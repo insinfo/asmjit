@@ -913,4 +913,129 @@ class X86Assembler {
 
   /// MOVD r32, xmm (move doubleword from XMM to GP)
   void movdRX(X86Gp dst, X86Xmm src) => _enc.movdR32Xmm(dst, src);
+
+  // ===========================================================================
+  // AVX - Move instructions (VEX-encoded)
+  // ===========================================================================
+
+  /// VMOVAPS xmm, xmm (VEX move aligned packed single 128-bit)
+  void vmovapsXX(X86Xmm dst, X86Xmm src) => _enc.vmovapsXmmXmm(dst, src);
+
+  /// VMOVAPS ymm, ymm (VEX move aligned packed single 256-bit)
+  void vmovapsYY(X86Ymm dst, X86Ymm src) => _enc.vmovapsYmmYmm(dst, src);
+
+  /// VMOVUPS xmm, xmm (VEX move unaligned packed single 128-bit)
+  void vmovupsXX(X86Xmm dst, X86Xmm src) => _enc.vmovupsXmmXmm(dst, src);
+
+  /// VMOVUPS ymm, ymm (VEX move unaligned packed single 256-bit)
+  void vmovupsYY(X86Ymm dst, X86Ymm src) => _enc.vmovupsYmmYmm(dst, src);
+
+  // ===========================================================================
+  // AVX - Scalar arithmetic (VEX-encoded)
+  // ===========================================================================
+
+  /// VADDSD xmm, xmm, xmm (VEX add scalar double)
+  void vaddsdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vaddsdXmmXmmXmm(dst, src1, src2);
+
+  /// VSUBSD xmm, xmm, xmm (VEX subtract scalar double)
+  void vsubsdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vsubsdXmmXmmXmm(dst, src1, src2);
+
+  /// VMULSD xmm, xmm, xmm (VEX multiply scalar double)
+  void vmulsdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vmulsdXmmXmmXmm(dst, src1, src2);
+
+  /// VDIVSD xmm, xmm, xmm (VEX divide scalar double)
+  void vdivsdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vdivsdXmmXmmXmm(dst, src1, src2);
+
+  // ===========================================================================
+  // AVX - Packed arithmetic 128-bit (VEX-encoded)
+  // ===========================================================================
+
+  /// VADDPS xmm, xmm, xmm (VEX add packed single 128-bit)
+  void vaddpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vaddpsXmmXmmXmm(dst, src1, src2);
+
+  // ===========================================================================
+  // AVX - Packed arithmetic 256-bit (VEX-encoded)
+  // ===========================================================================
+
+  /// VADDPS ymm, ymm, ymm (VEX add packed single 256-bit)
+  void vaddpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vaddpsYmmYmmYmm(dst, src1, src2);
+
+  /// VMULPS ymm, ymm, ymm (VEX multiply packed single 256-bit)
+  void vmulpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vmulpsYmmYmmYmm(dst, src1, src2);
+
+  /// VADDPD ymm, ymm, ymm (VEX add packed double 256-bit)
+  void vaddpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vaddpdYmmYmmYmm(dst, src1, src2);
+
+  /// VMULPD ymm, ymm, ymm (VEX multiply packed double 256-bit)
+  void vmulpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vmulpdYmmYmmYmm(dst, src1, src2);
+
+  // ===========================================================================
+  // AVX - Logical (VEX-encoded)
+  // ===========================================================================
+
+  /// VXORPS xmm, xmm, xmm (VEX XOR packed single) - use for zeroing
+  void vxorpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vxorpsXmmXmmXmm(dst, src1, src2);
+
+  /// VXORPS ymm, ymm, ymm (VEX XOR packed single 256-bit) - use for zeroing
+  void vxorpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vxorpsYmmYmmYmm(dst, src1, src2);
+
+  /// VPXOR xmm, xmm, xmm (VEX XOR packed integer)
+  void vpxorXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vpxorXmmXmmXmm(dst, src1, src2);
+
+  // ===========================================================================
+  // AVX2 - Integer arithmetic (VEX-encoded)
+  // ===========================================================================
+
+  /// VPADDD xmm, xmm, xmm (VEX add packed dwords)
+  void vpadddXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vpadddXmmXmmXmm(dst, src1, src2);
+
+  /// VPADDD ymm, ymm, ymm (VEX add packed dwords 256-bit)
+  void vpadddYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vpadddYmmYmmYmm(dst, src1, src2);
+
+  /// VPADDQ xmm, xmm, xmm (VEX add packed qwords)
+  void vpaddqXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vpaddqXmmXmmXmm(dst, src1, src2);
+
+  /// VPMULLD xmm, xmm, xmm (VEX multiply packed dwords low)
+  void vpmulldXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vpmulldXmmXmmXmm(dst, src1, src2);
+
+  // ===========================================================================
+  // FMA - Fused Multiply-Add (VEX-encoded)
+  // ===========================================================================
+
+  /// VFMADD132SD xmm, xmm, xmm: dst = dst * src2 + src1
+  void vfmadd132sdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vfmadd132sdXmmXmmXmm(dst, src1, src2);
+
+  /// VFMADD231SD xmm, xmm, xmm: dst = src1 * src2 + dst
+  void vfmadd231sdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vfmadd231sdXmmXmmXmm(dst, src1, src2);
+
+  // ===========================================================================
+  // AVX - Special
+  // ===========================================================================
+
+  /// VZEROUPPER - Zero upper 128 bits of all YMM registers.
+  ///
+  /// CRITICAL: Call this before transitioning from AVX to SSE code!
+  /// Avoids expensive AVX-SSE transition penalty.
+  void vzeroupper() => _enc.vzeroupper();
+
+  /// VZEROALL - Zero all YMM registers completely.
+  void vzeroall() => _enc.vzeroall();
 }

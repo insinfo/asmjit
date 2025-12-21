@@ -15,6 +15,7 @@ export 'src/core/labels.dart';
 export 'src/core/operand.dart';
 export 'src/core/const_pool.dart';
 export 'src/core/formatter.dart';
+export 'src/core/regalloc.dart';
 
 // Runtime
 export 'src/runtime/libc.dart';
