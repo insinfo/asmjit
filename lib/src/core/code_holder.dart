@@ -219,6 +219,16 @@ class CodeHolder {
     ));
   }
 
+  /// Adds a rel8 relocation (for short jumps).
+  void addRel8(Label target, int atOffset, [int addend = 0]) {
+    addReloc(Reloc(
+      kind: RelocKind.rel8,
+      atOffset: atOffset,
+      target: target,
+      addend: addend,
+    ));
+  }
+
   // ===========================================================================
   // Finalization
   // ===========================================================================

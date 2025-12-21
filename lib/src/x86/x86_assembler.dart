@@ -246,14 +246,53 @@ class X86Assembler {
   // ===========================================================================
 
   /// JMP to label.
-  void jmp(Label target) {
-    final placeholderOffset = _enc.jmpRel32Placeholder();
-    code.addRel32(target, placeholderOffset);
+  ///
+  /// For backward jumps (to already bound labels), automatically uses
+  /// short jump (rel8) if the distance is within range (-128 to 127).
+  /// For forward jumps, uses near jump (rel32).
+  void jmp(Label target, {bool forceShort = false}) {
+    final targetOffset = code.getLabelOffset(target);
+
+    if (targetOffset != null) {
+      // Backward jump - label is already bound
+      // Calculate distance from end of instruction
+      final currentPos = _enc.buffer.length;
+
+      // For rel8: instruction is 2 bytes (EB xx)
+      // For rel32: instruction is 5 bytes (E9 xx xx xx xx)
+      // disp = target - (current + instruction_size)
+      final dispShort = targetOffset - (currentPos + 2);
+
+      if (dispShort >= -128 && dispShort <= 127) {
+        // Use short jump
+        _enc.jmpRel8(dispShort);
+      } else {
+        // Use near jump
+        final dispNear = targetOffset - (currentPos + 5);
+        _enc.jmpRel32(dispNear);
+      }
+    } else {
+      // Forward jump - use placeholder and patch later
+      if (forceShort) {
+        // Emit short jump with placeholder (will be patched)
+        final placeholderOffset = _enc.buffer.length + 1; // offset of disp8
+        _enc.jmpRel8(0);
+        code.addRel8(target, placeholderOffset);
+      } else {
+        final placeholderOffset = _enc.jmpRel32Placeholder();
+        code.addRel32(target, placeholderOffset);
+      }
+    }
   }
 
   /// JMP rel32 (direct displacement).
   void jmpRel(int disp) {
     _enc.jmpRel32(disp);
+  }
+
+  /// JMP rel8 (short jump, direct displacement).
+  void jmpRelShort(int disp8) {
+    _enc.jmpRel8(disp8);
   }
 
   /// JMP r64.
@@ -282,9 +321,39 @@ class X86Assembler {
   // ===========================================================================
 
   /// Jcc to label.
-  void jcc(X86Cond cond, Label target) {
-    final placeholderOffset = _enc.jccRel32Placeholder(cond);
-    code.addRel32(target, placeholderOffset);
+  ///
+  /// For backward jumps, automatically uses short jump (rel8) if possible.
+  /// For forward jumps, uses near jump (rel32).
+  void jcc(X86Cond cond, Label target, {bool forceShort = false}) {
+    final targetOffset = code.getLabelOffset(target);
+
+    if (targetOffset != null) {
+      // Backward jump - label is already bound
+      final currentPos = _enc.buffer.length;
+
+      // For rel8: instruction is 2 bytes (7x xx)
+      // For rel32: instruction is 6 bytes (0F 8x xx xx xx xx)
+      final dispShort = targetOffset - (currentPos + 2);
+
+      if (dispShort >= -128 && dispShort <= 127) {
+        // Use short conditional jump
+        _enc.jccRel8(cond, dispShort);
+      } else {
+        // Use near conditional jump
+        final dispNear = targetOffset - (currentPos + 6);
+        _enc.jccRel32(cond, dispNear);
+      }
+    } else {
+      // Forward jump - use placeholder
+      if (forceShort) {
+        final placeholderOffset = _enc.buffer.length + 1;
+        _enc.jccRel8(cond, 0);
+        code.addRel8(target, placeholderOffset);
+      } else {
+        final placeholderOffset = _enc.jccRel32Placeholder(cond);
+        code.addRel32(target, placeholderOffset);
+      }
+    }
   }
 
   /// JE/JZ - Jump if equal/zero.
