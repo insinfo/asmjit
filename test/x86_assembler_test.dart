@@ -2,7 +2,6 @@
 ///
 /// Tests for high-level X86Assembler functionality.
 
-import 'dart:ffi';
 import 'dart:io' show Platform;
 import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';

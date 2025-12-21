@@ -1674,6 +1674,117 @@ class X86Encoder {
     buffer.emit8(0xB9);
     buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
   }
+
+  // ===========================================================================
+  // AVX single-precision (VEX.F3 prefix)
+  // ===========================================================================
+
+  /// VADDSS xmm, xmm, xmm (VEX.LIG.F3.0F 58)
+  void vaddssXmmXmmXmm(X86Xmm dst, X86Xmm src1, X86Xmm src2) {
+    final needsVex3 = dst.isExtended || src2.isExtended;
+    if (needsVex3) {
+      _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F, false,
+          src1.id, false, _vexPpF3);
+    } else {
+      _emitVex2(dst.isExtended, src1.id, false, _vexPpF3);
+    }
+    buffer.emit8(0x58);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+  }
+
+  /// VSUBSS xmm, xmm, xmm (VEX.LIG.F3.0F 5C)
+  void vsubssXmmXmmXmm(X86Xmm dst, X86Xmm src1, X86Xmm src2) {
+    final needsVex3 = dst.isExtended || src2.isExtended;
+    if (needsVex3) {
+      _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F, false,
+          src1.id, false, _vexPpF3);
+    } else {
+      _emitVex2(dst.isExtended, src1.id, false, _vexPpF3);
+    }
+    buffer.emit8(0x5C);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+  }
+
+  /// VMULSS xmm, xmm, xmm (VEX.LIG.F3.0F 59)
+  void vmulssXmmXmmXmm(X86Xmm dst, X86Xmm src1, X86Xmm src2) {
+    final needsVex3 = dst.isExtended || src2.isExtended;
+    if (needsVex3) {
+      _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F, false,
+          src1.id, false, _vexPpF3);
+    } else {
+      _emitVex2(dst.isExtended, src1.id, false, _vexPpF3);
+    }
+    buffer.emit8(0x59);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+  }
+
+  /// VDIVSS xmm, xmm, xmm (VEX.LIG.F3.0F 5E)
+  void vdivssXmmXmmXmm(X86Xmm dst, X86Xmm src1, X86Xmm src2) {
+    final needsVex3 = dst.isExtended || src2.isExtended;
+    if (needsVex3) {
+      _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F, false,
+          src1.id, false, _vexPpF3);
+    } else {
+      _emitVex2(dst.isExtended, src1.id, false, _vexPpF3);
+    }
+    buffer.emit8(0x5E);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+  }
+
+  // ===========================================================================
+  // AVX shuffle/blend (VEX.0F3A)
+  // ===========================================================================
+
+  /// VSHUFPS xmm, xmm, xmm, imm8 (VEX.128.0F3A C6)
+  void vshufpsXmmXmmXmmImm8(X86Xmm dst, X86Xmm src1, X86Xmm src2, int imm8) {
+    _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F3A, false,
+        src1.id, false, _vexPpNone);
+    buffer.emit8(0xC6);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+    buffer.emit8(imm8 & 0xFF);
+  }
+
+  /// VPSLLD xmm, xmm, imm8 (VEX.128.66.0F 72 /6 ib) - shift left dwords
+  /// Note: Uses SSE legacy encoding path for imm8
+  void vpslldXmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
+    _emitVex2(false, dst.id, false, _vexPp66);
+    buffer.emit8(0x72);
+    buffer.emit8(0xF0 | src.encoding); // ModRM with /6
+    buffer.emit8(imm8 & 0xFF);
+  }
+
+  /// VPSRLD xmm, xmm, imm8 (VEX.128.66.0F 72 /2 ib) - shift right dwords
+  void vpsrldXmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
+    _emitVex2(false, dst.id, false, _vexPp66);
+    buffer.emit8(0x72);
+    buffer.emit8(0xD0 | src.encoding); // ModRM with /2
+    buffer.emit8(imm8 & 0xFF);
+  }
+
+  // ===========================================================================
+  // SSE memory operations using _emitRexForXmm
+  // ===========================================================================
+
+  /// MOVSD xmm, [rip+disp32] (load scalar double from RIP-relative)
+  void movsdXmmRipRel32(X86Xmm dst, int disp32) {
+    buffer.emit8(0xF2);
+    _emitRexForXmm(dst);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x10);
+    // ModRM: mod=00, reg=dst, rm=101 (RIP-relative)
+    buffer.emit8(0x05 | (dst.encoding << 3));
+    buffer.emit32(disp32);
+  }
+
+  /// MOVSS xmm, [rip+disp32] (load scalar single from RIP-relative)
+  void movssXmmRipRel32(X86Xmm dst, int disp32) {
+    buffer.emit8(0xF3);
+    _emitRexForXmm(dst);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x10);
+    buffer.emit8(0x05 | (dst.encoding << 3));
+    buffer.emit32(disp32);
+  }
 }
 
 /// x86 condition codes.

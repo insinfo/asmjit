@@ -4,7 +4,6 @@
 
 import 'dart:ffi';
 import 'dart:io' show Platform;
-import 'dart:typed_data';
 import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
 
