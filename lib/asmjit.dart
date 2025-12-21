@@ -26,6 +26,7 @@ export 'src/x86/x86.dart';
 export 'src/x86/x86_operands.dart';
 export 'src/x86/x86_encoder.dart';
 export 'src/x86/x86_assembler.dart';
+export 'src/x86/x86_func.dart';
 
 // Inline
 export 'src/inline/inline_bytes.dart';

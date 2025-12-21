@@ -825,6 +825,210 @@ class X86Encoder {
     buffer.emit8(0xF7);
     emitModRmReg(6, reg);
   }
+
+  // ===========================================================================
+  // High-precision arithmetic (for cryptography)
+  // ===========================================================================
+
+  /// ADC r64, r64 - Add with carry
+  void adcR64R64(X86Gp dst, X86Gp src) {
+    emitRexForRegRm(src, dst, w: true);
+    buffer.emit8(0x11);
+    emitModRmReg(src.encoding, dst);
+  }
+
+  /// ADC r64, imm8 - Add with carry (sign-extended imm8)
+  void adcR64Imm8(X86Gp dst, int imm8) {
+    emitRexForReg(dst, w: true);
+    buffer.emit8(0x83);
+    emitModRmReg(2, dst);
+    buffer.emit8(imm8);
+  }
+
+  /// ADC r64, imm32 - Add with carry (sign-extended imm32)
+  void adcR64Imm32(X86Gp dst, int imm32) {
+    if (dst.id == 0) {
+      // ADC RAX, imm32 has shorter encoding
+      buffer.emit8(0x48); // REX.W
+      buffer.emit8(0x15);
+      buffer.emit32(imm32);
+    } else {
+      emitRexForReg(dst, w: true);
+      buffer.emit8(0x81);
+      emitModRmReg(2, dst);
+      buffer.emit32(imm32);
+    }
+  }
+
+  /// SBB r64, r64 - Subtract with borrow
+  void sbbR64R64(X86Gp dst, X86Gp src) {
+    emitRexForRegRm(src, dst, w: true);
+    buffer.emit8(0x19);
+    emitModRmReg(src.encoding, dst);
+  }
+
+  /// SBB r64, imm8 - Subtract with borrow (sign-extended imm8)
+  void sbbR64Imm8(X86Gp dst, int imm8) {
+    emitRexForReg(dst, w: true);
+    buffer.emit8(0x83);
+    emitModRmReg(3, dst);
+    buffer.emit8(imm8);
+  }
+
+  /// SBB r64, imm32 - Subtract with borrow (sign-extended imm32)
+  void sbbR64Imm32(X86Gp dst, int imm32) {
+    if (dst.id == 0) {
+      // SBB RAX, imm32 has shorter encoding
+      buffer.emit8(0x48); // REX.W
+      buffer.emit8(0x1D);
+      buffer.emit32(imm32);
+    } else {
+      emitRexForReg(dst, w: true);
+      buffer.emit8(0x81);
+      emitModRmReg(3, dst);
+      buffer.emit32(imm32);
+    }
+  }
+
+  /// MUL r64 - Unsigned multiply RDX:RAX = RAX * r64
+  void mulR64(X86Gp src) {
+    emitRexForReg(src, w: true);
+    buffer.emit8(0xF7);
+    emitModRmReg(4, src);
+  }
+
+  /// MULX r64, r64, r64 (BMI2) - Unsigned multiply without affecting flags
+  /// MULX rdx, rax, src: (RDX, RAX) = RDX * src (EDX is implicit input)
+  /// Encoding: VEX.LZ.F2.0F38.W1 F6 /r
+  void mulxR64R64R64(X86Gp hi, X86Gp lo, X86Gp src) {
+    // VEX.128.F2.0F38.W1 F6 /r
+    // VEX prefix for 3-byte VEX
+    final vvvv = (~lo.encoding) & 0xF;
+    final r = hi.isExtended ? 0 : 0x80;
+    final x = 0; // Not used for reg-reg
+    final b = src.isExtended ? 0 : 0x20;
+
+    // VEX.C4 RXB.m-mmmm W.vvvv.L.pp
+    buffer.emit8(0xC4); // 3-byte VEX
+    buffer.emit8(r | x | b | 0x02); // R.X.B.m-mmmm (0F38)
+    buffer.emit8(0x80 | (vvvv << 3) | 0x03); // W.vvvv.L.pp (W=1, L=0, pp=11=F2)
+    buffer.emit8(0xF6);
+    emitModRmReg(hi.encoding, src);
+  }
+
+  /// ADCX r64, r64 (ADX) - Unsigned add with carry flag
+  /// Only uses CF, leaves OF unchanged
+  /// Encoding: 66 0F 38 F6 /r
+  void adcxR64R64(X86Gp dst, X86Gp src) {
+    buffer.emit8(0x66); // Mandatory prefix
+    emitRexForRegRm(dst, src, w: true);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0xF6);
+    emitModRmReg(dst.encoding, src);
+  }
+
+  /// ADOX r64, r64 (ADX) - Unsigned add with overflow flag
+  /// Only uses OF, leaves CF unchanged
+  /// Encoding: F3 0F 38 F6 /r
+  void adoxR64R64(X86Gp dst, X86Gp src) {
+    buffer.emit8(0xF3); // Mandatory prefix
+    emitRexForRegRm(dst, src, w: true);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0xF6);
+    emitModRmReg(dst.encoding, src);
+  }
+
+  // ===========================================================================
+  // Flag manipulation
+  // ===========================================================================
+
+  /// CLC - Clear carry flag
+  void clc() {
+    buffer.emit8(0xF8);
+  }
+
+  /// STC - Set carry flag
+  void stc() {
+    buffer.emit8(0xF9);
+  }
+
+  /// CMC - Complement carry flag
+  void cmc() {
+    buffer.emit8(0xF5);
+  }
+
+  /// CLD - Clear direction flag
+  void cld() {
+    buffer.emit8(0xFC);
+  }
+
+  /// STD - Set direction flag
+  void std() {
+    buffer.emit8(0xFD);
+  }
+
+  // ===========================================================================
+  // String operations (useful for memcpy/memset)
+  // ===========================================================================
+
+  /// REP MOVSB - Repeat move string (byte)
+  void repMovsb() {
+    buffer.emit8(0xF3); // REP prefix
+    buffer.emit8(0xA4); // MOVSB
+  }
+
+  /// REP MOVSQ - Repeat move string (qword)
+  void repMovsq() {
+    buffer.emit8(0xF3); // REP prefix
+    buffer.emit8(0x48); // REX.W
+    buffer.emit8(0xA5); // MOVSQ
+  }
+
+  /// REP STOSB - Repeat store string (byte)
+  void repStosb() {
+    buffer.emit8(0xF3); // REP prefix
+    buffer.emit8(0xAA); // STOSB
+  }
+
+  /// REP STOSQ - Repeat store string (qword)
+  void repStosq() {
+    buffer.emit8(0xF3); // REP prefix
+    buffer.emit8(0x48); // REX.W
+    buffer.emit8(0xAB); // STOSQ
+  }
+
+  // ===========================================================================
+  // Memory fence instructions
+  // ===========================================================================
+
+  /// MFENCE - Memory fence
+  void mfence() {
+    buffer.emit8(0x0F);
+    buffer.emit8(0xAE);
+    buffer.emit8(0xF0);
+  }
+
+  /// SFENCE - Store fence
+  void sfence() {
+    buffer.emit8(0x0F);
+    buffer.emit8(0xAE);
+    buffer.emit8(0xF8);
+  }
+
+  /// LFENCE - Load fence
+  void lfence() {
+    buffer.emit8(0x0F);
+    buffer.emit8(0xAE);
+    buffer.emit8(0xE8);
+  }
+
+  /// PAUSE - Spin loop hint
+  void pause() {
+    buffer.emit8(0xF3);
+    buffer.emit8(0x90);
+  }
 }
 
 /// x86 condition codes.

@@ -619,4 +619,107 @@ class X86Assembler {
   void div(X86Gp reg) {
     _enc.divR64(reg);
   }
+
+  // ===========================================================================
+  // High-precision arithmetic (for cryptography)
+  // ===========================================================================
+
+  /// ADC dst, src - Add with carry
+  void adcRR(X86Gp dst, X86Gp src) {
+    _enc.adcR64R64(dst, src);
+  }
+
+  /// ADC dst, imm - Add with carry
+  void adcRI(X86Gp dst, int imm) {
+    if (imm >= -128 && imm <= 127) {
+      _enc.adcR64Imm8(dst, imm);
+    } else {
+      _enc.adcR64Imm32(dst, imm);
+    }
+  }
+
+  /// SBB dst, src - Subtract with borrow
+  void sbbRR(X86Gp dst, X86Gp src) {
+    _enc.sbbR64R64(dst, src);
+  }
+
+  /// SBB dst, imm - Subtract with borrow
+  void sbbRI(X86Gp dst, int imm) {
+    if (imm >= -128 && imm <= 127) {
+      _enc.sbbR64Imm8(dst, imm);
+    } else {
+      _enc.sbbR64Imm32(dst, imm);
+    }
+  }
+
+  /// MUL src - Unsigned multiply RDX:RAX = RAX * src
+  void mul(X86Gp src) {
+    _enc.mulR64(src);
+  }
+
+  /// MULX hi, lo, src (BMI2) - Unsigned multiply without flags
+  void mulx(X86Gp hi, X86Gp lo, X86Gp src) {
+    _enc.mulxR64R64R64(hi, lo, src);
+  }
+
+  /// ADCX dst, src (ADX) - Add with carry (uses CF only)
+  void adcx(X86Gp dst, X86Gp src) {
+    _enc.adcxR64R64(dst, src);
+  }
+
+  /// ADOX dst, src (ADX) - Add with overflow (uses OF only)
+  void adox(X86Gp dst, X86Gp src) {
+    _enc.adoxR64R64(dst, src);
+  }
+
+  // ===========================================================================
+  // Flag manipulation
+  // ===========================================================================
+
+  /// CLC - Clear carry flag
+  void clc() => _enc.clc();
+
+  /// STC - Set carry flag
+  void stc() => _enc.stc();
+
+  /// CMC - Complement carry flag
+  void cmc() => _enc.cmc();
+
+  /// CLD - Clear direction flag
+  void cld() => _enc.cld();
+
+  /// STD - Set direction flag (use with caution)
+  void std() => _enc.std();
+
+  // ===========================================================================
+  // String operations
+  // ===========================================================================
+
+  /// REP MOVSB - Copy RCX bytes from [RSI] to [RDI]
+  void repMovsb() => _enc.repMovsb();
+
+  /// REP MOVSQ - Copy RCX qwords from [RSI] to [RDI]
+  void repMovsq() => _enc.repMovsq();
+
+  /// REP STOSB - Store AL to RCX bytes at [RDI]
+  void repStosb() => _enc.repStosb();
+
+  /// REP STOSQ - Store RAX to RCX qwords at [RDI]
+  void repStosq() => _enc.repStosq();
+
+  // ===========================================================================
+  // Memory fences
+  // ===========================================================================
+
+  /// MFENCE - Full memory fence
+  void mfence() => _enc.mfence();
+
+  /// SFENCE - Store fence
+  void sfence() => _enc.sfence();
+
+  /// LFENCE - Load fence
+  void lfence() => _enc.lfence();
+
+  /// PAUSE - Spin loop hint
+  void pause() => _enc.pause();
 }

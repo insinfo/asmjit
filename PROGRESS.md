@@ -1,13 +1,13 @@
 # AsmJit Dart - Progresso
 
-## 🎉 Milestones 0-6 e 8 CONCLUÍDOS!
+## 🎉 Milestones 0-8 CONCLUÍDOS!
 
 Data: 20 Dezembro 2024
 
 ## 📊 Status dos Testes
 
 ```
-✅ 144 testes passaram!
+✅ 163 testes passaram!
 ```
 
 ## ✅ Implementado
@@ -21,8 +21,8 @@ Data: 20 Dezembro 2024
 - [x] `labels.dart` - Sistema de labels e relocações (`Label`, `Reloc`, `LabelManager`)
 - [x] `operand.dart` - Operandos base (`Operand`, `Imm`, `BaseReg`, `BaseMem`)
 - [x] `code_holder.dart` - Container de código, seções, labels, fixups
-- [x] `const_pool.dart` - **Constant Pool** para literais e constantes (Milestone 6)
-- [x] `formatter.dart` - **Formatter/Logger** para debug (Milestone 8)
+- [x] `const_pool.dart` - Constant Pool para literais e constantes
+- [x] `formatter.dart` - Formatter/Logger para debug
 
 ### Runtime (`lib/src/runtime/`)
 - [x] `libc.dart` - Bindings FFI para libc (malloc, free, memcpy, etc.)
@@ -32,14 +32,15 @@ Data: 20 Dezembro 2024
 ### x86 (`lib/src/x86/`)
 - [x] `x86.dart` - Registradores x86/x64 (RAX-R15, convenções SysV/Win64)
 - [x] `x86_operands.dart` - Operandos de memória (`X86Mem`, `X86RipMem`)
-- [x] `x86_encoder.dart` - Encoder de instruções (REX, ModR/M, SIB, opcodes) **+30 novas instruções**
-- [x] `x86_assembler.dart` - API de alto nível do assembler **+25 novos métodos**
+- [x] `x86_encoder.dart` - **80+ instruções codificadas**
+- [x] `x86_assembler.dart` - **60+ métodos de alto nível**
+- [x] `x86_func.dart` - **FuncFrame** para gerenciamento de prólogo/epílogo
 
 ### Inline (`lib/src/inline/`)
 - [x] `inline_bytes.dart` - Código pré-compilado com patches (`InlineBytes`, `InlinePatch`)
 - [x] `inline_asm.dart` - Builder de funções JIT (`InlineAsm`, `X86Templates`)
 
-## 🧪 Cobertura de Testes (144 testes)
+## 🧪 Cobertura de Testes (163 testes)
 
 1. **code_buffer_test.dart** (17 testes)
 2. **labels_test.dart** (13 testes)
@@ -47,9 +48,10 @@ Data: 20 Dezembro 2024
 4. **x86_assembler_test.dart** (15 testes)
 5. **jit_execution_test.dart** (13 testes)
 6. **inline_test.dart** (23 testes)
-7. **x86_extended_test.dart** (26 testes) - **NOVO**
+7. **x86_extended_test.dart** (26 testes)
+8. **crypto_test.dart** (19 testes) - **NOVO**
 
-## Instruções x86/x64 Implementadas
+## Instruções x86/x64 Implementadas (80+)
 
 ### Básicas
 - `ret`, `ret imm16`, `nop`, `nopN`, `int3`, `intN`, `leave`
@@ -60,124 +62,125 @@ Data: 20 Dezembro 2024
 - `mov r64, [mem]`, `mov [mem], r64`
 
 ### Aritméticas
-- `add r64, r64/imm8/imm32`
-- `sub r64, r64/imm8/imm32`
-- `imul r64, r64`
-- `xor`, `and`, `or`, `cmp`, `test`
+- `add`, `sub`, `imul`, `xor`, `and`, `or`, `cmp`, `test`
 
-### Unárias (NOVO)
-- `inc r64/r32` - Incrementar
-- `dec r64/r32` - Decrementar
-- `neg r64` - Negação (complemento de dois)
-- `not r64` - Complemento (bitwise not)
+### Unárias
+- `inc`, `dec`, `neg`, `not`
 
-### Shifts e Rotações (NOVO)
-- `shl r64, imm8/CL` - Shift left
-- `shr r64, imm8/CL` - Shift right (lógico)
-- `sar r64, imm8/CL` - Shift right (aritmético)
-- `rol r64, imm8` - Rotate left
-- `ror r64, imm8` - Rotate right
+### Shifts e Rotações
+- `shl`, `shr`, `sar`, `rol`, `ror` (com imm8 ou CL)
 
-### Divisão (NOVO)
-- `cqo` - Sign-extend RAX → RDX:RAX
-- `cdq` - Sign-extend EAX → EDX:EAX
-- `idiv r64` - Divisão com sinal
-- `div r64` - Divisão sem sinal
+### Divisão
+- `cqo`, `cdq`, `idiv`, `div`
 
-### Conditional Move (NOVO)
-- `cmovcc r64, r64` - Todas as condições
+### Conditional Move (CMOVcc)
 - `cmove/cmovz`, `cmovne/cmovnz`
 - `cmovl`, `cmovg`, `cmovle`, `cmovge`
 - `cmovb`, `cmova`
 
-### Set Byte on Condition (NOVO)
-- `setcc r8` - Todas as condições
+### Set Byte on Condition (SETcc)
 - `sete`, `setne`, `setl`, `setg`
 
-### Move com Extensão (NOVO)
-- `movzx r64, r8` - Zero-extend byte
-- `movzx r64, r16` - Zero-extend word
-- `movsxd r64, r32` - Sign-extend dword
+### Move com Extensão
+- `movzx` (byte→qword, word→qword)
+- `movsxd` (dword→qword com sinal)
 
-### Bit Manipulation (NOVO)
-- `bsf r64, r64` - Bit scan forward
-- `bsr r64, r64` - Bit scan reverse
-- `popcnt r64, r64` - Population count
-- `lzcnt r64, r64` - Leading zero count
-- `tzcnt r64, r64` - Trailing zero count
+### Bit Manipulation
+- `bsf`, `bsr`, `popcnt`, `lzcnt`, `tzcnt`
 
-### Exchange (NOVO)
-- `xchg r64, r64` - Exchange valores
+### Exchange
+- `xchg`
 
 ### Stack
-- `push r64`, `push imm8/imm32`, `pop r64`
+- `push`, `pop`
 
 ### Controle de Fluxo
-- `jmp rel32/r64`, `call rel32/r64`
-- `jcc rel32` (todas as condições: je, jne, jl, jg, jle, jge, jb, ja, etc.)
+- `jmp`, `call`, `jcc` (todas as condições)
 - Labels com relocação automática
 
 ### LEA
 - `lea r64, [mem]`
 
+### **Alta Precisão / Criptografia (NOVO)**
+- `adc` (add with carry)
+- `sbb` (subtract with borrow)
+- `mul` (unsigned multiply RDX:RAX)
+- `mulx` (BMI2 - multiply without flags)
+- `adcx` (ADX - add with carry, CF only)
+- `adox` (ADX - add with overflow, OF only)
+
+### **Flag Manipulation (NOVO)**
+- `clc` (clear carry)
+- `stc` (set carry)
+- `cmc` (complement carry)
+- `cld` (clear direction)
+- `std` (set direction)
+
+### **String Operations (NOVO)**
+- `rep movsb` (copy bytes)
+- `rep movsq` (copy qwords)
+- `rep stosb` (store bytes)
+- `rep stosq` (store qwords)
+
+### **Memory Fences (NOVO)**
+- `mfence` (full fence)
+- `sfence` (store fence)
+- `lfence` (load fence)
+- `pause` (spin loop hint)
+
 ## 📋 Próximos Passos
 
-- [ ] Milestone 5: Jump optimization (short vs near) - **parcialmente implementado**
 - [ ] Milestone 7: Instruction database generator
 - [ ] Suporte AArch64 (ARM64)
 - [ ] Mais instruções SIMD (SSE/AVX)
+- [ ] Compiler/RA (Register Allocator)
 
 ## Uso
 
-### Exemplo: Função ABS usando CMOV
+### Exemplo: FuncFrame para gerenciamento de prólogo/epílogo
 
 ```dart
+final frame = FuncFrame.host(
+  attr: FuncFrameAttr.nonLeaf(localStackSize: 64),
+);
+
 final code = CodeHolder();
 final asm = X86Assembler(code);
+final emitter = FuncFrameEmitter(frame, asm);
 
-// abs(x) = x < 0 ? -x : x
-final arg0 = asm.getArgReg(0);
-asm.movRR(rax, arg0);     // rax = x
-asm.movRR(rcx, arg0);     // rcx = x
-asm.neg(rcx);             // rcx = -x
-asm.cmpRI(rax, 0);        // compare x, 0
-asm.cmovl(rax, rcx);      // if x < 0, rax = -x
-asm.ret();
-
-final fn = runtime.add(code);
-final abs = fn.pointer.cast<...>().asFunction<...>();
-print(abs(-42)); // Output: 42
+emitter.emitPrologue();
+// ... código da função ...
+emitter.emitEpilogue();
 ```
 
-### Exemplo: Divisão e Módulo
+### Exemplo: Aritmética de Alta Precisão
 
 ```dart
-// div(a, b) = a / b
-asm.movRR(r8, arg1);    // salvar divisor (pode ser RDX)
-asm.movRR(rax, arg0);   // dividendo em RAX
-asm.cqo();              // sign-extend para RDX:RAX
-asm.idiv(r8);           // dividir, quociente em RAX, resto em RDX
-asm.ret();
-
-// Para módulo, adicione: asm.movRR(rax, rdx);
+// Adicionar com carry (útil para aritmética de 128-bit)
+asm.clc();                // Limpar carry
+asm.movRR(rax, arg0);     // rax = arg0
+asm.addRR(rax, arg1);     // rax += arg1, pode setar carry
+asm.movRR(rdx, arg2);     // rdx = arg2
+asm.adcRR(rdx, arg3);     // rdx += arg3 + carry
 ```
 
-### Exemplo: Shift e Rotação
+### Exemplo: Memory Fence
 
 ```dart
-asm.movRR(rax, arg0);
-asm.shlRI(rax, 4);  // rax *= 16 (shift left 4)
-asm.ret();
+// Para operações thread-safe
+asm.mfence();  // Full memory barrier
+asm.sfence();  // Store barrier
+asm.lfence();  // Load barrier
+asm.pause();   // Spin loop hint
 ```
 
-### Formatador para Debug
+### Exemplo: String copy (memcpy)
 
 ```dart
-final logger = AsmLogger();
-logger.logInstruction(0, [0xB8, 0x2A, 0x00, 0x00, 0x00], 'mov', operands: ['eax', '42']);
-logger.logInstruction(5, [0xC3], 'ret');
-print(logger.format());
-// Output:
-// 00000000  b8 2a 00 00 00        mov eax, 42
-// 00000005  c3                    ret
+// REP MOVSB: copy RCX bytes from [RSI] to [RDI]
+asm.movRR(rdi, dest);   // Destination
+asm.movRR(rsi, src);    // Source
+asm.movRR(rcx, count);  // Byte count
+asm.cld();              // Clear direction (forward)
+asm.repMovsb();         // Copy!
 ```
