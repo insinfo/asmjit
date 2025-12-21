@@ -20,6 +20,7 @@ export 'src/core/formatter.dart';
 export 'src/runtime/libc.dart';
 export 'src/runtime/virtmem.dart';
 export 'src/runtime/jit_runtime.dart';
+export 'src/runtime/cpuinfo.dart' show CpuInfo, CpuFeatures;
 
 // x86
 export 'src/x86/x86.dart';
@@ -27,6 +28,7 @@ export 'src/x86/x86_operands.dart';
 export 'src/x86/x86_encoder.dart';
 export 'src/x86/x86_assembler.dart';
 export 'src/x86/x86_func.dart';
+export 'src/x86/x86_simd.dart';
 
 // Inline
 export 'src/inline/inline_bytes.dart';

@@ -6,6 +6,7 @@
 import '../core/code_buffer.dart';
 import 'x86.dart';
 import 'x86_operands.dart';
+import 'x86_simd.dart';
 
 /// x86/x64 instruction encoder.
 ///
@@ -1028,6 +1029,337 @@ class X86Encoder {
   void pause() {
     buffer.emit8(0xF3);
     buffer.emit8(0x90);
+  }
+
+  // ===========================================================================
+  // SSE/SSE2 instructions
+  // ===========================================================================
+
+  /// Helper to emit REX for XMM register.
+  void _emitRexForXmm(X86Xmm reg, {bool w = false}) {
+    if (reg.isExtended || w) {
+      emitRex(w, reg.isExtended, false, false);
+    }
+  }
+
+  /// Helper to emit REX for XMM reg, XMM rm.
+  void _emitRexForXmmXmm(X86Xmm reg, X86Xmm rm, {bool w = false}) {
+    if (reg.isExtended || rm.isExtended || w) {
+      emitRex(w, reg.isExtended, false, rm.isExtended);
+    }
+  }
+
+  /// MOVAPS xmm, xmm (move aligned packed single-precision)
+  void movapsXmmXmm(X86Xmm dst, X86Xmm src) {
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x28);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// MOVAPS xmm, [mem] (move aligned packed single-precision)
+  void movapsXmmMem(X86Xmm dst, X86Mem mem) {
+    if (dst.isExtended ||
+        mem.base?.isExtended == true ||
+        mem.index?.isExtended == true) {
+      emitRex(false, dst.isExtended, mem.index?.isExtended ?? false,
+          mem.base?.isExtended ?? false);
+    }
+    buffer.emit8(0x0F);
+    buffer.emit8(0x28);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// MOVAPS [mem], xmm (move aligned packed single-precision)
+  void movapsMemXmm(X86Mem mem, X86Xmm src) {
+    if (src.isExtended ||
+        mem.base?.isExtended == true ||
+        mem.index?.isExtended == true) {
+      emitRex(false, src.isExtended, mem.index?.isExtended ?? false,
+          mem.base?.isExtended ?? false);
+    }
+    buffer.emit8(0x0F);
+    buffer.emit8(0x29);
+    emitModRmMem(src.encoding, mem);
+  }
+
+  /// MOVUPS xmm, xmm (move unaligned packed single-precision)
+  void movupsXmmXmm(X86Xmm dst, X86Xmm src) {
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x10);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// MOVUPD xmm, xmm (move unaligned packed double-precision)
+  void movupdXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66); // Mandatory prefix
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x10);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// MOVSD xmm, xmm (move scalar double-precision)
+  void movsdXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0xF2); // Mandatory prefix
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x10);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// MOVSS xmm, xmm (move scalar single-precision)
+  void movssXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0xF3); // Mandatory prefix
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x10);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PXOR xmm, xmm (packed XOR - commonly used to zero a register)
+  void pxorXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66); // Mandatory prefix
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xEF);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// XORPS xmm, xmm (XOR packed single-precision - commonly used to zero)
+  void xorpsXmmXmm(X86Xmm dst, X86Xmm src) {
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x57);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// XORPD xmm, xmm (XOR packed double-precision)
+  void xorpdXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66); // Mandatory prefix
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x57);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// ADDSS xmm, xmm (add scalar single-precision)
+  void addssXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0xF3);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x58);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// ADDSD xmm, xmm (add scalar double-precision)
+  void addsdXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0xF2);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x58);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// SUBSS xmm, xmm (subtract scalar single-precision)
+  void subssXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0xF3);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x5C);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// SUBSD xmm, xmm (subtract scalar double-precision)
+  void subsdXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0xF2);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x5C);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// MULSS xmm, xmm (multiply scalar single-precision)
+  void mulssXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0xF3);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x59);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// MULSD xmm, xmm (multiply scalar double-precision)
+  void mulsdXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0xF2);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x59);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// DIVSS xmm, xmm (divide scalar single-precision)
+  void divssXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0xF3);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x5E);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// DIVSD xmm, xmm (divide scalar double-precision)
+  void divsdXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0xF2);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x5E);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// SQRTSS xmm, xmm (square root scalar single-precision)
+  void sqrtssXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0xF3);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x51);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// SQRTSD xmm, xmm (square root scalar double-precision)
+  void sqrtsdXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0xF2);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x51);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// CVTSI2SD xmm, r64 (convert signed integer to scalar double)
+  void cvtsi2sdXmmR64(X86Xmm dst, X86Gp src) {
+    buffer.emit8(0xF2);
+    emitRex(true, dst.isExtended, false, src.isExtended);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x2A);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// CVTSI2SS xmm, r64 (convert signed integer to scalar single)
+  void cvtsi2ssXmmR64(X86Xmm dst, X86Gp src) {
+    buffer.emit8(0xF3);
+    emitRex(true, dst.isExtended, false, src.isExtended);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x2A);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// CVTTSD2SI r64, xmm (convert with truncation scalar double to signed int)
+  void cvttsd2siR64Xmm(X86Gp dst, X86Xmm src) {
+    buffer.emit8(0xF2);
+    emitRex(true, dst.isExtended, false, src.isExtended);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x2C);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// CVTTSS2SI r64, xmm (convert with truncation scalar single to signed int)
+  void cvttss2siR64Xmm(X86Gp dst, X86Xmm src) {
+    buffer.emit8(0xF3);
+    emitRex(true, dst.isExtended, false, src.isExtended);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x2C);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// CVTSD2SS xmm, xmm (convert scalar double to single)
+  void cvtsd2ssXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0xF2);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x5A);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// CVTSS2SD xmm, xmm (convert scalar single to double)
+  void cvtss2sdXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0xF3);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x5A);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// COMISS xmm, xmm (compare scalar single-precision, set EFLAGS)
+  void comissXmmXmm(X86Xmm a, X86Xmm b) {
+    _emitRexForXmmXmm(a, b);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x2F);
+    buffer.emit8(0xC0 | (a.encoding << 3) | b.encoding);
+  }
+
+  /// COMISD xmm, xmm (compare scalar double-precision, set EFLAGS)
+  void comisdXmmXmm(X86Xmm a, X86Xmm b) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(a, b);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x2F);
+    buffer.emit8(0xC0 | (a.encoding << 3) | b.encoding);
+  }
+
+  /// UCOMISS xmm, xmm (unordered compare scalar single-precision)
+  void ucomissXmmXmm(X86Xmm a, X86Xmm b) {
+    _emitRexForXmmXmm(a, b);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x2E);
+    buffer.emit8(0xC0 | (a.encoding << 3) | b.encoding);
+  }
+
+  /// UCOMISD xmm, xmm (unordered compare scalar double-precision)
+  void ucomisdXmmXmm(X86Xmm a, X86Xmm b) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(a, b);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x2E);
+    buffer.emit8(0xC0 | (a.encoding << 3) | b.encoding);
+  }
+
+  /// MOVQ xmm, r64 (move quadword from GP to XMM)
+  void movqXmmR64(X86Xmm dst, X86Gp src) {
+    buffer.emit8(0x66);
+    emitRex(true, dst.isExtended, false, src.isExtended);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x6E);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// MOVQ r64, xmm (move quadword from XMM to GP)
+  void movqR64Xmm(X86Gp dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    emitRex(true, src.isExtended, false, dst.isExtended);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x7E);
+    buffer.emit8(0xC0 | (src.encoding << 3) | dst.encoding);
+  }
+
+  /// MOVD xmm, r32 (move doubleword from GP to XMM)
+  void movdXmmR32(X86Xmm dst, X86Gp src) {
+    buffer.emit8(0x66);
+    if (dst.isExtended || src.isExtended) {
+      emitRex(false, dst.isExtended, false, src.isExtended);
+    }
+    buffer.emit8(0x0F);
+    buffer.emit8(0x6E);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// MOVD r32, xmm (move doubleword from XMM to GP)
+  void movdR32Xmm(X86Gp dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    if (src.isExtended || dst.isExtended) {
+      emitRex(false, src.isExtended, false, dst.isExtended);
+    }
+    buffer.emit8(0x0F);
+    buffer.emit8(0x7E);
+    buffer.emit8(0xC0 | (src.encoding << 3) | dst.encoding);
   }
 }
 

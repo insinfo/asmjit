@@ -13,6 +13,7 @@ import '../core/arch.dart';
 import 'x86.dart';
 import 'x86_operands.dart';
 import 'x86_encoder.dart';
+import 'x86_simd.dart';
 
 /// x86/x64 Assembler.
 ///
@@ -722,4 +723,125 @@ class X86Assembler {
 
   /// PAUSE - Spin loop hint
   void pause() => _enc.pause();
+
+  // ===========================================================================
+  // SSE/SSE2 - Move instructions
+  // ===========================================================================
+
+  /// MOVAPS xmm, xmm (move aligned packed single-precision)
+  void movapsXX(X86Xmm dst, X86Xmm src) => _enc.movapsXmmXmm(dst, src);
+
+  /// MOVUPS xmm, xmm (move unaligned packed single-precision)
+  void movupsXX(X86Xmm dst, X86Xmm src) => _enc.movupsXmmXmm(dst, src);
+
+  /// MOVSD xmm, xmm (move scalar double-precision)
+  void movsdXX(X86Xmm dst, X86Xmm src) => _enc.movsdXmmXmm(dst, src);
+
+  /// MOVSS xmm, xmm (move scalar single-precision)
+  void movssXX(X86Xmm dst, X86Xmm src) => _enc.movssXmmXmm(dst, src);
+
+  // ===========================================================================
+  // SSE/SSE2 - Arithmetic (scalar double)
+  // ===========================================================================
+
+  /// ADDSD xmm, xmm (add scalar double)
+  void addsdXX(X86Xmm dst, X86Xmm src) => _enc.addsdXmmXmm(dst, src);
+
+  /// SUBSD xmm, xmm (subtract scalar double)
+  void subsdXX(X86Xmm dst, X86Xmm src) => _enc.subsdXmmXmm(dst, src);
+
+  /// MULSD xmm, xmm (multiply scalar double)
+  void mulsdXX(X86Xmm dst, X86Xmm src) => _enc.mulsdXmmXmm(dst, src);
+
+  /// DIVSD xmm, xmm (divide scalar double)
+  void divsdXX(X86Xmm dst, X86Xmm src) => _enc.divsdXmmXmm(dst, src);
+
+  /// SQRTSD xmm, xmm (square root scalar double)
+  void sqrtsdXX(X86Xmm dst, X86Xmm src) => _enc.sqrtsdXmmXmm(dst, src);
+
+  // ===========================================================================
+  // SSE/SSE2 - Arithmetic (scalar single)
+  // ===========================================================================
+
+  /// ADDSS xmm, xmm (add scalar single)
+  void addssXX(X86Xmm dst, X86Xmm src) => _enc.addssXmmXmm(dst, src);
+
+  /// SUBSS xmm, xmm (subtract scalar single)
+  void subssXX(X86Xmm dst, X86Xmm src) => _enc.subssXmmXmm(dst, src);
+
+  /// MULSS xmm, xmm (multiply scalar single)
+  void mulssXX(X86Xmm dst, X86Xmm src) => _enc.mulssXmmXmm(dst, src);
+
+  /// DIVSS xmm, xmm (divide scalar single)
+  void divssXX(X86Xmm dst, X86Xmm src) => _enc.divssXmmXmm(dst, src);
+
+  /// SQRTSS xmm, xmm (square root scalar single)
+  void sqrtssXX(X86Xmm dst, X86Xmm src) => _enc.sqrtssXmmXmm(dst, src);
+
+  // ===========================================================================
+  // SSE/SSE2 - Logical
+  // ===========================================================================
+
+  /// PXOR xmm, xmm (packed XOR, zero register: pxor xmm, xmm)
+  void pxorXX(X86Xmm dst, X86Xmm src) => _enc.pxorXmmXmm(dst, src);
+
+  /// XORPS xmm, xmm (XOR packed single)
+  void xorpsXX(X86Xmm dst, X86Xmm src) => _enc.xorpsXmmXmm(dst, src);
+
+  /// XORPD xmm, xmm (XOR packed double)
+  void xorpdXX(X86Xmm dst, X86Xmm src) => _enc.xorpdXmmXmm(dst, src);
+
+  // ===========================================================================
+  // SSE/SSE2 - Conversion
+  // ===========================================================================
+
+  /// CVTSI2SD xmm, r64 (convert int64 to double)
+  void cvtsi2sdXR(X86Xmm dst, X86Gp src) => _enc.cvtsi2sdXmmR64(dst, src);
+
+  /// CVTSI2SS xmm, r64 (convert int64 to float)
+  void cvtsi2ssXR(X86Xmm dst, X86Gp src) => _enc.cvtsi2ssXmmR64(dst, src);
+
+  /// CVTTSD2SI r64, xmm (convert double to int64 with truncation)
+  void cvttsd2siRX(X86Gp dst, X86Xmm src) => _enc.cvttsd2siR64Xmm(dst, src);
+
+  /// CVTTSS2SI r64, xmm (convert float to int64 with truncation)
+  void cvttss2siRX(X86Gp dst, X86Xmm src) => _enc.cvttss2siR64Xmm(dst, src);
+
+  /// CVTSD2SS xmm, xmm (convert double to float)
+  void cvtsd2ssXX(X86Xmm dst, X86Xmm src) => _enc.cvtsd2ssXmmXmm(dst, src);
+
+  /// CVTSS2SD xmm, xmm (convert float to double)
+  void cvtss2sdXX(X86Xmm dst, X86Xmm src) => _enc.cvtss2sdXmmXmm(dst, src);
+
+  // ===========================================================================
+  // SSE/SSE2 - Comparison
+  // ===========================================================================
+
+  /// COMISD xmm, xmm (ordered compare double, set EFLAGS)
+  void comisdXX(X86Xmm a, X86Xmm b) => _enc.comisdXmmXmm(a, b);
+
+  /// COMISS xmm, xmm (ordered compare single, set EFLAGS)
+  void comissXX(X86Xmm a, X86Xmm b) => _enc.comissXmmXmm(a, b);
+
+  /// UCOMISD xmm, xmm (unordered compare double, set EFLAGS)
+  void ucomisdXX(X86Xmm a, X86Xmm b) => _enc.ucomisdXmmXmm(a, b);
+
+  /// UCOMISS xmm, xmm (unordered compare single, set EFLAGS)
+  void ucomissXX(X86Xmm a, X86Xmm b) => _enc.ucomissXmmXmm(a, b);
+
+  // ===========================================================================
+  // SSE/SSE2 - GP <-> XMM Transfer
+  // ===========================================================================
+
+  /// MOVQ xmm, r64 (move quadword from GP to XMM)
+  void movqXR(X86Xmm dst, X86Gp src) => _enc.movqXmmR64(dst, src);
+
+  /// MOVQ r64, xmm (move quadword from XMM to GP)
+  void movqRX(X86Gp dst, X86Xmm src) => _enc.movqR64Xmm(dst, src);
+
+  /// MOVD xmm, r32 (move doubleword from GP to XMM)
+  void movdXR(X86Xmm dst, X86Gp src) => _enc.movdXmmR32(dst, src);
+
+  /// MOVD r32, xmm (move doubleword from XMM to GP)
+  void movdRX(X86Gp dst, X86Xmm src) => _enc.movdR32Xmm(dst, src);
 }

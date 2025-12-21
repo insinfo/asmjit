@@ -338,7 +338,7 @@ M7: gerador do instruction DB (crescer ISA sem sofrimento)
 
 M8: formatter/logger (debuggabilidade)
 
-M9: (opcional) começar “Compiler/RA”
+M9:  “Compiler/RA”
 
 A seguir vai um esqueleto de API (em Dart) pensado pra ficar “AsmJit-like”, mas 100% Dart/FFI, com camadas bem separadas: core (CodeHolder/labels/fixups), runtime (VirtMem + JitRuntime), x86 (assembler/encoder), e inline (bytes/templates).
 

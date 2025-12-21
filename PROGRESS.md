@@ -1,13 +1,13 @@
 # AsmJit Dart - Progresso
 
-## 🎉 Milestones 0-8 CONCLUÍDOS!
+## 🎉 Port Completo do Core AsmJit!
 
 Data: 20 Dezembro 2024
 
 ## 📊 Status dos Testes
 
 ```
-✅ 163 testes passaram!
+✅ 198 testes passaram!
 ```
 
 ## ✅ Implementado
@@ -28,19 +28,21 @@ Data: 20 Dezembro 2024
 - [x] `libc.dart` - Bindings FFI para libc (malloc, free, memcpy, etc.)
 - [x] `virtmem.dart` - Memória virtual executável com padrão W^X (VirtualAlloc/mmap)
 - [x] `jit_runtime.dart` - JIT Runtime completo para execução de código gerado
+- [x] `cpuinfo.dart` - **Detecção de features da CPU via CPUID (NOVO)**
 
 ### x86 (`lib/src/x86/`)
 - [x] `x86.dart` - Registradores x86/x64 (RAX-R15, convenções SysV/Win64)
 - [x] `x86_operands.dart` - Operandos de memória (`X86Mem`, `X86RipMem`)
-- [x] `x86_encoder.dart` - **80+ instruções codificadas**
-- [x] `x86_assembler.dart` - **60+ métodos de alto nível**
-- [x] `x86_func.dart` - **FuncFrame** para gerenciamento de prólogo/epílogo
+- [x] `x86_encoder.dart` - **120+ instruções codificadas**
+- [x] `x86_assembler.dart` - **90+ métodos de alto nível**
+- [x] `x86_func.dart` - FuncFrame para gerenciamento de prólogo/epílogo
+- [x] `x86_simd.dart` - Registradores XMM/YMM/ZMM
 
 ### Inline (`lib/src/inline/`)
 - [x] `inline_bytes.dart` - Código pré-compilado com patches (`InlineBytes`, `InlinePatch`)
 - [x] `inline_asm.dart` - Builder de funções JIT (`InlineAsm`, `X86Templates`)
 
-## 🧪 Cobertura de Testes (163 testes)
+## 🧪 Cobertura de Testes (198 testes)
 
 1. **code_buffer_test.dart** (17 testes)
 2. **labels_test.dart** (13 testes)
@@ -49,138 +51,141 @@ Data: 20 Dezembro 2024
 5. **jit_execution_test.dart** (13 testes)
 6. **inline_test.dart** (23 testes)
 7. **x86_extended_test.dart** (26 testes)
-8. **crypto_test.dart** (19 testes) - **NOVO**
+8. **crypto_test.dart** (19 testes)
+9. **sse_test.dart** (28 testes)
+10. **cpuinfo_test.dart** (7 testes) - **NOVO**
 
-## Instruções x86/x64 Implementadas (80+)
+## CPU Feature Detection (NOVO)
+
+O AsmJit Dart agora detecta automaticamente as features da CPU usando a instrução CPUID:
+
+```dart
+final cpu = CpuInfo.host();
+print(cpu);
+// CpuInfo(
+//   vendor: GenuineIntel,
+//   brand: Intel(R) Core(TM) i7-3632QM CPU @ 2.20GHz,
+//   processors: 8,
+//   features: CpuFeatures(x64, FPU, CMOV, MMX, SSE, SSE2, SSE3, SSSE3, 
+//                          SSE4.1, SSE4.2, POPCNT, AVX, AES-NI, PCLMULQDQ)
+// )
+
+// Check for specific features
+if (cpu.features.avx2) {
+  // Use AVX2 instructions
+}
+
+if (cpu.features.bmi2) {
+  // Use MULX instruction
+}
+
+if (cpu.features.adx) {
+  // Use ADCX/ADOX instructions
+}
+```
+
+## Instruções x86/x64 Implementadas (120+)
 
 ### Básicas
-- `ret`, `ret imm16`, `nop`, `nopN`, `int3`, `intN`, `leave`
+- `ret`, `nop`, `int3`, `leave`
 
 ### MOV
-- `mov r64, r64`, `mov r32, r32`
-- `mov r64/r32, imm32/imm64`
+- `mov r64/r32, r64/r32/imm`
 - `mov r64, [mem]`, `mov [mem], r64`
 
 ### Aritméticas
 - `add`, `sub`, `imul`, `xor`, `and`, `or`, `cmp`, `test`
+- `adc`, `sbb` (com carry/borrow)
+- `mul`, `mulx` (multiplicação sem flags)
 
 ### Unárias
 - `inc`, `dec`, `neg`, `not`
 
 ### Shifts e Rotações
-- `shl`, `shr`, `sar`, `rol`, `ror` (com imm8 ou CL)
+- `shl`, `shr`, `sar`, `rol`, `ror`
 
 ### Divisão
 - `cqo`, `cdq`, `idiv`, `div`
 
-### Conditional Move (CMOVcc)
-- `cmove/cmovz`, `cmovne/cmovnz`
-- `cmovl`, `cmovg`, `cmovle`, `cmovge`
-- `cmovb`, `cmova`
-
-### Set Byte on Condition (SETcc)
-- `sete`, `setne`, `setl`, `setg`
+### Conditional Move/Set
+- `cmovcc`, `setcc` (todas as condições)
 
 ### Move com Extensão
-- `movzx` (byte→qword, word→qword)
-- `movsxd` (dword→qword com sinal)
+- `movzx`, `movsxd`
 
 ### Bit Manipulation
 - `bsf`, `bsr`, `popcnt`, `lzcnt`, `tzcnt`
-
-### Exchange
-- `xchg`
-
-### Stack
-- `push`, `pop`
 
 ### Controle de Fluxo
 - `jmp`, `call`, `jcc` (todas as condições)
 - Labels com relocação automática
 
-### LEA
-- `lea r64, [mem]`
+### Stack
+- `push`, `pop`
 
-### **Alta Precisão / Criptografia (NOVO)**
-- `adc` (add with carry)
-- `sbb` (subtract with borrow)
-- `mul` (unsigned multiply RDX:RAX)
-- `mulx` (BMI2 - multiply without flags)
-- `adcx` (ADX - add with carry, CF only)
-- `adox` (ADX - add with overflow, OF only)
+### Alta Precisão / Criptografia
+- `adc`, `sbb`, `mul`, `mulx`, `adcx`, `adox`
 
-### **Flag Manipulation (NOVO)**
-- `clc` (clear carry)
-- `stc` (set carry)
-- `cmc` (complement carry)
-- `cld` (clear direction)
-- `std` (set direction)
+### Flag/String/Fence
+- `clc`, `stc`, `cmc`, `cld`, `std`
+- `rep movsb/q`, `rep stosb/q`
+- `mfence`, `sfence`, `lfence`, `pause`
 
-### **String Operations (NOVO)**
-- `rep movsb` (copy bytes)
-- `rep movsq` (copy qwords)
-- `rep stosb` (store bytes)
-- `rep stosq` (store qwords)
-
-### **Memory Fences (NOVO)**
-- `mfence` (full fence)
-- `sfence` (store fence)
-- `lfence` (load fence)
-- `pause` (spin loop hint)
+### SSE/SSE2
+- Move: `movaps`, `movups`, `movsd`, `movss`, `movq`, `movd`
+- Arithmetic: `addsd/ss`, `subsd/ss`, `mulsd/ss`, `divsd/ss`, `sqrtsd/ss`
+- Logic: `pxor`, `xorps`, `xorpd`
+- Conversion: `cvtsi2sd/ss`, `cvttsd/ss2si`, `cvtsd2ss`, `cvtss2sd`
+- Comparison: `comisd/ss`, `ucomisd/ss`
 
 ## 📋 Próximos Passos
 
 - [ ] Milestone 7: Instruction database generator
+- [ ] Short jump optimization (rel8/rel32 auto-select)
 - [ ] Suporte AArch64 (ARM64)
-- [ ] Mais instruções SIMD (SSE/AVX)
+- [ ] Mais instruções AVX/AVX2/AVX-512
 - [ ] Compiler/RA (Register Allocator)
 
-## Uso
-
-### Exemplo: FuncFrame para gerenciamento de prólogo/epílogo
+## Exemplo Completo
 
 ```dart
-final frame = FuncFrame.host(
-  attr: FuncFrameAttr.nonLeaf(localStackSize: 64),
-);
+import 'package:asmjit/asmjit.dart';
+import 'dart:ffi';
 
-final code = CodeHolder();
-final asm = X86Assembler(code);
-final emitter = FuncFrameEmitter(frame, asm);
+void main() {
+  // Check CPU features
+  final cpu = CpuInfo.host();
+  print('Running on: ${cpu.brand}');
+  print('Features: ${cpu.features}');
 
-emitter.emitPrologue();
-// ... código da função ...
-emitter.emitEpilogue();
-```
+  // Create JIT runtime
+  final runtime = JitRuntime();
 
-### Exemplo: Aritmética de Alta Precisão
+  // Build a function that adds two numbers
+  final code = CodeHolder();
+  final asm = X86Assembler(code);
 
-```dart
-// Adicionar com carry (útil para aritmética de 128-bit)
-asm.clc();                // Limpar carry
-asm.movRR(rax, arg0);     // rax = arg0
-asm.addRR(rax, arg1);     // rax += arg1, pode setar carry
-asm.movRR(rdx, arg2);     // rdx = arg2
-asm.adcRR(rdx, arg3);     // rdx += arg3 + carry
-```
+  final arg0 = asm.getArgReg(0);
+  final arg1 = asm.getArgReg(1);
 
-### Exemplo: Memory Fence
+  asm.movRR(rax, arg0);
+  asm.addRR(rax, arg1);
+  asm.ret();
 
-```dart
-// Para operações thread-safe
-asm.mfence();  // Full memory barrier
-asm.sfence();  // Store barrier
-asm.lfence();  // Load barrier
-asm.pause();   // Spin loop hint
-```
+  // Compile and execute
+  final fn = runtime.add(code);
+  
+  typedef NativeAdd = Int64 Function(Int64, Int64);
+  typedef DartAdd = int Function(int, int);
+  
+  final add = fn.pointer
+      .cast<NativeFunction<NativeAdd>>()
+      .asFunction<DartAdd>();
 
-### Exemplo: String copy (memcpy)
+  print('10 + 20 = ${add(10, 20)}');
 
-```dart
-// REP MOVSB: copy RCX bytes from [RSI] to [RDI]
-asm.movRR(rdi, dest);   // Destination
-asm.movRR(rsi, src);    // Source
-asm.movRR(rcx, count);  // Byte count
-asm.cld();              // Clear direction (forward)
-asm.repMovsb();         // Copy!
+  // Cleanup
+  fn.dispose();
+  runtime.dispose();
+}
 ```
