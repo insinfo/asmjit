@@ -101,44 +101,225 @@ class X86CodeBuilder extends ir.BaseBuilder {
     inst(X86InstId.kMov, [_toOperand(dst), _toOperand(src)]);
   }
 
-  /// VMOVUPS (unaligned move packed single)
+  /// MOVAPS (aligned move packed single)
+  void movaps(Object dst, Object src) {
+    inst(X86InstId.kMovaps, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// MOVUPS (unaligned move packed single)
+  void movups(Object dst, Object src) {
+    inst(X86InstId.kMovups, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// MOVSS (move scalar single)
+  void movss(Object dst, Object src) {
+    inst(X86InstId.kMovss, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// MOVSD (move scalar double)
+  void movsd(Object dst, Object src) {
+    inst(X86InstId.kMovsd, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// VMOVAPS (aligned AVX move packed single)
+  void vmovaps(Object dst, Object src) {
+    inst(X86InstId.kVmovaps, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// VMOVUPS (unaligned AVX move packed single)
   void vmovups(Object dst, Object src) {
-    inst(X86InstId.kMovups,
-        [_toOperand(dst), _toOperand(src)]); // Mapped to kMovups
+    inst(X86InstId.kVmovups, [_toOperand(dst), _toOperand(src)]);
   }
 
-  /// VMOVUPD (unaligned move packed double)
+  /// VMOVAPD (aligned AVX move packed double)
+  void vmovapd(Object dst, Object src) {
+    inst(X86InstId.kVmovapd, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// VMOVUPD (unaligned AVX move packed double)
   void vmovupd(Object dst, Object src) {
-    inst(X86InstId.kMovups, [
-      _toOperand(dst),
-      _toOperand(src)
-    ]); // Note: sharing ID? Check mappings.
-    // X86InstId might have movupd. Assuming yes.
-    // If not, use generic instructions or ensure ID is correct.
-    // I previously missed adding kMovupd mapping in Serializer. I should check.
-    // But for now let's focus on helper methods.
+    inst(X86InstId.kVmovupd, [_toOperand(dst), _toOperand(src)]);
   }
-
-  // ... (Other standard methods preserved)
 
   /// ADD vreg, vreg/imm
   void add(Object dst, Object src) {
     inst(X86InstId.kAdd, [_toOperand(dst), _toOperand(src)]);
   }
 
+  /// ADDPS (packed single add)
+  void addps(Object dst, Object src) {
+    inst(X86InstId.kAddps, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// ADDPD (packed double add)
+  void addpd(Object dst, Object src) {
+    inst(X86InstId.kAddpd, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// SUBPS (packed single sub)
+  void subps(Object dst, Object src) {
+    inst(X86InstId.kSubps, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// SUBPD (packed double sub)
+  void subpd(Object dst, Object src) {
+    inst(X86InstId.kSubpd, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// MULPS (packed single mul)
+  void mulps(Object dst, Object src) {
+    inst(X86InstId.kMulps, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// MULPD (packed double mul)
+  void mulpd(Object dst, Object src) {
+    inst(X86InstId.kMulpd, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// DIVPS (packed single div)
+  void divps(Object dst, Object src) {
+    inst(X86InstId.kDivps, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// DIVPD (packed double div)
+  void divpd(Object dst, Object src) {
+    inst(X86InstId.kDivpd, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// XORPS (packed single xor)
+  void xorps(Object dst, Object src) {
+    inst(X86InstId.kXorps, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// XORPD (packed double xor)
+  void xorpd(Object dst, Object src) {
+    inst(X86InstId.kXorpd, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// PXOR (packed integer xor)
+  void pxor(Object dst, Object src) {
+    inst(X86InstId.kPxor, [_toOperand(dst), _toOperand(src)]);
+  }
+
   /// VADDPS (packed single add)
-  void vaddps(Object dst, Object src1, Object src2) {
-    inst(X86InstId.kAddps,
-        [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+  void vaddps(Object dst, Object src1, [Object? src2]) {
+    if (src2 == null) {
+      addps(dst, src1);
+    } else {
+      inst(X86InstId.kVaddps,
+          [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+    }
   }
 
   /// VADDPD (packed double add)
-  void vaddpd(Object dst, Object src1, Object src2) {
-    inst(X86InstId.kAddpd,
-        [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+  void vaddpd(Object dst, Object src1, [Object? src2]) {
+    if (src2 == null) {
+      addpd(dst, src1);
+    } else {
+      inst(X86InstId.kVaddpd,
+          [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+    }
   }
 
-  // ...
+  /// VSUBPS (packed single sub)
+  void vsubps(Object dst, Object src1, [Object? src2]) {
+    if (src2 == null) {
+      subps(dst, src1);
+    } else {
+      inst(X86InstId.kVsubps,
+          [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+    }
+  }
+
+  /// VSUBPD (packed double sub)
+  void vsubpd(Object dst, Object src1, [Object? src2]) {
+    if (src2 == null) {
+      subpd(dst, src1);
+    } else {
+      inst(X86InstId.kVsubpd,
+          [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+    }
+  }
+
+  /// VMULPS (packed single mul)
+  void vmulps(Object dst, Object src1, [Object? src2]) {
+    if (src2 == null) {
+      inst(X86InstId.kMulps, [_toOperand(dst), _toOperand(src1)]);
+    } else {
+      inst(X86InstId.kVmulps,
+          [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+    }
+  }
+
+  /// VMULPD (packed double mul)
+  void vmulpd(Object dst, Object src1, [Object? src2]) {
+    if (src2 == null) {
+      inst(X86InstId.kMulpd, [_toOperand(dst), _toOperand(src1)]);
+    } else {
+      inst(X86InstId.kVmulpd,
+          [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+    }
+  }
+
+  /// VDIVPS (packed single div)
+  void vdivps(Object dst, Object src1, [Object? src2]) {
+    if (src2 == null) {
+      inst(X86InstId.kDivps, [_toOperand(dst), _toOperand(src1)]);
+    } else {
+      inst(X86InstId.kVdivps,
+          [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+    }
+  }
+
+  /// VDIVPD (packed double div)
+  void vdivpd(Object dst, Object src1, [Object? src2]) {
+    if (src2 == null) {
+      inst(X86InstId.kDivpd, [_toOperand(dst), _toOperand(src1)]);
+    } else {
+      inst(X86InstId.kVdivpd,
+          [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+    }
+  }
+
+  /// VXORPS (packed single xor)
+  void vxorps(Object dst, Object src1, [Object? src2]) {
+    if (src2 == null) {
+      inst(X86InstId.kXorps, [_toOperand(dst), _toOperand(src1)]);
+    } else {
+      inst(X86InstId.kVxorps,
+          [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+    }
+  }
+
+  /// VXORPD (packed double xor)
+  void vxorpd(Object dst, Object src1, [Object? src2]) {
+    if (src2 == null) {
+      inst(X86InstId.kXorpd, [_toOperand(dst), _toOperand(src1)]);
+    } else {
+      inst(X86InstId.kVxorpd,
+          [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+    }
+  }
+
+  /// VPXOR (packed integer xor)
+  void vpxor(Object dst, Object src1, [Object? src2]) {
+    if (src2 == null) {
+      inst(X86InstId.kPxor, [_toOperand(dst), _toOperand(src1)]);
+    } else {
+      inst(X86InstId.kVpxor,
+          [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+    }
+  }
+
+  /// VPADDD (packed integer add)
+  void vpaddd(Object dst, Object src1, [Object? src2]) {
+    if (src2 == null) {
+      inst(X86InstId.kPaddd, [_toOperand(dst), _toOperand(src1)]);
+    } else {
+      inst(X86InstId.kVpaddd,
+          [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+    }
+  }
 
   // ---------------------------------------------------------------------------
 

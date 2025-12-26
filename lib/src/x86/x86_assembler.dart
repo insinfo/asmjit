@@ -901,11 +901,41 @@ class X86Assembler {
   /// MOVUPS xmm, xmm (move unaligned packed single-precision)
   void movupsXX(X86Xmm dst, X86Xmm src) => _enc.movupsXmmXmm(dst, src);
 
+  /// MOVUPS xmm, [mem]
+  void movupsXM(X86Xmm dst, X86Mem mem) => _enc.movupsXmmMem(dst, mem);
+
+  /// MOVUPS [mem], xmm
+  void movupsMX(X86Mem mem, X86Xmm src) => _enc.movupsMemXmm(mem, src);
+
+  /// MOVAPS xmm, [mem]
+  void movapsXM(X86Xmm dst, X86Mem mem) => _enc.movapsXmmMem(dst, mem);
+
+  /// MOVAPS [mem], xmm
+  void movapsMX(X86Mem mem, X86Xmm src) => _enc.movapsMemXmm(mem, src);
+
+  /// MOVD xmm, [mem]
+  void movdXM(X86Xmm dst, X86Mem mem) => _enc.movdXmmMem(dst, mem);
+
+  /// MOVD [mem], xmm
+  void movdMX(X86Mem mem, X86Xmm src) => _enc.movdMemXmm(mem, src);
+
   /// MOVSD xmm, xmm (move scalar double-precision)
   void movsdXX(X86Xmm dst, X86Xmm src) => _enc.movsdXmmXmm(dst, src);
 
+  /// MOVSD xmm, [mem]
+  void movsdXM(X86Xmm dst, X86Mem mem) => _enc.movsdXmmMem(dst, mem);
+
+  /// MOVSD [mem], xmm
+  void movsdMX(X86Mem mem, X86Xmm src) => _enc.movsdMemXmm(mem, src);
+
   /// MOVSS xmm, xmm (move scalar single-precision)
   void movssXX(X86Xmm dst, X86Xmm src) => _enc.movssXmmXmm(dst, src);
+
+  /// MOVSS xmm, [mem]
+  void movssXM(X86Xmm dst, X86Mem mem) => _enc.movssXmmMem(dst, mem);
+
+  /// MOVSS [mem], xmm
+  void movssMX(X86Mem mem, X86Xmm src) => _enc.movssMemXmm(mem, src);
 
   // ===========================================================================
   // SSE/SSE2 - Arithmetic (scalar double)
@@ -952,14 +982,42 @@ class X86Assembler {
   /// ADDPS xmm, xmm (add packed single)
   void addps(X86Xmm dst, X86Xmm src) => _enc.addpsXmmXmm(dst, src);
 
+  /// ADDPS xmm, [mem]
+  void addpsXM(X86Xmm dst, X86Mem mem) => _enc.addpsXmmMem(dst, mem);
+
   /// SUBPS xmm, xmm (subtract packed single)
   void subps(X86Xmm dst, X86Xmm src) => _enc.subpsXmmXmm(dst, src);
+
+  /// SUBPS xmm, [mem]
+  void subpsXM(X86Xmm dst, X86Mem mem) => _enc.subpsXmmMem(dst, mem);
 
   /// MULPS xmm, xmm (multiply packed single)
   void mulps(X86Xmm dst, X86Xmm src) => _enc.mulpsXmmXmm(dst, src);
 
+  /// MULPS xmm, [mem]
+  void mulpsXM(X86Xmm dst, X86Mem mem) => _enc.mulpsXmmMem(dst, mem);
+
   /// DIVPS xmm, xmm (divide packed single)
   void divps(X86Xmm dst, X86Xmm src) => _enc.divpsXmmXmm(dst, src);
+
+  /// DIVPS xmm, [mem]
+  void divpsXM(X86Xmm dst, X86Mem mem) => _enc.divpsXmmMem(dst, mem);
+
+  /// ADDPD xmm, xmm (add packed double)
+  void addpd(X86Xmm dst, X86Xmm src) => _enc.addpdXmmXmm(dst, src);
+  void addpdXM(X86Xmm dst, X86Mem mem) => _enc.addpdXmmMem(dst, mem);
+
+  /// SUBPD xmm, xmm (subtract packed double)
+  void subpd(X86Xmm dst, X86Xmm src) => _enc.subpdXmmXmm(dst, src);
+  void subpdXM(X86Xmm dst, X86Mem mem) => _enc.subpdXmmMem(dst, mem);
+
+  /// MULPD xmm, xmm (multiply packed double)
+  void mulpd(X86Xmm dst, X86Xmm src) => _enc.mulpdXmmXmm(dst, src);
+  void mulpdXM(X86Xmm dst, X86Mem mem) => _enc.mulpdXmmMem(dst, mem);
+
+  /// DIVPD xmm, xmm (divide packed double)
+  void divpd(X86Xmm dst, X86Xmm src) => _enc.divpdXmmXmm(dst, src);
+  void divpdXM(X86Xmm dst, X86Mem mem) => _enc.divpdXmmMem(dst, mem);
 
   /// MINPS xmm, xmm (minimum packed single)
   void minps(X86Xmm dst, X86Xmm src) => _enc.minpsXmmXmm(dst, src);
@@ -979,13 +1037,24 @@ class X86Assembler {
   // ===========================================================================
 
   /// PXOR xmm, xmm (packed XOR, zero register: pxor xmm, xmm)
+  void pxor(X86Xmm dst, X86Xmm src) => _enc.pxorXmmXmm(dst, src);
   void pxorXX(X86Xmm dst, X86Xmm src) => _enc.pxorXmmXmm(dst, src);
+
+  /// PXOR xmm, [mem]
+  void pxorXM(X86Xmm dst, X86Mem mem) => _enc.pxorXmmMem(dst, mem);
 
   /// XORPS xmm, xmm (XOR packed single)
   void xorpsXX(X86Xmm dst, X86Xmm src) => _enc.xorpsXmmXmm(dst, src);
 
+  /// XORPS xmm, [mem]
+  void xorpsXM(X86Xmm dst, X86Mem mem) => _enc.xorpsXmmMem(dst, mem);
+
   /// XORPD xmm, xmm (XOR packed double)
+  void xorpd(X86Xmm dst, X86Xmm src) => _enc.xorpdXmmXmm(dst, src);
   void xorpdXX(X86Xmm dst, X86Xmm src) => _enc.xorpdXmmXmm(dst, src);
+
+  /// XORPD xmm, [mem]
+  void xorpdXM(X86Xmm dst, X86Mem mem) => _enc.xorpdXmmMem(dst, mem);
 
   // ===========================================================================
   // SSE/SSE2 - Conversion
@@ -1085,16 +1154,44 @@ class X86Assembler {
   void vaddpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
       _enc.vaddpsXmmXmmXmm(dst, src1, src2);
 
+  /// VADDPS xmm, xmm, [mem]
+  void vaddpsXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vaddpsXmmXmmMem(dst, src1, mem);
+
   void vaddpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
       _enc.vaddpdXmmXmmXmm(dst, src1, src2);
+
+  /// VADDPD xmm, xmm, [mem]
+  void vaddpdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vaddpdXmmXmmMem(dst, src1, mem);
 
   /// VSUBPS xmm, xmm, xmm (VEX subtract packed single 128-bit)
   void vsubpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
       _enc.vsubpsXmmXmmXmm(dst, src1, src2);
 
+  /// VMULPS xmm, xmm, xmm (VEX multiply packed single 128-bit)
+  void vmulpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vmulpsXmmXmmXmm(dst, src1, src2);
+
+  /// VMULPS xmm, xmm, [mem]
+  void vmulpsXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vmulpsXmmXmmMem(dst, src1, mem);
+
+  /// VMULPD xmm, xmm, xmm (VEX multiply packed double 128-bit)
+  void vmulpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vmulpdXmmXmmXmm(dst, src1, src2);
+
+  /// VSUBPS xmm, xmm, [mem]
+  void vsubpsXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vsubpsXmmXmmMem(dst, src1, mem);
+
   /// VSUBPD xmm, xmm, xmm (VEX subtract packed double 128-bit)
   void vsubpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
       _enc.vsubpdXmmXmmXmm(dst, src1, src2);
+
+  /// VSUBPD xmm, xmm, [mem]
+  void vsubpdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vsubpdXmmXmmMem(dst, src1, mem);
 
   // ===========================================================================
   // AVX - Packed arithmetic 256-bit (VEX-encoded)
@@ -1104,25 +1201,53 @@ class X86Assembler {
   void vaddpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
       _enc.vaddpsYmmYmmYmm(dst, src1, src2);
 
+  /// VADDPS ymm, ymm, [mem]
+  void vaddpsYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vaddpsYmmYmmMem(dst, src1, mem);
+
   /// VMULPS ymm, ymm, ymm (VEX multiply packed single 256-bit)
   void vmulpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
       _enc.vmulpsYmmYmmYmm(dst, src1, src2);
+
+  /// VMULPS ymm, ymm, [mem]
+  void vmulpsYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vmulpsYmmYmmMem(dst, src1, mem);
 
   /// VADDPD ymm, ymm, ymm (VEX add packed double 256-bit)
   void vaddpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
       _enc.vaddpdYmmYmmYmm(dst, src1, src2);
 
+  /// VADDPD ymm, ymm, [mem]
+  void vaddpdYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vaddpdYmmYmmMem(dst, src1, mem);
+
+  /// VMULPD xmm, xmm, [mem]
+  void vmulpdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vmulpdXmmXmmMem(dst, src1, mem);
+
   /// VSUBPS ymm, ymm, ymm (VEX subtract packed single 256-bit)
   void vsubpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
       _enc.vsubpsYmmYmmYmm(dst, src1, src2);
+
+  /// VSUBPS ymm, ymm, [mem]
+  void vsubpsYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vsubpsYmmYmmMem(dst, src1, mem);
 
   /// VSUBPD ymm, ymm, ymm (VEX subtract packed double 256-bit)
   void vsubpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
       _enc.vsubpdYmmYmmYmm(dst, src1, src2);
 
+  /// VSUBPD ymm, ymm, [mem]
+  void vsubpdYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vsubpdYmmYmmMem(dst, src1, mem);
+
   /// VMULPD ymm, ymm, ymm (VEX multiply packed double 256-bit)
   void vmulpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
       _enc.vmulpdYmmYmmYmm(dst, src1, src2);
+
+  /// VMULPD ymm, ymm, [mem]
+  void vmulpdYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vmulpdYmmYmmMem(dst, src1, mem);
 
   // ===========================================================================
   // AVX - Logical (VEX-encoded)
@@ -1132,13 +1257,49 @@ class X86Assembler {
   void vxorpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
       _enc.vxorpsXmmXmmXmm(dst, src1, src2);
 
+  /// VXORPS xmm, xmm, [mem]
+  void vxorpsXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vxorpsXmmXmmMem(dst, src1, mem);
+
   /// VXORPS ymm, ymm, ymm (VEX XOR packed single 256-bit) - use for zeroing
   void vxorpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
       _enc.vxorpsYmmYmmYmm(dst, src1, src2);
 
+  /// VXORPS ymm, ymm, [mem]
+  void vxorpsYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vxorpsYmmYmmMem(dst, src1, mem);
+
+  /// VXORPD xmm, xmm, xmm (VEX XOR packed double)
+  void vxorpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vxorpdXmmXmmXmm(dst, src1, src2);
+
+  /// VXORPD ymm, ymm, ymm (VEX XOR packed double 256-bit)
+  void vxorpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vxorpdYmmYmmYmm(dst, src1, src2);
+
+  /// VXORPD xmm, xmm, [mem]
+  void vxorpdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vxorpdXmmXmmMem(dst, src1, mem);
+
+  /// VXORPD ymm, ymm, [mem]
+  void vxorpdYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vxorpdYmmYmmMem(dst, src1, mem);
+
   /// VPXOR xmm, xmm, xmm (VEX XOR packed integer)
   void vpxorXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
       _enc.vpxorXmmXmmXmm(dst, src1, src2);
+
+  /// VPXOR xmm, xmm, [mem]
+  void vpxorXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vpxorXmmXmmMem(dst, src1, mem);
+
+  /// VPXOR ymm, ymm, ymm (VEX XOR packed integer 256-bit)
+  void vpxorYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vpxorYmmYmmYmm(dst, src1, src2);
+
+  /// VPXOR ymm, ymm, [mem]
+  void vpxorYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vpxorYmmYmmMem(dst, src1, mem);
 
   // ===========================================================================
   // AVX2 - Integer arithmetic (VEX-encoded)
@@ -1307,21 +1468,38 @@ class X86Assembler {
   void pshufdXXI(X86Xmm dst, X86Xmm src, int imm8) =>
       _enc.pshufdXmmXmmImm8(dst, src, imm8);
 
-  /// MOVUPS xmm, [mem]
-  void movupsXM(X86Xmm dst, X86Mem mem) => _enc.movupsXmmMem(dst, mem);
+  void vmovups(X86Xmm dst, X86Xmm src) => _enc.vmovupsXmmXmm(dst, src);
+  void vmovupsXM(X86Xmm dst, X86Mem mem) => _enc.vmovupsXmmMem(dst, mem);
+  void vmovupsMX(X86Mem mem, X86Xmm src) => _enc.vmovupsMemXmm(mem, src);
 
-  /// MOVUPS [mem], xmm
-  void movupsMX(X86Mem mem, X86Xmm src) => _enc.movupsMemXmm(mem, src);
+  void vmovaps(X86Xmm dst, X86Xmm src) => _enc.vmovapsXmmXmm(dst, src);
+  void vmovapsXM(X86Xmm dst, X86Mem mem) => _enc.vmovapsXmmMem(dst, mem);
+  void vmovapsMX(X86Mem mem, X86Xmm src) => _enc.vmovapsMemXmm(mem, src);
 
-  /// MOVAPS xmm, [mem]
-  void movapsXM(X86Xmm dst, X86Mem mem) => _enc.movapsXmmMem(dst, mem);
+  void vmovupsY(X86Ymm dst, X86Ymm src) => _enc.vmovupsYmmYmm(dst, src);
+  void vmovupsYM(X86Ymm dst, X86Mem mem) => _enc.vmovupsYmmMem(dst, mem);
+  void vmovupsMY(X86Mem mem, X86Ymm src) => _enc.vmovupsMemYmm(mem, src);
 
-  /// MOVAPS [mem], xmm
-  void movapsMX(X86Mem mem, X86Xmm src) => _enc.movapsMemXmm(mem, src);
+  void vmovapsY(X86Ymm dst, X86Ymm src) => _enc.vmovapsYmmYmm(dst, src);
+  void vmovapsYM(X86Ymm dst, X86Mem mem) => _enc.vmovapsYmmMem(dst, mem);
+  void vmovapsMY(X86Mem mem, X86Ymm src) => _enc.vmovapsMemYmm(mem, src);
 
-  /// MOVD xmm, [mem]
-  void movdXM(X86Xmm dst, X86Mem mem) => _enc.movdXmmMem(dst, mem);
+  // VDIVPS/VDIVPD forms
+  void vdivpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vdivpsXXX(dst, src1, src2);
+  void vdivpsXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vdivpsXmmXmmMem(dst, src1, mem);
+  void vdivpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vdivpsYYY(dst, src1, src2);
+  void vdivpsYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vdivpsYmmYmmMem(dst, src1, mem);
 
-  /// MOVD [mem], xmm
-  void movdMX(X86Mem mem, X86Xmm src) => _enc.movdMemXmm(mem, src);
+  void vdivpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vdivpdXXX(dst, src1, src2);
+  void vdivpdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vdivpdXmmXmmMem(dst, src1, mem);
+  void vdivpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vdivpdYYY(dst, src1, src2);
+  void vdivpdYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vdivpdYmmYmmMem(dst, src1, mem);
 }

@@ -56,8 +56,9 @@ docker run --rm --platform linux/arm64 dart:stable bash -lc "uname -m"
 **Warnings**: nao verificado
 
 Atualizações recentes:
+- **Expansão Despachante SIMD X86**: Adicionadas 20+ novas instruções SSE/AVX ao dispatcher (andps/pd, orps/pd, minps/pd, maxps/pd, sqrtps/pd, rcpps, rsqrtps, vandps/pd, vorps/pd, vpor, vpand, vpaddd/q, vpmulld) com suporte para formas de registro e memória (XMM/YMM).
 - **AVX Implementado**: Adicionado instruções `vsubps` e `vsubpd` (XMM/YMM) no Encoder e Assembler.
-- **Benchmarks Corrigidos**: `codegen_benchmark.dart`, `overhead_benchmark.dart` e `regalloc_benchmark.dart` atualizados e corrigidos.
+- ** Benchmarks Corrigidos**: `codegen_benchmark.dart`, `overhead_benchmark.dart` e `regalloc_benchmark.dart` atualizados e corrigidos.
 - **X86Mem.ptr**: Adicionado factory `ptr` para conveniência.
 - **gen_a64_db.dart expandido**: Dispatcher A64 agora tem handlers para mais instruções NEON/FP (fneg, fabs, fsqrt, fcmp, fcsel, etc - marcados como TODO).
 - **emitters_test.dart criado**: Suite completa portada do asmjit_test_emitters.cpp com 14 testes para X86/A64 Assembler e Builder.
@@ -182,9 +183,10 @@ Atualizações recentes:
 
 **XCHG**: `xchg r,r`
 
-**SSE/SSE2**: `movaps`, `movups`, `movsd`, `movss`, `addsd`, `subsd`, `mulsd`, `divsd`, `sqrtsd`, `cvtsi2sd`, `cvttsd2si`, `pxor`, `xorps`, `xorpd`, `comisd`
+**SSE/SSE2**: `movaps`, `movups`, `movsd`, `movss`, `addps`, `addpd`, `subps`, `subpd`, `mulps`, `mulpd`, `divps`, `divpd`, `sqrtsd`, `sqrtps`, `sqrtpd`, `cvtsi2sd`, `cvttsd2si`, `pxor`, `xorps`, `xorpd`, `andps`, `andpd`, `orps`, `orpd`, `minps`, `minpd`, `maxps`, `maxpd`, `rcpps`, `rsqrtps`, `comisd`
 
-**AVX/AVX2**: `vmovaps`, `vmovups`, `vaddsd`, `vsubsd`, `vmulsd`, `vdivsd`, `vaddps`, `vsubps`, `vmulps`, `vsubpd`, `vpxor`, `vpaddd`, `vpaddq`, `vpmulld`, `vfmadd132sd`, `vfmadd231sd`, `vzeroupper`
+**AVX/AVX2**: `vmovaps`, `vmovups`, `vaddsd`, `vsubsd`, `vmulsd`, `vdivsd`, `vaddps`, `vaddpd`, `vsubps`, `vsubpd`, `vmulps`, `vmulpd`, `vdivps`, `vdivpd`, `vpxor`, `vxorps`, `vxorpd`, `vandps`, `vandpd`, `vorps`, `vorpd`, `vpor`, `vpand`, `vpaddd`, `vpaddq`, `vpmulld`, `vfmadd132sd`, `vfmadd231sd`, `vzeroupper`
+
 
 **BMI1**: `andn`, `bextr`, `blsi`, `blsmsk`, `blsr` ✅
 

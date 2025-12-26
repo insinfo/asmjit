@@ -461,6 +461,17 @@ class NodeList {
 
 /// Abstract operand class for builder.
 class Operand {
+  /// Creates an operand from a raw object (register, memory, immediate, label).
+  static Operand from(Object op) {
+    if (op is Operand) return op;
+    if (op is BaseReg) return RegOperand(op);
+    if (op.runtimeType.toString().contains('Mem')) return MemOperand(op);
+    if (op is int) return ImmOperand(op);
+    if (op is Label) return LabelOperand(op);
+
+    throw ArgumentError('Unsupported operand type: ${op.runtimeType}');
+  }
+
   /// Check if operand is a register.
   bool get isReg => false;
 

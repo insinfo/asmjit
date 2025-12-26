@@ -433,13 +433,31 @@ void benchmarkX86SseSequenceReg(int iterations) {
 
 void benchmarkX86SseSequenceMem(int iterations) {
   print('SseSequence<Mem> (sequence of SSE+ instructions - reg/mem):');
-  // TODO: SSE mem forms are not wired in the assembler/dispatcher yet.
-  printUnavailable('X64', 'Assembler [raw]', 'TODO SSE mem forms');
-  printUnavailable('X64', 'Assembler [validated]', 'TODO SSE mem forms');
-  printUnavailable('X64', 'Assembler [prolog/epilog]', 'TODO SSE mem forms');
-  printUnavailable('X64', 'Builder [no-asm]', 'TODO SSE mem forms');
-  printUnavailable('X64', 'Builder [finalized]', 'TODO SSE mem forms');
-  printUnavailable('X64', 'Builder [prolog/epilog]', 'TODO SSE mem forms');
+
+  // Assembler [raw]
+  runBench('SseSeqMem', 'X64', 'Assembler [raw]', iterations, () {
+    final code = CodeHolder(env: Environment.host());
+    final asm = X86Assembler(code);
+    _generateSseSequenceMem(asm);
+    return code.text.buffer.length;
+  }).print();
+
+  // Assembler [validated]
+  runBench('SseSeqMem', 'X64', 'Assembler [validated]', iterations, () {
+    final code = CodeHolder(env: Environment.host());
+    final asm = X86Assembler(code);
+    _generateSseSequenceMem(asm);
+    return code.finalize().textBytes.length;
+  }).print();
+
+  // Builder [finalized]
+  runBench('SseSeqMem', 'X64', 'Builder [finalized]', iterations, () {
+    final builder = X86CodeBuilder.create();
+    _generateSseSequenceBuilderMem(builder);
+    builder.ret();
+    return builder.finalize().textBytes.length;
+  }).print();
+
   printCompilerUnavailable('X64');
 
   print('');
@@ -509,13 +527,31 @@ void benchmarkX86AvxSequenceReg(int iterations) {
 
 void benchmarkX86AvxSequenceMem(int iterations) {
   print('AvxSequence<Mem> (sequence of AVX+ instructions - reg/mem):');
-  // TODO: AVX mem forms are not wired in the assembler/dispatcher yet.
-  printUnavailable('X64', 'Assembler [raw]', 'TODO AVX mem forms');
-  printUnavailable('X64', 'Assembler [validated]', 'TODO AVX mem forms');
-  printUnavailable('X64', 'Assembler [prolog/epilog]', 'TODO AVX mem forms');
-  printUnavailable('X64', 'Builder [no-asm]', 'TODO AVX mem forms');
-  printUnavailable('X64', 'Builder [finalized]', 'TODO AVX mem forms');
-  printUnavailable('X64', 'Builder [prolog/epilog]', 'TODO AVX mem forms');
+
+  // Assembler [raw]
+  runBench('AvxSeqMem', 'X64', 'Assembler [raw]', iterations, () {
+    final code = CodeHolder(env: Environment.host());
+    final asm = X86Assembler(code);
+    _generateAvxSequenceMem(asm);
+    return code.text.buffer.length;
+  }).print();
+
+  // Assembler [validated]
+  runBench('AvxSeqMem', 'X64', 'Assembler [validated]', iterations, () {
+    final code = CodeHolder(env: Environment.host());
+    final asm = X86Assembler(code);
+    _generateAvxSequenceMem(asm);
+    return code.finalize().textBytes.length;
+  }).print();
+
+  // Builder [finalized]
+  runBench('AvxSeqMem', 'X64', 'Builder [finalized]', iterations, () {
+    final builder = X86CodeBuilder.create();
+    _generateAvxSequenceBuilderMem(builder);
+    builder.ret();
+    return builder.finalize().textBytes.length;
+  }).print();
+
   printCompilerUnavailable('X64');
 
   print('');
@@ -748,6 +784,50 @@ void _generateAvxSequenceBuilderReg(X86CodeBuilder builder) {
       ir.RegOperand(xmm1),
       ir.RegOperand(xmm2),
     ]);
+  }
+}
+
+void _generateAvxSequenceMem(X86Assembler asm) {
+  asm.xorRR(eax, eax);
+  final mem = X86Mem.ptr(rcx);
+
+  for (var i = 0; i < 10; i++) {
+    asm.vaddpsXXM(xmm0, xmm1, mem);
+    asm.vaddpsYYM(ymm0, ymm1, mem);
+    asm.vaddpdXXM(xmm1, xmm2, mem);
+    asm.vaddpdYYM(ymm1, ymm2, mem);
+    asm.vsubpsXXM(xmm2, xmm3, mem);
+    asm.vsubpsYYM(ymm2, ymm3, mem);
+    asm.vsubpdXXM(xmm0, xmm1, mem);
+    asm.vsubpdYYM(ymm0, ymm1, mem);
+    asm.vmulpsXXM(xmm1, xmm2, mem);
+    asm.vmulpsYYM(ymm1, ymm2, mem);
+    asm.vxorpsXXM(xmm2, xmm3, mem);
+    asm.vxorpsYYM(ymm2, ymm3, mem);
+    asm.vpxorXXM(xmm0, xmm1, mem);
+    asm.vpxorYYM(ymm0, ymm1, mem);
+  }
+
+  asm.ret();
+}
+
+void _generateAvxSequenceBuilderMem(X86CodeBuilder builder) {
+  final mem = X86Mem.ptr(rcx);
+  for (var i = 0; i < 10; i++) {
+    builder.vaddps(xmm0, xmm1, mem);
+    builder.vaddps(ymm0, ymm1, mem);
+    builder.vaddpd(xmm1, xmm2, mem);
+    builder.vaddpd(ymm1, ymm2, mem);
+    builder.vsubps(xmm2, xmm3, mem);
+    builder.vsubps(ymm2, ymm3, mem);
+    builder.vsubpd(xmm0, xmm1, mem);
+    builder.vsubpd(ymm0, ymm1, mem);
+    builder.vmulps(xmm1, xmm2, mem);
+    builder.vmulps(ymm1, ymm2, mem);
+    builder.vxorps(xmm2, xmm3, mem);
+    builder.vxorps(ymm2, ymm3, mem);
+    builder.vpxor(xmm0, xmm1, mem);
+    builder.vpxor(ymm0, ymm1, mem);
   }
 }
 
@@ -1029,5 +1109,42 @@ void _generateA64NeonSequenceBuilder(A64CodeBuilder builder) {
     builder.fsub(d0, d1, d2);
     builder.fmul(d0, d1, d2);
     builder.fdiv(d0, d1, d2);
+  }
+}
+
+// X86 SSE Sequence generator - memory
+void _generateSseSequenceMem(X86Assembler asm) {
+  asm.xorRR(eax, eax);
+  final mem = X86Mem.ptr(rcx);
+
+  for (var i = 0; i < 10; i++) {
+    asm.addpsXM(xmm0, mem);
+    asm.subpsXM(xmm1, mem);
+    asm.mulpsXM(xmm2, mem);
+    asm.divpsXM(xmm3, mem);
+    asm.xorpsXM(xmm0, mem);
+    asm.pxorXM(xmm1, mem);
+    asm.movapsXM(xmm2, mem);
+    asm.movupsXM(xmm3, mem);
+    asm.movssXM(xmm0, mem);
+    asm.movsdXM(xmm1, mem);
+  }
+
+  asm.ret();
+}
+
+void _generateSseSequenceBuilderMem(X86CodeBuilder builder) {
+  final mem = X86Mem.ptr(rcx);
+  for (var i = 0; i < 10; i++) {
+    builder.vaddps(xmm0, mem);
+    builder.vsubps(xmm1, mem);
+    builder.vmulps(xmm2, mem);
+    builder.vdivps(xmm3, mem);
+    builder.vxorps(xmm0, mem);
+    builder.vpxor(xmm1, mem);
+    builder.vmovaps(xmm2, mem);
+    builder.vmovups(xmm3, mem);
+    builder.movss(xmm0, mem);
+    builder.movsd(xmm1, mem);
   }
 }
