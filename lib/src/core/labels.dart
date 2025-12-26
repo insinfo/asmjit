@@ -100,6 +100,15 @@ enum RelocKind {
 
   /// RIP-relative 32-bit displacement (x86-64).
   ripRel32,
+
+  /// ARM64 26-bit branch (B, BL).
+  arm64Branch26,
+
+  /// ARM64 19-bit conditional branch (B.cond, CBZ, CBNZ).
+  arm64Branch19,
+
+  /// ARM64 ADR/ADRP 21-bit PC-relative.
+  arm64Adr21,
 }
 
 /// A relocation entry.
@@ -134,6 +143,9 @@ class Reloc {
       case RelocKind.rel32:
       case RelocKind.abs32:
       case RelocKind.ripRel32:
+      case RelocKind.arm64Branch26:
+      case RelocKind.arm64Branch19:
+      case RelocKind.arm64Adr21:
         return 4;
       case RelocKind.abs64:
         return 8;

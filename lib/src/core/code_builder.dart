@@ -54,8 +54,6 @@ class X86CodeBuilder {
   /// Current instruction position.
   int _pos = 0;
 
-  /// Labels.
-  final Map<Label, int> _labelPositions = {};
   final List<Label> _labels = [];
 
   /// Pending label bindings (label -> instruction position).
@@ -70,7 +68,7 @@ class X86CodeBuilder {
   /// Argument virtual registers.
   final List<VirtReg> _argRegs = [];
 
-  /// Return virtual register (if any).
+  // ignore: unused_field - reserved for future return value tracking
   VirtReg? _returnReg;
 
   X86CodeBuilder._({

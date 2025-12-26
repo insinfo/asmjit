@@ -3,8 +3,6 @@
 /// High-level x86/x64 instruction emission API.
 /// Ported from asmjit/x86/x86assembler.h
 
-import 'dart:io' show Platform;
-
 import '../core/code_holder.dart';
 import '../core/code_buffer.dart';
 import '../core/labels.dart';
@@ -195,6 +193,24 @@ class X86Assembler {
     _enc.imulR64R64(dst, src);
   }
 
+  /// IMUL dst, src, imm (three-operand form).
+  void imulRRI(X86Gp dst, X86Gp src, int imm) {
+    if (imm >= -128 && imm <= 127) {
+      _enc.imulR64R64Imm8(dst, src, imm);
+    } else {
+      _enc.imulR64R64Imm32(dst, src, imm);
+    }
+  }
+
+  /// IMUL dst, imm (dst = dst * imm).
+  void imulRI(X86Gp dst, int imm) {
+    if (imm >= -128 && imm <= 127) {
+      _enc.imulR64Imm8(dst, imm);
+    } else {
+      _enc.imulR64Imm32(dst, imm);
+    }
+  }
+
   /// XOR dst, src.
   void xorRR(X86Gp dst, X86Gp src) {
     _enc.xorR64R64(dst, src);
@@ -223,6 +239,48 @@ class X86Assembler {
   /// TEST dst, src.
   void testRR(X86Gp dst, X86Gp src) {
     _enc.testR64R64(dst, src);
+  }
+
+  /// TEST r64, imm32.
+  void testRI(X86Gp dst, int imm) {
+    _enc.testR64Imm32(dst, imm);
+  }
+
+  /// AND r64, imm.
+  void andRI(X86Gp dst, int imm) {
+    if (imm >= -128 && imm <= 127) {
+      _enc.andR64Imm8(dst, imm);
+    } else {
+      _enc.andR64Imm32(dst, imm);
+    }
+  }
+
+  /// OR r64, imm.
+  void orRI(X86Gp dst, int imm) {
+    if (imm >= -128 && imm <= 127) {
+      _enc.orR64Imm8(dst, imm);
+    } else {
+      _enc.orR64Imm32(dst, imm);
+    }
+  }
+
+  /// XOR r64, imm.
+  void xorRI(X86Gp dst, int imm) {
+    if (imm >= -128 && imm <= 127) {
+      _enc.xorR64Imm8(dst, imm);
+    } else {
+      _enc.xorR64Imm32(dst, imm);
+    }
+  }
+
+  /// MOVSX r64, r8 (sign-extend byte).
+  void movsxB(X86Gp dst, X86Gp src) {
+    _enc.movsxR64R8(dst, src);
+  }
+
+  /// MOVSX r64, r16 (sign-extend word).
+  void movsxW(X86Gp dst, X86Gp src) {
+    _enc.movsxR64R16(dst, src);
   }
 
   // ===========================================================================

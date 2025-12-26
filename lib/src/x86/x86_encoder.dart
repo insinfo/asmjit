@@ -361,6 +361,32 @@ class X86Encoder {
     emitModRmReg(dst.encoding, src);
   }
 
+  /// IMUL r64, r64, imm8 (three-operand form)
+  void imulR64R64Imm8(X86Gp dst, X86Gp src, int imm8) {
+    emitRexForRegRm(dst, src, w: true);
+    buffer.emit8(0x6B);
+    emitModRmReg(dst.encoding, src);
+    buffer.emit8(imm8);
+  }
+
+  /// IMUL r64, r64, imm32 (three-operand form)
+  void imulR64R64Imm32(X86Gp dst, X86Gp src, int imm32) {
+    emitRexForRegRm(dst, src, w: true);
+    buffer.emit8(0x69);
+    emitModRmReg(dst.encoding, src);
+    buffer.emit32(imm32);
+  }
+
+  /// IMUL r64, imm8 (dst = dst * imm8)
+  void imulR64Imm8(X86Gp dst, int imm8) {
+    imulR64R64Imm8(dst, dst, imm8);
+  }
+
+  /// IMUL r64, imm32 (dst = dst * imm32)
+  void imulR64Imm32(X86Gp dst, int imm32) {
+    imulR64R64Imm32(dst, dst, imm32);
+  }
+
   /// XOR r64, r64
   void xorR64R64(X86Gp dst, X86Gp src) {
     emitRexForRegRm(src, dst, w: true);
@@ -406,6 +432,102 @@ class X86Encoder {
     emitRexForRegRm(src, dst, w: true);
     buffer.emit8(0x85);
     emitModRmReg(src.encoding, dst);
+  }
+
+  /// TEST r64, imm32
+  void testR64Imm32(X86Gp dst, int imm32) {
+    emitRexForReg(dst, w: true);
+    if (dst.encoding == 0) {
+      buffer.emit8(0xA9);
+    } else {
+      buffer.emit8(0xF7);
+      emitModRmReg(0, dst);
+    }
+    buffer.emit32(imm32);
+  }
+
+  /// AND r64, imm32
+  void andR64Imm32(X86Gp dst, int imm32) {
+    emitRexForReg(dst, w: true);
+    if (dst.encoding == 0) {
+      buffer.emit8(0x25);
+    } else {
+      buffer.emit8(0x81);
+      emitModRmReg(4, dst);
+    }
+    buffer.emit32(imm32);
+  }
+
+  /// AND r64, imm8
+  void andR64Imm8(X86Gp dst, int imm8) {
+    emitRexForReg(dst, w: true);
+    buffer.emit8(0x83);
+    emitModRmReg(4, dst);
+    buffer.emit8(imm8);
+  }
+
+  /// OR r64, imm32
+  void orR64Imm32(X86Gp dst, int imm32) {
+    emitRexForReg(dst, w: true);
+    if (dst.encoding == 0) {
+      buffer.emit8(0x0D);
+    } else {
+      buffer.emit8(0x81);
+      emitModRmReg(1, dst);
+    }
+    buffer.emit32(imm32);
+  }
+
+  /// OR r64, imm8
+  void orR64Imm8(X86Gp dst, int imm8) {
+    emitRexForReg(dst, w: true);
+    buffer.emit8(0x83);
+    emitModRmReg(1, dst);
+    buffer.emit8(imm8);
+  }
+
+  /// XOR r64, imm32
+  void xorR64Imm32(X86Gp dst, int imm32) {
+    emitRexForReg(dst, w: true);
+    if (dst.encoding == 0) {
+      buffer.emit8(0x35);
+    } else {
+      buffer.emit8(0x81);
+      emitModRmReg(6, dst);
+    }
+    buffer.emit32(imm32);
+  }
+
+  /// XOR r64, imm8
+  void xorR64Imm8(X86Gp dst, int imm8) {
+    emitRexForReg(dst, w: true);
+    buffer.emit8(0x83);
+    emitModRmReg(6, dst);
+    buffer.emit8(imm8);
+  }
+
+  /// CMP r64, imm8
+  void cmpR64Imm8(X86Gp dst, int imm8) {
+    emitRexForReg(dst, w: true);
+    buffer.emit8(0x83);
+    emitModRmReg(7, dst);
+    buffer.emit8(imm8);
+  }
+
+  /// MOVSX r64, r8 (sign-extend byte to qword)
+  void movsxR64R8(X86Gp dst, X86Gp src) {
+    emitRexForRegRm(dst, src, w: true);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xBE);
+    emitModRmReg(dst.encoding, src);
+  }
+
+  /// MOVSX r64, r16 (sign-extend word to qword)
+  void movsxR64R16(X86Gp dst, X86Gp src) {
+    emitRexForRegRm(dst, src, w: true);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xBF);
+    emitModRmReg(dst.encoding, src);
   }
 
   // ===========================================================================
@@ -1784,6 +1906,342 @@ class X86Encoder {
     buffer.emit8(0x10);
     buffer.emit8(0x05 | (dst.encoding << 3));
     buffer.emit32(disp32);
+  }
+
+  // ===========================================================================
+  // BMI1 Instructions (Bit Manipulation Instruction Set 1)
+  // ===========================================================================
+
+  /// Helper to emit VEX prefix for BMI instructions.
+  void _emitVexBmi(X86Gp dst, X86Gp src1, X86Gp src2, int pp, int opcode,
+      {bool w = true}) {
+    // VEX.LZ.0F38.W[01] opcode /r
+    final vvvv = (~src1.encoding) & 0xF;
+    final r = dst.isExtended ? 0 : 0x80;
+    final b = src2.isExtended ? 0 : 0x20;
+
+    buffer.emit8(0xC4); // 3-byte VEX
+    buffer.emit8(r | 0x40 | b | 0x02); // R.1.B.m-mmmm (0F38 = 0x02)
+    buffer.emit8((w ? 0x80 : 0) | (vvvv << 3) | pp); // W.vvvv.L.pp
+    buffer.emit8(opcode);
+    emitModRmReg(dst.encoding, src2);
+  }
+
+  /// ANDN r64, r64, r64 (BMI1) - Logical AND NOT
+  /// dst = src1 & ~src2
+  /// Encoding: VEX.LZ.0F38.W1 F2 /r
+  void andnR64R64R64(X86Gp dst, X86Gp src1, X86Gp src2) {
+    _emitVexBmi(dst, src1, src2, 0x00, 0xF2);
+  }
+
+  /// BEXTR r64, r64, r64 (BMI1) - Bit Field Extract
+  /// dst = (src >> start) & ((1 << len) - 1), where start/len from ctrl
+  /// Encoding: VEX.LZ.0F38.W1 F7 /r
+  void bextrR64R64R64(X86Gp dst, X86Gp src, X86Gp ctrl) {
+    _emitVexBmi(dst, ctrl, src, 0x00, 0xF7);
+  }
+
+  /// BLSI r64, r64 (BMI1) - Extract Lowest Set Bit
+  /// dst = src & (-src)
+  /// Encoding: VEX.LZ.0F38.W1 F3 /3
+  void blsiR64R64(X86Gp dst, X86Gp src) {
+    final vvvv = (~dst.encoding) & 0xF;
+    final b = src.isExtended ? 0 : 0x20;
+
+    buffer.emit8(0xC4);
+    buffer.emit8(0x40 | b | 0x02); // R=1, X=1, B, m-mmmm=0F38
+    buffer.emit8(0x80 | (vvvv << 3)); // W=1, vvvv, L=0, pp=00
+    buffer.emit8(0xF3);
+    emitModRmReg(3, src); // /3
+  }
+
+  /// BLSMSK r64, r64 (BMI1) - Get Mask Up To Lowest Set Bit
+  /// dst = src ^ (src - 1)
+  /// Encoding: VEX.LZ.0F38.W1 F3 /2
+  void blsmskR64R64(X86Gp dst, X86Gp src) {
+    final vvvv = (~dst.encoding) & 0xF;
+    final b = src.isExtended ? 0 : 0x20;
+
+    buffer.emit8(0xC4);
+    buffer.emit8(0x40 | b | 0x02);
+    buffer.emit8(0x80 | (vvvv << 3));
+    buffer.emit8(0xF3);
+    emitModRmReg(2, src); // /2
+  }
+
+  /// BLSR r64, r64 (BMI1) - Reset Lowest Set Bit
+  /// dst = src & (src - 1)
+  /// Encoding: VEX.LZ.0F38.W1 F3 /1
+  void blsrR64R64(X86Gp dst, X86Gp src) {
+    final vvvv = (~dst.encoding) & 0xF;
+    final b = src.isExtended ? 0 : 0x20;
+
+    buffer.emit8(0xC4);
+    buffer.emit8(0x40 | b | 0x02);
+    buffer.emit8(0x80 | (vvvv << 3));
+    buffer.emit8(0xF3);
+    emitModRmReg(1, src); // /1
+  }
+
+  // ===========================================================================
+  // BMI2 Instructions (Bit Manipulation Instruction Set 2)
+  // ===========================================================================
+
+  /// BZHI r64, r64, r64 (BMI2) - Zero High Bits Starting from Specified Position
+  /// dst = src & ((1 << idx[7:0]) - 1)
+  /// Encoding: VEX.LZ.0F38.W1 F5 /r
+  void bzhiR64R64R64(X86Gp dst, X86Gp src, X86Gp idx) {
+    _emitVexBmi(dst, idx, src, 0x00, 0xF5);
+  }
+
+  /// PDEP r64, r64, r64 (BMI2) - Parallel Bits Deposit
+  /// Encoding: VEX.LZ.F2.0F38.W1 F5 /r
+  void pdepR64R64R64(X86Gp dst, X86Gp src, X86Gp mask) {
+    _emitVexBmi(dst, src, mask, 0x03, 0xF5); // pp=11 = F2
+  }
+
+  /// PEXT r64, r64, r64 (BMI2) - Parallel Bits Extract
+  /// Encoding: VEX.LZ.F3.0F38.W1 F5 /r
+  void pextR64R64R64(X86Gp dst, X86Gp src, X86Gp mask) {
+    _emitVexBmi(dst, src, mask, 0x02, 0xF5); // pp=10 = F3
+  }
+
+  /// RORX r64, r64, imm8 (BMI2) - Rotate Right Logical Without Affecting Flags
+  /// Encoding: VEX.LZ.F2.0F3A.W1 F0 /r ib
+  void rorxR64R64Imm8(X86Gp dst, X86Gp src, int imm8) {
+    final r = dst.isExtended ? 0 : 0x80;
+    final b = src.isExtended ? 0 : 0x20;
+
+    buffer.emit8(0xC4);
+    buffer.emit8(r | 0x40 | b | 0x03); // m-mmmm = 0F3A = 0x03
+    buffer.emit8(0x80 | 0x78 | 0x03); // W=1, vvvv=1111, L=0, pp=11
+    buffer.emit8(0xF0);
+    emitModRmReg(dst.encoding, src);
+    buffer.emit8(imm8);
+  }
+
+  /// SARX r64, r64, r64 (BMI2) - Shift Arithmetic Right Without Affecting Flags
+  /// Encoding: VEX.LZ.F3.0F38.W1 F7 /r
+  void sarxR64R64R64(X86Gp dst, X86Gp src, X86Gp shift) {
+    _emitVexBmi(dst, shift, src, 0x02, 0xF7); // pp=10 = F3
+  }
+
+  /// SHLX r64, r64, r64 (BMI2) - Shift Logical Left Without Affecting Flags
+  /// Encoding: VEX.LZ.66.0F38.W1 F7 /r
+  void shlxR64R64R64(X86Gp dst, X86Gp src, X86Gp shift) {
+    _emitVexBmi(dst, shift, src, 0x01, 0xF7); // pp=01 = 66
+  }
+
+  /// SHRX r64, r64, r64 (BMI2) - Shift Logical Right Without Affecting Flags
+  /// Encoding: VEX.LZ.F2.0F38.W1 F7 /r
+  void shrxR64R64R64(X86Gp dst, X86Gp src, X86Gp shift) {
+    _emitVexBmi(dst, shift, src, 0x03, 0xF7); // pp=11 = F2
+  }
+
+  // ===========================================================================
+  // AES-NI Instructions
+  // ===========================================================================
+
+  /// AESENC xmm, xmm - Perform One Round of AES Encryption
+  /// Encoding: 66 0F 38 DC /r
+  void aesencXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0xDC);
+    emitModRmReg(dst.encoding, X86Gp.r64(src.id));
+  }
+
+  /// AESENCLAST xmm, xmm - Perform Last Round of AES Encryption
+  /// Encoding: 66 0F 38 DD /r
+  void aesenclastXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0xDD);
+    emitModRmReg(dst.encoding, X86Gp.r64(src.id));
+  }
+
+  /// AESDEC xmm, xmm - Perform One Round of AES Decryption
+  /// Encoding: 66 0F 38 DE /r
+  void aesdecXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0xDE);
+    emitModRmReg(dst.encoding, X86Gp.r64(src.id));
+  }
+
+  /// AESDECLAST xmm, xmm - Perform Last Round of AES Decryption
+  /// Encoding: 66 0F 38 DF /r
+  void aesdeclastXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0xDF);
+    emitModRmReg(dst.encoding, X86Gp.r64(src.id));
+  }
+
+  /// AESKEYGENASSIST xmm, xmm, imm8 - AES Round Key Generation Assist
+  /// Encoding: 66 0F 3A DF /r ib
+  void aeskeygenassistXmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0xDF);
+    emitModRmReg(dst.encoding, X86Gp.r64(src.id));
+    buffer.emit8(imm8);
+  }
+
+  /// AESIMC xmm, xmm - AES Inverse Mix Columns
+  /// Encoding: 66 0F 38 DB /r
+  void aesimcXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0xDB);
+    emitModRmReg(dst.encoding, X86Gp.r64(src.id));
+  }
+
+  // ===========================================================================
+  // SHA Extensions
+  // ===========================================================================
+
+  /// SHA1RNDS4 xmm, xmm, imm8 - SHA1 Round with Constant
+  /// Encoding: 0F 3A CC /r ib
+  void sha1rnds4XmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0xCC);
+    emitModRmReg(dst.encoding, X86Gp.r64(src.id));
+    buffer.emit8(imm8);
+  }
+
+  /// SHA1NEXTE xmm, xmm - SHA1 Next E
+  /// Encoding: 0F 38 C8 /r
+  void sha1nexteXmmXmm(X86Xmm dst, X86Xmm src) {
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0xC8);
+    emitModRmReg(dst.encoding, X86Gp.r64(src.id));
+  }
+
+  /// SHA1MSG1 xmm, xmm - SHA1 Message Schedule Update 1
+  /// Encoding: 0F 38 C9 /r
+  void sha1msg1XmmXmm(X86Xmm dst, X86Xmm src) {
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0xC9);
+    emitModRmReg(dst.encoding, X86Gp.r64(src.id));
+  }
+
+  /// SHA1MSG2 xmm, xmm - SHA1 Message Schedule Update 2
+  /// Encoding: 0F 38 CA /r
+  void sha1msg2XmmXmm(X86Xmm dst, X86Xmm src) {
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0xCA);
+    emitModRmReg(dst.encoding, X86Gp.r64(src.id));
+  }
+
+  /// SHA256RNDS2 xmm, xmm - SHA256 Two Rounds (implicit XMM0)
+  /// Encoding: 0F 38 CB /r
+  void sha256rnds2XmmXmm(X86Xmm dst, X86Xmm src) {
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0xCB);
+    emitModRmReg(dst.encoding, X86Gp.r64(src.id));
+  }
+
+  /// SHA256MSG1 xmm, xmm - SHA256 Message Schedule Update 1
+  /// Encoding: 0F 38 CC /r
+  void sha256msg1XmmXmm(X86Xmm dst, X86Xmm src) {
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0xCC);
+    emitModRmReg(dst.encoding, X86Gp.r64(src.id));
+  }
+
+  /// SHA256MSG2 xmm, xmm - SHA256 Message Schedule Update 2
+  /// Encoding: 0F 38 CD /r
+  void sha256msg2XmmXmm(X86Xmm dst, X86Xmm src) {
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0xCD);
+    emitModRmReg(dst.encoding, X86Gp.r64(src.id));
+  }
+
+  // ===========================================================================
+  // Memory-Immediate Instructions
+  // ===========================================================================
+
+  /// MOV [mem], imm32 - Move immediate to memory (64-bit mode writes 32-bit)
+  void movMemImm32(X86Mem mem, int imm32) {
+    final baseExt = mem.base?.isExtended ?? false;
+    final indexExt = mem.index?.isExtended ?? false;
+    if (baseExt || indexExt) {
+      emitRex(true, false, indexExt, baseExt);
+    } else {
+      buffer.emit8(0x48); // REX.W for 64-bit
+    }
+    buffer.emit8(0xC7);
+    emitModRmMem(0, mem);
+    buffer.emit32(imm32);
+  }
+
+  /// ADD [mem], r64 - Add register to memory
+  void addMemR64(X86Mem mem, X86Gp src) {
+    emitRexForRegMem(src, mem, w: true);
+    buffer.emit8(0x01);
+    emitModRmMem(src.encoding, mem);
+  }
+
+  /// ADD [mem], imm32 - Add immediate to memory
+  void addMemImm32(X86Mem mem, int imm32) {
+    final baseExt = mem.base?.isExtended ?? false;
+    final indexExt = mem.index?.isExtended ?? false;
+    if (baseExt || indexExt) {
+      emitRex(true, false, indexExt, baseExt);
+    } else {
+      buffer.emit8(0x48);
+    }
+    buffer.emit8(0x81);
+    emitModRmMem(0, mem);
+    buffer.emit32(imm32);
+  }
+
+  /// SUB [mem], r64 - Subtract register from memory
+  void subMemR64(X86Mem mem, X86Gp src) {
+    emitRexForRegMem(src, mem, w: true);
+    buffer.emit8(0x29);
+    emitModRmMem(src.encoding, mem);
+  }
+
+  /// CMP [mem], imm32 - Compare memory with immediate
+  void cmpMemImm32(X86Mem mem, int imm32) {
+    final baseExt = mem.base?.isExtended ?? false;
+    final indexExt = mem.index?.isExtended ?? false;
+    if (baseExt || indexExt) {
+      emitRex(true, false, indexExt, baseExt);
+    } else {
+      buffer.emit8(0x48);
+    }
+    buffer.emit8(0x81);
+    emitModRmMem(7, mem);
+    buffer.emit32(imm32);
   }
 }
 

@@ -191,4 +191,80 @@ void main() {
       expect(finalized.textBytes, equals([0x48, 0x31, 0xC0, 0xC3]));
     });
   });
+
+  group('FuncSignature', () {
+    test('default constructor creates empty signature', () {
+      final sig = FuncSignature();
+      expect(sig.argCount, 0);
+      expect(sig.hasRet, isFalse);
+      expect(sig.retType.isVoid, isTrue);
+    });
+
+    test('noArgs factory creates signature with return type', () {
+      final sig = FuncSignature.noArgs(ret: TypeId.int64);
+      expect(sig.argCount, 0);
+      expect(sig.hasRet, isTrue);
+      expect(sig.retType, TypeId.int64);
+    });
+
+    test('i64i64 factory creates unary function', () {
+      final sig = FuncSignature.i64i64();
+      expect(sig.argCount, 1);
+      expect(sig.arg(0), TypeId.int64);
+      expect(sig.retType, TypeId.int64);
+    });
+
+    test('i64i64i64 factory creates binary function', () {
+      final sig = FuncSignature.i64i64i64();
+      expect(sig.argCount, 2);
+      expect(sig.arg(0), TypeId.int64);
+      expect(sig.arg(1), TypeId.int64);
+    });
+
+    test('f64f64f64 factory creates double function', () {
+      final sig = FuncSignature.f64f64f64();
+      expect(sig.argCount, 2);
+      expect(sig.retType, TypeId.float64);
+    });
+
+    test('addArg adds arguments', () {
+      final sig = FuncSignature();
+      sig.addArg(TypeId.int32);
+      sig.addArg(TypeId.int64);
+
+      expect(sig.argCount, 2);
+      expect(sig.arg(0), TypeId.int32);
+      expect(sig.arg(1), TypeId.int64);
+    });
+
+    test('setRet changes return type', () {
+      final sig = FuncSignature();
+      expect(sig.hasRet, isFalse);
+
+      sig.setRet(TypeId.float32);
+      expect(sig.hasRet, isTrue);
+      expect(sig.retType, TypeId.float32);
+    });
+
+    test('hasVarArgs detects variadic functions', () {
+      final sig = FuncSignature();
+      expect(sig.hasVarArgs, isFalse);
+
+      final vaSig = FuncSignature(vaIndex: 2);
+      expect(vaSig.hasVarArgs, isTrue);
+    });
+
+    test('toString provides readable output', () {
+      final sig = FuncSignature.i64i64i64();
+      expect(sig.toString(), contains('int64'));
+    });
+  });
+
+  group('CallConvId', () {
+    test('contains expected values', () {
+      expect(CallConvId.cdecl, isNotNull);
+      expect(CallConvId.x64SystemV, isNotNull);
+      expect(CallConvId.x64Windows, isNotNull);
+    });
+  });
 }

@@ -293,6 +293,16 @@ class CodeHolder {
 
       case RelocKind.abs64:
         buffer.patch64(atOffset, targetOffset);
+
+      case RelocKind.arm64Branch26:
+      case RelocKind.arm64Branch19:
+      case RelocKind.arm64Adr21:
+        // ARM64-specific relocations are handled by A64Assembler.finalize()
+        // They should not appear in standard CodeHolder relocations.
+        throw AsmJitException(
+          AsmJitError.invalidArgument,
+          'ARM64 relocations must be handled by A64Assembler',
+        );
     }
   }
 

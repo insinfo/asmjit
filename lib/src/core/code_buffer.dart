@@ -242,6 +242,21 @@ class CodeBuffer {
     _data[offset] = value & 0xFF;
   }
 
+  /// Reads a 32-bit value at [offset] (little-endian).
+  int read32At(int offset) {
+    if (offset < 0 || offset + 4 > _length) {
+      throw RangeError.range(offset, 0, _length - 4, 'offset');
+    }
+    return _data[offset] |
+        (_data[offset + 1] << 8) |
+        (_data[offset + 2] << 16) |
+        (_data[offset + 3] << 24);
+  }
+
+  /// Writes a 32-bit value at [offset] (little-endian).
+  /// Alias for patch32.
+  void write32At(int offset, int value) => patch32(offset, value);
+
   @override
   String toString() =>
       'CodeBuffer(length: $_length, capacity: ${_data.length})';

@@ -5,7 +5,144 @@
 
 import '../core/arch.dart';
 import '../core/environment.dart';
+import '../core/type.dart';
 import 'x86.dart';
+
+/// Maximum number of function arguments.
+const int kMaxFuncArgs = 32;
+
+/// Marker for no variable arguments.
+const int kNoVarArgs = 0xFF;
+
+/// Function signature.
+///
+/// Describes the return type and argument types of a function.
+/// Used to calculate FuncDetail which maps types to registers/stack.
+class FuncSignature {
+  /// Calling convention ID.
+  final CallConvId callConvId;
+
+  /// Return type.
+  TypeId retType;
+
+  /// Argument types.
+  final List<TypeId> argTypes;
+
+  /// Index of first variadic argument (kNoVarArgs if none).
+  int vaIndex;
+
+  /// Creates a function signature.
+  FuncSignature({
+    this.callConvId = CallConvId.cdecl,
+    this.retType = TypeId.void_,
+    List<TypeId>? args,
+    this.vaIndex = kNoVarArgs,
+  }) : argTypes = args ?? [];
+
+  /// Creates a signature for: int64 func().
+  factory FuncSignature.noArgs({
+    CallConvId callConv = CallConvId.cdecl,
+    TypeId ret = TypeId.int64,
+  }) {
+    return FuncSignature(callConvId: callConv, retType: ret);
+  }
+
+  /// Creates a signature for: int64 func(int64).
+  factory FuncSignature.i64i64({CallConvId callConv = CallConvId.cdecl}) {
+    return FuncSignature(
+      callConvId: callConv,
+      retType: TypeId.int64,
+      args: [TypeId.int64],
+    );
+  }
+
+  /// Creates a signature for: int64 func(int64, int64).
+  factory FuncSignature.i64i64i64({CallConvId callConv = CallConvId.cdecl}) {
+    return FuncSignature(
+      callConvId: callConv,
+      retType: TypeId.int64,
+      args: [TypeId.int64, TypeId.int64],
+    );
+  }
+
+  /// Creates a signature for: int64 func(int64, int64, int64).
+  factory FuncSignature.i64i64i64i64({CallConvId callConv = CallConvId.cdecl}) {
+    return FuncSignature(
+      callConvId: callConv,
+      retType: TypeId.int64,
+      args: [TypeId.int64, TypeId.int64, TypeId.int64],
+    );
+  }
+
+  /// Creates a signature for: double func(double, double).
+  factory FuncSignature.f64f64f64({CallConvId callConv = CallConvId.cdecl}) {
+    return FuncSignature(
+      callConvId: callConv,
+      retType: TypeId.float64,
+      args: [TypeId.float64, TypeId.float64],
+    );
+  }
+
+  /// Number of arguments.
+  int get argCount => argTypes.length;
+
+  /// Whether function has a return value.
+  bool get hasRet => retType != TypeId.void_;
+
+  /// Whether function has variable arguments.
+  bool get hasVarArgs => vaIndex != kNoVarArgs;
+
+  /// Add an argument type.
+  void addArg(TypeId type) {
+    if (argTypes.length >= kMaxFuncArgs) {
+      throw StateError('Too many function arguments');
+    }
+    argTypes.add(type);
+  }
+
+  /// Set return type.
+  void setRet(TypeId type) {
+    retType = type;
+  }
+
+  /// Get argument type at index.
+  TypeId arg(int index) {
+    if (index < 0 || index >= argTypes.length) {
+      throw RangeError.index(index, argTypes, 'index');
+    }
+    return argTypes[index];
+  }
+
+  @override
+  String toString() {
+    final argsStr = argTypes.map((t) => t.name).join(', ');
+    return 'FuncSignature(${retType.name} func($argsStr))';
+  }
+}
+
+/// Calling convention IDs (matches AsmJit).
+enum CallConvId {
+  /// Standard C calling convention.
+  cdecl,
+
+  /// __stdcall (Windows 32-bit).
+  stdCall,
+
+  /// __fastcall (Windows 32-bit).
+  fastCall,
+
+  /// __vectorcall (Windows).
+  vectorCall,
+
+  /// __thiscall (Windows 32-bit).
+  thisCall,
+
+  /// X64 System V ABI.
+  x64SystemV,
+
+  /// X64 Windows ABI.
+  x64Windows,
+}
 
 /// Function frame attributes.
 class FuncFrameAttr {
@@ -287,5 +424,228 @@ class FuncFrameEmitter {
     }
     _asm.leave();
     _asm.ret();
+  }
+}
+
+/// Describes how a function value (argument or return) is passed.
+class FuncValue {
+  /// Type of the value.
+  final TypeId typeId;
+
+  /// Whether passed in a register.
+  final bool isReg;
+
+  /// Whether passed on stack.
+  final bool isStack;
+
+  /// Whether passed indirectly (by pointer).
+  final bool isIndirect;
+
+  /// Register ID (if isReg).
+  final int regId;
+
+  /// Register type (GP, XMM, etc).
+  final FuncRegType regType;
+
+  /// Stack offset (if isStack).
+  final int stackOffset;
+
+  // ignore: unused_element - reserved for Win64 vectorcall indirect args
+  const FuncValue._({
+    this.typeId = TypeId.void_,
+    this.isReg = false,
+    this.isStack = false,
+    // ignore: unused_element
+    this.isIndirect = false,
+    this.regId = 0,
+    this.regType = FuncRegType.gp,
+    this.stackOffset = 0,
+  });
+
+  /// Creates a value passed in a GP register.
+  factory FuncValue.gpReg(TypeId type, int regId) {
+    return FuncValue._(
+      typeId: type,
+      isReg: true,
+      regId: regId,
+      regType: FuncRegType.gp,
+    );
+  }
+
+  /// Creates a value passed in an XMM register.
+  factory FuncValue.xmmReg(TypeId type, int regId) {
+    return FuncValue._(
+      typeId: type,
+      isReg: true,
+      regId: regId,
+      regType: FuncRegType.xmm,
+    );
+  }
+
+  /// Creates a value passed on stack.
+  factory FuncValue.stack(TypeId type, int offset) {
+    return FuncValue._(
+      typeId: type,
+      isStack: true,
+      stackOffset: offset,
+    );
+  }
+
+  /// Returns the X86 GP register if this is a GP reg value.
+  X86Gp? get gpReg {
+    if (!isReg || regType != FuncRegType.gp) return null;
+    return X86Gp.r64(regId);
+  }
+
+  @override
+  String toString() {
+    if (isReg) {
+      return 'FuncValue(${typeId.name} in ${regType.name}[$regId])';
+    } else if (isStack) {
+      return 'FuncValue(${typeId.name} at stack+$stackOffset)';
+    }
+    return 'FuncValue(${typeId.name})';
+  }
+}
+
+/// Register type for FuncValue.
+enum FuncRegType {
+  gp,
+  xmm,
+  ymm,
+  zmm,
+}
+
+/// Detailed function info with argument/return value allocation.
+///
+/// Takes a FuncSignature and resolves how each argument and
+/// return value is passed according to the calling convention.
+class FuncDetail {
+  /// The original signature.
+  final FuncSignature signature;
+
+  /// Calling convention.
+  final CallingConvention callingConvention;
+
+  /// Allocated return value.
+  late final FuncValue retValue;
+
+  /// Allocated argument values.
+  late final List<FuncValue> argValues;
+
+  /// Total stack space needed for arguments.
+  int stackArgsSize = 0;
+
+  /// Creates function detail from signature.
+  FuncDetail(this.signature, {CallingConvention? cc})
+      : callingConvention = cc ?? _detectCallingConvention() {
+    _allocate();
+  }
+
+  /// Detect host calling convention.
+  static CallingConvention _detectCallingConvention() {
+    final env = Environment.host();
+    return env.callingConvention;
+  }
+
+  /// Allocate arguments and return value.
+  void _allocate() {
+    // Allocate return value
+    if (signature.hasRet) {
+      retValue = _allocateReturnValue(signature.retType);
+    } else {
+      retValue = const FuncValue._();
+    }
+
+    // Allocate arguments
+    argValues = [];
+    int gpIndex = 0;
+    int xmmIndex = 0;
+    int stackOffset = callingConvention == CallingConvention.win64 ? 32 : 0;
+
+    final gpOrder = _getGpOrder();
+    final xmmOrder = _getXmmOrder();
+
+    for (int i = 0; i < signature.argCount; i++) {
+      final type = signature.arg(i);
+
+      if (type.isFloat) {
+        // Float/double go in XMM registers
+        if (xmmIndex < xmmOrder.length) {
+          argValues.add(FuncValue.xmmReg(type, xmmOrder[xmmIndex++]));
+          if (callingConvention == CallingConvention.win64) {
+            gpIndex++; // Win64: XMM and GP share slots
+          }
+        } else {
+          argValues.add(FuncValue.stack(type, stackOffset));
+          stackOffset += 8;
+        }
+      } else {
+        // Integer types go in GP registers
+        if (gpIndex < gpOrder.length) {
+          argValues.add(FuncValue.gpReg(type, gpOrder[gpIndex++]));
+          if (callingConvention == CallingConvention.win64) {
+            xmmIndex++; // Win64: GP and XMM share slots
+          }
+        } else {
+          argValues.add(FuncValue.stack(type, stackOffset));
+          stackOffset += 8;
+        }
+      }
+    }
+
+    stackArgsSize = stackOffset;
+  }
+
+  /// Allocate return value register.
+  FuncValue _allocateReturnValue(TypeId type) {
+    if (type.isFloat) {
+      return FuncValue.xmmReg(type, 0); // XMM0
+    } else {
+      return FuncValue.gpReg(type, 0); // RAX
+    }
+  }
+
+  /// Get GP register order for arguments.
+  List<int> _getGpOrder() {
+    if (callingConvention == CallingConvention.win64) {
+      return [1, 2, 8, 9]; // RCX, RDX, R8, R9
+    } else {
+      return [7, 6, 2, 1, 8, 9]; // RDI, RSI, RDX, RCX, R8, R9
+    }
+  }
+
+  /// Get XMM register order for arguments.
+  List<int> _getXmmOrder() {
+    if (callingConvention == CallingConvention.win64) {
+      return [0, 1, 2, 3]; // XMM0-3
+    } else {
+      return [0, 1, 2, 3, 4, 5, 6, 7]; // XMM0-7
+    }
+  }
+
+  /// Get the FuncValue for argument at index.
+  FuncValue getArg(int index) {
+    if (index < 0 || index >= argValues.length) {
+      throw RangeError.index(index, argValues, 'index');
+    }
+    return argValues[index];
+  }
+
+  /// Number of arguments passed in GP registers.
+  int get gpArgCount =>
+      argValues.where((v) => v.isReg && v.regType == FuncRegType.gp).length;
+
+  /// Number of arguments passed in XMM registers.
+  int get xmmArgCount =>
+      argValues.where((v) => v.isReg && v.regType == FuncRegType.xmm).length;
+
+  /// Number of arguments passed on stack.
+  int get stackArgCount => argValues.where((v) => v.isStack).length;
+
+  @override
+  String toString() {
+    final args = argValues.map((v) => v.toString()).join(', ');
+    return 'FuncDetail(ret: $retValue, args: [$args])';
   }
 }

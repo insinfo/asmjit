@@ -38,12 +38,6 @@ class X86Gp extends BaseReg {
   /// Whether this is the high byte register (AH, BH, CH, DH).
   final bool isHighByte;
 
-  const X86Gp._({
-    required this.id,
-    required this.bits,
-    this.isHighByte = false,
-  });
-
   /// Creates a 64-bit register.
   const X86Gp.r64(this.id)
       : bits = 64,
