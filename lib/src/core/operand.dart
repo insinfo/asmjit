@@ -204,6 +204,12 @@ abstract class BaseMem extends Operand {
   /// Whether this has an index register.
   bool get hasIndex;
 
+  /// Base register (if any).
+  BaseReg? get base;
+
+  /// Index register (if any).
+  BaseReg? get index;
+
   /// The displacement/offset.
   int get displacement;
 

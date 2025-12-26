@@ -295,6 +295,26 @@ class A64Encoder {
   // Branch Instructions
   // ===========================================================================
 
+  /// ADR - PC-relative address (immediate).
+  /// Encoding: op|00|10000|immlo|immhi|Rd  (op=0 for ADR)
+  void adr(A64Gp rd, int offset) {
+    final imm = offset >> 0;
+    final immlo = (imm & 0x3);
+    final immhi = (imm >> 2) & 0x7FFFF;
+    final inst = (0 << 31) | (immlo << 29) | (0x10 << 24) | (immhi << 5) | _encReg(rd);
+    emit32(inst);
+  }
+
+  /// ADRP - PC-relative to page (imm scaled by 4096).
+  /// Encoding: op|00|10000|immlo|immhi|Rd  (op=1 for ADRP, imm = (offset >> 12))
+  void adrp(A64Gp rd, int offset) {
+    final imm = offset >> 12;
+    final immlo = (imm & 0x3);
+    final immhi = (imm >> 2) & 0x7FFFF;
+    final inst = (1 << 31) | (immlo << 29) | (0x10 << 24) | (immhi << 5) | _encReg(rd);
+    emit32(inst);
+  }
+
   /// B - Unconditional branch (PC-relative).
   /// Encoding: 0|00101|imm26
   void b(int offset) {
@@ -359,31 +379,88 @@ class A64Encoder {
   // Load/Store Instructions
   // ===========================================================================
 
-  /// LDR (immediate, unsigned offset) - Load register.
-  /// Encoding: 1|x|111|0|01|01|imm12|Rn|Rt
-  void ldrImm(A64Gp rt, A64Gp rn, int offset) {
-    final sf = _encSf(rt);
-    final size = sf == 1 ? 3 : 2;
-    final scale = sf == 1 ? 3 : 2;
+  void _emitLoadStore(
+      {required bool load,
+      required int size,
+      required A64Gp rt,
+      required A64Gp rn,
+      required int offset}) {
+    final scale = size;
     final imm12 = (offset >> scale) & 0xFFF;
     final inst = (size << 30) |
         (0x39 << 24) |
-        (1 << 22) |
+        ((load ? 1 : 0) << 22) |
         (imm12 << 10) |
         (_encReg(rn) << 5) |
         _encReg(rt);
     emit32(inst);
   }
 
+  /// LDR (immediate, unsigned offset) - Load register.
+  /// Encoding: 1|x|111|0|01|01|imm12|Rn|Rt
+  void ldrImm(A64Gp rt, A64Gp rn, int offset) {
+    final sf = _encSf(rt);
+    final size = sf == 1 ? 3 : 2;
+    _emitLoadStore(load: true, size: size, rt: rt, rn: rn, offset: offset);
+  }
+
   /// STR (immediate, unsigned offset) - Store register.
   void strImm(A64Gp rt, A64Gp rn, int offset) {
     final sf = _encSf(rt);
     final size = sf == 1 ? 3 : 2;
-    final scale = sf == 1 ? 3 : 2;
-    final imm12 = (offset >> scale) & 0xFFF;
-    final inst = (size << 30) |
+    _emitLoadStore(load: false, size: size, rt: rt, rn: rn, offset: offset);
+  }
+
+  /// LDRB (immediate, unsigned offset) - Load byte.
+  void ldrb(A64Gp rt, A64Gp rn, int offset) {
+    _emitLoadStore(load: true, size: 0, rt: rt, rn: rn, offset: offset);
+  }
+
+  /// STRB (immediate, unsigned offset) - Store byte.
+  void strb(A64Gp rt, A64Gp rn, int offset) {
+    _emitLoadStore(load: false, size: 0, rt: rt, rn: rn, offset: offset);
+  }
+
+  /// LDRH (immediate, unsigned offset) - Load halfword.
+  void ldrh(A64Gp rt, A64Gp rn, int offset) {
+    _emitLoadStore(load: true, size: 1, rt: rt, rn: rn, offset: offset);
+  }
+
+  /// STRH (immediate, unsigned offset) - Store halfword.
+  void strh(A64Gp rt, A64Gp rn, int offset) {
+    _emitLoadStore(load: false, size: 1, rt: rt, rn: rn, offset: offset);
+  }
+
+  /// LDRSB (immediate, unsigned offset) - Load byte and sign-extend to 64-bit.
+  void ldrsb(A64Gp rt, A64Gp rn, int offset) {
+    final imm12 = (offset >> 0) & 0xFFF;
+    final inst = (0 << 30) |
         (0x39 << 24) |
-        (0 << 22) |
+        (2 << 22) | // sign-extend variant
+        (imm12 << 10) |
+        (_encReg(rn) << 5) |
+        _encReg(rt);
+    emit32(inst);
+  }
+
+  /// LDRSH (immediate, unsigned offset) - Load halfword and sign-extend to 64-bit.
+  void ldrsh(A64Gp rt, A64Gp rn, int offset) {
+    final imm12 = (offset >> 1) & 0xFFF;
+    final inst = (1 << 30) |
+        (0x39 << 24) |
+        (2 << 22) |
+        (imm12 << 10) |
+        (_encReg(rn) << 5) |
+        _encReg(rt);
+    emit32(inst);
+  }
+
+  /// LDRSW (immediate, unsigned offset) - Load word and sign-extend to 64-bit.
+  void ldrsw(A64Gp rt, A64Gp rn, int offset) {
+    final imm12 = (offset >> 2) & 0xFFF;
+    final inst = (2 << 30) |
+        (0x39 << 24) |
+        (2 << 22) |
         (imm12 << 10) |
         (_encReg(rn) << 5) |
         _encReg(rt);

@@ -5,7 +5,7 @@ roteiro bem prático (e incremental) para portar o AsmJit (C++) C:\MyDartProject
 micro otimzações são vitais para extrair o maximo de performace 
 assumir Dart Native (VM/AOT) em desktop/servidor. No iOS (e alguns ambientes “hardened”) JIT/memória executável costuma ser bloqueado por política do sistema — então trate como alvo “não suportado” ou “modo AOT/sem JIT”.
 
-nada no codigo em testes podem depender de C:\MyDartProjects\asmjit\referencias
+nada no codigo ou em testes podem depender de C:\MyDartProjects\asmjit\referencias
 copie o que for necessario paras diretorios apropriados por exemplo C:\MyDartProjects\asmjit\assets
 
 coloque comentarios \\ TODO onde não esta concluido ou completo
@@ -15,6 +15,13 @@ O arquivo serializer_benchmark.dart
 porte os geradores e tools para dart
 C:\MyDartProjects\asmjit\referencias\asmjit-master\db
 C:\MyDartProjects\asmjit\referencias\asmjit-master\tools
+
+nunca edite o codigo gerado e sim o gerador de codigo
+
+implementar o gerador Gerar dispatcher/serializer AArch64 a partir do DB (similar ao x86) e ligar no a64_assembler.dart.
+Portar as suites pesadas do asmjit-testing (assembler_x64/x86, compiler_x86/a64, emitters, instinfo, bench) removendo os skips.
+ implementar o pipeline caching (M23) e quaisquer otimizações adicionais.
+
 
 porte os testes para dart
 C:\MyDartProjects\asmjit\referencias\asmjit-master\asmjit-testing
@@ -45,8 +52,15 @@ docker run --rm --platform linux/arm64 dart:stable bash -lc "uname -m"
 ## 📊 Status Atual
 
 **Data**: 25 Dezembro 2024  
-**Testes**: ✅ 343 passando  
+**Testes**: ✅ 345 (8 skips dos ports asmjit-testing ainda pendentes)  
 **Warnings**: 0
+
+Atualizações recentes:
+- Serializer agora depende apenas do dispatcher gerado via switch (sem Map fallback).
+- gen_x86_db.dart gera dispatcher real para o conjunto implementado e instdb.
+- gen_tables.dart integra enumgen opcional.
+- gen_a64_db captura categorias/extensões/raw para futuro dispatcher A64 e agora gera handlers para ldrb/ldrh/strb/strh.
+- smoke tests de dispatcher/instdb adicionados (asmjit_testing_port_test.dart).
 
 ---
 
@@ -68,12 +82,13 @@ docker run --rm --platform linux/arm64 dart:stable bash -lc "uname -m"
 | `type.h/.cpp` | `type.dart` | ✅ |
 | `builder.h/.cpp` | `builder.dart` | ✅ (básico) |
 | `func.h/.cpp` | `x86_func.dart` | ✅ (FuncSignature) |
-| `compiler.h/.cpp` | - | ❌ TODO: Compiler |
+| `compiler.h/.cpp` | - | ⚠️ Parcial (CFG + liveness básicos) |
 | `rapass.h/.cpp` | `regalloc.dart` | ✅ (linear scan) |
 | `jitruntime.h/.cpp` | `jit_runtime.dart` | ✅ |
 | `jitallocator.h/.cpp` | `virtmem.dart` | ✅ |
 | `cpuinfo.h/.cpp` | `cpuinfo.dart` | ✅ |
 | `instdb.h` | `x86_inst_db.g.dart` | ✅ (1831 inst) |
+| `a64 instdb` | `a64_inst_db.g.dart` | ✅ (1347 inst) |
 
 ### x86 (`asmjit/x86/` → `lib/src/x86/`)
 
@@ -85,10 +100,11 @@ docker run --rm --platform linux/arm64 dart:stable bash -lc "uname -m"
 | `x86emitter.h` | `x86_encoder.dart` | ✅ (200+ instruções) |
 | `x86instdb.h/.cpp` | `x86_inst_db.g.dart` | ✅ |
 | `x86func.h` | `x86_func.dart` | ✅ (FuncFrame) |
-| `x86rapass.h/.cpp` | - | ❌ TODO |
-| `x86builder.h/.cpp` | `code_builder.dart` | ⚠️ Parcial |
+| `x86rapass.h/.cpp` | - | ⚠️ Parcial |
+| `x86builder.h/.cpp` | `code_builder.dart` | ⚠️ Parcial (RA + frame, faltam atributos avançados) |
 | - | `x86_serializer.dart` | ✅ |
-| `x86compiler.h/.cpp` | - | ❌ TODO |
+| `x86compiler.h/.cpp` | - | ⚠️ Parcial |
+| `arm a64 dispatcher/serializer` | `a64_dispatcher.g.dart` / `a64_serializer.dart` | ✅ (subset, precisa ampliar) |
 
 ### ASMTK (`asmtk/` → `lib/src/asmtk/`)
 
@@ -193,9 +209,10 @@ docker run --rm --platform linux/arm64 dart:stable bash -lc "uname -m"
 
 | # | Status | Descrição | Prioridade |
 |---|--------|-----------|------------|
-| M21 | 🏗️ | Compiler IR Expansion (FuncNode, BlockNode, CFG) | Added nodes to Builder |
-| M22 | 🚧 | AArch64 Backend Completion | Added FP instructions & tests |
-| M23 | ⏳ | JitRuntime Pipeline Caching (Pointer<Void> stubs) | Performance for JIT |
+| M21 | 🏗️ | Compiler IR Expansion (FuncNode, BlockNode, CFG, liveness) | Nodes criados + liveness básica |
+| M22 | 🚧 | AArch64 Backend Completion + Dispatcher | DB gerado (1347 inst); falta dispatcher/serializer |
+| M23 | ⏳ | JitRuntime Pipeline Caching (Pointer<Void> stubs) | Performance para JIT |
+| M24 | ⏳ | Portar asmjit-testing suites pesadas | assembler_x64/x86, compiler_x86/a64, emitters, instinfo, bench |
 
 ---
 

@@ -276,6 +276,12 @@ class X86RipMem extends BaseMem {
   @override
   bool get hasIndex => false;
 
+  @override
+  BaseReg? get base => null;
+
+  @override
+  BaseReg? get index => null;
+
   /// Whether this is a label reference.
   bool get hasLabel => label != null;
 

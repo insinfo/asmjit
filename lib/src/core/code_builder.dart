@@ -278,11 +278,13 @@ class X86CodeBuilder extends ir.BaseBuilder {
   ///
   /// This allows specifying a custom [FuncFrame] or name.
   /// If [frame] is provided, it will be used for prologue/epilogue generation.
-  ir.FuncNode func(String name, {FuncFrame? frame}) {
+  ir.FuncNode func(String name, {FuncFrame? frame, FuncFrameAttr? attr}) {
     final node = ir.FuncNode(name, frame: frame);
     addNode(node);
     if (frame != null) {
       _funcFrame = frame;
+    } else if (attr != null) {
+      _funcFrame = FuncFrame.host(attr: attr);
     }
     return node;
   }
@@ -294,8 +296,13 @@ class X86CodeBuilder extends ir.BaseBuilder {
     return node;
   }
 
+  /// Allows overriding frame attributes before build.
+  void configureFrameAttr(FuncFrameAttr attr) {
+    _funcFrame ??= FuncFrame.host(attr: attr);
+  }
+
   /// Builds the code and returns the executable function.
-  JitFunction build(JitRuntime runtime) {
+  JitFunction build(JitRuntime runtime, {FuncFrameAttr? frameAttrHint}) {
     // 1. Run register allocation on IR
     _ra.allocate(nodes);
 
@@ -307,16 +314,13 @@ class X86CodeBuilder extends ir.BaseBuilder {
 
     // 4. Calculate Frame (Prologue)
     if (_funcFrame == null) {
-      // Create minimal frame based on spills
+      // Create minimal frame based on spills or user-provided attr hint.
       final spillSize = _ra.spillAreaSize;
-      if (spillSize > 0) {
-        // Need a frame to handle spills
-        // For simplicity, we use a basic frame that preserves RBP
-        // and allocates stack.
-        // TODO: Allow user to specify frame attributes or infer from usage (calls?)
-        _funcFrame = FuncFrame.host(
-            attr: FuncFrameAttr.nonLeaf(localStackSize: spillSize));
-      }
+      final attr = frameAttrHint ??
+          (spillSize > 0
+              ? FuncFrameAttr.nonLeaf(localStackSize: spillSize)
+              : FuncFrameAttr.leaf());
+      _funcFrame = FuncFrame.host(attr: attr);
     }
 
     if (_funcFrame != null) {

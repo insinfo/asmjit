@@ -4,6 +4,7 @@
 
 import 'builder.dart';
 import 'labels.dart';
+import 'operand.dart';
 
 /// A compiler pass that operates on the instruction stream.
 abstract class CompilerPass {
@@ -133,9 +134,94 @@ class LivenessAnalysis extends CompilerPass {
     // Ensure CFG is up to date
     _cfgBuilder.run(nodes);
 
-    // TODO: Implement liveness computation
-    // 1. Initialize bitsets for LiveIn/LiveOut/Def/Use
-    // 2. Compute Def/Use sets for each block (scan instructions)
-    // 3. Iterate backwards to compute LiveIn/LiveOut until convergence
+    // 1) Collect BlockNodes and reset liveness info.
+    final blocks = <BlockNode>[];
+    var node = nodes.first;
+    while (node != null) {
+      if (node is BlockNode) {
+        node.resetLiveness();
+        blocks.add(node);
+      }
+      node = node.next;
+    }
+
+    // 2) Compute Def/Use sets per block by scanning instructions inside it.
+    BlockNode? current;
+    node = nodes.first;
+    while (node != null) {
+      if (node is BlockNode) {
+        current = node;
+      } else if (node is InstNode && current != null) {
+        _accumulateDefUse(current, node);
+      }
+      node = node.next;
+    }
+
+    // 3) Iterate to fixed point for LiveIn/LiveOut.
+    var changed = true;
+    while (changed) {
+      changed = false;
+      for (final block in blocks.reversed) {
+        final liveOut = <BaseReg>{};
+        for (final succ in block.successors) {
+          liveOut.addAll(succ.liveIn);
+        }
+
+        final liveIn = <BaseReg>{}..addAll(block.use)
+          ..addAll(liveOut.where((r) => !block.def.contains(r)));
+
+        if (!_setEquals(block.liveOut, liveOut)) {
+          block.liveOut
+            ..clear()
+            ..addAll(liveOut);
+          changed = true;
+        }
+        if (!_setEquals(block.liveIn, liveIn)) {
+          block.liveIn
+            ..clear()
+            ..addAll(liveIn);
+          changed = true;
+        }
+      }
+    }
+  }
+
+  void _accumulateDefUse(BlockNode block, InstNode inst) {
+    if (inst.operands.isEmpty) return;
+
+    // Heuristic: first reg operand is treated as def (dest); others as use.
+    bool destHandled = false;
+    for (final op in inst.operands) {
+      if (op is RegOperand) {
+        final reg = op.reg;
+        if (!reg.isPhysical && !destHandled) {
+          block.def.add(reg);
+          destHandled = true;
+          continue;
+        }
+        if (!reg.isPhysical) block.use.add(reg);
+      } else if (op is MemOperand) {
+        _scanMemForUse(block, op);
+      }
+    }
+  }
+
+  void _scanMemForUse(BlockNode block, MemOperand memOp) {
+    final mem = memOp.mem;
+    if (mem is BaseMem) {
+      final base = mem.base;
+      final index = mem.index;
+      if (base is BaseReg && !base.isPhysical) block.use.add(base);
+      if (index is BaseReg && !index.isPhysical) block.use.add(index);
+    }
+  }
+
+  bool _setEquals(Set<BaseReg> a, Set<BaseReg> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (final v in a) {
+      if (!b.contains(v)) return false;
+    }
+    return true;
   }
 }

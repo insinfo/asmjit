@@ -173,6 +173,16 @@ class A64Assembler {
     _fixups.add(_A64LabelFixup(label, currentOffset, _A64FixupKind.branch26));
   }
 
+  /// ADR - PC-relative address (immediate).
+  void adr(A64Gp rd, int offset) {
+    _enc.adr(rd, offset);
+  }
+
+  /// ADRP - PC-relative page address (immediate, offset is byte distance).
+  void adrp(A64Gp rd, int offset) {
+    _enc.adrp(rd, offset);
+  }
+
   /// BL - Branch with link to label.
   void bl(Label label) {
     final currentOffset = offset;
@@ -233,9 +243,44 @@ class A64Assembler {
     _enc.ldrImm(rt, rn, offset);
   }
 
+  /// LDRSB (immediate).
+  void ldrsb(A64Gp rt, A64Gp rn, [int offset = 0]) {
+    _enc.ldrsb(rt, rn, offset);
+  }
+
+  /// LDRSH (immediate).
+  void ldrsh(A64Gp rt, A64Gp rn, [int offset = 0]) {
+    _enc.ldrsh(rt, rn, offset);
+  }
+
+  /// LDRSW (immediate).
+  void ldrsw(A64Gp rt, A64Gp rn, [int offset = 0]) {
+    _enc.ldrsw(rt, rn, offset);
+  }
+
+  /// LDRB (immediate).
+  void ldrb(A64Gp rt, A64Gp rn, [int offset = 0]) {
+    _enc.ldrb(rt, rn, offset);
+  }
+
+  /// LDRH (immediate).
+  void ldrh(A64Gp rt, A64Gp rn, [int offset = 0]) {
+    _enc.ldrh(rt, rn, offset);
+  }
+
   /// STR (immediate).
   void str(A64Gp rt, A64Gp rn, [int offset = 0]) {
     _enc.strImm(rt, rn, offset);
+  }
+
+  /// STRB (immediate).
+  void strb(A64Gp rt, A64Gp rn, [int offset = 0]) {
+    _enc.strb(rt, rn, offset);
+  }
+
+  /// STRH (immediate).
+  void strh(A64Gp rt, A64Gp rn, [int offset = 0]) {
+    _enc.strh(rt, rn, offset);
   }
 
   /// LDP - Load pair.

@@ -27,6 +27,13 @@ void main() {
       asm.str(x0, sp, 16);
       asm.ldr(x0, sp, 16);
       asm.ldp(x29, x30, sp, 0);
+      asm.strb(w0, sp, 0);
+      asm.ldrb(w1, sp, 0);
+      asm.strh(w2, sp, 2);
+      asm.ldrh(w3, sp, 2);
+      asm.ldrsb(x4, sp, 0);
+      asm.ldrsh(x5, sp, 2);
+      asm.ldrsw(x6, sp, 4);
 
       final bytes = asm.code.text.buffer.bytes;
       expect(bytes.length, greaterThan(0));
@@ -37,6 +44,8 @@ void main() {
       asm.b(label);
       asm.nop();
       asm.bind(label);
+      asm.adr(x0, 8); // small PC-rel
+      asm.adrp(x1, 0); // page-rel zero
       asm.ret();
 
       asm.finalize();

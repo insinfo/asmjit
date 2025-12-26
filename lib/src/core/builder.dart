@@ -267,11 +267,23 @@ class FuncRetNode extends BaseNode {
 
 /// Function call node (Invoke).
 class InvokeNode extends BaseNode {
-  // TODO: Add target, usage info
-  InvokeNode() : super(NodeType.invoke, NodeFlags.isCode);
+  /// Target of the invocation (Label, pointer, or register).
+  final Object target;
+
+  /// Arguments passed to the call (as IR operands).
+  final List<Operand> args;
+
+  /// Optional return register (virtual or physical).
+  final BaseReg? ret;
+
+  InvokeNode({
+    required this.target,
+    this.args = const [],
+    this.ret,
+  }) : super(NodeType.invoke, NodeFlags.isCode);
 
   @override
-  String toString() => 'InvokeNode()';
+  String toString() => 'InvokeNode(target: $target, args: ${args.length})';
 }
 
 /// Basic Block node.
@@ -280,6 +292,12 @@ class BlockNode extends BaseNode {
   final Label label;
   final List<BlockNode> predecessors = [];
   final List<BlockNode> successors = [];
+
+  /// Liveness sets (used by liveness analysis).
+  final Set<BaseReg> use = {};
+  final Set<BaseReg> def = {};
+  final Set<BaseReg> liveIn = {};
+  final Set<BaseReg> liveOut = {};
 
   BlockNode(this.label) : super(NodeType.label, NodeFlags.actsAsLabel);
 
@@ -291,6 +309,14 @@ class BlockNode extends BaseNode {
         block.predecessors.add(this);
       }
     }
+  }
+
+  /// Clears liveness information.
+  void resetLiveness() {
+    use.clear();
+    def.clear();
+    liveIn.clear();
+    liveOut.clear();
   }
 
   @override
