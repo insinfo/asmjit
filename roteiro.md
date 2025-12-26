@@ -1,4 +1,4 @@
-# Roteiro de Portação: AsmJit C++ → Dart
+ # Roteiro de Portação: AsmJit C++ → Dart
 
 
 roteiro bem prático (e incremental) para portar o AsmJit (C++) C:\MyDartProjects\asmjit\referencias\asmtk-master C:\MyDartProjects\asmjit\referencias\asmjit-master para Dart, mantendo alto desempenho e a filosofia FFI para ponteiros + libc para alocação, APIs do SO para memória executável, convenções de chamada da plataforma, e uma API “inline” de bytes ( “assembly inline via constantes para o dart”).
@@ -16,7 +16,7 @@ porte os geradores e tools para dart
 C:\MyDartProjects\asmjit\referencias\asmjit-master\db
 C:\MyDartProjects\asmjit\referencias\asmjit-master\tools
 
-nunca edite o codigo gerado e sim o gerador de codigo
+nunca edite o codigo .g.dart gerado e sim o gerador de codigo
 
 implementar o gerador Gerar dispatcher/serializer AArch64 a partir do DB (similar ao x86) e ligar no a64_assembler.dart.
 Portar as suites pesadas do asmjit-testing (assembler_x64/x86, compiler_x86/a64, emitters, instinfo, bench) removendo os skips.
@@ -52,7 +52,7 @@ docker run --rm --platform linux/arm64 dart:stable bash -lc "uname -m"
 ## 📊 Status Atual
 
 **Data**: 25 Dezembro 2024  
-**Testes**: ✅ 345 (8 skips dos ports asmjit-testing ainda pendentes)  
+**Testes**: ✅ 364 (2 skips dos ports asmjit-testing ainda pendentes)  
 **Warnings**: 0
 
 Atualizações recentes:
@@ -61,6 +61,12 @@ Atualizações recentes:
 - gen_tables.dart integra enumgen opcional.
 - gen_a64_db captura categorias/extensões/raw para futuro dispatcher A64 e agora gera handlers para ldrb/ldrh/strb/strh.
 - smoke tests de dispatcher/instdb adicionados (asmjit_testing_port_test.dart).
+- Suite asmjit_test_instinfo parcialmente portada (checagem de nomes/IDs); skips reduzidos.
+- NEON inteiro (add/sub/mul/and/orr/eor) e dispatcher A64 para vetores adicionados.
+- Suite asmjit_test_compiler_x86 portada com multiplos cenarios (branch, loop, jumps, spills basicos).
+- X86CodeBuilder agora cria labels via CodeHolder e faz shuffle seguro de argumentos.
+- Scaffold inicial de asmjit_test_assembler_x86/x64 (sanity encoding) sem depender de referencias/.
+- Scaffold inicial de asmjit_test_emitters (nop/int3/ret) sem depender de referencias/.
 
 ---
 

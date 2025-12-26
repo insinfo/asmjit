@@ -34,6 +34,11 @@ void main() {
       asm.ldrsb(x4, sp, 0);
       asm.ldrsh(x5, sp, 2);
       asm.ldrsw(x6, sp, 4);
+      asm.strVec(v0.q, sp, 0);
+      asm.ldrVec(v1.q, sp, 0);
+      asm.ldrVecLiteral(v2.q, 0);
+      asm.ldur(x7, sp, -8);
+      asm.stur(x8, sp, -8);
 
       final bytes = asm.code.text.buffer.bytes;
       expect(bytes.length, greaterThan(0));
@@ -63,6 +68,24 @@ void main() {
       expect(bytes.length, equals(8));
       expect(bytes.sublist(0, 4), equals([0x20, 0x28, 0x22, 0x1E]));
       expect(bytes.sublist(4, 8), equals([0x20, 0x28, 0x62, 0x1E]));
+    });
+
+    test('Vector ALU (integer)', () {
+      asm.addVec(v0.s, v1.s, v2.s);
+      asm.subVec(v0.s, v1.s, v2.s);
+      asm.mulVec(v0.s, v1.s, v2.s);
+      asm.andVec(v0.q, v1.q, v2.q);
+      asm.orrVec(v0.q, v1.q, v2.q);
+      asm.eorVec(v0.q, v1.q, v2.q);
+
+      final bytes = asm.code.text.buffer.bytes;
+      expect(bytes.length, equals(24));
+      expect(bytes.sublist(0, 4), equals([0x20, 0x84, 0xA2, 0x4E])); // add
+      expect(bytes.sublist(4, 8), equals([0x20, 0x84, 0xA2, 0x6E])); // sub
+      expect(bytes.sublist(8, 12), equals([0x20, 0x9C, 0xA2, 0x4E])); // mul
+      expect(bytes.sublist(12, 16), equals([0x20, 0x1C, 0x22, 0x4E])); // and
+      expect(bytes.sublist(16, 20), equals([0x20, 0x1C, 0xA2, 0x4E])); // orr
+      expect(bytes.sublist(20, 24), equals([0x20, 0x1C, 0x22, 0x6E])); // eor
     });
   });
 }

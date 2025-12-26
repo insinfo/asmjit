@@ -2722,3 +2722,8 @@ A64InstInfo? a64InstByName(String name) {
   }
   return null;
 }
+
+A64InstInfo? a64InstById(int id) {
+  if (id < 0 || id >= kA64InstDb.length) return null;
+  return kA64InstDb[id];
+}

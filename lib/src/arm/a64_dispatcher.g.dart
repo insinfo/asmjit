@@ -22,7 +22,7 @@ void a64Dispatch(A64Assembler asm, int instId, List<Object> ops) {
       _adrp(asm, ops);
       break;
     case A64InstId.kAnd:
-      _binaryReg(asm, ops, (rd, rn, rm) => asm.and(rd, rn, rm));
+      _and(asm, ops);
       break;
     case A64InstId.kAsr:
       _shift(asm, ops, A64Shift.asr);
@@ -55,7 +55,7 @@ void a64Dispatch(A64Assembler asm, int instId, List<Object> ops) {
       _cmp(asm, ops);
       break;
     case A64InstId.kEor:
-      _binaryReg(asm, ops, (rd, rn, rm) => asm.eor(rd, rn, rm));
+      _eor(asm, ops);
       break;
     case A64InstId.kFadd:
       _vec3(asm, ops, (rd, rn, rm) => asm.fadd(rd, rn, rm));
@@ -115,13 +115,13 @@ void a64Dispatch(A64Assembler asm, int instId, List<Object> ops) {
       _msub(asm, ops);
       break;
     case A64InstId.kMul:
-      _ternaryReg(asm, ops, (rd, rn, rm) => asm.mul(rd, rn, rm));
+      _mul(asm, ops);
       break;
     case A64InstId.kNop:
       if (ops.isEmpty) asm.nop();
       break;
     case A64InstId.kOrr:
-      _binaryReg(asm, ops, (rd, rn, rm) => asm.orr(rd, rn, rm));
+      _orr(asm, ops);
       break;
     case A64InstId.kRet:
       _ret(asm, ops);
@@ -161,6 +161,11 @@ void a64Dispatch(A64Assembler asm, int instId, List<Object> ops) {
 void _add(A64Assembler asm, List<Object> ops) {
   if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is A64Gp) {
     asm.add(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp);
+  } else if (ops.length == 3 &&
+      ops[0] is A64Vec &&
+      ops[1] is A64Vec &&
+      ops[2] is A64Vec) {
+    asm.addVec(ops[0] as A64Vec, ops[1] as A64Vec, ops[2] as A64Vec);
   } else if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int) {
     asm.addImm(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int);
   }
@@ -175,6 +180,11 @@ void _adds(A64Assembler asm, List<Object> ops) {
 void _sub(A64Assembler asm, List<Object> ops) {
   if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is A64Gp) {
     asm.sub(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp);
+  } else if (ops.length == 3 &&
+      ops[0] is A64Vec &&
+      ops[1] is A64Vec &&
+      ops[2] is A64Vec) {
+    asm.subVec(ops[0] as A64Vec, ops[1] as A64Vec, ops[2] as A64Vec);
   } else if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int) {
     asm.subImm(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int);
   }
@@ -190,6 +200,39 @@ void _binaryReg(A64Assembler asm, List<Object> ops,
     void Function(A64Gp, A64Gp, A64Gp) fn) {
   if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is A64Gp) {
     fn(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp);
+  }
+}
+
+void _and(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is A64Gp) {
+    asm.and(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp);
+  } else if (ops.length == 3 &&
+      ops[0] is A64Vec &&
+      ops[1] is A64Vec &&
+      ops[2] is A64Vec) {
+    asm.andVec(ops[0] as A64Vec, ops[1] as A64Vec, ops[2] as A64Vec);
+  }
+}
+
+void _orr(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is A64Gp) {
+    asm.orr(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp);
+  } else if (ops.length == 3 &&
+      ops[0] is A64Vec &&
+      ops[1] is A64Vec &&
+      ops[2] is A64Vec) {
+    asm.orrVec(ops[0] as A64Vec, ops[1] as A64Vec, ops[2] as A64Vec);
+  }
+}
+
+void _eor(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is A64Gp) {
+    asm.eor(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp);
+  } else if (ops.length == 3 &&
+      ops[0] is A64Vec &&
+      ops[1] is A64Vec &&
+      ops[2] is A64Vec) {
+    asm.eorVec(ops[0] as A64Vec, ops[1] as A64Vec, ops[2] as A64Vec);
   }
 }
 
@@ -309,14 +352,26 @@ void _ret(A64Assembler asm, List<Object> ops) {
 }
 
 void _ldr(A64Assembler asm, List<Object> ops) {
-  if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int) {
-    asm.ldr(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int);
+  if (ops.length == 3 && ops[1] is A64Gp && ops[2] is int) {
+    final base = ops[1] as A64Gp;
+    final off = ops[2] as int;
+    if (ops[0] is A64Gp) {
+      asm.ldr(ops[0] as A64Gp, base, off);
+    } else if (ops[0] is A64Vec) {
+      asm.ldrVec(ops[0] as A64Vec, base, off);
+    }
   }
 }
 
 void _str(A64Assembler asm, List<Object> ops) {
-  if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int) {
-    asm.str(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int);
+  if (ops.length == 3 && ops[1] is A64Gp && ops[2] is int) {
+    final base = ops[1] as A64Gp;
+    final off = ops[2] as int;
+    if (ops[0] is A64Gp) {
+      asm.str(ops[0] as A64Gp, base, off);
+    } else if (ops[0] is A64Vec) {
+      asm.strVec(ops[0] as A64Vec, base, off);
+    }
   }
 }
 
@@ -362,6 +417,30 @@ void _strh(A64Assembler asm, List<Object> ops) {
   }
 }
 
+void _ldur(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 3 && ops[1] is A64Gp && ops[2] is int) {
+    final base = ops[1] as A64Gp;
+    final off = ops[2] as int;
+    if (ops[0] is A64Gp) {
+      asm.ldur(ops[0] as A64Gp, base, off);
+    } else if (ops[0] is A64Vec) {
+      asm.ldrVecUnscaled(ops[0] as A64Vec, base, off);
+    }
+  }
+}
+
+void _stur(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 3 && ops[1] is A64Gp && ops[2] is int) {
+    final base = ops[1] as A64Gp;
+    final off = ops[2] as int;
+    if (ops[0] is A64Gp) {
+      asm.stur(ops[0] as A64Gp, base, off);
+    } else if (ops[0] is A64Vec) {
+      asm.strVecUnscaled(ops[0] as A64Vec, base, off);
+    }
+  }
+}
+
 void _ldp(A64Assembler asm, List<Object> ops) {
   if (ops.length == 4 &&
       ops[0] is A64Gp &&
@@ -386,6 +465,17 @@ void _ternaryReg(A64Assembler asm, List<Object> ops,
     void Function(A64Gp, A64Gp, A64Gp) fn) {
   if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is A64Gp) {
     fn(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp);
+  }
+}
+
+void _mul(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is A64Gp) {
+    asm.mul(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp);
+  } else if (ops.length == 3 &&
+      ops[0] is A64Vec &&
+      ops[1] is A64Vec &&
+      ops[2] is A64Vec) {
+    asm.mulVec(ops[0] as A64Vec, ops[1] as A64Vec, ops[2] as A64Vec);
   }
 }
 

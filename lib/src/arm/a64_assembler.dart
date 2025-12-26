@@ -273,6 +273,41 @@ class A64Assembler {
     _enc.strImm(rt, rn, offset);
   }
 
+  /// LDR (SIMD/FP, immediate).
+  void ldrVec(A64Vec vt, A64Gp rn, [int offset = 0]) {
+    _enc.ldrVec(vt, rn, offset);
+  }
+
+  /// STR (SIMD/FP, immediate).
+  void strVec(A64Vec vt, A64Gp rn, [int offset = 0]) {
+    _enc.strVec(vt, rn, offset);
+  }
+
+  /// LDR (SIMD/FP, unscaled signed offset).
+  void ldrVecUnscaled(A64Vec vt, A64Gp rn, [int offset = 0]) {
+    _enc.ldrVecUnscaled(vt, rn, offset);
+  }
+
+  /// STR (SIMD/FP, unscaled signed offset).
+  void strVecUnscaled(A64Vec vt, A64Gp rn, [int offset = 0]) {
+    _enc.strVecUnscaled(vt, rn, offset);
+  }
+
+  /// LDR (SIMD/FP, literal PC-relative).
+  void ldrVecLiteral(A64Vec vt, int offset) {
+    _enc.ldrVecLiteral(vt, offset);
+  }
+
+  /// LDUR (GP, unscaled signed offset).
+  void ldur(A64Gp rt, A64Gp rn, [int offset = 0]) {
+    _enc.ldur(rt, rn, offset);
+  }
+
+  /// STUR (GP, unscaled signed offset).
+  void stur(A64Gp rt, A64Gp rn, [int offset = 0]) {
+    _enc.stur(rt, rn, offset);
+  }
+
   /// STRB (immediate).
   void strb(A64Gp rt, A64Gp rn, [int offset = 0]) {
     _enc.strb(rt, rn, offset);
@@ -356,6 +391,34 @@ class A64Assembler {
 
   /// FDIV (scalar).
   void fdiv(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.fdiv(rd, rn, rm);
+
+  // ===========================================================================
+  // NEON (integer) - Vector ALU
+  // ===========================================================================
+
+  void addVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
+    _enc.addVec(rd, rn, rm, wide: wide);
+  }
+
+  void subVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
+    _enc.subVec(rd, rn, rm, wide: wide);
+  }
+
+  void mulVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
+    _enc.mulVec(rd, rn, rm, wide: wide);
+  }
+
+  void andVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
+    _enc.andVec(rd, rn, rm, wide: wide);
+  }
+
+  void orrVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
+    _enc.orrVec(rd, rn, rm, wide: wide);
+  }
+
+  void eorVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
+    _enc.eorVec(rd, rn, rm, wide: wide);
+  }
 
   // ===========================================================================
   // Prologue/Epilogue Helpers

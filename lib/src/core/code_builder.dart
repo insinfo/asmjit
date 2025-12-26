@@ -84,6 +84,11 @@ class X86CodeBuilder extends ir.BaseBuilder {
     return _argRegs[index];
   }
 
+  @override
+  Label newLabel() {
+    return code.newLabel();
+  }
+
   // ===========================================================================
   // Instructions
   // ===========================================================================
@@ -329,30 +334,7 @@ class X86CodeBuilder extends ir.BaseBuilder {
     }
 
     // 5. Move Arguments (Prologue)
-    final physArgRegs = _getPhysicalArgRegs();
-    for (int i = 0; i < _argRegs.length && i < physArgRegs.length; i++) {
-      final argVreg = _argRegs[i];
-      final physArg = physArgRegs[i];
-
-      // If argVreg is assigned a physical register different from input arg reg
-      // or if it was spilled.
-      if (argVreg.physReg != null && argVreg.physReg != physArg) {
-        asm.movRR(argVreg.physReg!, physArg);
-      } else if (argVreg.isSpilled) {
-        // Store to stack
-        final offset = argVreg.spillOffset;
-
-        // Frame pointer (RBP) relative access
-        // If we have a frame, spills are at RBP - localOffset
-        // FuncFrame gives us getLocalOffset.
-        // But SimpleRegAlloc calculates `spillOffset` starting from 0.
-        // We need to map RA spill offset to Stack Frame offset.
-        // RA assumes [BP - 8 - offset].
-        // FuncFrame handles this logic in getLocalOffset.
-        // For now, assume simple RBP-based addressing if we have a frame.
-        asm.movMR(X86Mem.baseDisp(rbp, -8 - offset), physArg);
-      }
-    }
+    _emitArgMoves(asm);
 
     // 6. Serialize the body (Nodes)
     // Use custom serializer to handle RET -> Epilogue
@@ -362,6 +344,90 @@ class X86CodeBuilder extends ir.BaseBuilder {
     return runtime.add(code);
   }
 
+  void _emitArgMoves(X86Assembler asm) {
+    final physArgRegs = _getPhysicalArgRegs();
+    final moves = <_ArgMove>[];
+
+    // Spills must be stored before any register moves that could clobber sources.
+    for (int i = 0; i < _argRegs.length && i < physArgRegs.length; i++) {
+      final argVreg = _argRegs[i];
+      final physArg = physArgRegs[i];
+      if (argVreg.isSpilled) {
+        final offset = argVreg.spillOffset;
+        asm.movMR(X86Mem.baseDisp(rbp, -8 - offset), physArg);
+      } else if (argVreg.physReg != null && argVreg.physReg != physArg) {
+        moves.add(_ArgMove(argVreg.physReg!, physArg));
+      }
+    }
+
+    if (moves.isEmpty) return;
+
+    final used = <X86Gp>{};
+    for (final m in moves) {
+      used.add(m.dst);
+      used.add(m.src);
+    }
+
+    while (moves.isNotEmpty) {
+      final idx = _findIndependentMove(moves);
+      if (idx != -1) {
+        final m = moves.removeAt(idx);
+        asm.movRR(m.dst, m.src);
+        continue;
+      }
+
+      final temp = _findTempReg(used);
+      final m = moves.removeAt(0);
+      if (temp != null) {
+        asm.movRR(temp, m.src);
+        moves.insert(0, _ArgMove(m.dst, temp));
+        used.add(temp);
+      } else {
+        asm.push(m.src);
+        asm.pop(m.dst);
+      }
+    }
+  }
+
+  int _findIndependentMove(List<_ArgMove> moves) {
+    for (var i = 0; i < moves.length; i++) {
+      final dst = moves[i].dst;
+      var usedAsSrc = false;
+      for (var j = 0; j < moves.length; j++) {
+        if (i == j) continue;
+        if (moves[j].src == dst) {
+          usedAsSrc = true;
+          break;
+        }
+      }
+      if (!usedAsSrc) return i;
+    }
+    return -1;
+  }
+
+  X86Gp? _findTempReg(Set<X86Gp> used) {
+    const temps = [
+      r11,
+      r10,
+      r9,
+      r8,
+      rcx,
+      rdx,
+      rax,
+      rbx,
+      rsi,
+      rdi,
+      r12,
+      r13,
+      r14,
+      r15
+    ];
+    for (final reg in temps) {
+      if (!used.contains(reg)) return reg;
+    }
+    return null;
+  }
+
   List<X86Gp> _getPhysicalArgRegs() {
     if (callingConvention == CallingConvention.win64) {
       return [rcx, rdx, r8, r9];
@@ -369,6 +435,13 @@ class X86CodeBuilder extends ir.BaseBuilder {
       return [rdi, rsi, rdx, rcx, r8, r9];
     }
   }
+}
+
+class _ArgMove {
+  final X86Gp dst;
+  final X86Gp src;
+
+  _ArgMove(this.dst, this.src);
 }
 
 class _FuncSerializer extends X86Serializer {

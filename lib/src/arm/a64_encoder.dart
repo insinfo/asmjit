@@ -43,6 +43,21 @@ class A64Encoder {
   /// Encode shift type (2 bits).
   int _encShift(A64Shift shift) => shift.encoding & 0x3;
 
+  int _vecElemSizeBits(A64Vec vt) {
+    switch (vt.sizeBits) {
+      case 8:
+        return 0;
+      case 16:
+        return 1;
+      case 32:
+        return 2;
+      case 64:
+        return 3;
+      default:
+        throw ArgumentError('Unsupported vector element size: ${vt.sizeBits}');
+    }
+  }
+
   // ===========================================================================
   // Data Processing - Immediate
   // ===========================================================================
@@ -411,6 +426,86 @@ class A64Encoder {
     _emitLoadStore(load: false, size: size, rt: rt, rn: rn, offset: offset);
   }
 
+  int _vecSizeBits(A64Vec vt) {
+    switch (vt.sizeBits) {
+      case 32:
+        return 0;
+      case 64:
+        return 1;
+      case 128:
+        return 2;
+      default:
+        throw ArgumentError('Unsupported vector size: ${vt.sizeBits}');
+    }
+  }
+
+  /// LDR (SIMD&FP, immediate, unsigned offset) - Load vector register.
+  /// Encoding: size|111100|1|imm12|Rn|Rt
+  void ldrVec(A64Vec vt, A64Gp rn, int offset) {
+    final size = _vecSizeBits(vt);
+    final scale = size + 2; // bytes = 4,8,16
+    final imm12 = (offset >> scale) & 0xFFF;
+    final inst = (size << 30) |
+        (0x3C << 24) |
+        (1 << 22) |
+        (imm12 << 10) |
+        (_encReg(rn) << 5) |
+        _encVec(vt);
+    emit32(inst);
+  }
+
+  /// LDR (SIMD&FP, literal) - PC-relative load vector register.
+  /// Encoding: size|011000|1|imm19|Rt
+  void ldrVecLiteral(A64Vec vt, int offset) {
+    final size = _vecSizeBits(vt);
+    final imm19 = (offset >> 2) & 0x7FFFF;
+    final inst = (size << 30) | (0x18 << 24) | (1 << 22) | (imm19 << 5) | _encVec(vt);
+    emit32(inst);
+  }
+
+  /// STR (SIMD&FP, immediate, unsigned offset) - Store vector register.
+  void strVec(A64Vec vt, A64Gp rn, int offset) {
+    final size = _vecSizeBits(vt);
+    final scale = size + 2; // bytes = 4,8,16
+    final imm12 = (offset >> scale) & 0xFFF;
+    final inst = (size << 30) |
+        (0x3C << 24) |
+        (0 << 22) |
+        (imm12 << 10) |
+        (_encReg(rn) << 5) |
+        _encVec(vt);
+    emit32(inst);
+  }
+
+  /// LDR (SIMD&FP, unscaled) - Load vector register with signed 9-bit offset.
+  /// Encoding: size|111000|1|imm9|10|Rn|Rt
+  void ldrVecUnscaled(A64Vec vt, A64Gp rn, int offset) {
+    final size = _vecSizeBits(vt);
+    final imm9 = offset & 0x1FF; // signed, lower 9 bits
+    final inst = (size << 30) |
+        (0x38 << 24) |
+        (1 << 22) |
+        (imm9 << 12) |
+        (2 << 10) | // unscaled addressing mode
+        (_encReg(rn) << 5) |
+        _encVec(vt);
+    emit32(inst);
+  }
+
+  /// STR (SIMD&FP, unscaled) - Store vector register with signed 9-bit offset.
+  void strVecUnscaled(A64Vec vt, A64Gp rn, int offset) {
+    final size = _vecSizeBits(vt);
+    final imm9 = offset & 0x1FF;
+    final inst = (size << 30) |
+        (0x38 << 24) |
+        (0 << 22) |
+        (imm9 << 12) |
+        (2 << 10) |
+        (_encReg(rn) << 5) |
+        _encVec(vt);
+    emit32(inst);
+  }
+
   /// LDRB (immediate, unsigned offset) - Load byte.
   void ldrb(A64Gp rt, A64Gp rn, int offset) {
     _emitLoadStore(load: true, size: 0, rt: rt, rn: rn, offset: offset);
@@ -438,6 +533,34 @@ class A64Encoder {
         (0x39 << 24) |
         (2 << 22) | // sign-extend variant
         (imm12 << 10) |
+        (_encReg(rn) << 5) |
+        _encReg(rt);
+    emit32(inst);
+  }
+
+  /// LDUR (unscaled) - Load GP register with signed 9-bit offset.
+  void ldur(A64Gp rt, A64Gp rn, int offset) {
+    final size = _encSf(rt) == 1 ? 3 : 2;
+    final imm9 = offset & 0x1FF;
+    final inst = (size << 30) |
+        (0x18 << 24) | // 011000 load/store (unscaled)
+        (1 << 22) | // load
+        (imm9 << 12) |
+        (0 << 10) |
+        (_encReg(rn) << 5) |
+        _encReg(rt);
+    emit32(inst);
+  }
+
+  /// STUR (unscaled) - Store GP register with signed 9-bit offset.
+  void stur(A64Gp rt, A64Gp rn, int offset) {
+    final size = _encSf(rt) == 1 ? 3 : 2;
+    final imm9 = offset & 0x1FF;
+    final inst = (size << 30) |
+        (0x18 << 24) |
+        (0 << 22) | // store
+        (imm9 << 12) |
+        (0 << 10) |
         (_encReg(rn) << 5) |
         _encReg(rt);
     emit32(inst);
@@ -563,6 +686,72 @@ class A64Encoder {
         (_encReg(rn) << 5) |
         _encReg(rd);
     emit32(inst);
+  }
+
+  // ===========================================================================
+  // NEON (integer) - Vector ALU
+  // ===========================================================================
+
+  void _vec3SameInt(int base, int op, A64Vec rd, A64Vec rn, A64Vec rm,
+      {bool wide = true}) {
+    final sz = _vecElemSizeBits(rd);
+    final q = wide ? 1 : 0;
+    final inst = (base << 24) |
+        (q << 30) |
+        (sz << 22) |
+        (1 << 21) |
+        (_encVec(rm) << 16) |
+        (op << 11) |
+        (1 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  void _vec3SameLogic(int base, int op2, int op, A64Vec rd, A64Vec rn, A64Vec rm,
+      {bool wide = true}) {
+    final q = wide ? 1 : 0;
+    final inst = (base << 24) |
+        (q << 30) |
+        (op2 << 22) |
+        (1 << 21) |
+        (_encVec(rm) << 16) |
+        (op << 11) |
+        (1 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// ADD (vector).
+  void addVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
+    // TODO: Support explicit 64-bit vectors (Q=0) through API call sites.
+    _vec3SameInt(0x0E, 0x10, rd, rn, rm, wide: wide);
+  }
+
+  /// SUB (vector).
+  void subVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
+    _vec3SameInt(0x2E, 0x10, rd, rn, rm, wide: wide);
+  }
+
+  /// MUL (vector).
+  void mulVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
+    _vec3SameInt(0x0E, 0x13, rd, rn, rm, wide: wide);
+  }
+
+  /// AND (vector).
+  void andVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
+    _vec3SameLogic(0x0E, 0x0, 0x03, rd, rn, rm, wide: wide);
+  }
+
+  /// ORR (vector).
+  void orrVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
+    _vec3SameLogic(0x0E, 0x2, 0x03, rd, rn, rm, wide: wide);
+  }
+
+  /// EOR (vector).
+  void eorVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
+    _vec3SameLogic(0x2E, 0x0, 0x03, rd, rn, rm, wide: wide);
   }
 
   // ===========================================================================
