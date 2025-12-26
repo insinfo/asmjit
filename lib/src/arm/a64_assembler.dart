@@ -297,6 +297,22 @@ class A64Assembler {
   }
 
   // ===========================================================================
+  // Floating Point Instructions
+  // ===========================================================================
+
+  /// FADD (scalar).
+  void fadd(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.fadd(rd, rn, rm);
+
+  /// FSUB (scalar).
+  void fsub(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.fsub(rd, rn, rm);
+
+  /// FMUL (scalar).
+  void fmul(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.fmul(rd, rn, rm);
+
+  /// FDIV (scalar).
+  void fdiv(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.fdiv(rd, rn, rm);
+
+  // ===========================================================================
   // Prologue/Epilogue Helpers
   // ===========================================================================
 

@@ -31,8 +31,8 @@ class A64Encoder {
   /// Encode register field (5 bits).
   int _encReg(A64Gp reg) => reg.id & 0x1F;
 
-  // /// Encode vector register field (5 bits).
-  // int _encVec(A64Vec reg) => reg.id & 0x1F;
+  /// Encode vector register field (5 bits).
+  int _encVec(A64Vec reg) => reg.id & 0x1F;
 
   /// Encode size field for GP registers (sf bit).
   int _encSf(A64Gp reg) => reg.is64Bit ? 1 : 0;
@@ -506,6 +506,50 @@ class A64Encoder {
   /// SVC - Supervisor call (system call).
   void svc(int imm16) {
     final inst = (0xD4 << 24) | (0 << 21) | ((imm16 & 0xFFFF) << 5) | 1;
+    emit32(inst);
+  }
+
+  // ===========================================================================
+  // Floating Point
+  // ===========================================================================
+
+  /// FADD (scalar).
+  void fadd(A64Vec rd, A64Vec rn, A64Vec rm) {
+    final type = rd.sizeBits == 64 ? 1 : 0;
+    final inst = ((type == 1 ? 0x1E602800 : 0x1E202800)) |
+        (_encVec(rm) << 16) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// FSUB (scalar).
+  void fsub(A64Vec rd, A64Vec rn, A64Vec rm) {
+    final type = rd.sizeBits == 64 ? 1 : 0;
+    final inst = ((type == 1 ? 0x1E603800 : 0x1E203800)) |
+        (_encVec(rm) << 16) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// FMUL (scalar).
+  void fmul(A64Vec rd, A64Vec rn, A64Vec rm) {
+    final type = rd.sizeBits == 64 ? 1 : 0;
+    final inst = ((type == 1 ? 0x1E600800 : 0x1E200800)) |
+        (_encVec(rm) << 16) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// FDIV (scalar).
+  void fdiv(A64Vec rd, A64Vec rn, A64Vec rm) {
+    final type = rd.sizeBits == 64 ? 1 : 0;
+    final inst = ((type == 1 ? 0x1E601800 : 0x1E201800)) |
+        (_encVec(rm) << 16) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
     emit32(inst);
   }
 }

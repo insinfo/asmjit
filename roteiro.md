@@ -12,6 +12,13 @@ coloque comentarios \\ TODO onde não esta concluido ou completo
 
 O arquivo serializer_benchmark.dart
 
+porte os geradores e tools para dart
+C:\MyDartProjects\asmjit\referencias\asmjit-master\db
+C:\MyDartProjects\asmjit\referencias\asmjit-master\tools
+
+porte os testes para dart
+C:\MyDartProjects\asmjit\referencias\asmjit-master\asmjit-testing
+
 demonstrou claramente que o switch (e o if-else, que é isomórfico neste contexto) supera significativamente as buscas baseadas em List
 ou Map (aceleração de aproximadamente 3x). Isso justifica a geração de uma tabela de despacho estática.
 
@@ -186,8 +193,8 @@ docker run --rm --platform linux/arm64 dart:stable bash -lc "uname -m"
 
 | # | Status | Descrição | Prioridade |
 |---|--------|-----------|------------|
-| M21 | 🚧 | Compiler IR Expansion (FuncNode, BlockNode, CFG) | Prerequisite for Blend2D |
-| M22 | 🚧 | AArch64 Backend Completion (Match x86 features) | Core for portable pipelines |
+| M21 | 🏗️ | Compiler IR Expansion (FuncNode, BlockNode, CFG) | Added nodes to Builder |
+| M22 | 🚧 | AArch64 Backend Completion | Added FP instructions & tests |
 | M23 | ⏳ | JitRuntime Pipeline Caching (Pointer<Void> stubs) | Performance for JIT |
 
 ---
