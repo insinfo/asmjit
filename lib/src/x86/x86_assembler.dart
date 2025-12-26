@@ -142,6 +142,15 @@ class X86Assembler {
     _enc.movR32Imm32(dst.r32, imm);
   }
 
+  /// MOV reg, imm (convenience method - auto-selects size).
+  void movRI(X86Gp dst, int imm) {
+    if (dst.bits == 64) {
+      movRI64(dst, imm);
+    } else {
+      movRI32(dst, imm);
+    }
+  }
+
   /// MOV r64, [mem].
   void movRM(X86Gp dst, X86Mem mem) {
     _enc.movR64Mem(dst, mem);
@@ -150,6 +159,11 @@ class X86Assembler {
   /// MOV [mem], r64.
   void movMR(X86Mem mem, X86Gp src) {
     _enc.movMemR64(mem, src);
+  }
+
+  /// MOV [mem], imm.
+  void movMI(X86Mem mem, int imm) {
+    _enc.movMemImm32(mem, imm);
   }
 
   // ===========================================================================
@@ -187,6 +201,27 @@ class X86Assembler {
       _enc.subR64Imm32(dst, imm);
     }
   }
+
+  /// ADD r64, [mem].
+  void addRM(X86Gp dst, X86Mem mem) => _enc.addR64Mem(dst, mem);
+
+  /// SUB r64, [mem].
+  void subRM(X86Gp dst, X86Mem mem) => _enc.subR64Mem(dst, mem);
+
+  /// AND r64, [mem].
+  void andRM(X86Gp dst, X86Mem mem) => _enc.andR64Mem(dst, mem);
+
+  /// OR r64, [mem].
+  void orRM(X86Gp dst, X86Mem mem) => _enc.orR64Mem(dst, mem);
+
+  /// XOR r64, [mem].
+  void xorRM(X86Gp dst, X86Mem mem) => _enc.xorR64Mem(dst, mem);
+
+  /// CMP r64, [mem].
+  void cmpRM(X86Gp dst, X86Mem mem) => _enc.cmpR64Mem(dst, mem);
+
+  /// TEST r64, [mem].
+  void testRM(X86Gp dst, X86Mem mem) => _enc.testR64Mem(dst, mem);
 
   /// IMUL dst, src.
   void imulRR(X86Gp dst, X86Gp src) {
@@ -911,6 +946,35 @@ class X86Assembler {
   void sqrtssXX(X86Xmm dst, X86Xmm src) => _enc.sqrtssXmmXmm(dst, src);
 
   // ===========================================================================
+  // SSE/SSE2 - Packed single-precision arithmetic
+  // ===========================================================================
+
+  /// ADDPS xmm, xmm (add packed single)
+  void addps(X86Xmm dst, X86Xmm src) => _enc.addpsXmmXmm(dst, src);
+
+  /// SUBPS xmm, xmm (subtract packed single)
+  void subps(X86Xmm dst, X86Xmm src) => _enc.subpsXmmXmm(dst, src);
+
+  /// MULPS xmm, xmm (multiply packed single)
+  void mulps(X86Xmm dst, X86Xmm src) => _enc.mulpsXmmXmm(dst, src);
+
+  /// DIVPS xmm, xmm (divide packed single)
+  void divps(X86Xmm dst, X86Xmm src) => _enc.divpsXmmXmm(dst, src);
+
+  /// MINPS xmm, xmm (minimum packed single)
+  void minps(X86Xmm dst, X86Xmm src) => _enc.minpsXmmXmm(dst, src);
+
+  /// MAXPS xmm, xmm (maximum packed single)
+  void maxps(X86Xmm dst, X86Xmm src) => _enc.maxpsXmmXmm(dst, src);
+
+  // ===========================================================================
+  // SSE/SSE2 - Logical (convenience aliases)
+  // ===========================================================================
+
+  /// XORPS xmm, xmm (XOR packed single) - also used to zero registers
+  void xorps(X86Xmm dst, X86Xmm src) => _enc.xorpsXmmXmm(dst, src);
+
+  // ===========================================================================
   // SSE/SSE2 - Logical
   // ===========================================================================
 
@@ -1021,9 +1085,16 @@ class X86Assembler {
   void vaddpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
       _enc.vaddpsXmmXmmXmm(dst, src1, src2);
 
-  /// VADDPD xmm, xmm, xmm (VEX add packed double 128-bit)
   void vaddpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
       _enc.vaddpdXmmXmmXmm(dst, src1, src2);
+
+  /// VSUBPS xmm, xmm, xmm (VEX subtract packed single 128-bit)
+  void vsubpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vsubpsXmmXmmXmm(dst, src1, src2);
+
+  /// VSUBPD xmm, xmm, xmm (VEX subtract packed double 128-bit)
+  void vsubpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vsubpdXmmXmmXmm(dst, src1, src2);
 
   // ===========================================================================
   // AVX - Packed arithmetic 256-bit (VEX-encoded)
@@ -1040,6 +1111,14 @@ class X86Assembler {
   /// VADDPD ymm, ymm, ymm (VEX add packed double 256-bit)
   void vaddpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
       _enc.vaddpdYmmYmmYmm(dst, src1, src2);
+
+  /// VSUBPS ymm, ymm, ymm (VEX subtract packed single 256-bit)
+  void vsubpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vsubpsYmmYmmYmm(dst, src1, src2);
+
+  /// VSUBPD ymm, ymm, ymm (VEX subtract packed double 256-bit)
+  void vsubpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vsubpdYmmYmmYmm(dst, src1, src2);
 
   /// VMULPD ymm, ymm, ymm (VEX multiply packed double 256-bit)
   void vmulpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
@@ -1207,4 +1286,42 @@ class X86Assembler {
 
   /// VCVTPD2PS ymm, zmm (AVX-512)
   void vcvtpd2psYmm(X86Ymm dst, X86Zmm src) => _enc.vcvtpd2psYmmZmm(dst, src);
+
+  // ===========================================================================
+  // Part Added by Antigravity for ChaCha20 Benchmark (SSE2 extensions)
+  // ===========================================================================
+
+  /// PADDD xmm, xmm
+  void padddXX(X86Xmm dst, X86Xmm src) => _enc.padddXmmXmm(dst, src);
+
+  /// POR xmm, xmm
+  void porXX(X86Xmm dst, X86Xmm src) => _enc.porXmmXmm(dst, src);
+
+  /// PSLLD xmm, imm8
+  void pslldXI(X86Xmm dst, int imm8) => _enc.pslldXmmImm8(dst, imm8);
+
+  /// PSRLD xmm, imm8
+  void psrldXI(X86Xmm dst, int imm8) => _enc.psrldXmmImm8(dst, imm8);
+
+  /// PSHUFD xmm, xmm, imm8
+  void pshufdXXI(X86Xmm dst, X86Xmm src, int imm8) =>
+      _enc.pshufdXmmXmmImm8(dst, src, imm8);
+
+  /// MOVUPS xmm, [mem]
+  void movupsXM(X86Xmm dst, X86Mem mem) => _enc.movupsXmmMem(dst, mem);
+
+  /// MOVUPS [mem], xmm
+  void movupsMX(X86Mem mem, X86Xmm src) => _enc.movupsMemXmm(mem, src);
+
+  /// MOVAPS xmm, [mem]
+  void movapsXM(X86Xmm dst, X86Mem mem) => _enc.movapsXmmMem(dst, mem);
+
+  /// MOVAPS [mem], xmm
+  void movapsMX(X86Mem mem, X86Xmm src) => _enc.movapsMemXmm(mem, src);
+
+  /// MOVD xmm, [mem]
+  void movdXM(X86Xmm dst, X86Mem mem) => _enc.movdXmmMem(dst, mem);
+
+  /// MOVD [mem], xmm
+  void movdMX(X86Mem mem, X86Xmm src) => _enc.movdMemXmm(mem, src);
 }

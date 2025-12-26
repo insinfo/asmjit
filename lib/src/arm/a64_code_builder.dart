@@ -37,6 +37,9 @@ class A64CodeBuilder extends ir.BaseBuilder {
   @override
   Label newLabel() => code.newLabel();
 
+  /// Current code offset.
+  int get offset => code.text.buffer.length;
+
   /// Configure stack size for prologue/epilogue.
   void setStackSize(int size) {
     if (size < 0) {
@@ -83,10 +86,6 @@ class A64CodeBuilder extends ir.BaseBuilder {
     return aapcs64VecArgRegs[index];
   }
 
-  // -------------------------------------------------------------------------
-  // Instructions (subset)
-  // -------------------------------------------------------------------------
-
   void mov(A64Gp rd, A64Gp rn) => _inst(A64InstId.kMov, [rd, rn]);
 
   void add(A64Gp rd, A64Gp rn, Object rmOrImm) {
@@ -95,6 +94,11 @@ class A64CodeBuilder extends ir.BaseBuilder {
 
   void sub(A64Gp rd, A64Gp rn, Object rmOrImm) {
     _inst(A64InstId.kSub, [rd, rn, rmOrImm]);
+  }
+
+  void mul(A64Gp rd, A64Gp rn, A64Gp rm) {
+    // MUL is alias for MADD rd, rn, rm, xzr
+    _inst(A64InstId.kMadd, [rd, rn, rm, xzr]);
   }
 
   void cmp(A64Gp rn, Object rmOrImm) {
@@ -149,6 +153,10 @@ class A64CodeBuilder extends ir.BaseBuilder {
     _inst(A64InstId.kSub, [rd, rn, rm]);
   }
 
+  void mulVec(A64Vec rd, A64Vec rn, A64Vec rm) {
+    _inst(A64InstId.kMul, [rd, rn, rm]);
+  }
+
   void andVec(A64Vec rd, A64Vec rn, A64Vec rm) {
     _inst(A64InstId.kAnd, [rd, rn, rm]);
   }
@@ -167,6 +175,10 @@ class A64CodeBuilder extends ir.BaseBuilder {
 
   void fmul(A64Vec rd, A64Vec rn, A64Vec rm) {
     _inst(A64InstId.kFmul, [rd, rn, rm]);
+  }
+
+  void fdiv(A64Vec rd, A64Vec rn, A64Vec rm) {
+    _inst(A64InstId.kFdiv, [rd, rn, rm]);
   }
 
   void nop() => _inst(A64InstId.kNop, []);
@@ -236,7 +248,8 @@ class _A64FuncSerializer extends A64Serializer {
   final _A64RegAlloc alloc;
   final int spillBase;
 
-  _A64FuncSerializer(A64Assembler asm, this.frameSize, this.alloc, this.spillBase)
+  _A64FuncSerializer(
+      A64Assembler asm, this.frameSize, this.alloc, this.spillBase)
       : super(asm);
 
   @override
@@ -483,11 +496,36 @@ const List<A64Vec> _allocVecRegs = [
   v26,
   v27,
   v28,
-  v29,
 ];
 
-const List<A64Gp> _scratchGpRegs = [x9, x10];
-const List<A64Vec> _scratchVecRegs = [v30, v31];
+const List<A64Gp> _scratchGpRegs = [
+  x0,
+  x1,
+  x2,
+  x3,
+  x4,
+  x5,
+  x6,
+  x7,
+  x8,
+  x9,
+  x10,
+  x16,
+  x17,
+];
+const List<A64Vec> _scratchVecRegs = [
+  v30,
+  v31,
+  v29,
+  v0,
+  v1,
+  v2,
+  v3,
+  v4,
+  v5,
+  v6,
+  v7
+];
 
 int _align16(int value) => (value + 15) & ~15;
 
@@ -815,7 +853,6 @@ class _ScratchAllocator {
         return reg;
       }
     }
-    // TODO: allow more scratch regs when multiple spills appear.
     throw StateError('A64 scratch GP registers exhausted');
   }
 
@@ -826,7 +863,6 @@ class _ScratchAllocator {
         return reg;
       }
     }
-    // TODO: allow more scratch regs when multiple spills appear.
     throw StateError('A64 scratch vector registers exhausted');
   }
 

@@ -142,8 +142,7 @@ class SimpleRegAlloc {
         rdx,
         r8,
         r9,
-        r10,
-        r11,
+        // r11,
         rbx,
         rdi,
         rsi,
@@ -163,8 +162,7 @@ class SimpleRegAlloc {
         rdi,
         r8,
         r9,
-        r10,
-        r11,
+        // r11, // Reserved for scratch (spill resolution)
         rbx,
         r12,
         r13,
@@ -320,10 +318,13 @@ class SimpleRegAlloc {
       final spilledReg = longest.vreg.physReg!;
       longest.vreg.isSpilled = true;
       longest.vreg.spillOffset = _allocSpillSlot();
+      longest.vreg.physReg = null;
 
       // Assign to new interval
       newInterval.vreg.physReg = spilledReg;
       _gpAssignments[spilledReg] = newInterval.vreg;
+      active.remove(longest);
+      active.add(newInterval);
     } else {
       // Spill the new interval
       newInterval.vreg.isSpilled = true;
@@ -348,9 +349,12 @@ class SimpleRegAlloc {
       final spilledReg = longest.vreg.physXmm!;
       longest.vreg.isSpilled = true;
       longest.vreg.spillOffset = _allocSpillSlot();
+      longest.vreg.physXmm = null;
 
       newInterval.vreg.physXmm = spilledReg;
       _xmmAssignments[spilledReg] = newInterval.vreg;
+      active.remove(longest);
+      active.add(newInterval);
     } else {
       newInterval.vreg.isSpilled = true;
       newInterval.vreg.spillOffset = _allocSpillSlot();

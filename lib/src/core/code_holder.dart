@@ -318,4 +318,7 @@ class CodeHolder {
     }
     _labelManager.clear();
   }
+
+  /// Re-initializes the code holder (alias for reset).
+  void reinit() => reset();
 }

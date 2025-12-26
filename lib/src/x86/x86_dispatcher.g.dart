@@ -292,6 +292,8 @@ void _mov(X86Assembler asm, List<Object> ops) {
     asm.movRM(dst, src);
   } else if (dst is X86Mem && src is X86Gp) {
     asm.movMR(dst, src);
+  } else if (dst is X86Mem && src is int) {
+    asm.movMI(dst, src);
   }
 }
 

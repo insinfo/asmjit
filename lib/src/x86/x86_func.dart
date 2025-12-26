@@ -386,8 +386,12 @@ class FuncFrameEmitter {
     }
 
     // Allocate stack space
-    if (frame.frameSize > 0) {
-      _asm.subRI(rsp, frame.frameSize);
+    // frameSize includes saved registers + locals + alignment padding.
+    // We already pushed saved registers. So we only need to alloc the rest.
+    final savedSize = frame.savedRegisters.length * 8;
+    final remaining = frame.frameSize - savedSize;
+    if (remaining > 0) {
+      _asm.subRI(rsp, remaining);
     }
 
     // Win64: Allocate shadow space for calls
@@ -397,8 +401,10 @@ class FuncFrameEmitter {
   /// Emits the function epilogue.
   void emitEpilogue() {
     // Deallocate stack space
-    if (frame.frameSize > 0) {
-      _asm.addRI(rsp, frame.frameSize);
+    final savedSize = frame.savedRegisters.length * 8;
+    final remaining = frame.frameSize - savedSize;
+    if (remaining > 0) {
+      _asm.addRI(rsp, remaining);
     }
 
     // Pop callee-saved registers (reverse order)

@@ -55,6 +55,9 @@ class X86CodeBuilder extends ir.BaseBuilder {
     );
   }
 
+  /// Current code offset.
+  int get offset => code.text.buffer.length;
+
   // ===========================================================================
   // Register management
   // ===========================================================================
@@ -99,15 +102,15 @@ class X86CodeBuilder extends ir.BaseBuilder {
   }
 
   /// VMOVUPS (unaligned move packed single)
-  void vmovups(VirtReg dst, Object src) {
+  void vmovups(Object dst, Object src) {
     inst(X86InstId.kMovups,
-        [ir.RegOperand(dst), _toOperand(src)]); // Mapped to kMovups
+        [_toOperand(dst), _toOperand(src)]); // Mapped to kMovups
   }
 
   /// VMOVUPD (unaligned move packed double)
-  void vmovupd(VirtReg dst, Object src) {
+  void vmovupd(Object dst, Object src) {
     inst(X86InstId.kMovups, [
-      ir.RegOperand(dst),
+      _toOperand(dst),
       _toOperand(src)
     ]); // Note: sharing ID? Check mappings.
     // X86InstId might have movupd. Assuming yes.
@@ -119,20 +122,20 @@ class X86CodeBuilder extends ir.BaseBuilder {
   // ... (Other standard methods preserved)
 
   /// ADD vreg, vreg/imm
-  void add(VirtReg dst, Object src) {
-    inst(X86InstId.kAdd, [ir.RegOperand(dst), _toOperand(src)]);
+  void add(Object dst, Object src) {
+    inst(X86InstId.kAdd, [_toOperand(dst), _toOperand(src)]);
   }
 
   /// VADDPS (packed single add)
-  void vaddps(VirtReg dst, VirtReg src1, VirtReg src2) {
+  void vaddps(Object dst, Object src1, Object src2) {
     inst(X86InstId.kAddps,
-        [ir.RegOperand(dst), ir.RegOperand(src1), ir.RegOperand(src2)]);
+        [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
   }
 
   /// VADDPD (packed double add)
-  void vaddpd(VirtReg dst, VirtReg src1, VirtReg src2) {
+  void vaddpd(Object dst, Object src1, Object src2) {
     inst(X86InstId.kAddpd,
-        [ir.RegOperand(dst), ir.RegOperand(src1), ir.RegOperand(src2)]);
+        [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
   }
 
   // ...
@@ -159,37 +162,201 @@ class X86CodeBuilder extends ir.BaseBuilder {
             node.operands[i] = ir.RegOperand(phys);
           } else if (vreg.isSpilled) {
             // Rewrite to MemOperand [rbp - offset]
-            final offset = vreg.spillOffset;
-            node.operands[i] = ir.MemOperand(X86Mem.baseDisp(rbp, -8 - offset));
+            // We need correct offset from RBP, considering saved registers.
+            // SimpleRegAlloc gives spillOffset as index*8.
+            final slotIndex = vreg.spillOffset ~/ 8;
+            int offset = 0;
+            if (_funcFrame != null) {
+              offset = _funcFrame!.getLocalOffset(slotIndex);
+              // getLocalOffset returns negative offset from RBP
+            } else {
+              // Fallback (shouldn't happen if build order is correct)
+              offset = -8 - vreg.spillOffset;
+            }
+            node.operands[i] = ir.MemOperand(X86Mem.baseDisp(rbp, offset));
           }
         }
+      }
+
+      // Check for mov [mem], imm (might require 64-bit size but encoder defaults to 32-bit?)
+      // Safe option: Rewrite to mov r11, imm; mov [mem], r11
+      if (node.instId == X86InstId.kMov &&
+          node.operands.length == 2 &&
+          node.operands[0] is ir.MemOperand &&
+          node.operands[1] is ir.ImmOperand) {
+        final immSrc = node.operands[1] as ir.ImmOperand;
+
+        // Insert MOV r11, imm before
+        final movNode =
+            ir.InstNode(X86InstId.kMov, [ir.RegOperand(r11), immSrc]);
+        nodes.insertBefore(movNode, node);
+
+        // Replace current node with MOV [mem], r11
+        // We modify source operand to be r11.
+        node.operands[1] = ir.RegOperand(r11);
+      }
+
+      if (_rewriteUnsupportedMemOps(node)) {
+        continue;
+      }
+
+      // Check for double memory operands (illegal in x86)
+      // We assume binary instructions with 2 operands for now.
+      if (node.operands.length == 2 &&
+          node.operands[0] is ir.MemOperand &&
+          node.operands[1] is ir.MemOperand) {
+        // illegal: op [mem], [mem]
+        // Fix: mov r11, [mem_src]
+        //      op [mem_dst], r11
+        final memSrc = node.operands[1] as ir.MemOperand;
+
+        // Insert MOV r11, memSrc before this node
+        final movNode =
+            ir.InstNode(X86InstId.kMov, [ir.RegOperand(r11), memSrc]);
+        nodes.insertBefore(movNode, node);
+
+        // Replace source operand with r11
+        node.operands[1] = ir.RegOperand(r11);
       }
     }
   }
 
+  bool _rewriteUnsupportedMemOps(ir.InstNode node) {
+    const binaryReadWrite = {
+      X86InstId.kAdd,
+      X86InstId.kSub,
+      X86InstId.kAnd,
+      X86InstId.kOr,
+      X86InstId.kXor,
+      X86InstId.kImul,
+      X86InstId.kShl,
+      X86InstId.kShr,
+      X86InstId.kSar,
+      X86InstId.kRol,
+      X86InstId.kRor,
+    };
+    const binaryReadOnly = {
+      X86InstId.kCmp,
+      X86InstId.kTest,
+    };
+    const unaryReadWrite = {
+      X86InstId.kInc,
+      X86InstId.kDec,
+      X86InstId.kNeg,
+      X86InstId.kNot,
+    };
+    const unaryReadOnly = {
+      X86InstId.kMul,
+      X86InstId.kDiv,
+      X86InstId.kIdiv,
+    };
+
+    final instId = node.instId;
+    final ops = node.operands;
+
+    final isBinary = ops.length == 2;
+    final isUnary = ops.length == 1;
+    final isBinaryRw = binaryReadWrite.contains(instId);
+    final isBinaryRo = binaryReadOnly.contains(instId);
+    final isUnaryRw = unaryReadWrite.contains(instId);
+    final isUnaryRo = unaryReadOnly.contains(instId);
+
+    if (!isBinary && !isUnary) return false;
+    if (!(isBinaryRw || isBinaryRo || isUnaryRw || isUnaryRo)) return false;
+
+    final writeBack = isBinaryRw || isUnaryRw;
+
+    if (isUnary) {
+      final op = ops[0];
+      if (op is! ir.MemOperand) return false;
+
+      final load = ir.InstNode(
+        X86InstId.kMov,
+        [ir.RegOperand(r11), op],
+      );
+      nodes.insertBefore(load, node);
+      ops[0] = ir.RegOperand(r11);
+
+      if (writeBack) {
+        final store = ir.InstNode(
+          X86InstId.kMov,
+          [op, ir.RegOperand(r11)],
+        );
+        nodes.insertAfter(store, node);
+      }
+      return true;
+    }
+
+    if (!isBinary) return false;
+
+    final dst = ops[0];
+    final src = ops[1];
+    final hasMem = dst is ir.MemOperand || src is ir.MemOperand;
+    if (!hasMem) return false;
+
+    ir.MemOperand? dstMem;
+    BaseReg dstTemp = r11;
+    if (dst is ir.MemOperand) {
+      dstMem = dst;
+      if (src is ir.RegOperand && src.reg == r11) {
+        dstTemp = r10;
+      }
+      final load = ir.InstNode(
+        X86InstId.kMov,
+        [ir.RegOperand(dstTemp), dst],
+      );
+      nodes.insertBefore(load, node);
+      ops[0] = ir.RegOperand(dstTemp);
+    }
+
+    if (src is ir.MemOperand) {
+      final useTemp = dstTemp == r11 ? r10 : r11;
+      final load = ir.InstNode(
+        X86InstId.kMov,
+        [ir.RegOperand(useTemp), src],
+      );
+      nodes.insertBefore(load, node);
+      ops[1] = ir.RegOperand(useTemp);
+    } else if (src is ir.RegOperand &&
+        (src.reg == r11 || src.reg == r10) &&
+        dstMem == null) {
+      // Keep source intact if we aren't rewriting destination.
+    }
+
+    if (dstMem != null && writeBack) {
+      final store = ir.InstNode(
+        X86InstId.kMov,
+        [dstMem, ir.RegOperand(dstTemp)],
+      );
+      nodes.insertAfter(store, node);
+    }
+
+    return true;
+  }
+
   /// SUB vreg, vreg/imm
-  void sub(VirtReg dst, Object src) {
-    inst(X86InstId.kSub, [ir.RegOperand(dst), _toOperand(src)]);
+  void sub(Object dst, Object src) {
+    inst(X86InstId.kSub, [_toOperand(dst), _toOperand(src)]);
   }
 
   /// IMUL vreg, vreg
-  void imul(VirtReg dst, VirtReg src) {
-    inst(X86InstId.kImul, [ir.RegOperand(dst), ir.RegOperand(src)]);
+  void imul(Object dst, Object src) {
+    inst(X86InstId.kImul, [_toOperand(dst), _toOperand(src)]);
   }
 
   /// XOR vreg, vreg
-  void xor(VirtReg dst, VirtReg src) {
-    inst(X86InstId.kXor, [ir.RegOperand(dst), ir.RegOperand(src)]);
+  void xor(Object dst, Object src) {
+    inst(X86InstId.kXor, [_toOperand(dst), _toOperand(src)]);
   }
 
   /// AND vreg, vreg
-  void and(VirtReg dst, VirtReg src) {
-    inst(X86InstId.kAnd, [ir.RegOperand(dst), ir.RegOperand(src)]);
+  void and(Object dst, Object src) {
+    inst(X86InstId.kAnd, [_toOperand(dst), _toOperand(src)]);
   }
 
   /// OR vreg, vreg
-  void or(VirtReg dst, VirtReg src) {
-    inst(X86InstId.kOr, [ir.RegOperand(dst), ir.RegOperand(src)]);
+  void or(Object dst, Object src) {
+    inst(X86InstId.kOr, [_toOperand(dst), _toOperand(src)]);
   }
 
   /// INC vreg
@@ -213,23 +380,23 @@ class X86CodeBuilder extends ir.BaseBuilder {
   }
 
   /// CMP vreg, vreg
-  void cmp(VirtReg a, VirtReg b) {
-    inst(X86InstId.kCmp, [ir.RegOperand(a), ir.RegOperand(b)]);
+  void cmp(Object a, Object b) {
+    inst(X86InstId.kCmp, [_toOperand(a), _toOperand(b)]);
   }
 
   /// TEST vreg, vreg
-  void test(VirtReg a, VirtReg b) {
-    inst(X86InstId.kTest, [ir.RegOperand(a), ir.RegOperand(b)]);
+  void test(Object a, Object b) {
+    inst(X86InstId.kTest, [_toOperand(a), _toOperand(b)]);
   }
 
   /// SHL vreg, imm8
-  void shl(VirtReg dst, int imm8) {
-    inst(X86InstId.kShl, [ir.RegOperand(dst), ir.ImmOperand(imm8)]);
+  void shl(Object dst, int imm8) {
+    inst(X86InstId.kShl, [_toOperand(dst), ir.ImmOperand(imm8)]);
   }
 
   /// SHR vreg, imm8
-  void shr(VirtReg dst, int imm8) {
-    inst(X86InstId.kShr, [ir.RegOperand(dst), ir.ImmOperand(imm8)]);
+  void shr(Object dst, int imm8) {
+    inst(X86InstId.kShr, [_toOperand(dst), ir.ImmOperand(imm8)]);
   }
 
   // ===========================================================================
@@ -309,43 +476,66 @@ class X86CodeBuilder extends ir.BaseBuilder {
   /// Builds the code and returns the executable function.
   JitFunction build(JitRuntime runtime,
       {FuncFrameAttr? frameAttrHint, bool useCache = false, String? cacheKey}) {
+    final asm = X86Assembler(code);
+    _emitToAssembler(asm, frameAttrHint: frameAttrHint);
+
+    if (useCache) {
+      return runtime.addCached(code, key: cacheKey);
+    }
+    return runtime.add(code);
+  }
+
+  /// Finalizes the code without allocating executable memory.
+  FinalizedCode finalize({FuncFrameAttr? frameAttrHint}) {
+    final asm = X86Assembler(code);
+    _emitToAssembler(asm, frameAttrHint: frameAttrHint);
+    return code.finalize();
+  }
+
+  void _emitToAssembler(X86Assembler asm, {FuncFrameAttr? frameAttrHint}) {
     // 1. Run register allocation on IR
     _ra.allocate(nodes);
 
-    // 2. Rewrite IR with physical registers
-    _rewriteRegisters();
-
-    // 3. Setup Assembler
-    final asm = X86Assembler(code);
-
-    // 4. Calculate Frame (Prologue)
+    // 2. Calculate Frame (Prologue)
     if (_funcFrame == null) {
-      // Create minimal frame based on spills or user-provided attr hint.
+      // Determine used callee-saved registers
+      final usedRegs = <X86Gp>{};
+      for (final vreg in _ra.virtualRegs) {
+        if (vreg.physReg != null) usedRegs.add(vreg.physReg!);
+      }
+
+      final preserved = <X86Gp>[];
+      final calleeSaved = FuncFrame.host().calleeSavedRegs;
+      for (final reg in usedRegs) {
+        if (calleeSaved.contains(reg)) {
+          preserved.add(reg);
+        }
+      }
+
       final spillSize = _ra.spillAreaSize;
       final attr = frameAttrHint ??
-          (spillSize > 0
-              ? FuncFrameAttr.nonLeaf(localStackSize: spillSize)
+          (spillSize > 0 || preserved.isNotEmpty
+              ? FuncFrameAttr.nonLeaf(
+                  localStackSize: spillSize, preservedRegs: preserved)
               : FuncFrameAttr.leaf());
       _funcFrame = FuncFrame.host(attr: attr);
     }
+
+    // 3. Rewrite IR with physical registers (now that we have frame offsets)
+    _rewriteRegisters();
 
     if (_funcFrame != null) {
       _frameEmitter = FuncFrameEmitter(_funcFrame!, asm);
       _frameEmitter!.emitPrologue();
     }
 
-    // 5. Move Arguments (Prologue)
+    // 4. Move Arguments (Prologue)
     _emitArgMoves(asm);
 
-    // 6. Serialize the body (Nodes)
+    // 5. Serialize the body (Nodes)
     // Use custom serializer to handle RET -> Epilogue
     final serializer = _FuncSerializer(asm, _frameEmitter);
     serialize(serializer);
-
-    if (useCache) {
-      return runtime.addCached(code, key: cacheKey);
-    }
-    return runtime.add(code);
   }
 
   void _emitArgMoves(X86Assembler asm) {

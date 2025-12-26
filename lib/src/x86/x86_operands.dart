@@ -41,6 +41,10 @@ class X86Mem extends BaseMem {
     this.segment,
   });
 
+  /// Creates a memory operand from a pointer (base register + displacement).
+  static X86Mem ptr(X86Gp base, [int disp = 0]) =>
+      X86Mem.base(base, disp: disp);
+
   /// Creates a memory operand with just a base register.
   const X86Mem.base(X86Gp base, {int disp = 0, int size = 0})
       : this(base: base, displacement: disp, size: size);
@@ -228,8 +232,8 @@ enum X86Seg {
 
 /// Helper functions for creating memory operands.
 
-/// Creates a memory operand: [base]
-X86Mem ptr(X86Gp base, {int size = 0}) => X86Mem.base(base, size: size);
+/// Creates a memory operand: [base + disp]
+X86Mem ptr(X86Gp base, [int disp = 0]) => X86Mem.base(base, disp: disp);
 
 /// Creates a byte memory operand: byte ptr [base]
 X86Mem bytePtr(X86Gp base, [int disp = 0]) =>
@@ -246,6 +250,10 @@ X86Mem dwordPtr(X86Gp base, [int disp = 0]) =>
 /// Creates a qword memory operand: qword ptr [base]
 X86Mem qwordPtr(X86Gp base, [int disp = 0]) =>
     X86Mem.baseDisp(base, disp, size: 8);
+
+/// Creates an xmmword memory operand: xmmword ptr [base]
+X86Mem xmmwordPtr(X86Gp base, [int disp = 0]) =>
+    X86Mem.baseDisp(base, disp, size: 16);
 
 /// RIP-relative memory operand (for x86-64).
 class X86RipMem extends BaseMem {

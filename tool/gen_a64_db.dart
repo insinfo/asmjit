@@ -315,6 +315,39 @@ class A64DbGenerator {
       'fsub',
       'fmul',
       'fdiv',
+      // FP additional
+      'fneg',
+      'fabs',
+      'fsqrt',
+      'fcmp',
+      'fcsel',
+      // NEON integer additional
+      'neg',
+      'mvn',
+      'abs',
+      'cls',
+      'clz',
+      'cnt',
+      'rev16',
+      'rev32',
+      'rev64',
+      // NEON FP vector
+      'faddp',
+      'fmaxnm',
+      'fminnm',
+      'fmax',
+      'fmin',
+      // Vector moves
+      'dup',
+      'ins',
+      'umov',
+      'smov',
+      // Bit manipulation
+      'bic',
+      'orn',
+      'bif',
+      'bit',
+      'bsl',
     };
 
     final sorted = _instructions.values
@@ -334,7 +367,8 @@ class A64DbGenerator {
     buf.writeln('');
     buf.writeln(
         '/// Dispatches A64 instruction IDs to assembler methods for the supported set.');
-    buf.writeln('void a64Dispatch(A64Assembler asm, int instId, List<Object> ops) {');
+    buf.writeln(
+        'void a64Dispatch(A64Assembler asm, int instId, List<Object> ops) {');
     buf.writeln('  switch (instId) {');
     for (final inst in sorted) {
       final cname = _capitalize(_toConstName(inst.name));
@@ -442,14 +476,10 @@ class A64DbGenerator {
       case 'msub':
         return _useHelper(used, '_msub', '_msub(asm, ops);');
       case 'sdiv':
-        return _useHelper(
-            used,
-            '_ternaryReg',
+        return _useHelper(used, '_ternaryReg',
             "_ternaryReg(asm, ops, (rd, rn, rm) => asm.sdiv(rd, rn, rm));");
       case 'udiv':
-        return _useHelper(
-            used,
-            '_ternaryReg',
+        return _useHelper(used, '_ternaryReg',
             "_ternaryReg(asm, ops, (rd, rn, rm) => asm.udiv(rd, rn, rm));");
       case 'nop':
         return 'if (ops.isEmpty) asm.nop();';
@@ -458,17 +488,101 @@ class A64DbGenerator {
       case 'svc':
         return 'if (ops.length == 1 && ops[0] is int) asm.svc(ops[0] as int);';
       case 'fadd':
-        return _useHelper(
-            used, '_vec3', "_vec3(asm, ops, (rd, rn, rm) => asm.fadd(rd, rn, rm));");
+        return _useHelper(used, '_vec3',
+            "_vec3(asm, ops, (rd, rn, rm) => asm.fadd(rd, rn, rm));");
       case 'fsub':
-        return _useHelper(
-            used, '_vec3', "_vec3(asm, ops, (rd, rn, rm) => asm.fsub(rd, rn, rm));");
+        return _useHelper(used, '_vec3',
+            "_vec3(asm, ops, (rd, rn, rm) => asm.fsub(rd, rn, rm));");
       case 'fmul':
-        return _useHelper(
-            used, '_vec3', "_vec3(asm, ops, (rd, rn, rm) => asm.fmul(rd, rn, rm));");
+        return _useHelper(used, '_vec3',
+            "_vec3(asm, ops, (rd, rn, rm) => asm.fmul(rd, rn, rm));");
       case 'fdiv':
+        return _useHelper(used, '_vec3',
+            "_vec3(asm, ops, (rd, rn, rm) => asm.fdiv(rd, rn, rm));");
+      // FP additional instructions
+      case 'fneg':
         return _useHelper(
-            used, '_vec3', "_vec3(asm, ops, (rd, rn, rm) => asm.fdiv(rd, rn, rm));");
+            used, '_vec2', "_vec2(asm, ops, (rd, rn) => asm.fneg(rd, rn));");
+      case 'fabs':
+        return _useHelper(
+            used, '_vec2', "_vec2(asm, ops, (rd, rn) => asm.fabs(rd, rn));");
+      case 'fsqrt':
+        return _useHelper(
+            used, '_vec2', "_vec2(asm, ops, (rd, rn) => asm.fsqrt(rd, rn));");
+      case 'fcmp':
+        return _useHelper(
+            used, '_vec2', "_vec2(asm, ops, (rn, rm) => asm.fcmp(rn, rm));");
+      case 'fcsel':
+        return _useHelper(used, '_fcsel', "_fcsel(asm, ops);");
+      // NEON integer additional
+      case 'neg':
+        return _useHelper(
+            used, '_vec2', "_vec2(asm, ops, (rd, rn) => asm.neg(rd, rn));");
+      case 'mvn':
+        return _useHelper(
+            used, '_vec2', "_vec2(asm, ops, (rd, rn) => asm.mvn(rd, rn));");
+      case 'abs':
+        return _useHelper(
+            used, '_vec2', "_vec2(asm, ops, (rd, rn) => asm.abs(rd, rn));");
+      case 'cls':
+        return _useHelper(
+            used, '_vec2', "_vec2(asm, ops, (rd, rn) => asm.cls(rd, rn));");
+      case 'clz':
+        return _useHelper(
+            used, '_vec2', "_vec2(asm, ops, (rd, rn) => asm.clz(rd, rn));");
+      case 'cnt':
+        return _useHelper(
+            used, '_vec2', "_vec2(asm, ops, (rd, rn) => asm.cnt(rd, rn));");
+      case 'rev16':
+        return _useHelper(
+            used, '_vec2', "_vec2(asm, ops, (rd, rn) => asm.rev16(rd, rn));");
+      case 'rev32':
+        return _useHelper(
+            used, '_vec2', "_vec2(asm, ops, (rd, rn) => asm.rev32(rd, rn));");
+      case 'rev64':
+        return _useHelper(
+            used, '_vec2', "_vec2(asm, ops, (rd, rn) => asm.rev64(rd, rn));");
+      // NEON FP vector
+      case 'faddp':
+        return _useHelper(used, '_vec3',
+            "_vec3(asm, ops, (rd, rn, rm) => asm.faddp(rd, rn, rm));");
+      case 'fmaxnm':
+        return _useHelper(used, '_vec3',
+            "_vec3(asm, ops, (rd, rn, rm) => asm.fmaxnmVec(rd, rn, rm));");
+      case 'fminnm':
+        return _useHelper(used, '_vec3',
+            "_vec3(asm, ops, (rd, rn, rm) => asm.fminnmVec(rd, rn, rm));");
+      case 'fmax':
+        return _useHelper(used, '_vec3',
+            "_vec3(asm, ops, (rd, rn, rm) => asm.fmaxVec(rd, rn, rm));");
+      case 'fmin':
+        return _useHelper(used, '_vec3',
+            "_vec3(asm, ops, (rd, rn, rm) => asm.fminVec(rd, rn, rm));");
+      // Vector moves
+      case 'dup':
+        return _useHelper(used, '_dup', "_dup(asm, ops);");
+      case 'ins':
+        return _useHelper(used, '_ins', "_ins(asm, ops);");
+      case 'umov':
+        return _useHelper(used, '_umov', "_umov(asm, ops);");
+      case 'smov':
+        return _useHelper(used, '_smov', "_smov(asm, ops);");
+      // Bit manipulation
+      case 'bic':
+        return _useHelper(used, '_vec3',
+            "_vec3(asm, ops, (rd, rn, rm) => asm.bic(rd, rn, rm));");
+      case 'orn':
+        return _useHelper(used, '_vec3',
+            "_vec3(asm, ops, (rd, rn, rm) => asm.orn(rd, rn, rm));");
+      case 'bif':
+        return _useHelper(used, '_vec3',
+            "_vec3(asm, ops, (rd, rn, rm) => asm.bif(rd, rn, rm));");
+      case 'bit':
+        return _useHelper(used, '_vec3',
+            "_vec3(asm, ops, (rd, rn, rm) => asm.bit(rd, rn, rm));");
+      case 'bsl':
+        return _useHelper(used, '_vec3',
+            "_vec3(asm, ops, (rd, rn, rm) => asm.bsl(rd, rn, rm));");
       default:
         return '// unsupported';
     }
@@ -866,6 +980,58 @@ void _vec3(A64Assembler asm, List<Object> ops,
   }
 }
 ''',
+      '_vec2': '''
+void _vec2(A64Assembler asm, List<Object> ops,
+    void Function(A64Vec, A64Vec) fn) {
+  if (ops.length == 2 &&
+      ops[0] is A64Vec &&
+      ops[1] is A64Vec) {
+    fn(ops[0] as A64Vec, ops[1] as A64Vec);
+  }
+}
+''',
+      '_fcsel': '''
+void _fcsel(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 4 &&
+      ops[0] is A64Vec &&
+      ops[1] is A64Vec &&
+      ops[2] is A64Vec &&
+      ops[3] is A64Cond) {
+    asm.fcsel(ops[0] as A64Vec, ops[1] as A64Vec, ops[2] as A64Vec, ops[3] as A64Cond);
+  }
+}
+''',
+      '_dup': '''
+void _dup(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 3 &&
+      ops[0] is A64Vec &&
+      ops[1] is A64Vec &&
+      ops[2] is int) {
+    asm.dup(ops[0] as A64Vec, ops[1] as A64Vec, ops[2] as int);
+  }
+}
+''',
+      '_ins': '''
+void _ins(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 4 &&ops[0] is A64Vec && ops[1] is int && ops[2] is A64Vec && ops[3] is int) {
+      asm.ins(ops[0] as A64Vec, ops[1] as int, ops[2] as A64Vec, ops[3] as int);
+  }
+}
+''',
+      '_umov': '''
+void _umov(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Vec && ops[2] is int) {
+      asm.umov(ops[0] as A64Gp, ops[1] as A64Vec, ops[2] as int);
+  }
+}
+''',
+      '_smov': '''
+void _smov(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Vec && ops[2] is int) {
+      asm.smov(ops[0] as A64Gp, ops[1] as A64Vec, ops[2] as int);
+  }
+}
+''',
     };
 
     final ordered = [
@@ -910,6 +1076,12 @@ void _vec3(A64Assembler asm, List<Object> ops,
       '_madd',
       '_msub',
       '_vec3',
+      '_vec2',
+      '_fcsel',
+      '_dup',
+      '_ins',
+      '_umov',
+      '_smov',
     ];
 
     final buf = StringBuffer();

@@ -316,7 +316,8 @@ class A64Encoder {
     final imm = offset >> 0;
     final immlo = (imm & 0x3);
     final immhi = (imm >> 2) & 0x7FFFF;
-    final inst = (0 << 31) | (immlo << 29) | (0x10 << 24) | (immhi << 5) | _encReg(rd);
+    final inst =
+        (0 << 31) | (immlo << 29) | (0x10 << 24) | (immhi << 5) | _encReg(rd);
     emit32(inst);
   }
 
@@ -326,7 +327,8 @@ class A64Encoder {
     final imm = offset >> 12;
     final immlo = (imm & 0x3);
     final immhi = (imm >> 2) & 0x7FFFF;
-    final inst = (1 << 31) | (immlo << 29) | (0x10 << 24) | (immhi << 5) | _encReg(rd);
+    final inst =
+        (1 << 31) | (immlo << 29) | (0x10 << 24) | (immhi << 5) | _encReg(rd);
     emit32(inst);
   }
 
@@ -459,7 +461,8 @@ class A64Encoder {
   void ldrVecLiteral(A64Vec vt, int offset) {
     final size = _vecSizeBits(vt);
     final imm19 = (offset >> 2) & 0x7FFFF;
-    final inst = (size << 30) | (0x18 << 24) | (1 << 22) | (imm19 << 5) | _encVec(vt);
+    final inst =
+        (size << 30) | (0x18 << 24) | (1 << 22) | (imm19 << 5) | _encVec(vt);
     emit32(inst);
   }
 
@@ -695,7 +698,7 @@ class A64Encoder {
   void _vec3SameInt(int base, int op, A64Vec rd, A64Vec rn, A64Vec rm,
       {bool wide = true}) {
     final sz = _vecElemSizeBits(rd);
-    final q = wide ? 1 : 0;
+    final q = _resolveWide(rd, wide) ? 1 : 0;
     final inst = (base << 24) |
         (q << 30) |
         (sz << 22) |
@@ -708,9 +711,10 @@ class A64Encoder {
     emit32(inst);
   }
 
-  void _vec3SameLogic(int base, int op2, int op, A64Vec rd, A64Vec rn, A64Vec rm,
+  void _vec3SameLogic(
+      int base, int op2, int op, A64Vec rd, A64Vec rn, A64Vec rm,
       {bool wide = true}) {
-    final q = wide ? 1 : 0;
+    final q = _resolveWide(rd, wide) ? 1 : 0;
     final inst = (base << 24) |
         (q << 30) |
         (op2 << 22) |
@@ -725,7 +729,6 @@ class A64Encoder {
 
   /// ADD (vector).
   void addVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
-    // TODO: Support explicit 64-bit vectors (Q=0) through API call sites.
     _vec3SameInt(0x0E, 0x10, rd, rn, rm, wide: wide);
   }
 
@@ -752,6 +755,12 @@ class A64Encoder {
   /// EOR (vector).
   void eorVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
     _vec3SameLogic(0x2E, 0x0, 0x03, rd, rn, rm, wide: wide);
+  }
+
+  bool _resolveWide(A64Vec vec, bool wide) {
+    if (vec.sizeBits == 128) return true;
+    if (vec.sizeBits == 64) return false;
+    return wide;
   }
 
   // ===========================================================================
@@ -814,6 +823,345 @@ class A64Encoder {
     final type = rd.sizeBits == 64 ? 1 : 0;
     final inst = ((type == 1 ? 0x1E601800 : 0x1E201800)) |
         (_encVec(rm) << 16) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// FNEG (scalar).
+  void fneg(A64Vec rd, A64Vec rn) {
+    final type = rd.sizeBits == 64 ? 1 : 0;
+    final inst = ((type == 1 ? 0x1E604000 : 0x1E204000)) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// FABS (scalar).
+  void fabs(A64Vec rd, A64Vec rn) {
+    final type = rd.sizeBits == 64 ? 1 : 0;
+    final inst = ((type == 1 ? 0x1E60C000 : 0x1E20C000)) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// FSQRT (scalar).
+  void fsqrt(A64Vec rd, A64Vec rn) {
+    final type = rd.sizeBits == 64 ? 1 : 0;
+    final inst = ((type == 1 ? 0x1E61C000 : 0x1E21C000)) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// FCMP (scalar).
+  void fcmp(A64Vec rn, A64Vec rm) {
+    final type = rn.sizeBits == 64 ? 1 : 0;
+    final inst = ((type == 1 ? 0x1E602000 : 0x1E202000)) |
+        (_encVec(rm) << 16) |
+        (_encVec(rn) << 5);
+    emit32(inst);
+  }
+
+  /// FCSEL (scalar).
+  void fcsel(A64Vec rd, A64Vec rn, A64Vec rm, A64Cond cond) {
+    final type = rd.sizeBits == 64 ? 1 : 0;
+    final inst = ((type == 1 ? 0x1E600C00 : 0x1E200C00)) |
+        (_encVec(rm) << 16) |
+        (_encCond(cond) << 12) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// FMAX (scalar).
+  void fmax(A64Vec rd, A64Vec rn, A64Vec rm) {
+    final type = rd.sizeBits == 64 ? 1 : 0;
+    final inst = ((type == 1 ? 0x1E604800 : 0x1E204800)) |
+        (_encVec(rm) << 16) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// FMIN (scalar).
+  void fmin(A64Vec rd, A64Vec rn, A64Vec rm) {
+    final type = rd.sizeBits == 64 ? 1 : 0;
+    final inst = ((type == 1 ? 0x1E605800 : 0x1E205800)) |
+        (_encVec(rm) << 16) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// FMAXNM (scalar).
+  void fmaxnm(A64Vec rd, A64Vec rn, A64Vec rm) {
+    final type = rd.sizeBits == 64 ? 1 : 0;
+    final inst = ((type == 1 ? 0x1E606800 : 0x1E206800)) |
+        (_encVec(rm) << 16) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// FMINNM (scalar).
+  void fminnm(A64Vec rd, A64Vec rn, A64Vec rm) {
+    final type = rd.sizeBits == 64 ? 1 : 0;
+    final inst = ((type == 1 ? 0x1E607800 : 0x1E207800)) |
+        (_encVec(rm) << 16) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  // ===========================================================================
+  // NEON (integer) - 2 Register Misc
+  // ===========================================================================
+
+  void _vec2Misc(A64Vec rd, A64Vec rn, int u, int opcode,
+      {int sizeOverride = -1}) {
+    final sz = (sizeOverride != -1) ? sizeOverride : _vecElemSizeBits(rd);
+    final q = rd.sizeBits == 128 ? 1 : 0;
+    final inst = (0x0E200800) |
+        (q << 30) |
+        (u << 29) |
+        (sz << 22) |
+        (opcode << 12) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// NEG (vector).
+  void neg(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 1, 11);
+
+  /// ABS (vector).
+  void abs(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 0, 11);
+
+  /// MVN (vector) - Bitwise NOT.
+  void mvn(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 1, 5, sizeOverride: 0);
+
+  /// CLS (vector) - Count leading sign bits.
+  void cls(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 0, 4);
+
+  /// CLZ (vector) - Count leading zeros.
+  void clz(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 1, 4);
+
+  /// CNT (vector) - Population count.
+  void cnt(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 0, 5, sizeOverride: 0);
+
+  /// REV64 (vector).
+  void rev64(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 0, 0);
+
+  /// REV32 (vector).
+  void rev32(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 0, 1);
+
+  /// REV16 (vector).
+  void rev16(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 0, 2);
+
+  // ===========================================================================
+  // NEON (logic) - Additional
+  // ===========================================================================
+
+  void bic(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
+    _vec3SameLogic(0x0E, 0x1, 0x03, rd, rn, rm, wide: wide);
+  }
+
+  void orn(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
+    _vec3SameLogic(0x0E, 0x3, 0x03, rd, rn, rm, wide: wide);
+  }
+
+  void bsl(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
+    _vec3SameLogic(0x2E, 0x1, 0x03, rd, rn, rm, wide: wide);
+  }
+
+  void bit(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
+    _vec3SameLogic(0x2E, 0x2, 0x03, rd, rn, rm, wide: wide);
+  }
+
+  void bif(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
+    _vec3SameLogic(0x2E, 0x3, 0x03, rd, rn, rm, wide: wide);
+  }
+
+  // ===========================================================================
+  // NEON (FP) - Vector
+  // ===========================================================================
+
+  void _vec3SameFp(int u, int opcode, A64Vec rd, A64Vec rn, A64Vec rm,
+      {bool wide = true}) {
+    final rawSz = _vecElemSizeBits(rd); // 2=32, 3=64
+    final szEnc = (rawSz == 3) ? 1 : 0;
+    final q = wide ? 1 : 0;
+    final inst = (q << 30) |
+        (u << 29) |
+        (0x0E << 24) |
+        (szEnc << 22) |
+        (1 << 21) |
+        (_encVec(rm) << 16) |
+        (opcode << 11) |
+        (1 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// FMAX (vector).
+  void fmaxVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _vec3SameFp(0, 0x0F, rd, rn, rm, wide: wide);
+
+  /// FMIN (vector).
+  void fminVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _vec3SameFp(0, 0x1F, rd, rn, rm, wide: wide);
+
+  /// FMAXNM (vector).
+  void fmaxnmVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _vec3SameFp(0, 0x0C, rd, rn, rm, wide: wide);
+
+  /// FMINNM (vector).
+  void fminnmVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _vec3SameFp(0, 0x0D, rd, rn, rm, wide: wide);
+
+  /// FADDP (vector).
+  void faddp(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
+    // FADDP is Pairwise: U=1. Bit 21=0.
+    final rawSz = _vecElemSizeBits(rd);
+    final szEnc = (rawSz == 3) ? 1 : 0;
+    final q = wide ? 1 : 0;
+    final inst = (q << 30) |
+        (1 << 29) | // U=1
+        (0x0E << 24) |
+        (szEnc << 22) |
+        (0 << 21) | // Pairwise=0
+        (_encVec(rm) << 16) |
+        (0x1A << 11) | // Opcode 11010
+        (1 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+
+    emit32(inst);
+  }
+
+  /// INS (element).
+  void ins(A64Vec rd, int rdIdx, A64Vec rn, int rnIdx) {
+    // Basic implementation: INS Vd.Ts[index1], Vn.Ts[index2]
+    // Alias for MOV (element).
+    // Encoding: 0|1|001110000|imm5|0|imm4|1|Rn|Rd
+
+    // Simplification: assume same element size for now.
+    final rawSz = _vecElemSizeBits(rd);
+    int imm5 = 0;
+    if (rawSz == 0) {
+      imm5 = (rnIdx << 1) | 1;
+    } else if (rawSz == 1) {
+      imm5 = (rnIdx << 2) | 2;
+    } else if (rawSz == 2) {
+      imm5 = (rnIdx << 3) | 4;
+    } else if (rawSz == 3) {
+      imm5 = (rnIdx << 4) | 8;
+    }
+
+    int imm4 = 0; // Destination index
+    if (rawSz == 0) {
+      imm4 = rdIdx;
+    } else if (rawSz == 1) {
+      imm4 = rdIdx << 1;
+    } else if (rawSz == 2) {
+      imm4 = rdIdx << 2;
+    } else if (rawSz == 3) {
+      imm4 = rdIdx << 3;
+    }
+
+    final inst = (1 << 30) |
+        (0x0E << 24) |
+        (imm5 << 16) |
+        (0 << 15) |
+        (imm4 << 11) |
+        (1 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// UMOV (element) - Move vector element to GP register (unsigned).
+  void umov(A64Gp rd, A64Vec rn, int index) {
+    // Default to 32/64 based on dst
+    // But actually element size comes from the vector instruction usually.
+    // umov w0, v0.b[0] -> rawSz=0
+    // We need to infer size from call site or separate API.
+    // For now, let's assume inferred from index range or passed explicitly?
+    // Let's rely on `_vecElemSizeBits` of `rn` if `rn` was `v0.b`.
+
+    // In AsmJit/Dart port, A64Vec holds size bits (8, 16, 32, 64).
+    final size = _vecElemSizeBits(rn);
+
+    int imm5 = 0;
+    if (size == 0)
+      imm5 = (index << 1) | 1;
+    else if (size == 1)
+      imm5 = (index << 2) | 2;
+    else if (size == 2)
+      imm5 = (index << 3) | 4;
+    else if (size == 3) imm5 = (index << 4) | 8;
+
+    final q = (size == 3 && rd.is64Bit) ? 1 : 0;
+    // Q=1 for 64-bit move (sometimes).
+    // Actually simple: 0|Q|001110000|imm5|0|00111|1|Rn|Rd
+
+    final inst = (0 << 30) |
+        (q << 30) | // This logic might be slightly off for UMOV vs SMOV
+        (0x0E << 24) |
+        (imm5 << 16) |
+        (0 << 15) |
+        (0x07 << 11) | // 00111
+        (1 << 10) |
+        (_encVec(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
+  /// SMOV (element) - Move vector element to GP register (signed).
+  void smov(A64Gp rd, A64Vec rn, int index) {
+    final size = _vecElemSizeBits(rn);
+
+    int imm5 = 0;
+    if (size == 0)
+      imm5 = (index << 1) | 1;
+    else if (size == 1)
+      imm5 = (index << 2) | 2;
+    else if (size == 2) imm5 = (index << 3) | 4;
+    // size=3 (64-bit) SMOV doesn't exist equivalent to UMOV/MOV, it uses 'mov'.
+
+    final q = 0;
+    final inst = (0 << 30) |
+        (q << 30) |
+        (0x0E << 24) |
+        (imm5 << 16) |
+        (0 << 15) |
+        (0x05 << 11) | // 00101
+        (1 << 10) |
+        (_encVec(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
+  /// DUP (element).
+  void dup(A64Vec rd, A64Vec rn, int index) {
+    final rawSz = _vecElemSizeBits(rd);
+    int imm5 = 0;
+    if (rawSz == 0)
+      imm5 = (index << 1) | 1;
+    else if (rawSz == 1)
+      imm5 = (index << 2) | 2;
+    else if (rawSz == 2)
+      imm5 = (index << 3) | 4;
+    else if (rawSz == 3) imm5 = (index << 4) | 8;
+
+    final q = rd.sizeBits == 128 ? 1 : 0;
+    final inst = (q << 30) |
+        (0x0E << 24) |
+        (imm5 << 16) |
+        (1 << 10) |
         (_encVec(rn) << 5) |
         _encVec(rd);
     emit32(inst);

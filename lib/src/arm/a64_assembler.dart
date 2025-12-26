@@ -421,6 +421,71 @@ class A64Assembler {
   }
 
   // ===========================================================================
+  // Floating Point (Scalar - Additional)
+  // ===========================================================================
+
+  void fneg(A64Vec rd, A64Vec rn) => _enc.fneg(rd, rn);
+  void fabs(A64Vec rd, A64Vec rn) => _enc.fabs(rd, rn);
+  void fsqrt(A64Vec rd, A64Vec rn) => _enc.fsqrt(rd, rn);
+  void fcmp(A64Vec rn, A64Vec rm) => _enc.fcmp(rn, rm);
+  void fcsel(A64Vec rd, A64Vec rn, A64Vec rm, A64Cond cond) =>
+      _enc.fcsel(rd, rn, rm, cond);
+  void fmax(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.fmax(rd, rn, rm);
+  void fmin(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.fmin(rd, rn, rm);
+  void fmaxnm(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.fmaxnm(rd, rn, rm);
+  void fminnm(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.fminnm(rd, rn, rm);
+
+  // ===========================================================================
+  // NEON (Integer) - Misc and Logic
+  // ===========================================================================
+
+  void neg(A64Vec rd, A64Vec rn) => _enc.neg(rd, rn);
+  void abs(A64Vec rd, A64Vec rn) => _enc.abs(rd, rn);
+  void mvn(A64Vec rd, A64Vec rn) => _enc.mvn(rd, rn);
+  void cls(A64Vec rd, A64Vec rn) => _enc.cls(rd, rn);
+  void clz(A64Vec rd, A64Vec rn) => _enc.clz(rd, rn);
+  void cnt(A64Vec rd, A64Vec rn) => _enc.cnt(rd, rn);
+  void rev64(A64Vec rd, A64Vec rn) => _enc.rev64(rd, rn);
+  void rev32(A64Vec rd, A64Vec rn) => _enc.rev32(rd, rn);
+  void rev16(A64Vec rd, A64Vec rn) => _enc.rev16(rd, rn);
+
+  void bic(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _enc.bic(rd, rn, rm, wide: wide);
+  void orn(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _enc.orn(rd, rn, rm, wide: wide);
+  void bsl(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _enc.bsl(rd, rn, rm, wide: wide);
+  void bit(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _enc.bit(rd, rn, rm, wide: wide);
+  void bif(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _enc.bif(rd, rn, rm, wide: wide);
+
+  // ===========================================================================
+  // NEON (FP) - Vector
+  // ===========================================================================
+
+  void fmaxVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _enc.fmaxVec(rd, rn, rm, wide: wide);
+  void fminVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _enc.fminVec(rd, rn, rm, wide: wide);
+  void fmaxnmVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _enc.fmaxnmVec(rd, rn, rm, wide: wide);
+  void fminnmVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _enc.fminnmVec(rd, rn, rm, wide: wide);
+  void faddp(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _enc.faddp(rd, rn, rm, wide: wide);
+
+  // ===========================================================================
+  // Vector Moves
+  // ===========================================================================
+
+  void dup(A64Vec rd, A64Vec rn, int index) => _enc.dup(rd, rn, index);
+  void ins(A64Vec rd, int rdIdx, A64Vec rn, int rnIdx) =>
+      _enc.ins(rd, rdIdx, rn, rnIdx);
+  void umov(A64Gp rd, A64Vec rn, int index) => _enc.umov(rd, rn, index);
+  void smov(A64Gp rd, A64Vec rn, int index) => _enc.smov(rd, rn, index);
+
+  // ===========================================================================
   // Prologue/Epilogue Helpers
   // ===========================================================================
 

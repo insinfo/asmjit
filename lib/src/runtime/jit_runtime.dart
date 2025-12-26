@@ -262,6 +262,11 @@ class JitRuntime {
     VirtMem.release(block);
   }
 
+  /// Releases a JIT function.
+  void release(JitFunction fn) {
+    _release(fn._block);
+  }
+
   /// Disposes all allocated memory.
   void dispose() {
     clearCache();

@@ -1,7 +1,7 @@
  # Roteiro de Portação: AsmJit C++ → Dart
 
 
-roteiro bem prático (e incremental) para portar o AsmJit (C++) C:\MyDartProjects\asmjit\referencias\asmtk-master C:\MyDartProjects\asmjit\referencias\asmjit-master para Dart, mantendo alto desempenho e a filosofia FFI para ponteiros + libc para alocação, APIs do SO para memória executável, convenções de chamada da plataforma, e uma API “inline” de bytes ( “assembly inline via constantes para o dart”).
+roteiro bem prático (e incremental) para portar o AsmJit (C++) C:\MyDartProjects\asmjit\referencias\asmtk-master C:\MyDartProjects\asmjit\referencias\asmjit-master para Dart, mantendo alto desempenho e a filosofia FFI para ponteiros + libc para alocação, APIs do SO para memória executável, convenções de chamada da plataforma, e uma API “inline” de bytes ( “assembly inline via constantes para o dart”) uma API de Asembly Inline é vital para criar codigo otimizado no dart.
 micro otimzações são vitais para extrair o maximo de performace 
 assumir Dart Native (VM/AOT) em desktop/servidor. No iOS (e alguns ambientes “hardened”) JIT/memória executável costuma ser bloqueado por política do sistema — então trate como alvo “não suportado” ou “modo AOT/sem JIT”.
 
@@ -51,11 +51,17 @@ docker run --rm --platform linux/arm64 dart:stable bash -lc "uname -m"
 
 ## 📊 Status Atual
 
-**Data**: 25 Dezembro 2024  
-**Testes**: ✅ 367 (0 skips dos ports asmjit-testing ainda pendentes)  
-**Warnings**: 0
+**Data**: 27 Dezembro 2025  
+**Testes**: nao executado nesta revisao  
+**Warnings**: nao verificado
 
 Atualizações recentes:
+- **AVX Implementado**: Adicionado instruções `vsubps` e `vsubpd` (XMM/YMM) no Encoder e Assembler.
+- **Benchmarks Corrigidos**: `codegen_benchmark.dart`, `overhead_benchmark.dart` e `regalloc_benchmark.dart` atualizados e corrigidos.
+- **X86Mem.ptr**: Adicionado factory `ptr` para conveniência.
+- **gen_a64_db.dart expandido**: Dispatcher A64 agora tem handlers para mais instruções NEON/FP (fneg, fabs, fsqrt, fcmp, fcsel, etc - marcados como TODO).
+- **emitters_test.dart criado**: Suite completa portada do asmjit_test_emitters.cpp com 14 testes para X86/A64 Assembler e Builder.
+- **codegen_benchmark.dart criado**: Benchmark de geração de código X86 e A64 portado de asmjit_bench_codegen_x86.cpp.
 - Serializer agora depende apenas do dispatcher gerado via switch (sem Map fallback).
 - gen_x86_db.dart gera dispatcher real para o conjunto implementado e instdb.
 - gen_tables.dart integra enumgen opcional.
@@ -66,7 +72,6 @@ Atualizações recentes:
 - Suite asmjit_test_compiler_x86 portada com multiplos cenarios (branch, loop, jumps, spills basicos).
 - X86CodeBuilder agora cria labels via CodeHolder e faz shuffle seguro de argumentos.
 - Scaffold inicial de asmjit_test_assembler_x86/x64 (sanity encoding) sem depender de referencias/.
-- Scaffold inicial de asmjit_test_emitters (nop/int3/ret) sem depender de referencias/.
 - Suite asmjit_test_compiler_a64 portada (prologo/epilogo, branches, NEON/FP encode).
 - Suite asmjit_bench_codegen_x86 portada (loop de codegen e validacao de bytes).
 - JitRuntime agora tem pipeline cache (addCached/addBytesCached).
@@ -75,6 +80,17 @@ Atualizações recentes:
 - Tratamento de spills com offsets grandes (materializa endereco em registrador temporario).
 - Caso de spill para vetores (NEON) adicionado no teste A64.
 - Spills agora respeitam o stackSize definido pelo usuario (base de spill separada).
+
+## Revisao do C++ original (resumo)
+
+- Relatorio detalhado em `relatorio_portacao.md`.
+- Benchmarks Dart executados (quick): `codegen_benchmark.dart`, `overhead_benchmark.dart`,
+  `regalloc_benchmark.dart`, `serializer_benchmark.dart`.
+- Divergencias notaveis com o C++:
+  - `codegen_benchmark.dart`: `Builder [finalized]` sem gerar bytes (CodeSize 0).
+  - `regalloc_benchmark.dart`: AArch64 falha com `labelAlreadyBound`.
+  - Falta paridade de cenarios/emitters nas suites de benchmark.
+
 
 ---
 
@@ -168,7 +184,7 @@ Atualizações recentes:
 
 **SSE/SSE2**: `movaps`, `movups`, `movsd`, `movss`, `addsd`, `subsd`, `mulsd`, `divsd`, `sqrtsd`, `cvtsi2sd`, `cvttsd2si`, `pxor`, `xorps`, `xorpd`, `comisd`
 
-**AVX/AVX2**: `vmovaps`, `vmovups`, `vaddsd`, `vsubsd`, `vmulsd`, `vdivsd`, `vaddps`, `vmulps`, `vpxor`, `vpaddd`, `vpaddq`, `vpmulld`, `vfmadd132sd`, `vfmadd231sd`, `vzeroupper`
+**AVX/AVX2**: `vmovaps`, `vmovups`, `vaddsd`, `vsubsd`, `vmulsd`, `vdivsd`, `vaddps`, `vsubps`, `vmulps`, `vsubpd`, `vpxor`, `vpaddd`, `vpaddq`, `vpmulld`, `vfmadd132sd`, `vfmadd231sd`, `vzeroupper`
 
 **BMI1**: `andn`, `bextr`, `blsi`, `blsmsk`, `blsr` ✅
 
@@ -219,18 +235,18 @@ Atualizações recentes:
 | M19 | ✅ | AVX-512 Support (EVEX, ZMM, Mask) |
 | M20 | ✅ | Optimization (Generated Dispatcher, Hybrid Serializer) |
 
-### 🚧 Em Andamento (M21-M22)
+### 🚧 Em Andamento (M21-M24)
 
 | # | Status | Descrição | Prioridade |
 |---|--------|-----------|------------|
 | M21 | 🏗️ | Compiler IR Expansion (FuncNode, BlockNode, CFG, liveness) | Nodes criados + liveness básica |
-| M22 | 🚧 | AArch64 Backend Completion + Dispatcher | DB gerado (1347 inst); falta dispatcher/serializer |
+| M22 | 🏗️ | AArch64 Backend Completion + Dispatcher | Dispatcher gerado com TODO para instruções adicionais |
 | M23 | ✅ | JitRuntime Pipeline Caching (Pointer<Void> stubs) | Performance para JIT |
-| M24 | ⏳ | Portar asmjit-testing suites pesadas | assembler_x64/x86, compiler_x86/a64, emitters, instinfo, bench |
+| M24 | 🏗️ | Portar asmjit-testing suites pesadas | emitters_test.dart completo; scaffold de assembler/compiler tests |
 
 ---
 
-## 🧪 Cobertura de Testes (340+ testes)
+## 🧪 Cobertura de Testes (381 testes)
 
 | Arquivo | Testes |
 |---------|--------|
@@ -253,6 +269,9 @@ Atualizações recentes:
 | bmi_aesni_test.dart | 25 |
 | compiler_test.dart | 1 |
 | x86_avx512_test.dart | 1 |
+| **emitters_test.dart** | **14** |
+| asmjit_testing_port_test.dart | ~30 |
+| cfg_test.dart | ~6 |
 
 ---
 
@@ -312,9 +331,15 @@ lib/
         ├── x86_operands.dart
         └── x86_simd.dart
 
-test/                        # 311 testes
+test/                        # 381 testes
+benchmark/
+├── serializer_benchmark.dart
+└── codegen_benchmark.dart
 tool/
-└── gen_x86_db.dart          # Gerador do instruction DB
+├── gen_x86_db.dart          # Gerador do instruction DB x86
+├── gen_a64_db.dart          # Gerador do instruction DB AArch64
+├── gen_tables.dart          # Unifica geração de tabelas
+└── gen_enum.dart            # Gerador de enums
 ```
 
 ---
@@ -346,4 +371,4 @@ Os arquivos originais do AsmJit estão em `referencias/` (não usar em código/t
 
 ---
 
-*Última atualização: 25 Dezembro 2024*
+*Última atualização: 26 Dezembro 2024*

@@ -1,0 +1,151 @@
+
+ÔòöÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòù
+Ôòæ               ChaCha20 Benchmark - 6 Implementa├º├Áes                    Ôòæ
+ÔòáÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòú
+Ôòæ  1. C puro (DLL)                                                       Ôòæ
+Ôòæ  2. Dart puro (baseline) - List<int>                                   Ôòæ
+Ôòæ  3. Dart otimizado - Uint32List/ByteData/Unroll                        Ôòæ
+Ôòæ  4. Dart FFI Pointer - Pointer<T> direto                               Ôòæ
+Ôòæ  5. Inline ASM - Shellcode SSE2 + VirtualAlloc                         Ôòæ
+Ôòæ  6. AsmJit - C├│digo SSE2 gerado em runtime                             Ôòæ
+ÔòÜÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòØ
+
+Mode: Full
+Platform: windows (3.6.0 (stable) (Thu Dec 5 07:46:24 2024 -0800) on "windows_x64")
+
+
+======================================================================
+1. C PURO (DLL via FFI)
+======================================================================
+DLL loaded successfully
+  C DLL (64B)                              |      843.9 ns/op |       72.3 MiB/s
+  C DLL (1KB)                              |     6886.9 ns/op |      141.8 MiB/s
+  C DLL (64KB)                             |   410910.2 ns/op |      152.1 MiB/s
+  C DLL Pooled (64KB)                      |   184838.2 ns/op |      338.1 MiB/s
+  C DLL noop() overhead                    |       30.4 ns/op |        N/A MiB/s
+
+======================================================================
+2. DART PURO (Baseline - List<int>)
+======================================================================
+  Dart Baseline (64B)                      |     3129.2 ns/op |       19.5 MiB/s
+  Dart Baseline (1KB)                      |    31977.7 ns/op |       30.5 MiB/s
+  Dart Baseline (64KB)                     |  2004127.4 ns/op |       31.2 MiB/s
+
+======================================================================
+3. DART OTIMIZADO (Uint32List, ByteData, Unroll)
+======================================================================
+  Dart Optimized (64B)                     |     3091.6 ns/op |       19.7 MiB/s
+  Dart Optimized (1KB)                     |    45627.9 ns/op |       21.4 MiB/s
+  Dart Optimized (64KB)                    |  2932091.8 ns/op |       21.3 MiB/s
+  Dart Unrolled (64B)                      |     1240.8 ns/op |       49.2 MiB/s
+  Dart Unrolled (1KB)                      |    14135.1 ns/op |       69.1 MiB/s
+  Dart Unrolled (64KB)                     |   959891.2 ns/op |       65.1 MiB/s
+
+======================================================================
+4. DART FFI POINTER (Pointer<T> direto)
+======================================================================
+  Dart FFI Pointer (64B)                   |     1795.6 ns/op |       34.0 MiB/s
+  Dart FFI Pointer (1KB)                   |    30065.1 ns/op |       32.5 MiB/s
+  Dart FFI Pointer (64KB)                  |  1833844.4 ns/op |       34.1 MiB/s
+  Dart FFI Ptr Opt (64B)                   |     1175.7 ns/op |       51.9 MiB/s
+  Dart FFI Ptr Opt (1KB)                   |    15584.9 ns/op |       62.7 MiB/s
+  Dart FFI Ptr Opt (64KB)                  |   998645.6 ns/op |       62.6 MiB/s
+
+======================================================================
+5. INLINE ASM (Shellcode SSE2 + VirtualAlloc)
+======================================================================
+SSE2 supported: yes
+  Inline ASM SSE2 (64B)                    |      462.7 ns/op |      131.9 MiB/s
+  Inline ASM SSE2 (1KB)                    |     6977.7 ns/op |      140.0 MiB/s
+  Inline ASM SSE2 (64KB)                   |   434788.6 ns/op |      143.7 MiB/s
+
+======================================================================
+6. ASMJIT (C├│digo SSE2 gerado em runtime)
+======================================================================
+  AsmJit SSE2 (64B)                        |      455.7 ns/op |      133.9 MiB/s
+  AsmJit SSE2 (1KB)                        |     6888.2 ns/op |      141.8 MiB/s
+  AsmJit SSE2 (64KB)                       |   435985.4 ns/op |      143.4 MiB/s
+
+
+ÔòöÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòù
+Ôòæ                           RESUMO COMPARATIVO                           Ôòæ
+ÔòÜÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòØ
+
+[64B]
+  AsmJit SSE2 (64B)                        133.9 MiB/s  (100.0%) Ôÿà FASTEST
+  Inline ASM SSE2 (64B)                    131.9 MiB/s  (98.5%)
+  C DLL (64B)                               72.3 MiB/s  (54.0%)
+  Dart FFI Ptr Opt (64B)                    51.9 MiB/s  (38.8%)
+  Dart Unrolled (64B)                       49.2 MiB/s  (36.7%)
+  Dart FFI Pointer (64B)                    34.0 MiB/s  (25.4%)
+  Dart Optimized (64B)                      19.7 MiB/s  (14.7%)
+  Dart Baseline (64B)                       19.5 MiB/s  (14.6%)
+
+[1KB]
+  C DLL (1KB)                              141.8 MiB/s  (100.0%) Ôÿà FASTEST
+  AsmJit SSE2 (1KB)                        141.8 MiB/s  (100.0%)
+  Inline ASM SSE2 (1KB)                    140.0 MiB/s  (98.7%)
+  Dart Unrolled (1KB)                       69.1 MiB/s  (48.7%)
+  Dart FFI Ptr Opt (1KB)                    62.7 MiB/s  (44.2%)
+  Dart FFI Pointer (1KB)                    32.5 MiB/s  (22.9%)
+  Dart Baseline (1KB)                       30.5 MiB/s  (21.5%)
+  Dart Optimized (1KB)                      21.4 MiB/s  (15.1%)
+
+[64KB]
+  C DLL Pooled (64KB)                      338.1 MiB/s  (100.0%) Ôÿà FASTEST
+  C DLL (64KB)                             152.1 MiB/s  (45.0%)
+  Inline ASM SSE2 (64KB)                   143.7 MiB/s  (42.5%)
+  AsmJit SSE2 (64KB)                       143.4 MiB/s  (42.4%)
+  Dart Unrolled (64KB)                      65.1 MiB/s  (19.3%)
+  Dart FFI Ptr Opt (64KB)                   62.6 MiB/s  (18.5%)
+  Dart FFI Pointer (64KB)                   34.1 MiB/s  (10.1%)
+  Dart Baseline (64KB)                      31.2 MiB/s  (9.2%)
+  Dart Optimized (64KB)                     21.3 MiB/s  (6.3%)
+
+FFI OVERHEAD ANALYSIS:
+  C ├® 7.14x mais r├ípido que Dart otimizado
+  FFI overhead compensado pelo c├│digo C otimizado
+  FFI call overhead (noop): 30.4 ns/call
+
+
+ÔòöÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòù
+Ôòæ                     ESTRAT├ëGIAS DE OTIMIZA├ç├âO                          Ôòæ
+ÔòÜÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòØ
+
+1. DART PURO:
+   - Use Uint32List ao inv├®s de List<int> para arrays de inteiros
+   - Use ByteData para convers├Áes endian
+   - Pr├®-aloque buffers e reutilize-os
+   - Use loop unrolling manual para hot loops
+   - Evite criar objetos tempor├írios em loops internos
+
+2. FFI POINTER:
+   - Minimize o n├║mero de chamadas FFI (batch operations)
+   - Use Pointer.asTypedList() para views sem c├│pia
+   - Pr├®-aloque ponteiros nativos e reutilize-os
+   - Evite convers├Áes Dart Ôåö Native em loops
+
+3. INLINE ASM:
+   - Use SIMD (SSE2/AVX) para processar m├║ltiplos dados
+   - Agrupe opera├º├Áes em blocos maiores
+   - Use registros ao inv├®s de mem├│ria quando poss├¡vel
+   - Considere cache line alignment
+
+4. ASMJIT:
+   - Gere c├│digo especializado para o caso espec├¡fico
+   - Evite branches condicionais em hot paths
+   - Use instru├º├Áes SIMD quando dispon├¡veis
+   - Cache fun├º├Áes geradas para reutiliza├º├úo
+
+5. QUANDO USAR CADA ABORDAGEM:
+   ÔöîÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔö¼ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÉ
+   Ôöé Abordagem         Ôöé Quando usar                                    Ôöé
+   Ôö£ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔö╝ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöñ
+   Ôöé Dart puro         Ôöé Portabilidade, manuten├º├úo, dados pequenos     Ôöé
+   Ôöé Dart otimizado    Ôöé Performance sem depend├¬ncias, dados m├®dios    Ôöé
+   Ôöé FFI Pointer       Ôöé Integra├º├úo com C existente, dados grandes     Ôöé
+   Ôöé C DLL             Ôöé M├íxima performance, c├│digo cr├¡tico            Ôöé
+   Ôöé Inline ASM        Ôöé Controle total, SIMD manual                   Ôöé
+   Ôöé AsmJit            Ôöé C├│digo adaptativo, JIT especializado          Ôöé
+   ÔööÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔö┤ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÿ
+
