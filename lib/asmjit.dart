@@ -36,6 +36,13 @@ export 'src/x86/x86_simd.dart';
 export 'src/x86/x86_inst_db.g.dart';
 export 'src/x86/x86_serializer.dart';
 
+// ARM64
+export 'src/arm/a64.dart' hide sp;
+export 'src/arm/a64_assembler.dart';
+export 'src/arm/a64_code_builder.dart';
+export 'src/arm/a64_inst_db.g.dart';
+export 'src/arm/a64_serializer.dart';
+
 // Inline
 export 'src/inline/inline_bytes.dart';
 export 'src/inline/inline_asm.dart';

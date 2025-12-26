@@ -3,19 +3,28 @@
 /// Provides registers, operands and instruction encoding for ARM64.
 /// Ported from asmjit/arm/a64globals.h and a64operand.h
 
+import '../core/operand.dart';
+
 // ===========================================================================
 // ARM64 Register Classes
 // ===========================================================================
 
 /// ARM64 General Purpose Register (32-bit or 64-bit).
-class A64Gp {
+class A64Gp extends BaseReg {
   /// Register ID (0-31).
+  @override
   final int id;
 
   /// Size in bits (32 or 64).
   final int sizeBits;
 
   const A64Gp(this.id, this.sizeBits);
+
+  @override
+  RegType get type => RegType.gp;
+
+  @override
+  RegGroup get group => RegGroup.gp;
 
   /// Is this a 64-bit register (X register).
   bool get is64Bit => sizeBits == 64;
@@ -24,6 +33,7 @@ class A64Gp {
   bool get is32Bit => sizeBits == 32;
 
   /// Size in bytes.
+  @override
   int get size => sizeBits ~/ 8;
 
   /// Register encoding.
@@ -59,8 +69,9 @@ class A64Gp {
 }
 
 /// ARM64 SIMD/FP Register (8, 16, 32, 64, or 128 bits).
-class A64Vec {
+class A64Vec extends BaseReg {
   /// Register ID (0-31).
+  @override
   final int id;
 
   /// Size in bits.
@@ -68,7 +79,14 @@ class A64Vec {
 
   const A64Vec(this.id, this.sizeBits);
 
+  @override
+  RegType get type => RegType.vec;
+
+  @override
+  RegGroup get group => RegGroup.vec;
+
   /// Size in bytes.
+  @override
   int get size => sizeBits ~/ 8;
 
   /// Register encoding.

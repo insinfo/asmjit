@@ -66,16 +66,23 @@ class JitRuntime {
   /// Whether executable memory allocation is enabled.
   final bool enableExecutableMemory;
 
+  /// Whether to cache compiled pipelines by key.
+  final bool enablePipelineCache;
+
   /// Virtual memory info (cached).
   late final VirtMemInfo _vmInfo;
 
   /// Track allocated blocks for cleanup.
   final List<VirtMemBlock> _allocatedBlocks = [];
 
+  /// Cache of compiled pipelines.
+  final Map<String, JitFunction> _pipelineCache = {};
+
   /// Creates a new JIT runtime.
   JitRuntime({
     Environment? environment,
     this.enableExecutableMemory = true,
+    this.enablePipelineCache = true,
   }) : environment = environment ?? Environment.host() {
     _vmInfo = VirtMem.info();
   }
@@ -145,6 +152,15 @@ class JitRuntime {
     }
   }
 
+  /// Adds code from a [CodeHolder] using the pipeline cache.
+  ///
+  /// If [key] is not provided, a stable key is derived from the code bytes
+  /// and the target environment.
+  JitFunction addCached(CodeHolder code, {String? key}) {
+    final finalized = code.finalize();
+    return addBytesCached(finalized.textBytes, key: key);
+  }
+
   /// Adds raw bytes as executable code.
   ///
   /// Use this when you already have pre-compiled machine code.
@@ -192,6 +208,54 @@ class JitRuntime {
     }
   }
 
+  /// Adds raw bytes with caching enabled.
+  JitFunction addBytesCached(Uint8List bytes, {String? key}) {
+    if (!enablePipelineCache) {
+      return addBytes(bytes);
+    }
+
+    final cacheKey = key ?? _makeCacheKey(bytes);
+    final cached = _pipelineCache[cacheKey];
+    if (cached != null) {
+      return cached;
+    }
+
+    final fn = addBytes(bytes);
+    _pipelineCache[cacheKey] = fn;
+    return fn;
+  }
+
+  /// Drops a cached pipeline by key.
+  void dropCached(String key) {
+    final fn = _pipelineCache.remove(key);
+    fn?.dispose();
+  }
+
+  /// Clears the pipeline cache.
+  void clearCache() {
+    for (final fn in _pipelineCache.values) {
+      fn.dispose();
+    }
+    _pipelineCache.clear();
+  }
+
+  String _makeCacheKey(Uint8List bytes) {
+    final hash = _hashBytes(bytes);
+    return '${environment.arch.index}'
+        ':${environment.platformABI.index}'
+        ':${bytes.length}'
+        ':$hash';
+  }
+
+  int _hashBytes(Uint8List bytes) {
+    var hash = 0xcbf29ce484222325;
+    for (final b in bytes) {
+      hash ^= b;
+      hash = (hash * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF;
+    }
+    return hash;
+  }
+
   /// Releases a memory block.
   void _release(VirtMemBlock block) {
     _allocatedBlocks.remove(block);
@@ -200,6 +264,7 @@ class JitRuntime {
 
   /// Disposes all allocated memory.
   void dispose() {
+    clearCache();
     for (final block in _allocatedBlocks) {
       try {
         VirtMem.release(block);

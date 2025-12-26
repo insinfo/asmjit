@@ -307,7 +307,8 @@ class X86CodeBuilder extends ir.BaseBuilder {
   }
 
   /// Builds the code and returns the executable function.
-  JitFunction build(JitRuntime runtime, {FuncFrameAttr? frameAttrHint}) {
+  JitFunction build(JitRuntime runtime,
+      {FuncFrameAttr? frameAttrHint, bool useCache = false, String? cacheKey}) {
     // 1. Run register allocation on IR
     _ra.allocate(nodes);
 
@@ -341,6 +342,9 @@ class X86CodeBuilder extends ir.BaseBuilder {
     final serializer = _FuncSerializer(asm, _frameEmitter);
     serialize(serializer);
 
+    if (useCache) {
+      return runtime.addCached(code, key: cacheKey);
+    }
     return runtime.add(code);
   }
 

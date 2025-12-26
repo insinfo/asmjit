@@ -52,7 +52,7 @@ docker run --rm --platform linux/arm64 dart:stable bash -lc "uname -m"
 ## 📊 Status Atual
 
 **Data**: 25 Dezembro 2024  
-**Testes**: ✅ 364 (2 skips dos ports asmjit-testing ainda pendentes)  
+**Testes**: ✅ 367 (0 skips dos ports asmjit-testing ainda pendentes)  
 **Warnings**: 0
 
 Atualizações recentes:
@@ -67,6 +67,14 @@ Atualizações recentes:
 - X86CodeBuilder agora cria labels via CodeHolder e faz shuffle seguro de argumentos.
 - Scaffold inicial de asmjit_test_assembler_x86/x64 (sanity encoding) sem depender de referencias/.
 - Scaffold inicial de asmjit_test_emitters (nop/int3/ret) sem depender de referencias/.
+- Suite asmjit_test_compiler_a64 portada (prologo/epilogo, branches, NEON/FP encode).
+- Suite asmjit_bench_codegen_x86 portada (loop de codegen e validacao de bytes).
+- JitRuntime agora tem pipeline cache (addCached/addBytesCached).
+- A64CodeBuilder agora tem RA + spills (GP/NEON) com slots em stack.
+- Teste de cache do JitRuntime (reuso por chave) adicionado.
+- Tratamento de spills com offsets grandes (materializa endereco em registrador temporario).
+- Caso de spill para vetores (NEON) adicionado no teste A64.
+- Spills agora respeitam o stackSize definido pelo usuario (base de spill separada).
 
 ---
 
@@ -217,7 +225,7 @@ Atualizações recentes:
 |---|--------|-----------|------------|
 | M21 | 🏗️ | Compiler IR Expansion (FuncNode, BlockNode, CFG, liveness) | Nodes criados + liveness básica |
 | M22 | 🚧 | AArch64 Backend Completion + Dispatcher | DB gerado (1347 inst); falta dispatcher/serializer |
-| M23 | ⏳ | JitRuntime Pipeline Caching (Pointer<Void> stubs) | Performance para JIT |
+| M23 | ✅ | JitRuntime Pipeline Caching (Pointer<Void> stubs) | Performance para JIT |
 | M24 | ⏳ | Portar asmjit-testing suites pesadas | assembler_x64/x86, compiler_x86/a64, emitters, instinfo, bench |
 
 ---

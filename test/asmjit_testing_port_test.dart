@@ -7,9 +7,6 @@ import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
 import 'package:asmjit/src/x86/x86_dispatcher.g.dart';
 import 'package:asmjit/src/arm/a64_dispatcher.g.dart';
-import 'package:asmjit/src/arm/a64.dart';
-import 'package:asmjit/src/arm/a64_assembler.dart';
-import 'package:asmjit/src/arm/a64_inst_db.g.dart';
 import 'package:asmjit/src/core/builder.dart' as ir;
 
 void main() {
@@ -151,7 +148,6 @@ void main() {
         builder.mov(rax, sum);
         builder.ret();
 
-        // TODO: validar execucao com spills quando o RA/stack estiver estavel.
         final fn = builder.build(runtime);
         final call = _as2(fn);
         expect(call(40, 2), equals(82));
@@ -307,7 +303,128 @@ void main() {
 
       runtime.dispose();
     });
-    test('asmjit_test_compiler_a64.cpp', () {}, skip: 'pending port');
+    test('asmjit_test_compiler_a64.cpp', () {
+      final env = Environment.aarch64();
+
+      // Caso 1: prologo/epilogo e retorno simples via builder.
+      final builder = A64CodeBuilder.create(env: env);
+      builder.setStackSize(16);
+      builder.mov(x0, x1);
+      builder.add(x0, x0, 7);
+      builder.ret();
+
+      final finalized = builder.finalize();
+      final bytes = finalized.textBytes;
+      expect(bytes.length, greaterThanOrEqualTo(16));
+
+      // RET (D65F03C0) em little-endian.
+      expect(
+        bytes.sublist(bytes.length - 4),
+        equals([0xC0, 0x03, 0x5F, 0xD6]),
+      );
+
+      // Caso 2: branch fixups (B e CBZ) com offset diferente de zero.
+      final builder2 = A64CodeBuilder.create(env: env);
+      final target = builder2.newLabel();
+      final cbzTarget = builder2.newLabel();
+      builder2.b(target);
+      builder2.nop();
+      builder2.label(target);
+      builder2.nop();
+      builder2.cbz(x0, cbzTarget);
+      builder2.nop();
+      builder2.nop();
+      builder2.label(cbzTarget);
+      builder2.ret();
+
+      builder2.finalize();
+      final buf2 = builder2.code.text.buffer;
+      final bInst = buf2.read32At(0);
+      final cbzInst = buf2.read32At(12);
+
+      final bImm = bInst & 0x03FFFFFF;
+      final cbzImm = (cbzInst >> 5) & 0x7FFFF;
+      expect(bImm, isNonZero);
+      expect(cbzImm, isNonZero);
+
+      // Caso 3: NEON/FP e load/store vetorial basico (apenas encode).
+      final builder3 = A64CodeBuilder.create(env: env);
+      builder3.ldrVec(v0, x0, 0);
+      builder3.ldrVec(v1, x0, 16);
+      builder3.addVec(v2.s, v0.s, v1.s);
+      builder3.andVec(v3.s, v2.s, v1.s);
+      builder3.fadd(d0, d1, d2);
+      builder3.strVec(v3, x1, 32);
+      builder3.ret();
+      final bytes3 = builder3.finalize().textBytes;
+      expect(bytes3.isNotEmpty, isTrue);
+
+      // Caso 4: estresse de RA/spills (GP).
+      final builder4 = A64CodeBuilder.create(env: env);
+      final regs = <A64Gp>[];
+      for (var i = 0; i < 28; i++) {
+        final r = builder4.newGpReg();
+        regs.add(r);
+        builder4.mov(r, x0);
+        builder4.add(r, r, i);
+      }
+      final acc = builder4.newGpReg();
+      builder4.mov(acc, xzr);
+      for (final r in regs) {
+        builder4.add(acc, acc, r);
+      }
+      builder4.mov(x0, acc);
+      builder4.ret();
+      final bytes4 = builder4.finalize().textBytes;
+      expect(bytes4.isNotEmpty, isTrue);
+      expect(
+        bytes4.sublist(bytes4.length - 4),
+        equals([0xC0, 0x03, 0x5F, 0xD6]),
+      );
+
+      // Caso 5: estresse de RA/spills (vetores).
+      final builder5 = A64CodeBuilder.create(env: env);
+      final vregs = <A64Vec>[];
+      for (var i = 0; i < 40; i++) {
+        final r = builder5.newVecReg(sizeBits: 128);
+        vregs.add(r);
+        builder5.addVec(r.s, r.s, r.s);
+      }
+      for (final r in vregs) {
+        builder5.addVec(v0.s, v0.s, r.s);
+      }
+      builder5.ret();
+      final bytes5 = builder5.finalize().textBytes;
+      expect(bytes5.isNotEmpty, isTrue);
+
+      // Caso 6: spill com stackSize alto (sem sobreposicao).
+      final builder6 = A64CodeBuilder.create(env: env);
+      builder6.setStackSize(512);
+      final regs6 = <A64Gp>[];
+      for (var i = 0; i < 30; i++) {
+        final r = builder6.newGpReg();
+        regs6.add(r);
+        builder6.mov(r, x0);
+        builder6.add(r, r, i);
+      }
+      final acc6 = builder6.newGpReg();
+      builder6.mov(acc6, xzr);
+      for (final r in regs6) {
+        builder6.add(acc6, acc6, r);
+      }
+      builder6.mov(x0, acc6);
+      builder6.ret();
+      final bytes6 = builder6.finalize().textBytes;
+      expect(bytes6.isNotEmpty, isTrue);
+      expect(
+        bytes6.sublist(bytes6.length - 4),
+        equals([0xC0, 0x03, 0x5F, 0xD6]),
+      );
+      final spillOffsets = builder6.debugSpillOffsets();
+      for (final off in spillOffsets) {
+        expect(off, greaterThanOrEqualTo(512));
+      }
+    });
     test('asmjit_test_emitters.cpp (scaffold)', () {
       final env = Environment.host();
       final code = CodeHolder(env: env);
@@ -338,7 +455,35 @@ void main() {
       expect(a64Ret?.id, A64InstId.kRet);
     });
 
-    test('asmjit_bench_codegen_x86.cpp', () {}, skip: 'pending port');
+    test('asmjit_bench_codegen_x86.cpp', () {
+      final env = Environment.host();
+      final code = CodeHolder(env: env);
+      final asm = X86Assembler(code);
+
+      final r0 = env.is32Bit ? eax : rax;
+      final r1 = env.is32Bit ? ebx : rbx;
+      final r2 = env.is32Bit ? ecx : rcx;
+      final loopLabel = asm.newLabel();
+      asm.bind(loopLabel);
+
+      final loops = [512, 2048, 8192];
+      for (final count in loops) {
+        final start = Stopwatch()..start();
+        for (var i = 0; i < count; i++) {
+          asm.movRR(r0, r1);
+          asm.addRI(r0, i & 0x7F);
+          asm.xorRR(r2, r2);
+          asm.cmpRR(r0, r2);
+          asm.jcc(X86Cond.ne, loopLabel);
+        }
+        start.stop();
+      }
+
+      asm.ret();
+      final bytes = code.finalize().textBytes;
+      expect(bytes.length, greaterThan(0));
+      expect(bytes.last, equals(0xC3));
+    });
   });
 }
 

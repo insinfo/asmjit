@@ -196,13 +196,6 @@ void _subs(A64Assembler asm, List<Object> ops) {
   }
 }
 
-void _binaryReg(A64Assembler asm, List<Object> ops,
-    void Function(A64Gp, A64Gp, A64Gp) fn) {
-  if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is A64Gp) {
-    fn(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp);
-  }
-}
-
 void _and(A64Assembler asm, List<Object> ops) {
   if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is A64Gp) {
     asm.and(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp);
@@ -312,12 +305,6 @@ void _bl(A64Assembler asm, List<Object> ops) {
   }
 }
 
-void _bCond(A64Assembler asm, List<Object> ops) {
-  if (ops.length == 2 && ops[0] is A64Cond && ops[1] is Label) {
-    asm.bCond(ops[0] as A64Cond, ops[1] as Label);
-  }
-}
-
 void _cb(A64Assembler asm, List<Object> ops, {required bool zero}) {
   if (ops.length != 2) return;
   final rt = ops[0];
@@ -417,30 +404,6 @@ void _strh(A64Assembler asm, List<Object> ops) {
   }
 }
 
-void _ldur(A64Assembler asm, List<Object> ops) {
-  if (ops.length == 3 && ops[1] is A64Gp && ops[2] is int) {
-    final base = ops[1] as A64Gp;
-    final off = ops[2] as int;
-    if (ops[0] is A64Gp) {
-      asm.ldur(ops[0] as A64Gp, base, off);
-    } else if (ops[0] is A64Vec) {
-      asm.ldrVecUnscaled(ops[0] as A64Vec, base, off);
-    }
-  }
-}
-
-void _stur(A64Assembler asm, List<Object> ops) {
-  if (ops.length == 3 && ops[1] is A64Gp && ops[2] is int) {
-    final base = ops[1] as A64Gp;
-    final off = ops[2] as int;
-    if (ops[0] is A64Gp) {
-      asm.stur(ops[0] as A64Gp, base, off);
-    } else if (ops[0] is A64Vec) {
-      asm.strVecUnscaled(ops[0] as A64Vec, base, off);
-    }
-  }
-}
-
 void _ldp(A64Assembler asm, List<Object> ops) {
   if (ops.length == 4 &&
       ops[0] is A64Gp &&
@@ -508,4 +471,5 @@ void _vec3(A64Assembler asm, List<Object> ops,
     fn(ops[0] as A64Vec, ops[1] as A64Vec, ops[2] as A64Vec);
   }
 }
+
 
