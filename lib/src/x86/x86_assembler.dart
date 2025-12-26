@@ -446,6 +446,11 @@ class X86Assembler {
   /// JAE - Jump if above or equal (unsigned).
   void jae(Label target) => jcc(X86Cond.ae, target);
 
+  /// Jcc rel32 (direct displacement).
+  void jccRel(X86Cond cond, int disp) {
+    _enc.jccRel32(cond, disp);
+  }
+
   // ===========================================================================
   // LEA instruction
   // ===========================================================================
@@ -1016,6 +1021,10 @@ class X86Assembler {
   void vaddpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
       _enc.vaddpsXmmXmmXmm(dst, src1, src2);
 
+  /// VADDPD xmm, xmm, xmm (VEX add packed double 128-bit)
+  void vaddpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vaddpdXmmXmmXmm(dst, src1, src2);
+
   // ===========================================================================
   // AVX - Packed arithmetic 256-bit (VEX-encoded)
   // ===========================================================================
@@ -1096,4 +1105,106 @@ class X86Assembler {
 
   /// VZEROALL - Zero all YMM registers completely.
   void vzeroall() => _enc.vzeroall();
+
+  // ===========================================================================
+  // AVX-512 Instructions (EVEX-encoded)
+  // ===========================================================================
+
+  /// VADDPS zmm, zmm, zmm (AVX-512 add packed single 512-bit)
+  void vaddpsZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
+      _enc.vaddpsZmmZmmZmm(dst, src1, src2);
+
+  /// VADDPD zmm, zmm, zmm (AVX-512 add packed double 512-bit)
+  void vaddpdZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
+      _enc.vaddpdZmmZmmZmm(dst, src1, src2);
+
+  // --- Move Instructions ---
+
+  /// VMOVUPS zmm, zmm (AVX-512)
+  void vmovupsZmm(X86Zmm dst, X86Zmm src) => _enc.vmovupsZmmZmm(dst, src);
+
+  /// VMOVUPS zmm, [mem] (AVX-512)
+  void vmovupsZmmMem(X86Zmm dst, X86Mem mem) => _enc.vmovupsZmmMem(dst, mem);
+
+  /// VMOVUPS [mem], zmm (AVX-512)
+  void vmovupsMemZmm(X86Mem mem, X86Zmm src) => _enc.vmovupsMemZmm(mem, src);
+
+  /// VMOVUPD zmm, zmm (AVX-512)
+  void vmovupdZmm(X86Zmm dst, X86Zmm src) => _enc.vmovupdZmmZmm(dst, src);
+
+  /// VMOVUPD zmm, [mem] (AVX-512)
+  void vmovupdZmmMem(X86Zmm dst, X86Mem mem) => _enc.vmovupdZmmMem(dst, mem);
+
+  /// VMOVUPD [mem], zmm (AVX-512)
+  void vmovupdMemZmm(X86Mem mem, X86Zmm src) => _enc.vmovupdMemZmm(mem, src);
+
+  /// VMOVDQU32 zmm, zmm (AVX-512)
+  void vmovdqu32Zmm(X86Zmm dst, X86Zmm src) => _enc.vmovdqu32ZmmZmm(dst, src);
+
+  /// VMOVDQU32 zmm, [mem] (AVX-512)
+  void vmovdqu32ZmmMem(X86Zmm dst, X86Mem mem) =>
+      _enc.vmovdqu32ZmmMem(dst, mem);
+
+  /// VMOVDQU32 [mem], zmm (AVX-512)
+  void vmovdqu32MemZmm(X86Mem mem, X86Zmm src) =>
+      _enc.vmovdqu32MemZmm(mem, src);
+
+  /// VMOVDQU64 zmm, zmm (AVX-512)
+  void vmovdqu64Zmm(X86Zmm dst, X86Zmm src) => _enc.vmovdqu64ZmmZmm(dst, src);
+
+  /// VMOVDQU64 zmm, [mem] (AVX-512)
+  void vmovdqu64ZmmMem(X86Zmm dst, X86Mem mem) =>
+      _enc.vmovdqu64ZmmMem(dst, mem);
+
+  /// VMOVDQU64 [mem], zmm (AVX-512)
+  void vmovdqu64MemZmm(X86Mem mem, X86Zmm src) =>
+      _enc.vmovdqu64MemZmm(mem, src);
+
+  // --- Logic Instructions ---
+
+  /// VPANDD zmm, zmm, zmm (AVX-512)
+  void vpanddZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
+      _enc.vpanddZmmZmmZmm(dst, src1, src2);
+
+  /// VPANDQ zmm, zmm, zmm (AVX-512)
+  void vpandqZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
+      _enc.vpandqZmmZmmZmm(dst, src1, src2);
+
+  /// VPORD zmm, zmm, zmm (AVX-512)
+  void vpordZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
+      _enc.vpordZmmZmmZmm(dst, src1, src2);
+
+  /// VPORQ zmm, zmm, zmm (AVX-512)
+  void vporqZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
+      _enc.vporqZmmZmmZmm(dst, src1, src2);
+
+  /// VPXORD zmm, zmm, zmm (AVX-512)
+  void vpxordZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
+      _enc.vpxordZmmZmmZmm(dst, src1, src2);
+
+  /// VPXORQ zmm, zmm, zmm (AVX-512)
+  void vpxorqZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
+      _enc.vpxorqZmmZmmZmm(dst, src1, src2);
+
+  /// VXORPS zmm, zmm, zmm (AVX-512)
+  void vxorpsZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
+      _enc.vxorpsZmmZmmZmm(dst, src1, src2);
+
+  /// VXORPD zmm, zmm, zmm (AVX-512)
+  void vxorpdZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
+      _enc.vxorpdZmmZmmZmm(dst, src1, src2);
+
+  // --- Conversion Instructions ---
+
+  /// VCVTTPS2DQ zmm, zmm (AVX-512) - Convert with truncation
+  void vcvttps2dqZmm(X86Zmm dst, X86Zmm src) => _enc.vcvttps2dqZmmZmm(dst, src);
+
+  /// VCVTDQ2PS zmm, zmm (AVX-512)
+  void vcvtdq2psZmm(X86Zmm dst, X86Zmm src) => _enc.vcvtdq2psZmmZmm(dst, src);
+
+  /// VCVTPS2PD zmm, ymm (AVX-512)
+  void vcvtps2pdZmm(X86Zmm dst, X86Ymm src) => _enc.vcvtps2pdZmmYmm(dst, src);
+
+  /// VCVTPD2PS ymm, zmm (AVX-512)
+  void vcvtpd2psYmm(X86Ymm dst, X86Zmm src) => _enc.vcvtpd2psYmmZmm(dst, src);
 }

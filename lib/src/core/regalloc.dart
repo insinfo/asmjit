@@ -6,11 +6,13 @@
 import 'package:asmjit/asmjit.dart';
 
 /// Virtual register - represents a value that needs a physical register.
-class VirtReg {
+class VirtReg extends BaseReg {
   /// Unique ID.
+  @override
   final int id;
 
   /// Size in bytes (1, 2, 4, or 8).
+  @override
   final int size;
 
   /// Register class (GP, XMM, YMM).
@@ -40,6 +42,15 @@ class VirtReg {
   VirtReg(this.id, {this.size = 8, this.regClass = RegClass.gp});
 
   @override
+  RegType get type => regClass == RegClass.gp ? RegType.gp : RegType.vec;
+
+  @override
+  RegGroup get group => regClass == RegClass.gp ? RegGroup.gp : RegGroup.vec;
+
+  @override
+  bool get isPhysical => false; // Virtual registers are not physical by default
+
+  @override
   String toString() => 'v$id';
 }
 
@@ -53,6 +64,9 @@ enum RegClass {
 
   /// AVX YMM registers
   ymm,
+
+  /// AVX-512 ZMM registers
+  zmm,
 }
 
 /// Live interval for a virtual register.
@@ -210,7 +224,14 @@ class SimpleRegAlloc {
   }
 
   /// Allocate registers using linear scan.
-  void allocate() {
+  ///
+  /// If [nodes] is provided, it scans the instruction list to build live intervals.
+  /// Otherwise, it assumes uses have been recorded via [recordUse].
+  void allocate([NodeList? nodes]) {
+    if (nodes != null) {
+      _buildIntervals(nodes);
+    }
+
     computeLiveIntervals();
 
     final active = <LiveInterval>[];
@@ -230,7 +251,9 @@ class SimpleRegAlloc {
           // Spill - find the longest-living active interval
           _spillRegister(interval, active);
         }
-      } else if (interval.vreg.regClass == RegClass.xmm) {
+      } else if (interval.vreg.regClass == RegClass.xmm ||
+          interval.vreg.regClass == RegClass.ymm ||
+          interval.vreg.regClass == RegClass.zmm) {
         final reg = _allocateXmmReg(interval.vreg);
         if (reg != null) {
           interval.vreg.physXmm = reg;
@@ -312,7 +335,9 @@ class SimpleRegAlloc {
   void _spillXmmRegister(LiveInterval newInterval, List<LiveInterval> active) {
     LiveInterval? longest;
     for (final interval in active) {
-      if (interval.vreg.regClass == RegClass.xmm) {
+      if (interval.vreg.regClass == RegClass.xmm ||
+          interval.vreg.regClass == RegClass.ymm ||
+          interval.vreg.regClass == RegClass.zmm) {
         if (longest == null || interval.end > longest.end) {
           longest = interval;
         }
@@ -381,5 +406,44 @@ class SimpleRegAlloc {
       sb.writeln('    $vreg -> $status');
     }
     return sb.toString();
+  }
+
+  /// Build intervals by iterating over the node list.
+  void _buildIntervals(NodeList nodes) {
+    int pos = 0;
+
+    for (final node in nodes.nodes) {
+      if (node is InstNode) {
+        for (final op in node.operands) {
+          if (op is RegOperand) {
+            final reg = op.reg;
+            if (reg is VirtReg) {
+              recordUse(reg, pos);
+            }
+          } else if (op is MemOperand) {
+            // Handle memory operands that use virtual registers
+            // This requires MemOperand definition inspection.
+            // Assuming MemOperand might contain VirtReg in index/base.
+            // For now, complex memory operand reg alloc might need more work if MemOperand stores BaseReg.
+            // check if op.mem is BaseMem, and check base/index.
+            _scanMemOperand(op, pos);
+          }
+        }
+        pos +=
+            2; // Increment by 2 to allow for insertion between instructions if needed (standard RA trick)
+      }
+    }
+  }
+
+  void _scanMemOperand(MemOperand op, int pos) {
+    final mem = op.mem;
+    if (mem is X86Mem) {
+      if (mem.base is VirtReg) {
+        recordUse(mem.base as VirtReg, pos);
+      }
+      if (mem.index is VirtReg) {
+        recordUse(mem.index as VirtReg, pos);
+      }
+    }
   }
 }

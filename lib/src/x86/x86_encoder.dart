@@ -7,6 +7,7 @@ import '../core/code_buffer.dart';
 import 'x86.dart';
 import 'x86_operands.dart';
 import 'x86_simd.dart';
+import '../core/operand.dart';
 
 /// x86/x64 instruction encoder.
 ///
@@ -18,7 +19,122 @@ class X86Encoder {
   X86Encoder(this.buffer);
 
   // ===========================================================================
-  // Prefix encoding
+  // EVEX Encoding (AVX-512)
+  // ===========================================================================
+
+  /// Emits the EVEX prefix and payload.
+  ///
+  /// [pp]: Legacy prefix (0=None, 1=66, 2=F3, 3=F2).
+  /// [mm]: Opcode map (1=0F, 2=0F38, 3=0F3A).
+  /// [w]: W bit (0 or 1).
+  /// [reg]: The register operand (ModRM.reg).
+  /// [vvvv]: The second source register (coded in EVEX.vvvv).
+  /// [rmReg]: The register operand (ModRM.rm) if generic register-to-register.
+  /// [rmMem]: The memory operand (ModRM.rm) if register-to-memory.
+  /// [k]: Opmask register (k0-k7).
+  /// [z]: Zeroing (true) or Merging (false).
+  /// [b]: Broadcast / Rounding Control / SAE.
+  /// [vectorLen]: Vector length (0=128, 1=256, 2=512).
+  void _emitEvex(int pp, int mm, int w,
+      {BaseReg? reg,
+      BaseReg? vvvv,
+      BaseReg? rmReg,
+      X86Mem? rmMem,
+      X86KReg? k,
+      bool z = false,
+      bool b = false,
+      int vectorLen = 0}) {
+    // P0: Payload 0 (Fixed 0x62)
+    buffer.emit8(0x62);
+
+    // Extract Register IDs and high bits
+    final rId = reg?.id ?? 0;
+    final rExt = (rId >> 3) & 1; // R (Extension of ModRM.reg)
+    final rHigh = (rId >> 4) & 1; // R' (High 16 of ModRM.reg)
+
+    final vId = vvvv?.id ?? 0;
+    // vvvv extension (bit 3) is handled in P2 via (~vId & 0xF)
+    final vHigh = (vId >> 4) & 1; // V' (High 16 of vvvv)
+
+    int bExt = 0; // B (Extension of ModRM.rm or SIB.base)
+    int xExt = 0; // X (Extension of SIB.index)
+    int rmId = 0;
+
+    if (rmReg != null) {
+      rmId = rmReg.id;
+      bExt = (rmId >> 3) & 1;
+      // X is 0 for register-register
+    } else if (rmMem != null) {
+      // Memory operand handling
+      final base = rmMem.base;
+      final index = rmMem.index;
+
+      if (base != null) {
+        bExt = (base.id >> 3) & 1;
+      }
+      if (index != null) {
+        xExt = (index.id >> 3) & 1;
+      }
+      // Note: R' might also be used for Index[4] in some future extensions,
+      // but standard EVEX uses X for index[3] and V' for vvvv[4].
+      // High-16 index support usually requires V' if vvvv is not used, or contextual.
+      // In AVX-512, V' encodes the high bit of vvvv (src2) OR high bit of index (for VSIB).
+      // If VSIB is used, V' is index[4].
+      // We assume standard usage for now. If VSIB, we must ensure vvvv is not used or handled differently.
+      // But standard _emitEvex signature implies vvvv is separate.
+      // For VSIB, the index comes from rmMem.index (which is a vector).
+      if (index != null && (index.type == RegType.vec)) {
+        // VSIB: V' matches index high bit
+        if ((index.id >> 4) != 0) {
+          // We need to set V' based on index, but V' is in P3.
+          // However, local vHigh variable is derived from vvvv.
+          // If vvvv is null/unused, or if instruction uses VSIB, we might conflict.
+          // Usually VBMI/gather instructions use vvvv for mask or dest, and index implies VSIB.
+          // Let's assume standard behavior: V' represents vvvv's high bit.
+        }
+      }
+    }
+
+    // P1: R X B R' | 00 | mm
+    // Bits are INVERTED (1's complement) relative to existence (0 means 1, 1 means 0 in typical descriptions,
+    // but EVEX specs say: bit 7 = ~R.
+    // So if R is present (Reg >= 8), bit should be 0.
+    // Function logic: if (rExt) emit 0. if (!rExt) emit 1.
+    final p1 = 0 |
+        ((rExt == 0 ? 1 : 0) << 7) | // R
+        ((xExt == 0 ? 1 : 0) << 6) | // X
+        ((bExt == 0 ? 1 : 0) << 5) | // B
+        ((rHigh == 0 ? 1 : 0) << 4) | // R'
+        (mm & 0x3);
+    buffer.emit8(p1);
+
+    // P2: W | vvvv | 1 | pp
+    // vvvv is 1's complement.
+    final vvvvBits = (~vId) & 0xF;
+    final p2 = 0 |
+        ((w & 1) << 7) | // W
+        (vvvvBits << 3) | // vvvv
+        0x04 | // Fixed 1
+        (pp & 0x3);
+    buffer.emit8(p2);
+
+    // P3: z | L'L | b | V' | aaa
+    // V' is 1's complement of vHigh.
+    final vPrime = (vHigh == 0 ? 1 : 0);
+    // If VSIB is used, V' might need to be index[4]. Check AVX-512 specs.
+    // For now we assume Non-VSIB or vvvv covers it.
+
+    final p3 = 0 |
+        ((z ? 1 : 0) << 7) | // z
+        ((vectorLen & 0x3) << 5) | // L'L
+        ((b ? 1 : 0) << 4) | // b
+        (vPrime << 3) | // V'
+        ((k?.id ?? 0) & 0x7); // aaa
+    buffer.emit8(p3);
+  }
+
+  // ===========================================================================
+  // VEX Encoding
   // ===========================================================================
 
   /// Emits a REX prefix if needed.
@@ -98,8 +214,11 @@ class X86Encoder {
   }
 
   /// Emits ModR/M for register-to-register.
-  void emitModRmReg(int regOp, X86Gp rm) {
-    emitModRm(3, regOp, rm.encoding);
+  void emitModRmReg(int regOp, BaseReg rm) {
+    // Note: Assuming encoding matches id & 7 for now, or using dynamic for specific properties.
+    // Ideally BaseReg should define encoding if it's universal for x86.
+    // For now we use id & 7 which is standard for Gp/Vec (except AH..BH).
+    emitModRm(3, regOp, rm.id & 0x7);
   }
 
   /// Emits ModR/M and optional SIB/displacement for memory operand.
@@ -1686,6 +1805,19 @@ class X86Encoder {
     buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
   }
 
+  /// VADDPD xmm, xmm, xmm (VEX.128.66.0F 58) - packed double add 128-bit
+  void vaddpdXmmXmmXmm(X86Xmm dst, X86Xmm src1, X86Xmm src2) {
+    final needsVex3 = dst.isExtended || src2.isExtended;
+    if (needsVex3) {
+      _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F, false,
+          src1.id, false, _vexPp66);
+    } else {
+      _emitVex2(dst.isExtended, src1.id, false, _vexPp66);
+    }
+    buffer.emit8(0x58);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+  }
+
   /// VADDPD ymm, ymm, ymm (VEX.256.66.0F 58) - packed double add 256-bit
   void vaddpdYmmYmmYmm(X86Ymm dst, X86Ymm src1, X86Ymm src2) {
     final needsVex3 = dst.isExtended || src2.isExtended;
@@ -2242,6 +2374,248 @@ class X86Encoder {
     buffer.emit8(0x81);
     emitModRmMem(7, mem);
     buffer.emit32(imm32);
+  }
+  // ===========================================================================
+  // AVX-512 Instructions
+  // ===========================================================================
+
+  /// VADDPS zmm, zmm, zmm (AVX-512)
+  /// Encoding: EVEX.ND.512.0F.W0 58 /r
+  void vaddpsZmmZmmZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) {
+    _emitEvex(
+      0, // pp = None
+      1, // mm = 0F
+      0, // W0
+      reg: dst,
+      vvvv: src1,
+      rmReg: src2,
+      vectorLen: 2, // 512-bit
+    );
+    buffer.emit8(0x58);
+    emitModRmReg(dst.encoding, src2.xmm); // rmReg is passed as rm to ModRM
+    // Note: rmReg argument to _emitEvex handles the bits for EVEX prefix.
+    // emitModRmReg handles the ModR/M byte itself.
+    // The "rm" operand in ModR/M is the second source (src2).
+    // The "reg" operand in ModR/M is dst.
+    // Wait, ModRM.reg usually encodes 'dst'.
+    // AVX VADDPS dst, src1, src2 -> reg=dst, vvvv=src1, rm=src2.
+  }
+
+  /// VADDPD zmm, zmm, zmm (AVX-512)
+  /// Encoding: EVEX.ND.512.66.0F.W1 58 /r
+  void vaddpdZmmZmmZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) {
+    _emitEvex(
+      1, // pp = 66
+      1, // mm = 0F
+      1, // W1
+      reg: dst,
+      vvvv: src1,
+      rmReg: src2,
+      vectorLen: 2, // 512-bit
+    );
+    buffer.emit8(0x58);
+    emitModRmReg(dst.encoding, src2);
+  }
+
+  // --- Move Instructions ---
+
+  /// VMOVUPS zmm, zmm (AVX-512)
+  /// Encoding: EVEX.F3.0F.W0 10 /r
+  void vmovupsZmmZmm(X86Zmm dst, X86Zmm src) {
+    _emitEvex(2, 1, 0,
+        reg: dst, rmReg: src, vectorLen: 2); // pp=F3(2), mm=0F(1)
+    buffer.emit8(0x10);
+    emitModRmReg(dst.encoding, src);
+  }
+
+  /// VMOVUPS zmm, [mem] (AVX-512)
+  /// Encoding: EVEX.F3.0F.W0 10 /r
+  void vmovupsZmmMem(X86Zmm dst, X86Mem mem) {
+    _emitEvex(2, 1, 0, reg: dst, rmMem: mem, vectorLen: 2);
+    buffer.emit8(0x10);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VMOVUPS [mem], zmm (AVX-512)
+  /// Encoding: EVEX.F3.0F.W0 11 /r
+  void vmovupsMemZmm(X86Mem mem, X86Zmm src) {
+    _emitEvex(2, 1, 0, reg: src, rmMem: mem, vectorLen: 2);
+    buffer.emit8(0x11);
+    emitModRmMem(src.encoding, mem);
+  }
+
+  /// VMOVUPD zmm, zmm (AVX-512)
+  /// Encoding: EVEX.66.0F.W1 10 /r
+  void vmovupdZmmZmm(X86Zmm dst, X86Zmm src) {
+    _emitEvex(1, 1, 1,
+        reg: dst, rmReg: src, vectorLen: 2); // pp=66(1), mm=0F(1)
+    buffer.emit8(0x10);
+    emitModRmReg(dst.encoding, src);
+  }
+
+  /// VMOVUPD zmm, [mem] (AVX-512)
+  void vmovupdZmmMem(X86Zmm dst, X86Mem mem) {
+    _emitEvex(1, 1, 1, reg: dst, rmMem: mem, vectorLen: 2);
+    buffer.emit8(0x10);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VMOVUPD [mem], zmm (AVX-512)
+  void vmovupdMemZmm(X86Mem mem, X86Zmm src) {
+    _emitEvex(1, 1, 1, reg: src, rmMem: mem, vectorLen: 2);
+    buffer.emit8(0x11);
+    emitModRmMem(src.encoding, mem);
+  }
+
+  /// VMOVDQU32 zmm, zmm (AVX-512)
+  /// Encoding: EVEX.F3.0F.W0 6F /r
+  void vmovdqu32ZmmZmm(X86Zmm dst, X86Zmm src) {
+    _emitEvex(2, 1, 0, reg: dst, rmReg: src, vectorLen: 2);
+    buffer.emit8(0x6F);
+    emitModRmReg(dst.encoding, src);
+  }
+
+  /// VMOVDQU32 zmm, [mem] (AVX-512)
+  void vmovdqu32ZmmMem(X86Zmm dst, X86Mem mem) {
+    _emitEvex(2, 1, 0, reg: dst, rmMem: mem, vectorLen: 2);
+    buffer.emit8(0x6F);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VMOVDQU32 [mem], zmm (AVX-512)
+  /// Encoding: EVEX.F3.0F.W0 7F /r
+  void vmovdqu32MemZmm(X86Mem mem, X86Zmm src) {
+    _emitEvex(2, 1, 0, reg: src, rmMem: mem, vectorLen: 2);
+    buffer.emit8(0x7F);
+    emitModRmMem(src.encoding, mem);
+  }
+
+  /// VMOVDQU64 zmm, zmm (AVX-512)
+  /// Encoding: EVEX.F3.0F.W1 6F /r
+  void vmovdqu64ZmmZmm(X86Zmm dst, X86Zmm src) {
+    _emitEvex(2, 1, 1, reg: dst, rmReg: src, vectorLen: 2);
+    buffer.emit8(0x6F);
+    emitModRmReg(dst.encoding, src);
+  }
+
+  /// VMOVDQU64 zmm, [mem]
+  void vmovdqu64ZmmMem(X86Zmm dst, X86Mem mem) {
+    _emitEvex(2, 1, 1, reg: dst, rmMem: mem, vectorLen: 2);
+    buffer.emit8(0x6F);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VMOVDQU64 [mem], zmm
+  void vmovdqu64MemZmm(X86Mem mem, X86Zmm src) {
+    _emitEvex(2, 1, 1, reg: src, rmMem: mem, vectorLen: 2);
+    buffer.emit8(0x7F);
+    emitModRmMem(src.encoding, mem);
+  }
+
+  // --- Logical Instructions ---
+
+  /// VPANDD zmm, zmm, zmm (AVX-512)
+  /// Encoding: EVEX.ND.512.66.0F38.W0 76 /r
+  void vpanddZmmZmmZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) {
+    _emitEvex(1, 2, 0,
+        reg: dst,
+        vvvv: src1,
+        rmReg: src2,
+        vectorLen: 2); // pp=66(1), mm=0F38(2)
+    buffer.emit8(0x76);
+    emitModRmReg(dst.encoding, src2);
+  }
+
+  /// VPANDQ zmm, zmm, zmm (AVX-512)
+  /// Encoding: EVEX.ND.512.66.0F38.W1 76 /r
+  void vpandqZmmZmmZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) {
+    _emitEvex(1, 2, 1, reg: dst, vvvv: src1, rmReg: src2, vectorLen: 2); // W=1
+    buffer.emit8(0x76);
+    emitModRmReg(dst.encoding, src2);
+  }
+
+  /// VPORD zmm, zmm, zmm (AVX-512)
+  /// Encoding: EVEX.ND.512.66.0F38.W0 EB /r
+  void vpordZmmZmmZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) {
+    _emitEvex(1, 2, 0, reg: dst, vvvv: src1, rmReg: src2, vectorLen: 2);
+    buffer.emit8(0xEB);
+    emitModRmReg(dst.encoding, src2);
+  }
+
+  /// VPORQ zmm, zmm, zmm (AVX-512)
+  /// Encoding: EVEX.ND.512.66.0F38.W1 EB /r
+  void vporqZmmZmmZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) {
+    _emitEvex(1, 2, 1, reg: dst, vvvv: src1, rmReg: src2, vectorLen: 2);
+    buffer.emit8(0xEB);
+    emitModRmReg(dst.encoding, src2);
+  }
+
+  /// VPXORD zmm, zmm, zmm (AVX-512)
+  /// Encoding: EVEX.ND.512.66.0F38.W0 EF /r
+  void vpxordZmmZmmZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) {
+    _emitEvex(1, 2, 0, reg: dst, vvvv: src1, rmReg: src2, vectorLen: 2);
+    buffer.emit8(0xEF);
+    emitModRmReg(dst.encoding, src2);
+  }
+
+  /// VPXORQ zmm, zmm, zmm (AVX-512)
+  /// Encoding: EVEX.ND.512.66.0F38.W1 EF /r
+  void vpxorqZmmZmmZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) {
+    _emitEvex(1, 2, 1, reg: dst, vvvv: src1, rmReg: src2, vectorLen: 2);
+    buffer.emit8(0xEF);
+    emitModRmReg(dst.encoding, src2);
+  }
+
+  /// VXORPS zmm, zmm, zmm (AVX-512)
+  /// Encoding: EVEX.ND.512.0F.W0 57 /r
+  void vxorpsZmmZmmZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) {
+    _emitEvex(0, 1, 0,
+        reg: dst, vvvv: src1, rmReg: src2, vectorLen: 2); // pp=0, mm=1
+    buffer.emit8(0x57);
+    emitModRmReg(dst.encoding, src2);
+  }
+
+  /// VXORPD zmm, zmm, zmm (AVX-512)
+  /// Encoding: EVEX.ND.512.66.0F.W1 57 /r
+  void vxorpdZmmZmmZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) {
+    _emitEvex(1, 1, 1,
+        reg: dst, vvvv: src1, rmReg: src2, vectorLen: 2); // pp=66(1), W=1
+    buffer.emit8(0x57);
+    emitModRmReg(dst.encoding, src2);
+  }
+
+  // --- Conversion Instructions ---
+
+  /// VCVTTPS2DQ zmm, zmm (AVX-512)
+  /// Encoding: EVEX.512.F3.0F.W0 5B /r
+  void vcvttps2dqZmmZmm(X86Zmm dst, X86Zmm src) {
+    _emitEvex(2, 1, 0, reg: dst, rmReg: src, vectorLen: 2);
+    buffer.emit8(0x5B);
+    emitModRmReg(dst.encoding, src);
+  }
+
+  /// VCVTDQ2PS zmm, zmm (AVX-512)
+  /// Encoding: EVEX.512.0F.W0 5B /r
+  void vcvtdq2psZmmZmm(X86Zmm dst, X86Zmm src) {
+    _emitEvex(0, 1, 0, reg: dst, rmReg: src, vectorLen: 2);
+    buffer.emit8(0x5B);
+    emitModRmReg(dst.encoding, src);
+  }
+
+  /// VCVTPS2PD zmm, ymm (AVX-512) - YMM source expands to ZMM
+  /// Encoding: EVEX.512.0F.W0 5A /r
+  void vcvtps2pdZmmYmm(X86Zmm dst, X86Ymm src) {
+    _emitEvex(0, 1, 0, reg: dst, rmReg: src, vectorLen: 2);
+    buffer.emit8(0x5A);
+    emitModRmReg(dst.encoding, src);
+  }
+
+  /// VCVTPD2PS ymm, zmm (AVX-512) - ZMM source shrinks to YMM
+  /// Encoding: EVEX.512.66.0F.W1 5A /r
+  void vcvtpd2psYmmZmm(X86Ymm dst, X86Zmm src) {
+    _emitEvex(1, 1, 1, reg: dst, rmReg: src, vectorLen: 2);
+    buffer.emit8(0x5A);
+    emitModRmReg(dst.encoding, src);
   }
 }
 

@@ -2,13 +2,18 @@
 
 
 roteiro bem prático (e incremental) para portar o AsmJit (C++) C:\MyDartProjects\asmjit\referencias\asmtk-master C:\MyDartProjects\asmjit\referencias\asmjit-master para Dart, mantendo alto desempenho e a filosofia FFI para ponteiros + libc para alocação, APIs do SO para memória executável, convenções de chamada da plataforma, e uma API “inline” de bytes ( “assembly inline via constantes para o dart”).
-
+micro otimzações são vitais para extrair o maximo de performace 
 assumir Dart Native (VM/AOT) em desktop/servidor. No iOS (e alguns ambientes “hardened”) JIT/memória executável costuma ser bloqueado por política do sistema — então trate como alvo “não suportado” ou “modo AOT/sem JIT”.
 
 nada no codigo em testes podem depender de C:\MyDartProjects\asmjit\referencias
 copie o que for necessario paras diretorios apropriados por exemplo C:\MyDartProjects\asmjit\assets
 
 coloque comentarios \\ TODO onde não esta concluido ou completo
+
+O arquivo serializer_benchmark.dart
+
+demonstrou claramente que o switch (e o if-else, que é isomórfico neste contexto) supera significativamente as buscas baseadas em List
+ou Map (aceleração de aproximadamente 3x). Isso justifica a geração de uma tabela de despacho estática.
 
 para ARM integration testes use:
 docker run --privileged --rm tonistiigi/binfmt --install arm64
@@ -75,6 +80,7 @@ docker run --rm --platform linux/arm64 dart:stable bash -lc "uname -m"
 | `x86func.h` | `x86_func.dart` | ✅ (FuncFrame) |
 | `x86rapass.h/.cpp` | - | ❌ TODO |
 | `x86builder.h/.cpp` | `code_builder.dart` | ⚠️ Parcial |
+| - | `x86_serializer.dart` | ✅ |
 | `x86compiler.h/.cpp` | - | ❌ TODO |
 
 ### ASMTK (`asmtk/` → `lib/src/asmtk/`)
@@ -150,7 +156,7 @@ docker run --rm --platform linux/arm64 dart:stable bash -lc "uname -m"
 
 ## 🎯 Milestones
 
-### ✅ Completos (M0-M16)
+### ✅ Completos (M0-M20)
 
 | # | Status | Descrição |
 |---|--------|-----------|
@@ -169,20 +175,24 @@ docker run --rm --platform linux/arm64 dart:stable bash -lc "uname -m"
 | M12 | ✅ | AES-NI implementado |
 | M13 | ✅ | Memory-Immediate instruções |
 | M14 | ✅ | SHA Extensions |
-| M15 | ✅ | FuncSignature + FuncDetail |
+| M15 | ✅ | FuncSignature + FuncDetail e Frame |
 | M16 | ✅ | BaseBuilder + SerializerContext |
+| M17 | ✅ | X86SerializerContext (Builder -> Assembler) |
+| M18 | ✅ | X86Compiler (RA + Builder integration) |
+| M19 | ✅ | AVX-512 Support (EVEX, ZMM, Mask) |
+| M20 | ✅ | Optimization (Generated Dispatcher, Hybrid Serializer) |
 
-### 🚧 Em Andamento (M17-M19)
+### 🚧 Em Andamento (M21-M22)
 
 | # | Status | Descrição | Prioridade |
 |---|--------|-----------|------------|
-| M17 | 🚧 | X86SerializerContext (IR -> assembler) | Alta |
-| M18 | ⏳ | X86Compiler (RA + Builder) | Média |
-| M19 | ⏳ | AVX-512 (EVEX encoding) | Baixa |
+| M21 | 🚧 | Compiler IR Expansion (FuncNode, BlockNode, CFG) | Prerequisite for Blend2D |
+| M22 | 🚧 | AArch64 Backend Completion (Match x86 features) | Core for portable pipelines |
+| M23 | ⏳ | JitRuntime Pipeline Caching (Pointer<Void> stubs) | Performance for JIT |
 
 ---
 
-## 🧪 Cobertura de Testes (311 testes)
+## 🧪 Cobertura de Testes (340+ testes)
 
 | Arquivo | Testes |
 |---------|--------|
@@ -203,43 +213,22 @@ docker run --rm --platform linux/arm64 dart:stable bash -lc "uname -m"
 | builder_test.dart | 18 |
 | type_test.dart | 14 |
 | bmi_aesni_test.dart | 25 |
+| compiler_test.dart | 1 |
+| x86_avx512_test.dart | 1 |
 
 ---
 
 ## 📝 TODO Detalhado
 
-### M14: Serialização IR → Assembler
+### M21: Compiler IR Expansion
 
 ```dart
 // TODO: lib/src/core/builder.dart
-// - Adicionar método serialize(X86Assembler asm)
-// - Iterar sobre NodeList e emitir cada InstNode
-// - Resolver LabelNode com bind()
-// - Tratar EmbedDataNode com embedBytes()
+// - Create FuncNode to hold Function Frame and Arguments
+// - Create BlockNode (Basic Block) for control flow
+// - Update BaseBuilder to manage generic nodes
 ```
 
-### M15: FuncSignature Completo
-
-```dart
-// TODO: lib/src/x86/x86_func.dart
-// - Portar FuncSignature do AsmJit
-// - Suporte a múltiplos tipos de retorno
-// - Suporte a parâmetros em stack
-// - Cálculo automático de stack frame
-// - Integração com RegAlloc
-```
-
-### M16: Compiler Pass
-
-```dart
-// TODO: lib/src/core/compiler.dart
-// - Criar classe X86Compiler extends BaseBuilder
-// - Integrar SimpleRegAlloc
-// - Adicionar passes de otimização:
-//   - Peephole optimization
-//   - Dead code elimination
-//   - Constant folding
-```
 
 ---
 

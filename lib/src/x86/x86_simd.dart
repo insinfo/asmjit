@@ -101,7 +101,10 @@ class X86Zmm extends BaseReg {
   /// Whether this register uses the extended encoding.
   bool get isExtended => id >= 8;
 
-  /// Gets the 3-bit encoding for ModR/M.
+  /// Whether this register uses EVEX-only high 16 range (ZMM16-ZMM31).
+  bool get isHigh16 => id >= 16;
+
+  /// Gets the 3-bit encoding for ModR/M (low 3 bits).
   int get encoding => id & 0x7;
 
   /// Returns the XMM version of this register.
@@ -116,6 +119,36 @@ class X86Zmm extends BaseReg {
   @override
   bool operator ==(Object other) =>
       identical(this, other) || other is X86Zmm && other.id == id;
+
+  @override
+  int get hashCode => id.hashCode;
+}
+
+/// Opmask register (k0-k7) for AVX-512.
+class X86KReg extends BaseReg {
+  @override
+  final int id;
+
+  const X86KReg(this.id);
+
+  @override
+  RegType get type => RegType.mask;
+
+  @override
+  int get size => 8; // 64 bits (max mask size)
+
+  @override
+  RegGroup get group => RegGroup.mask;
+
+  /// Gets the 3-bit encoding for ModR/M.
+  int get encoding => id & 0x7;
+
+  @override
+  String toString() => 'k$id';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || other is X86KReg && other.id == id;
 
   @override
   int get hashCode => id.hashCode;
@@ -201,6 +234,19 @@ const zmm28 = X86Zmm(28);
 const zmm29 = X86Zmm(29);
 const zmm30 = X86Zmm(30);
 const zmm31 = X86Zmm(31);
+
+// =============================================================================
+// Predefined Opmask registers (AVX-512)
+// =============================================================================
+
+const k0 = X86KReg(0);
+const k1 = X86KReg(1);
+const k2 = X86KReg(2);
+const k3 = X86KReg(3);
+const k4 = X86KReg(4);
+const k5 = X86KReg(5);
+const k6 = X86KReg(6);
+const k7 = X86KReg(7);
 
 // =============================================================================
 // SSE/AVX Constants

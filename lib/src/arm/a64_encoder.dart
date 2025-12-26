@@ -31,9 +31,8 @@ class A64Encoder {
   /// Encode register field (5 bits).
   int _encReg(A64Gp reg) => reg.id & 0x1F;
 
-  // ignore: unused_element - Will be used for SIMD instructions
-  /// Encode vector register field (5 bits).
-  int _encVec(A64Vec reg) => reg.id & 0x1F;
+  // /// Encode vector register field (5 bits).
+  // int _encVec(A64Vec reg) => reg.id & 0x1F;
 
   /// Encode size field for GP registers (sf bit).
   int _encSf(A64Gp reg) => reg.is64Bit ? 1 : 0;

@@ -241,6 +241,63 @@ enum SentinelType {
   funcEnd,
 }
 
+/// Function node.
+class FuncNode extends BaseNode {
+  /// Function name.
+  final String name;
+
+  /// Function frame (generic).
+  /// Casting to specific frame type (e.g. FuncFrame) is required.
+  final dynamic frame;
+
+  FuncNode(this.name, {this.frame})
+      : super(NodeType.func, NodeFlags.isInformative);
+
+  @override
+  String toString() => 'FuncNode("$name")';
+}
+
+/// Function return node.
+class FuncRetNode extends BaseNode {
+  FuncRetNode() : super(NodeType.funcRet, NodeFlags.isCode);
+
+  @override
+  String toString() => 'FuncRetNode()';
+}
+
+/// Function call node (Invoke).
+class InvokeNode extends BaseNode {
+  // TODO: Add target, usage info
+  InvokeNode() : super(NodeType.invoke, NodeFlags.isCode);
+
+  @override
+  String toString() => 'InvokeNode()';
+}
+
+/// Basic Block node.
+/// Often associated with a Label.
+class BlockNode extends BaseNode {
+  final Label label;
+  final List<BlockNode> predecessors = [];
+  final List<BlockNode> successors = [];
+
+  BlockNode(this.label) : super(NodeType.label, NodeFlags.actsAsLabel);
+
+  /// Adds a successor block (edge from this -> block).
+  void addSuccessor(BlockNode block) {
+    if (!successors.contains(block)) {
+      successors.add(block);
+      if (!block.predecessors.contains(this)) {
+        block.predecessors.add(this);
+      }
+    }
+  }
+
+  @override
+  String toString() =>
+      'BlockNode(L${label.id}, preds:${predecessors.length}, succs:${successors.length})';
+}
+
 /// Node list - a double-linked list of nodes.
 class NodeList {
   BaseNode? _first;
@@ -526,6 +583,16 @@ class BaseBuilder {
 
   /// Count of instructions.
   int get instCount => nodes.instructions.length;
+
+  /// Add a generic node.
+  void addNode(BaseNode node) {
+    nodes.append(node);
+  }
+
+  /// Serialize this builder's instructions to the given context.
+  void serialize(SerializerContext ctx) {
+    serializeNodes(nodes, ctx);
+  }
 }
 
 /// A serialization context for IR.

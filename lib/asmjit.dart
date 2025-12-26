@@ -34,6 +34,7 @@ export 'src/x86/x86_assembler.dart';
 export 'src/x86/x86_func.dart';
 export 'src/x86/x86_simd.dart';
 export 'src/x86/x86_inst_db.g.dart';
+export 'src/x86/x86_serializer.dart';
 
 // Inline
 export 'src/inline/inline_bytes.dart';

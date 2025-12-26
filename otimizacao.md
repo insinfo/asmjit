@@ -5,7 +5,7 @@ Depende do gargalo real. Pra um “AsmJit em Dart”, quase sempre o gargalo é 
 O que tende a ser mais rápido na prática
 1) Dart idiomático “bem feito” (Uint8List + growth + poucas alocações)
 
-Quase sempre vai ganhar de “C-style via FFI” em:
+Quase sempre vai ganhar de “C-style via FFI em dart” em:
 
 emitir bytes (CodeBuffer): Uint8List com crescimento e setRange é muito rápido.
 
