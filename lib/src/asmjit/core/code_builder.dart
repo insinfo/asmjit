@@ -1506,8 +1506,8 @@ class X86CodeBuilder extends ir.BaseBuilder {
           inst(X86InstId.kKmovq, [_toOperand(k0), _toOperand(rax)]);
         }
       } else if (retType.isMmx) {
-        // TODO: Model MMX return registers (mm0) instead of GP fallback.
-        mov(rax, 0);
+        // MMX aliases XMM0 on x86-64; zero XMM0 to return a default value.
+        inst(X86InstId.kPxor, [ir.RegOperand(xmm0), ir.RegOperand(xmm0)]);
       } else {
         mov(rax, 0);
       }
@@ -1623,9 +1623,9 @@ class X86CodeBuilder extends ir.BaseBuilder {
             anchor);
       }
     } else if (retType.isMmx) {
-      // TODO: Model MMX return registers (mm0) instead of GP fallback.
       nodes.insertBefore(
-          ir.InstNode(X86InstId.kMov, [ir.RegOperand(rax), ir.ImmOperand(0)]),
+          ir.InstNode(X86InstId.kPxor,
+              [ir.RegOperand(xmm0), ir.RegOperand(xmm0)]),
           anchor);
     } else {
       nodes.insertBefore(

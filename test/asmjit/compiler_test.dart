@@ -1,5 +1,6 @@
 import 'package:asmjit/asmjit.dart';
 import 'package:test/test.dart';
+import 'package:asmjit/src/asmjit/core/builder.dart' as ir;
 
 void main() {
   group('X86CodeBuilder Compiler Tests', () {
@@ -90,6 +91,78 @@ void main() {
       final bytes = builder.code.text.buffer.bytes;
       // Should have push rbx (0x53)
       expect(bytes.contains(0x53), isTrue, reason: 'Should preserve RBX');
+    });
+  });
+
+  group('X86IrCompiler IR Tests', () {
+    test('Emits multiple functions with invoke and mixed args', () {
+      final env = Environment.host();
+      final callConv = env.callingConvention == CallingConvention.win64
+          ? CallConvId.x64Windows
+          : CallConvId.x64SystemV;
+
+      final signature = FuncSignature(
+        callConvId: callConv,
+        retType: TypeId.int64,
+        args: [
+          TypeId.int64,
+          TypeId.int64,
+          TypeId.int64,
+          TypeId.int64,
+          TypeId.int64,
+          TypeId.int64,
+          TypeId.int64,
+          TypeId.float64,
+        ],
+      );
+
+      final builder = ir.BaseBuilder();
+      final calleeLabel = builder.newLabel();
+      builder.addNode(ir.FuncNode('callee', signature: signature));
+      builder.label(calleeLabel);
+      builder.inst(
+        X86InstId.kMov,
+        [ir.RegOperand(rax), ir.ImmOperand(42)],
+      );
+      builder.addNode(ir.FuncRetNode());
+
+      final callerLabel = builder.newLabel();
+      builder.addNode(ir.FuncNode('caller', signature: signature));
+      builder.label(callerLabel);
+
+      final stackMem = X86Mem.baseDisp(rbp, -16, size: 8);
+      builder.addNode(
+        ir.InvokeNode(
+          target: calleeLabel,
+          args: [
+            ir.RegOperand(rbx),
+            ir.ImmOperand(5),
+            ir.RegOperand(r12),
+            ir.ImmOperand(7),
+            ir.RegOperand(r13),
+            ir.ImmOperand(9),
+            ir.MemOperand(stackMem),
+            ir.RegOperand(xmm2),
+          ],
+          ret: r10,
+          signature: signature,
+        ),
+      );
+      builder.inst(
+        X86InstId.kMov,
+        [ir.RegOperand(rax), ir.RegOperand(r10)],
+      );
+      builder.addNode(ir.FuncRetNode());
+
+      final code = CodeHolder(env: env);
+      final asm = X86Assembler(code);
+      X86IrCompiler(env: env).emitBuilder(builder, asm);
+
+      final bytes = code.text.buffer.bytes;
+      expect(bytes, isNotEmpty);
+      expect(bytes.contains(0xE8), isTrue, reason: 'CALL rel32 expected');
+      final retCount = bytes.where((b) => b == 0xC3).length;
+      expect(retCount, greaterThanOrEqualTo(2));
     });
   });
 }

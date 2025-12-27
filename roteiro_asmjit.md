@@ -84,6 +84,7 @@ Atualizacoes recentes:
 - **Overhead benchmark alinhado**: inclui caminhos de Compiler/Builder + RT e reinit com reset de nodes.
 - **Regalloc benchmark com memoria**: tabela agora reporta estimativas de memoria (CodeHolder/nodes).
 - **Retorno mask default**: `endFunc()` agora zera `k0` via `kmovw/d/q` conforme tamanho do retorno.
+- **Retorno MMX default**: MMX agora usa `xmm0` (alias) zerado com `pxor`, evitando fallback em GP.
 - **KMOV no dispatcher**: encoder/assembler/dispatcher suportam `kmovw/d/q` (reg <-> k).
 - **Stack args com labels**: `invoke()` aceita `LabelOperand` para stack arg quando a label ja esta bound (usa offset imediato).
 - **IR deduplicado**: `core/ir.dart` agora reexporta `builder.dart`/`compiler.dart` (sem definicoes duplicadas).
@@ -409,7 +410,7 @@ tool/
 
 ```bash
 # Analisar código
-dart analyze lib
+dart analyze 
 
 # Rodar todos os testes
 dart test
@@ -649,7 +650,7 @@ db/
 
 **C++ Tools** (`tools/`):
 - Geradores de código C++ a partir de `db/`
-- Scripts Python
+- Scripts 
 
 **Dart Tools** (`tool/`):
 - ✅ `gen_x86_db.dart`: Gera `x86_inst_db.g.dart` e dispatcher
@@ -741,7 +742,6 @@ db/
 
 ## 🎯 **Recomendações para Próximas Iterações**
 
-### **Curto Prazo (1-2 semanas)**
 
 1. **Expandir a64Assembler**:
    - Portar 50+ métodos de `a64assembler.cpp` (focus: NEON integer ops)
@@ -756,7 +756,6 @@ db/
    - Argument shuffling simples
    - Preparar para x86Compiler
 
-### **Médio Prazo (1 mês)**
 
 4. **x86Compiler skeleton**:
    - Criar `lib/src/x86/x86_compiler.dart`
@@ -771,7 +770,6 @@ db/
    - Implementar algoritmo Chaitin-Briggs (simplificado)
    - Comparar performance com linear scan
 
-### **Longo Prazo (3 meses)**
 
 7. **AVX-512 completo**:
    - EVEX encoder
@@ -811,5 +809,4 @@ db/
 
 ---
 
-**Última Atualização**: 27 Dezembro 2025  
-**Foco Atual**: Blend2D core (BLImage, BLContext) + AsmJit compiler IR basics
+
