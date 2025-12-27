@@ -1,6 +1,6 @@
 import 'package:asmjit/asmjit.dart';
 import 'package:asmjit/blend2d.dart';
-import 'package:ffi/ffi.dart' as ffi;
+import 'package:asmjit/src/asmjit/runtime/ffi_utils/allocation.dart' as ffi;
 import 'dart:ffi';
 import 'dart:io';
 

@@ -3,8 +3,8 @@
 
 import 'dart:ffi';
 import 'dart:typed_data';
-import 'package:ffi/ffi.dart';
 
+import 'package:asmjit/src/asmjit/runtime/ffi_utils/allocation.dart' as ffi;
 import 'format.dart';
 import 'rgba.dart';
 import '../geometry/geometry.dart';
@@ -51,7 +51,7 @@ class BLImage {
     final byteSize = stride * height;
 
     // Allocate memory
-    final data = calloc<Uint8>(byteSize);
+    final data = ffi.calloc<Uint8>(byteSize);
 
     return BLImage._(data, width, height, stride, format, true);
   }
@@ -84,7 +84,7 @@ class BLImage {
       );
     }
 
-    final data = calloc<Uint8>(bytes.length);
+    final data = ffi.calloc<Uint8>(bytes.length);
     final dataList = data.asTypedList(bytes.length);
     dataList.setAll(0, bytes);
 
@@ -223,7 +223,7 @@ class BLImage {
   /// Dispose the image and free memory if owned.
   void dispose() {
     if (_data != null && _ownsData) {
-      calloc.free(_data!);
+      ffi.calloc.free(_data!);
     }
     _data = null;
     _width = 0;

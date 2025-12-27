@@ -1,6 +1,6 @@
 import 'dart:ffi';
 
-import 'package:ffi/ffi.dart' as ffi;
+import 'package:asmjit/src/asmjit/runtime/ffi_utils/allocation.dart' as ffi;
 import 'package:test/test.dart';
 
 import 'package:asmjit/asmjit.dart';

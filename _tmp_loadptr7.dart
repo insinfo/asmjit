@@ -1,5 +1,5 @@
 import 'dart:ffi';
-import 'package:ffi/ffi.dart' as ffi;
+import 'package:asmjit/src/asmjit/runtime/ffi_utils/allocation.dart' as ffi;
 import 'package:asmjit/asmjit.dart';
 
 typedef _NativeFn = Int32 Function(
