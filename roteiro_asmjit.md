@@ -443,3 +443,315 @@ em Dart e lista o que ainda falta portar ou alinhar.
 Expand SIMD dispatcher coverage in gen_x86_db.dart so builder SSE/AVX sequences can use the full instruction mix (removes current TODO limits).
 
 Implement the X86 compiler backend to replace the compiler placeholders with real numbers.
+
+---
+
+## 🔍 Análise Detalhada: Código C++ Original vs. Dart Port
+
+### Estrutura Original (AsmJit C++)
+
+Baseado em `referencias/asmjit-master/asmjit/`:
+
+#### 📁 **Core** (`core/` → 79 arquivos)
+
+| Componente C++ | Arquivo Original | Tamanho | Status Dart | Prioridade |
+|----------------|------------------|---------|-------------|------------|
+| **ArchTraits** | `archtraits.h/.cpp` | 10 KB, 4 KB | ✅ `arch.dart` | ✅ |
+| **Assembler** | `assembler.h/.cpp` | 4 KB, 12 KB | ✅ `x86_assembler.dart`, `a64_assembler.dart` | ✅ |
+| **Builder** | `builder.h/.cpp` | 55 KB, 24 KB | ⚠️ Parcial `code_builder.dart` | 🔴 **Crítico** |
+| **CodeBuffer** | `codebuffer.h` | 3 KB | ✅ `code_buffer.dart` | ✅ |
+| **CodeHolder** | `codeholder.h/.cpp` | 52 KB, 45 KB | ✅ `code_holder.dart` | ✅ |
+| **CodeWriter** | `codewriter.cpp`, `codewriter_p.h` | 8 KB, 5 KB | ❌ | 🟡 Média |
+| **Compiler** | `compiler.h/.cpp` | 30 KB, 19 KB | ⚠️ Básico `builder.dart` (CFG) | 🔴 **Crítico** |
+| **CompilerDefs** | `compilerdefs.h` | 10 KB | ❌ | 🟡 Média |
+| **ConstPool** | `constpool.h/.cpp` | 7 KB, 9 KB | ✅ `const_pool.dart` | ✅ |
+| **CpuInfo** | `cpuinfo.h/.cpp` | 75 KB, 92 KB | ✅ `cpuinfo.dart` | ✅ |
+| **EmitHelper** | `emithelper.cpp`, `emithelper_p.h` | 11 KB, 2 KB | ❌ | 🟡 Média |
+| **Emitter** | `emitter.h/.cpp` | 40 KB, 12 KB | ⚠️ Parcial (X86/A64 encoder) | 🟡 |
+| **EmitterUtils** | `emitterutils.cpp`, `emitterutils_p.h` | 4 KB, 2 KB | ❌ | 🟢 Baixa |
+| **Environment** | `environment.h/.cpp` | 19 KB, 1 KB | ✅ `environment.dart` | ✅ |
+| **ErrorHandler** | `errorhandler.h/.cpp` | 7 KB, 0.5 KB | ⚠️ VirtMem errors apenas | 🟡 |
+| **Formatter** | `formatter.h/.cpp` | 8 KB, 18 KB | ⚠️ Parcial `formatter.dart` | 🟡 |
+| **Func** | `func.h/.cpp` | 77 KB, 12 KB | ✅ `x86_func.dart` (FuncSignature) | ✅ |
+| **FuncArgsContext** | `funcargscontext.cpp`, `funcargscontext_p.h` | 11 KB, 7 KB | ❌ | 🟡 Média |
+| **Globals** | `globals.h/.cpp` | 15 KB, 3 KB | ✅ `globals.dart` | ✅ |
+| **Inst** | `inst.h/.cpp` | 34 KB, 3 KB | ⚠️ Enum em `x86_inst_db.g.dart` | 🟡 |
+| **InstDB** | `instdb.cpp`, `instdb_p.h` | 4 KB, 1 KB | ✅ Gerado `x86_inst_db.g.dart`, `a64_inst_db.g.dart` | ✅ |
+| **JitAllocator** | `jitallocator.h/.cpp` | 24 KB, 58 KB | ✅ `virtmem.dart` | ✅ |
+| **JitRuntime** | `jitruntime.h/.cpp` | 3 KB, 2 KB | ✅ `jit_runtime.dart` + cache | ✅ |
+| **Logger** | `logger.h/.cpp` | 7 KB, 1 KB | ⚠️ Básico em `formatter.dart` | 🟡 |
+| **Operand** | `operand.h/.cpp` | 120 KB, 3 KB | ✅ `operand.dart`, `x86_operands.dart` | ✅ |
+| **OSUtils** | `osutils.h/.cpp`, `osutils_p.h` | 1 KB, 1 KB, 2 KB | ⚠️ Parcial (libc.dart) | 🟡 |
+| **RAPass (Register Allocator)** |
+| - RAAssignment | `raassignment_p.h` | 17 KB | ❌ | 🔴 Alta |
+| - RACFGBlock | `racfgblock_p.h` | 13 KB | ⚠️ Básico `CFGBlock` | 🟡 |
+| - RACFGBuilder | `racfgbuilder_p.h` | 23 KB | ⚠️ Básico `CFGBuilder` | 🟡 |
+| - RAConstraints | `raconstraints_p.h` | 1 KB | ❌ | 🟡 |
+| - RADefs | `radefs_p.h` | 32 KB | ❌ | 🟡 |
+| - RAInst | `rainst_p.h` | 13 KB | ❌ | 🟡 |
+| - RALocal | `ralocal.cpp`, `ralocal_p.h` | 48 KB, 10 KB | ❌ | 🔴 Alta |
+| - RAPass | `rapass.cpp`, `rapass_p.h` | 75 KB, 23 KB | ⚠️ Linear scan básico | 🔴 **Crítico** |
+| - RAReg | `rareg_p.h` | 13 KB | ❌ | 🟡 |
+| - RAStack | `rastack.cpp`, `rastack_p.h` | 5 KB, 4 KB | ✅ Spills básicos | 🟡 |
+| **String** | `string.h/.cpp` | 13 KB, 15 KB | ❌ Usar Dart `String` | 🟢 |
+| **Target** | `target.h/.cpp` | 1 KB, 0.4 KB | ❌ | 🟢 |
+| **Type** | `type.h/.cpp` | 18 KB, 2 KB | ✅ `type.dart` | ✅ |
+| **VirtMem** | `virtmem.h/.cpp` | 13 KB, 36 KB | ✅ `virtmem.dart` | ✅ |
+| **Support (utilitários)** | `support/*` | ? | ❌ | 🟡 |
+
+**⚠️ CRÍTICO**:
+- **Compiler infraestrutura completa**: C++ tem ~50 KB de código para construir IR completo (nodes, edges, liveness). Dart tem apenas scaffold básico.
+- **RAPass completo**: C++ tem 75 KB de register allocator avançado (graph coloring, local/global RA). Dart tem linear scan básico.
+
+---
+
+#### 📁 **x86** (`x86/` → 25 arquivos)
+
+| Componente | Arquivo C++ | Tamanho | Status Dart | Ação |
+|------------|-------------|---------|-------------|------|
+| **x86Globals** | `x86globals.h` | 156 KB | ✅ `x86.dart` (enums) | ✅ |
+| **x86Operand** | `x86operand.h/.cpp` | 53 KB, 7 KB | ✅ `x86_operands.dart` | ✅ |
+| **x86Assembler** | `x86assembler.h/.cpp` | 29 KB, 159 KB | ✅ `x86_assembler.dart` (150+ métodos) | ⚠️ Faltam grupos |
+| **x86Builder** | `x86builder.h/.cpp` | 14 KB, 1 KB | ⚠️ `code_builder.dart` básico | Adicionar `x86Builder` específico |
+| **x86Compiler** | `x86compiler.h/.cpp` | 36 KB, 1 KB | ❌ | 🔴 **Crítico** |
+| **x86Emitter** | `x86emitter.h` | 305 KB | ⚠️ `x86_encoder.dart` (200+ inst) | Faltam AVX-512 completo |
+| **x86EmitHelper** | `x86emithelper.cpp`, `x86emithelper_p.h` | 21 KB, 5 KB | ❌ | Helpers de arg shuffling |
+| **x86Formatter** | `x86formatter.cpp`, `x86formatter_p.h` | 31 KB, 1 KB | ⚠️ Básico | Expandir mnemonics |
+| **x86Func** | `x86func.cpp`, `x86func_p.h` | 19 KB, 1 KB | ✅ `x86_func.dart` | ✅ |
+| **x86InstAPI** | `x86instapi.cpp`, `x86instapi_p.h` | 74 KB, 1 KB | ❌ | Validação/query de inst |
+| **x86InstDB** | `x86instdb.cpp/.h`, `x86instdb_p.h` | 512 KB, 30 KB, 17 KB | ✅ Gerado `x86_inst_db.g.dart` (1831 inst) | ✅ |
+| **x86Opcode** | `x86opcode_p.h` | 20 KB | ⚠️ Inline em encoder | ✅ |
+| **x86RAPass** | `x86rapass.cpp`, `x86rapass_p.h` | 59 KB, 2 KB | ❌ | X86-specific RA refinements |
+| **Serializer** | - | - | ✅ `x86_serializer.dart` (custom) | ✅ |
+
+**Instruções x86:**
+- C++: Suporta 1831 instruções (todos prefixos, EVEX, etc.)
+- Dart: ~220 instruções implementadas (SSE2, AVX, AVX2, BMI1/2, AES, SHA)
+- **Faltam**: AVX-512 completo, FPU, MMX legacy, instruções obscuras
+
+---
+
+#### 📁 **ARM** (`arm/` → 28 arquivos)
+
+| Componente | Arquivo C++ | Tamanho | Status Dart | Ação |
+|------------|-------------|---------|-------------|------|
+| **a64Globals** | `a64globals.h` | 128 KB | ⚠️ `a64.dart` Parcial | Expandir enums |
+| **a64Operand** | `a64operand.h/.cpp` | 47 KB, 2 KB | ✅ `a64_operands.dart` | ✅ |
+| **a64Assembler** | `a64assembler.h/.cpp` | 1 KB, 171 KB | ✅ `a64_assembler.dart` Básico | 🔴 Faltam MUITOS métodos |
+| **a64Builder** | `a64builder.h/.cpp` | 1 KB, 1 KB | ✅ `a64_code_builder.dart` | ✅ |
+| **a64Compiler** | `a64compiler.h/.cpp` | 12 KB, 1 KB | ❌ | 🔴 Crítico |
+| **a64Emitter** | `a64emitter.h` | 48 KB | ⚠️ `a64_encoder.dart` subset | Adicionar NEON completo |
+| **a64EmitHelper** | `a64emithelper.cpp`, `a64emithelper_p.h` | 14 KB, 1 KB | ❌ | Helpers de prologue/epilogue |
+| **a64Formatter** | `a64formatter.cpp`, `a64formatter_p.h` | 1 KB, 1 KB | ❌ | Mnemonics ARM |
+| **a64Func** | `a64func.cpp`, `a64func_p.h` | 7 KB, 1 KB | ⚠️ Básico | Calling conventions |
+| **a64InstAPI** | `a64instapi.cpp`, `a64instapi_p.h` | 7 KB, 1 KB | ❌ | Query/validation |
+| **a64InstDB** | `a64instdb.cpp/.h`, `a64instdb_p.h` | 230 KB, 2 KB, 21 KB | ✅ Gerado `a64_inst_db.g.dart` (1347 inst) | ✅ |
+| **a64RAPass** | `a64rapass.cpp`, `a64rapass_p.h` | 32 KB, 2 KB | ❌ | A64-specific RA |
+| **Dispatcher** | - | - | ⚠️ `a64_dispatcher.g.dart` TODO stubs | Implementar handlers |
+| **Serializer** | - | - | ⚠️ `a64_serializer.dart` subset | Expandir encoding |
+
+**⚠️ Gap Crítico**:
+- C++ `a64assembler.cpp`: 171 KB de métodos (centenas de instruções NEON, FP, LD/ST variants)
+- Dart `a64_assembler.dart`: Apenas ~30 métodos básicos
+- **Faltam**: 90%+ das instruções ARM64
+
+---
+
+#### 📁 **UJIT** (`ujit/` → ?)
+
+Universal JIT compiler (não portado):
+
+- Cross-architecture IR
+- `ujit/*.h/*.cpp`
+- **Status**: ❌ Não iniciado
+- **Prioridade**: 🟢 Baixa (não essencial para Blend2D)
+
+---
+
+#### 📁 **Support** (`support/` → ?)
+
+Utilitários (strings, math, memory):
+
+- Provavelmente 10-20 arquivos
+- **Status**: ❌ Substituir por `dart:core`, `dart:math`, etc.
+- **Prioridade**: 🟢 Baixa
+
+---
+
+### 📁 **DB (Database)** (`db/` → arquivos de dados)
+
+Definições de instruções em formato estruturado:
+
+```
+db/
+├── a64.json (ou similar)
+├── x86.json
+└── ...
+```
+
+**C++ Tools** (`tools/`):
+- Geradores de código C++ a partir de `db/`
+- Scripts Python
+
+**Dart Tools** (`tool/`):
+- ✅ `gen_x86_db.dart`: Gera `x86_inst_db.g.dart` e dispatcher
+- ✅ `gen_a64_db.dart`: Gera `a64_inst_db.g.dart` e dispatcher (com TODOs)
+- ✅ `gen_tables.dart`: Unifica geração
+- ✅ `gen_enum.dart`: Gera enums
+
+**Gap**: Geradores Dart não replicam 100% da pipeline C++ (algumas metadata ausentes).
+
+---
+
+### 📋 **Checklist: Componentes Faltantes (Priorizado)**
+
+#### 🔴 **Crítico (Core do Compiler)**
+
+- [ ] **Compiler IR completo** (`compiler.h/.cpp`):
+  - [ ] `FuncNode` (representa função com args, locals)
+  - [ ] `BlockNode` (basic blocks)
+  - [ ] `InstNode` (instruções no IR)
+  - [ ] `LabelNode`, `JumpNode`
+  - [ ] `VarNode` (variáveis virtuais)
+  - [ ] Liveness analysis avançada
+  - [ ] Dominance tree
+  - [ ] Loop detection
+
+- [ ] **RAPass avançado** (`rapass.cpp`):
+  - [ ] Graph coloring register allocation
+  - [ ] Live range splitting
+  - [ ] Spill cost calculation
+  - [ ] Rematerialization
+  - [ ] COPY coalescing
+
+- [ ] **x86Compiler** (`x86compiler.h/.cpp`):
+  - [ ] Integration com IR
+  - [ ] X86-specific prologue/epilogue
+  - [ ] Emit helpers
+
+- [ ] **a64Compiler** (`a64compiler.h/.cpp`):
+  - [ ] ARM64-specific prologue/epilogue
+  - [ ] AAPCS calling conv completa
+
+#### 🟡 **Alta (Cobertura de Instruções)**
+
+- [ ] **x86 AVX-512** (EVEX encoding):
+  - [ ] Máscaras (`k0-k7`)
+  - [ ] ZMM registers (`zmm0-zmm31`)
+  - [ ] Embedded broadcast
+  - [ ] Rounding control
+
+- [ ] **a64 NEON completo**:
+  - [ ] Vector load/store (LD1/ST1 com post-index, etc.)
+  - [ ] Advanced SIMD arithmetic (100+ instruções)
+  - [ ] FP16, BF16 variants
+  - [ ] SVE (Scalable Vector Extension) ?
+
+- [ ] **x86 FPU legacy** (x87):
+  - [ ] FLD, FST, FADD, FMUL, etc.
+
+#### 🟡 **Média (Utilitários)**
+
+- [ ] **EmitHelper** (`emithelper.cpp`, x86/a64):
+  - [ ] Argument shuffling (reg → stack, stack → reg)
+  - [ ] Calling convention helpers
+
+- [ ] **FuncArgsContext** (`funcargscontext.cpp`):
+  - [ ] Argument assignment (GP, XMM, stack)
+  - [ ] Variadic functions
+
+- [ ] **InstAPI** (x86/a64):
+  - [ ] Query instruction properties
+  - [ ] Validate operand combinations
+
+- [ ] **Formatter avançado**:
+  - [ ] Mnemonics completos
+  - [ ] AT&T syntax (além de Intel)
+  - [ ] Comments/annotations
+
+- [ ] **CodeWriter** (`codewriter.cpp`):
+  - [ ] High-level code serialization
+
+#### 🟢 **Baixa (Nice-to-have)**
+
+- [ ] **UJIT**: Cross-arch IR
+- [ ] **Support libs**: Usar Dart equivalents
+- [ ] **String class**: Usar `dart:core` `String`
+- [ ] **Target abstraction**: Minimal
+
+---
+
+## 🎯 **Recomendações para Próximas Iterações**
+
+### **Curto Prazo (1-2 semanas)**
+
+1. **Expandir a64Assembler**:
+   - Portar 50+ métodos de `a64assembler.cpp` (focus: NEON integer ops)
+   - Testar cada grupo (add/sub/mul NEON)
+
+2. **Implementar FuncNode/BlockNode** (IR):
+   - Criar `lib/src/core/ir.dart`
+   - `class FuncNode`, `class BlockNode`, `class InstNode`
+   - Integrar com `Builder`
+
+3. **Adicionar x86EmitHelper básico**:
+   - Argument shuffling simples
+   - Preparar para x86Compiler
+
+### **Médio Prazo (1 mês)**
+
+4. **x86Compiler skeleton**:
+   - Criar `lib/src/x86/x86_compiler.dart`
+   - Prólogo/epílogo com RA
+   - Emit de função completa
+
+5. **a64Compiler skeleton**:
+   - Criar `lib/src/arm/a64_compiler.dart`
+   - AAPCS calling convention
+
+6. **RAPass com graph coloring**:
+   - Implementar algoritmo Chaitin-Briggs (simplificado)
+   - Comparar performance com linear scan
+
+### **Longo Prazo (3 meses)**
+
+7. **AVX-512 completo**:
+   - EVEX encoder
+   - ZMM, masks, embedded ops
+
+8. **a64 NEON completo**:
+   - Port de todos os grupos de `a64emitter.h`
+
+9. **InstAPI e validação**:
+   - Runtime validation de operandos
+   - Mensagens de erro melhores
+
+10. **Formatter AT&T**:
+    - Syntax alternativa para x86
+
+---
+
+## 📚 **Arquivos C++ Críticos para Estudar**
+
+**Core Compiler**:
+- `compiler.cpp` (19 KB) - IR construction
+- `rapass.cpp` (75 KB) - Register allocator master
+- `builder.cpp` (24 KB) - Builder integration
+
+**x86**:
+- `x86assembler.cpp` (159 KB) - Todos os métodos de instrução
+- `x86compiler.cpp` (1 KB wrapper + includes) - Integration
+- `x86rapass.cpp` (59 KB) - X86-specific RA
+
+**ARM64**:
+- `a64assembler.cpp` (171 KB) - **CRÍTICO** - centenas de instruções
+- `a64rapass.cpp` (32 KB) - ARM64 RA nuances
+
+**Geração de Código**:
+- `tools/` (Python scripts) - Geradores originais
+- `db/` (JSON/estruturado) - Database de instruções
+
+---
+
+**Última Atualização**: 27 Dezembro 2025  
+**Foco Atual**: Blend2D core (BLImage, BLContext) + AsmJit compiler IR basics

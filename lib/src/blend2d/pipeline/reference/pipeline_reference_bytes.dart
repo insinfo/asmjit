@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
-import 'pipeline_ops.dart';
-import 'pipeline_types.dart';
+import '../pipeline_ops.dart';
+import '../pipeline_types.dart';
 
 /// Reference pipeline implementation for JS/wasm (no dart:ffi).
 class PipelineReferenceBytes {
@@ -144,22 +144,26 @@ void _copy32Bytes({
       var dstPixel = dstRow;
       var srcPixel = srcRow;
       if (width >= 1) {
-        dst.setUint32(dstPixel, src.getUint32(srcPixel, Endian.little), Endian.little);
+        dst.setUint32(
+            dstPixel, src.getUint32(srcPixel, Endian.little), Endian.little);
         dstPixel += 4;
         srcPixel += 4;
       }
       if (width >= 2) {
-        dst.setUint32(dstPixel, src.getUint32(srcPixel, Endian.little), Endian.little);
+        dst.setUint32(
+            dstPixel, src.getUint32(srcPixel, Endian.little), Endian.little);
         dstPixel += 4;
         srcPixel += 4;
       }
       if (width >= 3) {
-        dst.setUint32(dstPixel, src.getUint32(srcPixel, Endian.little), Endian.little);
+        dst.setUint32(
+            dstPixel, src.getUint32(srcPixel, Endian.little), Endian.little);
         dstPixel += 4;
         srcPixel += 4;
       }
       if (width == 4) {
-        dst.setUint32(dstPixel, src.getUint32(srcPixel, Endian.little), Endian.little);
+        dst.setUint32(
+            dstPixel, src.getUint32(srcPixel, Endian.little), Endian.little);
       }
       dstRow += dstStride;
       srcRow += srcStride;

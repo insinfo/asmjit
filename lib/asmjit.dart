@@ -20,7 +20,9 @@ export 'src/asmjit/core/inst_api.dart';
 export 'src/asmjit/core/type.dart';
 export 'src/asmjit/core/regalloc.dart';
 export 'src/asmjit/core/code_builder.dart';
-export 'src/asmjit/core/builder.dart' hide Operand;
+export 'src/asmjit/core/builder.dart'
+    hide Operand, NodeType, FuncNode, BlockNode, InstNode, LabelNode;
+export 'src/asmjit/core/ir.dart'; // Compiler IR (nodes, CFG, liveness)
 
 // Runtime
 export 'src/asmjit/runtime/libc.dart';

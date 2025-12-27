@@ -38,7 +38,7 @@ class X86CodeBuilder extends ir.BaseBuilder {
   FuncFrameEmitter? _frameEmitter;
 
   // ignore: unused_field - reserved for function tracking in compiler mode.
-  FuncNode? _currentFunc;
+  ir.FuncNode? _currentFunc;
 
   X86CodeBuilder._({
     required this.code,

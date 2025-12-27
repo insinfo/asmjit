@@ -1,9 +1,9 @@
 import 'dart:ffi';
 
 import 'package:asmjit/asmjit.dart';
-import 'pipeline_ops.dart';
-import 'pipeline_reference.dart';
-import 'pipeline_types.dart';
+import '../pipeline_ops.dart';
+import '../reference/pipeline_reference.dart';
+import '../pipeline_types.dart';
 
 typedef _NativePipeline = Void Function(
   IntPtr dst,
@@ -380,8 +380,7 @@ void _emitCopy(
   int srcStrideConst = 0,
   required PixelFormat dstFormat,
   required PixelFormat srcFormat,
-}
-) {
+}) {
   final isA8 = dstFormat == PixelFormat.a8 || srcFormat == PixelFormat.a8;
   final bpp = isA8 ? 1 : 4;
   final rowDst = b.newGpReg();
@@ -415,7 +414,8 @@ void _emitCopy(
   b.je(endRow);
 
   b.mov(pixel, X86Mem.baseDisp(rowSrc, 0, size: bpp));
-  if (!isA8 && (srcFormat == PixelFormat.xrgb32 || dstFormat == PixelFormat.xrgb32)) {
+  if (!isA8 &&
+      (srcFormat == PixelFormat.xrgb32 || dstFormat == PixelFormat.xrgb32)) {
     b.or(pixel, 0xFF000000);
   }
   b.mov(X86Mem.baseDisp(rowDst, 0, size: bpp), pixel);
@@ -449,8 +449,7 @@ void _emitFill(
   int dstStrideConst = 0,
   int colorConst = 0,
   required PixelFormat dstFormat,
-}
-) {
+}) {
   final isA8 = dstFormat == PixelFormat.a8;
   final bpp = isA8 ? 1 : 4;
   final rowDst = b.newGpReg();
@@ -517,8 +516,7 @@ void _emitSrcOver(
   required int globalAlphaConst,
   required Pointer<Uint8>? maskConst,
   required int maskStrideConst,
-}
-) {
+}) {
   final isA8 = dstFormat == PixelFormat.a8 || srcFormat == PixelFormat.a8;
   if (isA8) {
     if (widthConst > 0 && widthConst <= 4) {
@@ -776,8 +774,7 @@ void _emitSrcOver32X86(
   required int globalAlphaConst,
   required Pointer<Uint8>? maskConst,
   required int maskStrideConst,
-}
-) {
+}) {
   final hasMask = maskConst != null;
   final hasGlobalAlpha = globalAlphaConst != 0 && globalAlphaConst != 255;
   final needsMasking = hasMask || hasGlobalAlpha;
@@ -1067,8 +1064,7 @@ void _emitSrcOverA8X86(
   required int globalAlphaConst,
   required Pointer<Uint8>? maskConst,
   required int maskStrideConst,
-}
-) {
+}) {
   final hasMask = maskConst != null;
   final hasGlobalAlpha = globalAlphaConst != 0 && globalAlphaConst != 255;
   final needsMasking = hasMask || hasGlobalAlpha;
@@ -1241,11 +1237,10 @@ void _emitCopyA64(
   A64Gp srcStride, {
   required PixelFormat dstFormat,
   required PixelFormat srcFormat,
-}
-) {
+}) {
   final isA8 = dstFormat == PixelFormat.a8 || srcFormat == PixelFormat.a8;
-  final needAlpha =
-      !isA8 && (dstFormat == PixelFormat.xrgb32 || srcFormat == PixelFormat.xrgb32);
+  final needAlpha = !isA8 &&
+      (dstFormat == PixelFormat.xrgb32 || srcFormat == PixelFormat.xrgb32);
   final rowDst = b.newGpReg();
   final rowSrc = b.newGpReg();
   final xCount = b.newGpReg();
@@ -1318,8 +1313,7 @@ void _emitFillA64(
   A64Gp color, {
   required PixelFormat dstFormat,
   required int colorConst,
-}
-) {
+}) {
   final isA8 = dstFormat == PixelFormat.a8;
   final rowDst = b.newGpReg();
   final xCount = b.newGpReg();
@@ -1402,8 +1396,7 @@ void _emitSrcOverA64(
   required int globalAlphaConst,
   required Pointer<Uint8>? maskConst,
   required int maskStrideConst,
-}
-) {
+}) {
   final isA8 = dstFormat == PixelFormat.a8 || srcFormat == PixelFormat.a8;
   if (isA8) {
     if (widthConst > 0 && widthConst <= 4) {
@@ -1663,8 +1656,7 @@ void _emitSrcOver32A64(
   required int globalAlphaConst,
   required Pointer<Uint8>? maskConst,
   required int maskStrideConst,
-}
-) {
+}) {
   final hasMask = maskConst != null;
   final hasGlobalAlpha = globalAlphaConst != 0 && globalAlphaConst != 255;
   final needsMasking = hasMask || hasGlobalAlpha;
@@ -1961,8 +1953,7 @@ void _emitSrcOverA8A64(
   required int globalAlphaConst,
   required Pointer<Uint8>? maskConst,
   required int maskStrideConst,
-}
-) {
+}) {
   final hasMask = maskConst != null;
   final hasGlobalAlpha = globalAlphaConst != 0 && globalAlphaConst != 255;
   final needsMasking = hasMask || hasGlobalAlpha;

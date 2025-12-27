@@ -1,7 +1,7 @@
 import 'dart:ffi';
 
-import 'pipeline_ops.dart';
-import 'pipeline_types.dart';
+import '../pipeline_ops.dart';
+import '../pipeline_types.dart';
 
 /// Reference (pure Dart) with ffi Pointer<Uint8> pipeline implementation.
 /// uso de aritmetica de ponteiros para performace e gerenciamento de memoria manual para performace

@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 
-import 'pipeline_ops.dart';
-import 'pipeline_reference_bytes.dart';
-import 'pipeline_types.dart';
+import '../pipeline_ops.dart';
+import '../reference/pipeline_reference_bytes.dart';
+import '../pipeline_types.dart';
 
 enum PipelineBackend {
   auto,
