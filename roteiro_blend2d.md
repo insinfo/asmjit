@@ -1,4 +1,5 @@
-portar o C:\MyDartProjects\asmjit\referencias\blend2d-master para dart
+finalizar o necessario em C:\MyDartProjects\asmjit\roteiro_asmjit.md
+e portar o C:\MyDartProjects\asmjit\referencias\blend2d-master para dart
 em C:\MyDartProjects\asmjit\lib\src\blend2d
 
 a ideia e portar o blend2d para dart ultra otimizado com duas implementações uma que usa o asmjit
