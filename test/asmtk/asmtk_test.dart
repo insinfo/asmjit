@@ -1,5 +1,6 @@
-import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
+import 'package:test/test.dart';
+import 'package:asmjit/asmtk.dart';
 
 void main() {
   group('AsmTokenizer', () {

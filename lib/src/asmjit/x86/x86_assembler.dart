@@ -159,12 +159,20 @@ class X86Assembler {
 
   /// MOV r64, [mem].
   void movRM(X86Gp dst, X86Mem mem) {
-    _enc.movR64Mem(dst, mem);
+    if (dst.bits == 64) {
+      _enc.movR64Mem(dst, mem);
+    } else {
+      _enc.movR32Mem(dst.r32, mem);
+    }
   }
 
   /// MOV [mem], r64.
   void movMR(X86Mem mem, X86Gp src) {
-    _enc.movMemR64(mem, src);
+    if (src.bits == 64) {
+      _enc.movMemR64(mem, src);
+    } else {
+      _enc.movMemR32(mem, src.r32);
+    }
   }
 
   /// MOV [mem], imm.

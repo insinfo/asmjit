@@ -412,9 +412,23 @@ class X86Encoder {
     emitModRmMem(dst.encoding, mem);
   }
 
+  /// MOV r32, [mem]
+  void movR32Mem(X86Gp dst, X86Mem mem) {
+    emitRexForRegMem(dst, mem);
+    buffer.emit8(0x8B);
+    emitModRmMem(dst.encoding, mem);
+  }
+
   /// MOV [mem], r64
   void movMemR64(X86Mem mem, X86Gp src) {
     emitRexForRegMem(src, mem, w: true);
+    buffer.emit8(0x89);
+    emitModRmMem(src.encoding, mem);
+  }
+
+  /// MOV [mem], r32
+  void movMemR32(X86Mem mem, X86Gp src) {
+    emitRexForRegMem(src, mem);
     buffer.emit8(0x89);
     emitModRmMem(src.encoding, mem);
   }

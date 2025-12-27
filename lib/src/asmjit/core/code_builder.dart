@@ -654,7 +654,11 @@ class X86CodeBuilder extends ir.BaseBuilder {
 
   BaseReg? _physRegForVirt(VirtReg vreg) {
     if (vreg.physReg != null) {
-      return vreg.physReg;
+      final phys = vreg.physReg!;
+      if (vreg.size == 4) return phys.r32;
+      if (vreg.size == 2) return phys.r16;
+      if (vreg.size == 1) return phys.r8;
+      return phys;
     }
     if (vreg.physXmm != null) {
       BaseReg phys = vreg.physXmm!;

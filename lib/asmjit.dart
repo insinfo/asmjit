@@ -49,7 +49,3 @@ export 'src/asmjit/arm/a64_serializer.dart';
 // Inline
 export 'src/inline/inline_bytes.dart';
 export 'src/inline/inline_asm.dart';
-
-// ASMTK (Assembly Toolkit - Text Parser)
-export 'src/asmtk/tokenizer.dart';
-export 'src/asmtk/parser.dart';
