@@ -186,6 +186,16 @@ class CodeHolder {
   /// Gets a label by name.
   Label? getLabelByName(String name) => _labelManager.getLabelByName(name);
 
+  /// Returns the total number of labels allocated.
+  int get labelCount => _labelManager.labelCount;
+
+  /// Ensures the label manager has at least [count] labels.
+  void ensureLabelCount(int count) {
+    while (_labelManager.labelCount < count) {
+      _labelManager.newLabel();
+    }
+  }
+
   /// Binds a label to the current position in the text section.
   void bind(Label label) {
     _labelManager.bind(label, text.buffer.length);

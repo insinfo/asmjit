@@ -2,6 +2,7 @@ import '../core/compiler.dart';
 import '../core/builder.dart';
 import '../core/code_builder.dart';
 import '../core/code_holder.dart';
+import '../core/emitter.dart';
 import '../core/environment.dart';
 import '../core/formatter.dart';
 import '../core/labels.dart';
@@ -10,6 +11,7 @@ import '../core/regalloc.dart';
 import '../runtime/jit_runtime.dart';
 
 import 'x86_inst_db.g.dart'; // generated IDs
+import 'x86_assembler.dart';
 import 'x86_func.dart';
 
 /// Analyzes x86 instructions for CFG construction.
@@ -217,5 +219,121 @@ class X86Compiler {
       useCache: useCache,
       cacheKey: cacheKey,
     );
+  }
+}
+
+/// IR compiler backend that lowers Func/Invoke nodes into assembler output.
+///
+/// This allows using `builder.dart` IR with the same pipeline as X86CodeBuilder.
+class X86IrCompiler {
+  final Environment env;
+  final int encodingOptions;
+  final int diagnosticOptions;
+
+  X86IrCompiler({
+    Environment? env,
+    this.encodingOptions = EncodingOptions.kNone,
+    this.diagnosticOptions = DiagnosticOptions.kNone,
+  }) : env = env ?? Environment.host();
+
+  /// Finalizes code for the given [nodes] in a fresh [CodeHolder].
+  FinalizedCode finalize(NodeList nodes, {FuncFrameAttr? frameAttrHint}) {
+    final code = CodeHolder(env: env);
+    final asm = X86Assembler(code);
+    emit(nodes, asm, frameAttrHint: frameAttrHint);
+    return code.finalize();
+  }
+
+  /// Builds and allocates executable memory for [nodes].
+  JitFunction build(
+    NodeList nodes,
+    JitRuntime runtime, {
+    FuncFrameAttr? frameAttrHint,
+    bool useCache = false,
+    String? cacheKey,
+  }) {
+    final code = CodeHolder(env: env);
+    final asm = X86Assembler(code);
+    emit(nodes, asm, frameAttrHint: frameAttrHint);
+    if (useCache) {
+      return runtime.addCached(code, key: cacheKey);
+    }
+    return runtime.add(code);
+  }
+
+  /// Emits [nodes] to the given [asm] using the full pipeline.
+  void emit(NodeList nodes, X86Assembler asm,
+      {FuncFrameAttr? frameAttrHint}) {
+    _ensureLabels(nodes, asm.code);
+
+    final analyzer = X86InstructionAnalyzer();
+    final cfgBuilder = CFGBuilder(analyzer);
+    final liveness = LivenessAnalysis(cfgBuilder);
+
+    while (nodes.isNotEmpty) {
+      final segment = _extractFuncSegment(nodes);
+      if (segment.isEmpty) break;
+
+      // Compute CFG/liveness for the current function segment.
+      liveness.run(segment);
+
+      final builder = X86CodeBuilder.forCodeHolder(asm.code)
+        ..encodingOptions = encodingOptions
+        ..diagnosticOptions = diagnosticOptions;
+
+      builder.importNodes(segment);
+      builder.emitToAssembler(asm, frameAttrHint: frameAttrHint);
+    }
+  }
+
+  /// Emits nodes from a [BaseBuilder] instance.
+  void emitBuilder(BaseBuilder builder, X86Assembler asm,
+      {FuncFrameAttr? frameAttrHint}) {
+    emit(builder.nodes, asm, frameAttrHint: frameAttrHint);
+  }
+
+  void _ensureLabels(NodeList nodes, CodeHolder code) {
+    var maxId = -1;
+    for (final node in nodes.nodes) {
+      if (node is LabelNode) {
+        if (node.label.id > maxId) maxId = node.label.id;
+      } else if (node is InstNode) {
+        for (final op in node.operands) {
+          if (op is LabelOperand) {
+            if (op.label.id > maxId) maxId = op.label.id;
+          }
+        }
+      } else if (node is InvokeNode) {
+        final target = node.target;
+        if (target is Label) {
+          if (target.id > maxId) maxId = target.id;
+        } else if (target is LabelOperand) {
+          if (target.label.id > maxId) maxId = target.label.id;
+        }
+      }
+    }
+
+    if (maxId >= 0) {
+      code.ensureLabelCount(maxId + 1);
+    }
+  }
+
+  NodeList _extractFuncSegment(NodeList nodes) {
+    final segment = NodeList();
+    var node = nodes.first;
+    var started = false;
+
+    while (node != null) {
+      final next = node.next;
+      if (node is FuncNode && started) {
+        break;
+      }
+      started = true;
+      nodes.remove(node);
+      segment.append(node);
+      node = next;
+    }
+
+    return segment;
   }
 }

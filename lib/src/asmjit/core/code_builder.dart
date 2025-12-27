@@ -65,6 +65,16 @@ class X86CodeBuilder extends ir.BaseBuilder {
     );
   }
 
+  /// Creates a code builder that targets an existing [CodeHolder].
+  factory X86CodeBuilder.forCodeHolder(CodeHolder code) {
+    final env = code.env;
+    return X86CodeBuilder._(
+      code: code,
+      is64Bit: env.is64Bit,
+      callingConvention: env.callingConvention,
+    );
+  }
+
   /// Current code offset.
   int get offset => code.text.buffer.length;
 
@@ -1671,6 +1681,27 @@ class X86CodeBuilder extends ir.BaseBuilder {
     );
     addNode(node);
     return node;
+  }
+
+  /// Imports nodes from [src] and resets builder state.
+  void importNodes(ir.NodeList src) {
+    clear();
+    _ra.reset();
+    _argRegs.clear();
+    _fixedArgRegs.clear();
+    _returnReg = null;
+    _funcFrame = null;
+    _frameEmitter = null;
+    _currentFunc = null;
+
+    for (final node in src.nodes) {
+      addNode(node);
+    }
+  }
+
+  /// Emits the current nodes to the given assembler.
+  void emitToAssembler(X86Assembler asm, {FuncFrameAttr? frameAttrHint}) {
+    _emitToAssembler(asm, frameAttrHint: frameAttrHint);
   }
 
   void _emitToAssembler(X86Assembler asm, {FuncFrameAttr? frameAttrHint}) {

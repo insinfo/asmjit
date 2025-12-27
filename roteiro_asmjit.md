@@ -59,8 +59,9 @@ Para iniciar o porte da parte **JIT** do Blend2D (`pipecompiler.cpp`), o AsmJit 
 
 1.  🔴 **Compiler IR & CodeGen (Crítico)**:
     - O Blend2D usa intensivamente `Compiler` para construir pipelines (`PipeCompiler`).
-    - Atualmente, `builder.dart` tem a estrutura de nós (`FuncNode`, `BlockNode`), mas **não gera código de máquina** a partir deles (falta `serializeNodes` tratar `Func/Invoke` e converter para instruções do `Assembler`).
-    - Falta **Register Allocator** integrado que reescreva registradores virtuais para físicos no stream de instruções.
+    - `builder.dart` possui a estrutura de nós (`FuncNode`, `BlockNode`), mas `serializeNodes` ainda ignora `Func/Invoke` quando usado direto.
+    - **Novo**: `X86IrCompiler` agora baixa `Func/Invoke` e emite código via `X86Serializer`, com CFG/liveness no fluxo e suporte a múltiplas funções.
+    - Ainda falta evoluir o backend de compiler (RA/IR avançado + reescrita completa) para paridade com o C++.
 
 2.  🟡 **Heavy Test Suites**:
     - Antes de confiar no JIT para renderização de pixels (onde bugs visuais são difíceis de debugar), precisamos rodar as suites pesadas: `asmjit_test_assembler_x86`, `asmjit_test_compiler_x86`.
@@ -77,6 +78,8 @@ Para iniciar o porte da parte **JIT** do Blend2D (`pipecompiler.cpp`), o AsmJit 
 **Warnings**: nao verificado
 
 Atualizacoes recentes:
+- **IR puro -> assembler**: `X86IrCompiler` compila `builder.dart` (Func/Invoke) com CFG/liveness e suporta multiplas funcoes por NodeList.
+- **Labels IR**: `CodeHolder.ensureLabelCount()` garante IDs de labels criados no IR antes da emissao.
 - **Codegen benchmark com AVX-512**: sequencias ZMM (reg/mem) adicionadas, removendo o TODO de paridade.
 - **Overhead benchmark alinhado**: inclui caminhos de Compiler/Builder + RT e reinit com reset de nodes.
 - **Regalloc benchmark com memoria**: tabela agora reporta estimativas de memoria (CodeHolder/nodes).
