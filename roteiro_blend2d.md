@@ -6,4 +6,7 @@ a ideia e portar o blend2d para dart ultra otimizado com duas implementações u
 C:\MyDartProjects\asmjit\lib\src\asmjit e outra que não depende de asmjit
 pois a versão que não depende de asmjit poderar rodar em qualquer plataforma
 
-micro otimização seram muito importantes para garantir alto desempenho
+micro otimizações seram muito importantes para garantir alto desempenho
+
+não misture C:\MyDartProjects\asmjit\lib\src\asmjit com o C:\MyDartProjects\asmjit\lib\src\blend2d 
+C:\MyDartProjects\asmjit\lib\src\asmtk  pois no futuro seram pacotes separados
