@@ -1502,4 +1502,112 @@ class X86Assembler {
       _enc.vdivpdYYY(dst, src1, src2);
   void vdivpdYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
       _enc.vdivpdYmmYmmMem(dst, src1, mem);
+
+  // SSE Logical operations
+  void andps(X86Xmm dst, X86Xmm src) => _enc.andpsXmmXmm(dst, src);
+  void andpsXM(X86Xmm dst, X86Mem mem) => _enc.andpsXmmMem(dst, mem);
+  void andpd(X86Xmm dst, X86Xmm src) => _enc.andpdXmmXmm(dst, src);
+  void andpdXM(X86Xmm dst, X86Mem mem) => _enc.andpdXmmMem(dst, mem);
+
+  void orps(X86Xmm dst, X86Xmm src) => _enc.orpsXmmXmm(dst, src);
+  void orpsXM(X86Xmm dst, X86Mem mem) => _enc.orpsXmmMem(dst, mem);
+  void orpd(X86Xmm dst, X86Xmm src) => _enc.orpdXmmXmm(dst, src);
+  void orpdXM(X86Xmm dst, X86Mem mem) => _enc.orpdXmmMem(dst, mem);
+
+  // SSE Compare operations (min/max)
+
+  void minpsXM(X86Xmm dst, X86Mem mem) => _enc.minpsXmmMem(dst, mem);
+  void minpd(X86Xmm dst, X86Xmm src) => _enc.minpdXmmXmm(dst, src);
+  void minpdXM(X86Xmm dst, X86Mem mem) => _enc.minpdXmmMem(dst, mem);
+
+  void maxpsXM(X86Xmm dst, X86Mem mem) => _enc.maxpsXmmMem(dst, mem);
+  void maxpd(X86Xmm dst, X86Xmm src) => _enc.maxpdXmmXmm(dst, src);
+  void maxpdXM(X86Xmm dst, X86Mem mem) => _enc.maxpdXmmMem(dst, mem);
+
+  // SSE Math operations (sqrt, rcp, rsqrt)
+  void sqrtps(X86Xmm dst, X86Xmm src) => _enc.sqrtpsXmmXmm(dst, src);
+  void sqrtpsXM(X86Xmm dst, X86Mem mem) => _enc.sqrtpsXmmMem(dst, mem);
+  void sqrtpd(X86Xmm dst, X86Xmm src) => _enc.sqrtpdXmmXmm(dst, src);
+  void sqrtpdXM(X86Xmm dst, X86Mem mem) => _enc.sqrtpdXmmMem(dst, mem);
+
+  void rcpps(X86Xmm dst, X86Xmm src) => _enc.rcppsXmmXmm(dst, src);
+  void rcppsXM(X86Xmm dst, X86Mem mem) => _enc.rcppsXmmMem(dst, mem);
+  void rsqrtps(X86Xmm dst, X86Xmm src) => _enc.rsqrtpsXmmXmm(dst, src);
+  void rsqrtpsXM(X86Xmm dst, X86Mem mem) => _enc.rsqrtpsXmmMem(dst, mem);
+
+  // AVX Logical operations
+  void vandpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vandpsXmmXmmXmm(dst, src1, src2);
+  void vandpsXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vandpsXmmXmmMem(dst, src1, mem);
+  void vandpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vandpsYmmYmmYmm(dst, src1, src2);
+  void vandpsYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vandpsYmmYmmMem(dst, src1, mem);
+
+  void vandpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vandpdXmmXmmXmm(dst, src1, src2);
+  void vandpdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vandpdXmmXmmMem(dst, src1, mem);
+  void vandpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vandpdYmmYmmYmm(dst, src1, src2);
+  void vandpdYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vandpdYmmYmmMem(dst, src1, mem);
+
+  void vorpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vorpsXmmXmmXmm(dst, src1, src2);
+  void vorpsXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vorpsXmmXmmMem(dst, src1, mem);
+  void vorpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vorpsYmmYmmYmm(dst, src1, src2);
+  void vorpsYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vorpsYmmYmmMem(dst, src1, mem);
+
+  void vorpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vorpdXmmXmmXmm(dst, src1, src2);
+  void vorpdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vorpdXmmXmmMem(dst, src1, mem);
+  void vorpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vorpdYmmYmmYmm(dst, src1, src2);
+  void vorpdYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vorpdYmmYmmMem(dst, src1, mem);
+
+  void vporXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vporXmmXmmXmm(dst, src1, src2);
+  void vporXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vporXmmXmmMem(dst, src1, mem);
+  void vporYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vporYmmYmmYmm(dst, src1, src2);
+  void vporYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vporYmmYmmMem(dst, src1, mem);
+
+  void vpandXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vpandXmmXmmXmm(dst, src1, src2);
+  void vpandXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vpandXmmXmmMem(dst, src1, mem);
+  void vpandYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vpandYmmYmmYmm(dst, src1, src2);
+  void vpandYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vpandYmmYmmMem(dst, src1, mem);
+
+  void vpaddqXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vpaddqXmmXmmMem(dst, src1, mem);
+
+  void vpaddqYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vpaddqYmmYmmYmm(dst, src1, src2);
+
+  void vpaddqYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vpaddqYmmYmmMem(dst, src1, mem);
+
+  void vpadddXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vpadddXmmXmmMem(dst, src1, mem);
+  void vpadddYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vpadddYmmYmmMem(dst, src1, mem);
+
+  void vpmulldXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vpmulldXmmXmmMem(dst, src1, mem);
+  void vpmulldYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vpmulldYmmYmmMem(dst, src1, mem);
+
+  // TODO: AVX versions (vandps, vorps, etc.) - need encoder implementations
 }
