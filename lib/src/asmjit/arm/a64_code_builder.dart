@@ -141,8 +141,16 @@ class A64CodeBuilder extends ir.BaseBuilder {
     _inst(A64InstId.kLdr, [rt, rn, offset]);
   }
 
+  void ldrb(A64Gp rt, A64Gp rn, [int offset = 0]) {
+    _inst(A64InstId.kLdrb, [rt, rn, offset]);
+  }
+
   void str(A64Gp rt, A64Gp rn, [int offset = 0]) {
     _inst(A64InstId.kStr, [rt, rn, offset]);
+  }
+
+  void strb(A64Gp rt, A64Gp rn, [int offset = 0]) {
+    _inst(A64InstId.kStrb, [rt, rn, offset]);
   }
 
   void movz(A64Gp rd, int imm16, {int shift = 0}) {

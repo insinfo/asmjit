@@ -70,7 +70,7 @@ class PipelineProgram {
     if (entry != null) {
       if (globalAlpha != 0 || mask != null || maskStride != 0) {
         throw UnsupportedError(
-          'JIT pipeline does not support global alpha/mask yet',
+          'JIT pipeline does not accept runtime global alpha/mask overrides',
         );
       }
       entry(
@@ -195,15 +195,6 @@ class PipelineCompiler {
   }
 
   bool _requiresReference(List<PipelineOp> ops) {
-    for (final op in ops) {
-      if (op.dstFormat != PixelFormat.prgb32 ||
-          op.srcFormat != PixelFormat.prgb32) {
-        return true;
-      }
-      if (op.globalAlpha != 0 || op.mask != null || op.maskStride != 0) {
-        return true;
-      }
-    }
     return false;
   }
 
@@ -242,6 +233,11 @@ class PipelineCompiler {
       final dstStrideConst = op.dstStride;
       final srcStrideConst = op.srcStride;
       final colorConst = op.color;
+      final dstFormat = op.dstFormat;
+      final srcFormat = op.srcFormat;
+      final globalAlphaConst = op.globalAlpha;
+      final maskConst = op.mask as Pointer<Uint8>?;
+      final maskStrideConst = op.maskStride;
 
       switch (op.kind) {
         case PipelineOpKind.copy:
@@ -258,6 +254,8 @@ class PipelineCompiler {
             heightConst: heightConst,
             dstStrideConst: dstStrideConst,
             srcStrideConst: srcStrideConst,
+            dstFormat: dstFormat,
+            srcFormat: srcFormat,
           );
         case PipelineOpKind.fill:
           _emitFill(
@@ -271,6 +269,7 @@ class PipelineCompiler {
             heightConst: heightConst,
             dstStrideConst: dstStrideConst,
             colorConst: colorConst,
+            dstFormat: dstFormat,
           );
         case PipelineOpKind.compSrcOver:
           _emitSrcOver(
@@ -285,6 +284,11 @@ class PipelineCompiler {
             heightConst: heightConst,
             dstStrideConst: dstStrideConst,
             srcStrideConst: srcStrideConst,
+            dstFormat: dstFormat,
+            srcFormat: srcFormat,
+            globalAlphaConst: globalAlphaConst,
+            maskConst: maskConst,
+            maskStrideConst: maskStrideConst,
           );
       }
     }
@@ -320,6 +324,8 @@ class PipelineCompiler {
             heightArg,
             dstStrideArg,
             srcStrideArg,
+            dstFormat: op.dstFormat,
+            srcFormat: op.srcFormat,
           );
         case PipelineOpKind.fill:
           _emitFillA64(
@@ -329,6 +335,8 @@ class PipelineCompiler {
             heightArg,
             dstStrideArg,
             colorArg,
+            dstFormat: op.dstFormat,
+            colorConst: op.color,
           );
         case PipelineOpKind.compSrcOver:
           _emitSrcOverA64(
@@ -339,6 +347,11 @@ class PipelineCompiler {
             heightArg,
             dstStrideArg,
             srcStrideArg,
+            dstFormat: op.dstFormat,
+            srcFormat: op.srcFormat,
+            globalAlphaConst: op.globalAlpha,
+            maskConst: op.mask as Pointer<Uint8>?,
+            maskStrideConst: op.maskStride,
           );
       }
     }
@@ -361,20 +374,26 @@ void _emitCopy(
   int heightConst = 0,
   int dstStrideConst = 0,
   int srcStrideConst = 0,
+  required PixelFormat dstFormat,
+  required PixelFormat srcFormat,
 }
 ) {
+  final isA8 = dstFormat == PixelFormat.a8 || srcFormat == PixelFormat.a8;
+  final bpp = isA8 ? 1 : 4;
   final rowDst = b.newGpReg();
   final rowSrc = b.newGpReg();
   final xCount = b.newGpReg();
   final yCount = b.newGpReg();
   final rowBytes = b.newGpReg();
   final tmp = b.newGpReg();
-  final pixel = b.newGpReg(size: 4);
+  final pixel = b.newGpReg(size: isA8 ? 1 : 4);
 
   b.mov(rowDst, dst);
   b.mov(rowSrc, src);
   _loadInt(b, rowBytes, widthConst, width);
-  b.shl(rowBytes, 2);
+  if (!isA8) {
+    b.shl(rowBytes, 2);
+  }
   _loadInt(b, yCount, heightConst, height);
 
   final loopY = b.newLabel();
@@ -391,10 +410,13 @@ void _emitCopy(
   b.cmp(xCount, 0);
   b.je(endRow);
 
-  b.mov(pixel, X86Mem.baseDisp(rowSrc, 0, size: 4));
-  b.mov(X86Mem.baseDisp(rowDst, 0, size: 4), pixel);
-  b.add(rowSrc, 4);
-  b.add(rowDst, 4);
+  b.mov(pixel, X86Mem.baseDisp(rowSrc, 0, size: bpp));
+  if (!isA8 && (srcFormat == PixelFormat.xrgb32 || dstFormat == PixelFormat.xrgb32)) {
+    b.or(pixel, 0xFF000000);
+  }
+  b.mov(X86Mem.baseDisp(rowDst, 0, size: bpp), pixel);
+  b.add(rowSrc, bpp);
+  b.add(rowDst, bpp);
   b.dec(xCount);
   b.jmp(loopX);
 
@@ -422,19 +444,27 @@ void _emitFill(
   int heightConst = 0,
   int dstStrideConst = 0,
   int colorConst = 0,
+  required PixelFormat dstFormat,
 }
 ) {
+  final isA8 = dstFormat == PixelFormat.a8;
+  final bpp = isA8 ? 1 : 4;
   final rowDst = b.newGpReg();
   final xCount = b.newGpReg();
   final yCount = b.newGpReg();
   final rowBytes = b.newGpReg();
   final tmp = b.newGpReg();
-  final pixel = b.newGpReg(size: 4);
+  final pixel = b.newGpReg(size: isA8 ? 1 : 4);
 
   b.mov(rowDst, dst);
   _loadInt(b, rowBytes, widthConst, width);
-  b.shl(rowBytes, 2);
+  if (!isA8) {
+    b.shl(rowBytes, 2);
+  }
   _loadInt(b, pixel, colorConst, color);
+  if (!isA8 && dstFormat == PixelFormat.xrgb32) {
+    b.or(pixel, 0xFF000000);
+  }
   _loadInt(b, yCount, heightConst, height);
 
   final loopY = b.newLabel();
@@ -451,8 +481,8 @@ void _emitFill(
   b.cmp(xCount, 0);
   b.je(endRow);
 
-  b.mov(X86Mem.baseDisp(rowDst, 0, size: 4), pixel);
-  b.add(rowDst, 4);
+  b.mov(X86Mem.baseDisp(rowDst, 0, size: bpp), pixel);
+  b.add(rowDst, bpp);
   b.dec(xCount);
   b.jmp(loopX);
 
@@ -478,8 +508,76 @@ void _emitSrcOver(
   int heightConst = 0,
   int dstStrideConst = 0,
   int srcStrideConst = 0,
+  required PixelFormat dstFormat,
+  required PixelFormat srcFormat,
+  required int globalAlphaConst,
+  required Pointer<Uint8>? maskConst,
+  required int maskStrideConst,
 }
 ) {
+  final isA8 = dstFormat == PixelFormat.a8 || srcFormat == PixelFormat.a8;
+  if (isA8) {
+    _emitSrcOverA8X86(
+      b,
+      dst,
+      src,
+      width,
+      height,
+      dstStride,
+      srcStride,
+      widthConst: widthConst,
+      heightConst: heightConst,
+      dstStrideConst: dstStrideConst,
+      srcStrideConst: srcStrideConst,
+      globalAlphaConst: globalAlphaConst,
+      maskConst: maskConst,
+      maskStrideConst: maskStrideConst,
+    );
+    return;
+  }
+  _emitSrcOver32X86(
+    b,
+    dst,
+    src,
+    width,
+    height,
+    dstStride,
+    srcStride,
+    widthConst: widthConst,
+    heightConst: heightConst,
+    dstStrideConst: dstStrideConst,
+    srcStrideConst: srcStrideConst,
+    dstFormat: dstFormat,
+    srcFormat: srcFormat,
+    globalAlphaConst: globalAlphaConst,
+    maskConst: maskConst,
+    maskStrideConst: maskStrideConst,
+  );
+}
+
+void _emitSrcOver32X86(
+  X86CodeBuilder b,
+  VirtReg dst,
+  VirtReg src,
+  VirtReg width,
+  VirtReg height,
+  VirtReg dstStride,
+  VirtReg srcStride, {
+  int widthConst = 0,
+  int heightConst = 0,
+  int dstStrideConst = 0,
+  int srcStrideConst = 0,
+  required PixelFormat dstFormat,
+  required PixelFormat srcFormat,
+  required int globalAlphaConst,
+  required Pointer<Uint8>? maskConst,
+  required int maskStrideConst,
+}
+) {
+  final hasMask = maskConst != null;
+  final hasGlobalAlpha = globalAlphaConst != 0 && globalAlphaConst != 255;
+  final needsMasking = hasMask || hasGlobalAlpha;
+
   final rowDst = b.newGpReg();
   final rowSrc = b.newGpReg();
   final xCount = b.newGpReg();
@@ -493,18 +591,33 @@ void _emitSrcOver(
   final inv = b.newGpReg(size: 4);
   final rb = b.newGpReg(size: 4);
   final ag = b.newGpReg(size: 4);
+  final m = b.newGpReg(size: 4);
+  final rowMask = b.newGpReg();
+  final maskStep = b.newGpReg();
+  final maskBytes = b.newGpReg();
 
   b.mov(rowDst, dst);
   b.mov(rowSrc, src);
   _loadInt(b, rowBytes, widthConst, width);
   b.shl(rowBytes, 2);
   _loadInt(b, yCount, heightConst, height);
+  if (hasMask) {
+    b.mov(rowMask, maskConst.address);
+    _loadInt(b, maskBytes, widthConst, width);
+    if (maskStrideConst != 0) {
+      b.mov(maskStep, maskStrideConst);
+      b.sub(maskStep, maskBytes);
+    } else {
+      b.mov(maskStep, 0);
+    }
+  }
 
   final loopY = b.newLabel();
   final loopX = b.newLabel();
   final endRow = b.newLabel();
   final storeSrc = b.newLabel();
   final skipStore = b.newLabel();
+  final skipMask = b.newLabel();
   final storeDone = b.newLabel();
   final done = b.newLabel();
 
@@ -518,7 +631,31 @@ void _emitSrcOver(
   b.je(endRow);
 
   b.mov(s, X86Mem.baseDisp(rowSrc, 0, size: 4));
+  if (srcFormat == PixelFormat.xrgb32) {
+    b.or(s, 0xFF000000);
+  }
   b.mov(d, X86Mem.baseDisp(rowDst, 0, size: 4));
+  if (dstFormat == PixelFormat.xrgb32) {
+    b.or(d, 0xFF000000);
+  }
+  if (needsMasking) {
+    if (hasMask) {
+      b.movzx(m, X86Mem.baseDisp(rowMask, 0, size: 1));
+      if (hasGlobalAlpha) {
+        b.imul(m, globalAlphaConst);
+        _mulDiv255ScalarX86(b, m, tmp);
+      }
+      b.add(rowMask, 1);
+    } else {
+      b.mov(m, globalAlphaConst == 0 ? 255 : globalAlphaConst);
+    }
+    b.cmp(m, 0);
+    b.je(skipStore);
+    b.cmp(m, 255);
+    b.je(skipMask);
+    _applyMaskPRGB32X86(b, s, m, tmp, rb, ag);
+  }
+
   b.mov(sa, s);
   b.shr(sa, 24);
   b.cmp(sa, 0);
@@ -552,10 +689,18 @@ void _emitSrcOver(
   b.and(rb, 0x00FF00FF);
   b.or(ag, rb);
   b.add(ag, s);
+  if (dstFormat == PixelFormat.xrgb32) {
+    b.or(ag, 0xFF000000);
+  }
   b.mov(X86Mem.baseDisp(rowDst, 0, size: 4), ag);
   b.jmp(storeDone);
 
+  b.label(skipMask);
+
   b.label(storeSrc);
+  if (dstFormat == PixelFormat.xrgb32) {
+    b.or(s, 0xFF000000);
+  }
   b.mov(X86Mem.baseDisp(rowDst, 0, size: 4), s);
   b.jmp(storeDone);
 
@@ -574,10 +719,184 @@ void _emitSrcOver(
   _loadInt(b, tmp64, dstStrideConst, dstStride);
   b.sub(tmp64, rowBytes);
   b.add(rowDst, tmp64);
+  if (hasMask) {
+    b.add(rowMask, maskStep);
+  }
   b.dec(yCount);
   b.jmp(loopY);
 
   b.label(done);
+}
+
+void _emitSrcOverA8X86(
+  X86CodeBuilder b,
+  VirtReg dst,
+  VirtReg src,
+  VirtReg width,
+  VirtReg height,
+  VirtReg dstStride,
+  VirtReg srcStride, {
+  int widthConst = 0,
+  int heightConst = 0,
+  int dstStrideConst = 0,
+  int srcStrideConst = 0,
+  required int globalAlphaConst,
+  required Pointer<Uint8>? maskConst,
+  required int maskStrideConst,
+}
+) {
+  final hasMask = maskConst != null;
+  final hasGlobalAlpha = globalAlphaConst != 0 && globalAlphaConst != 255;
+  final needsMasking = hasMask || hasGlobalAlpha;
+
+  final rowDst = b.newGpReg();
+  final rowSrc = b.newGpReg();
+  final xCount = b.newGpReg();
+  final yCount = b.newGpReg();
+  final rowBytes = b.newGpReg();
+  final tmp = b.newGpReg(size: 4);
+  final tmp64 = b.newGpReg();
+  final s8 = b.newGpReg(size: 1);
+  final d8 = b.newGpReg(size: 1);
+  final s = b.newGpReg(size: 4);
+  final d = b.newGpReg(size: 4);
+  final inv = b.newGpReg(size: 4);
+  final out8 = b.newGpReg(size: 1);
+  final m = b.newGpReg(size: 4);
+  final rowMask = b.newGpReg();
+  final maskStep = b.newGpReg();
+  final maskBytes = b.newGpReg();
+
+  b.mov(rowDst, dst);
+  b.mov(rowSrc, src);
+  _loadInt(b, rowBytes, widthConst, width);
+  _loadInt(b, yCount, heightConst, height);
+  if (hasMask) {
+    b.mov(rowMask, maskConst.address);
+    _loadInt(b, maskBytes, widthConst, width);
+    if (maskStrideConst != 0) {
+      b.mov(maskStep, maskStrideConst);
+      b.sub(maskStep, maskBytes);
+    } else {
+      b.mov(maskStep, 0);
+    }
+  }
+
+  final loopY = b.newLabel();
+  final loopX = b.newLabel();
+  final endRow = b.newLabel();
+  final skipStore = b.newLabel();
+  final storeDone = b.newLabel();
+  final done = b.newLabel();
+
+  b.label(loopY);
+  b.cmp(yCount, 0);
+  b.je(done);
+
+  _loadInt(b, xCount, widthConst, width);
+  b.label(loopX);
+  b.cmp(xCount, 0);
+  b.je(endRow);
+
+  b.mov(s8, X86Mem.baseDisp(rowSrc, 0, size: 1));
+  b.mov(d8, X86Mem.baseDisp(rowDst, 0, size: 1));
+  b.movzx(s, s8);
+  b.movzx(d, d8);
+
+  if (needsMasking) {
+    if (hasMask) {
+      b.movzx(m, X86Mem.baseDisp(rowMask, 0, size: 1));
+      if (hasGlobalAlpha) {
+        b.imul(m, globalAlphaConst);
+        _mulDiv255ScalarX86(b, m, tmp);
+      }
+      b.add(rowMask, 1);
+    } else {
+      b.mov(m, globalAlphaConst == 0 ? 255 : globalAlphaConst);
+    }
+    b.cmp(m, 0);
+    b.je(skipStore);
+    b.cmp(m, 255);
+    b.je(storeDone);
+    b.imul(s, m);
+    _mulDiv255ScalarX86(b, s, tmp);
+  }
+
+  b.cmp(s, 0);
+  b.je(skipStore);
+  b.cmp(s, 255);
+  b.je(storeDone);
+  b.mov(inv, 255);
+  b.sub(inv, s);
+  b.imul(d, inv);
+  _mulDiv255ScalarX86(b, d, tmp);
+  b.add(s, d);
+
+  b.label(storeDone);
+  b.mov(out8, s);
+  b.mov(X86Mem.baseDisp(rowDst, 0, size: 1), out8);
+
+  b.label(skipStore);
+  b.add(rowSrc, 1);
+  b.add(rowDst, 1);
+  b.dec(xCount);
+  b.jmp(loopX);
+
+  b.label(endRow);
+  _loadInt(b, tmp64, srcStrideConst, srcStride);
+  b.sub(tmp64, rowBytes);
+  b.add(rowSrc, tmp64);
+  _loadInt(b, tmp64, dstStrideConst, dstStride);
+  b.sub(tmp64, rowBytes);
+  b.add(rowDst, tmp64);
+  if (hasMask) {
+    b.add(rowMask, maskStep);
+  }
+  b.dec(yCount);
+  b.jmp(loopY);
+
+  b.label(done);
+}
+
+void _mulDiv255ScalarX86(X86CodeBuilder b, VirtReg reg, VirtReg tmp) {
+  b.add(reg, 128);
+  b.mov(tmp, reg);
+  b.shr(tmp, 8);
+  b.add(reg, tmp);
+  b.shr(reg, 8);
+}
+
+void _applyMaskPRGB32X86(
+  X86CodeBuilder b,
+  VirtReg s,
+  VirtReg m,
+  VirtReg tmp,
+  VirtReg rb,
+  VirtReg ag,
+) {
+  b.mov(rb, s);
+  b.and(rb, 0x00FF00FF);
+  b.mov(ag, s);
+  b.shr(ag, 8);
+  b.and(ag, 0x00FF00FF);
+  b.imul(rb, m);
+  b.imul(ag, m);
+  b.add(rb, 0x00800080);
+  b.add(ag, 0x00800080);
+  b.mov(tmp, rb);
+  b.shr(tmp, 8);
+  b.and(tmp, 0x00FF00FF);
+  b.add(rb, tmp);
+  b.shr(rb, 8);
+  b.mov(tmp, ag);
+  b.shr(tmp, 8);
+  b.and(tmp, 0x00FF00FF);
+  b.add(ag, tmp);
+  b.shr(ag, 8);
+  b.shl(ag, 8);
+  b.and(rb, 0x00FF00FF);
+  b.or(ag, rb);
+  b.mov(s, ag);
 }
 
 void _loadInt(X86CodeBuilder b, VirtReg dst, int constant, Object fallback) {
@@ -595,8 +914,14 @@ void _emitCopyA64(
   A64Gp width,
   A64Gp height,
   A64Gp dstStride,
-  A64Gp srcStride,
+  A64Gp srcStride, {
+  required PixelFormat dstFormat,
+  required PixelFormat srcFormat,
+}
 ) {
+  final isA8 = dstFormat == PixelFormat.a8 || srcFormat == PixelFormat.a8;
+  final needAlpha =
+      !isA8 && (dstFormat == PixelFormat.xrgb32 || srcFormat == PixelFormat.xrgb32);
   final rowDst = b.newGpReg();
   final rowSrc = b.newGpReg();
   final xCount = b.newGpReg();
@@ -604,13 +929,19 @@ void _emitCopyA64(
   final rowBytes = b.newGpReg();
   final tmp = b.newGpReg();
   final pixel = b.newGpReg(sizeBits: 32);
+  final alphaMask = needAlpha ? b.newGpReg(sizeBits: 32) : null;
 
   b.mov(rowDst, dst);
   b.mov(rowSrc, src);
   b.mov(rowBytes, width);
-  b.add(rowBytes, rowBytes, width);
-  b.add(rowBytes, rowBytes, rowBytes);
+  if (!isA8) {
+    b.add(rowBytes, rowBytes, width);
+    b.add(rowBytes, rowBytes, rowBytes);
+  }
   b.mov(yCount, height);
+  if (needAlpha) {
+    b.movImm32(alphaMask!, 0xFF000000);
+  }
 
   final loopY = b.newLabel();
   final loopX = b.newLabel();
@@ -624,10 +955,20 @@ void _emitCopyA64(
   b.label(loopX);
   b.cbz(xCount, endRow);
 
-  b.ldr(pixel, rowSrc, 0);
-  b.str(pixel, rowDst, 0);
-  b.add(rowSrc, rowSrc, 4);
-  b.add(rowDst, rowDst, 4);
+  if (isA8) {
+    b.ldrb(pixel, rowSrc, 0);
+    b.strb(pixel, rowDst, 0);
+    b.add(rowSrc, rowSrc, 1);
+    b.add(rowDst, rowDst, 1);
+  } else {
+    b.ldr(pixel, rowSrc, 0);
+    if (needAlpha) {
+      b.orr(pixel, pixel, alphaMask!);
+    }
+    b.str(pixel, rowDst, 0);
+    b.add(rowSrc, rowSrc, 4);
+    b.add(rowDst, rowDst, 4);
+  }
   b.sub(xCount, xCount, 1);
   b.b(loopX);
 
@@ -650,21 +991,43 @@ void _emitFillA64(
   A64Gp width,
   A64Gp height,
   A64Gp dstStride,
-  A64Gp color,
+  A64Gp color, {
+  required PixelFormat dstFormat,
+  required int colorConst,
+}
 ) {
+  final isA8 = dstFormat == PixelFormat.a8;
   final rowDst = b.newGpReg();
   final xCount = b.newGpReg();
   final yCount = b.newGpReg();
   final rowBytes = b.newGpReg();
   final tmp = b.newGpReg();
   final pixel = b.newGpReg(sizeBits: 32);
+  final alphaMask = !isA8 && dstFormat == PixelFormat.xrgb32
+      ? b.newGpReg(sizeBits: 32)
+      : null;
+  final byteMask = b.newGpReg(sizeBits: 32);
 
   b.mov(rowDst, dst);
   b.mov(rowBytes, width);
-  b.add(rowBytes, rowBytes, width);
-  b.add(rowBytes, rowBytes, rowBytes);
+  if (!isA8) {
+    b.add(rowBytes, rowBytes, width);
+    b.add(rowBytes, rowBytes, rowBytes);
+  }
   b.mov(yCount, height);
-  b.mov(pixel, color);
+  if (colorConst != 0) {
+    b.movImm32(pixel, colorConst);
+  } else {
+    b.mov(pixel, color);
+  }
+  if (isA8) {
+    b.movImm32(byteMask, 0xFF);
+    b.and(pixel, pixel, byteMask);
+  }
+  if (alphaMask != null) {
+    b.movImm32(alphaMask, 0xFF000000);
+    b.orr(pixel, pixel, alphaMask);
+  }
 
   final loopY = b.newLabel();
   final loopX = b.newLabel();
@@ -678,8 +1041,13 @@ void _emitFillA64(
   b.label(loopX);
   b.cbz(xCount, endRow);
 
-  b.str(pixel, rowDst, 0);
-  b.add(rowDst, rowDst, 4);
+  if (isA8) {
+    b.strb(pixel, rowDst, 0);
+    b.add(rowDst, rowDst, 1);
+  } else {
+    b.str(pixel, rowDst, 0);
+    b.add(rowDst, rowDst, 4);
+  }
   b.sub(xCount, xCount, 1);
   b.b(loopX);
 
@@ -700,8 +1068,67 @@ void _emitSrcOverA64(
   A64Gp width,
   A64Gp height,
   A64Gp dstStride,
-  A64Gp srcStride,
+  A64Gp srcStride, {
+  required PixelFormat dstFormat,
+  required PixelFormat srcFormat,
+  required int globalAlphaConst,
+  required Pointer<Uint8>? maskConst,
+  required int maskStrideConst,
+}
 ) {
+  final isA8 = dstFormat == PixelFormat.a8 || srcFormat == PixelFormat.a8;
+  if (isA8) {
+    _emitSrcOverA8A64(
+      b,
+      dst,
+      src,
+      width,
+      height,
+      dstStride,
+      srcStride,
+      globalAlphaConst: globalAlphaConst,
+      maskConst: maskConst,
+      maskStrideConst: maskStrideConst,
+    );
+    return;
+  }
+  _emitSrcOver32A64(
+    b,
+    dst,
+    src,
+    width,
+    height,
+    dstStride,
+    srcStride,
+    dstFormat: dstFormat,
+    srcFormat: srcFormat,
+    globalAlphaConst: globalAlphaConst,
+    maskConst: maskConst,
+    maskStrideConst: maskStrideConst,
+  );
+}
+
+void _emitSrcOver32A64(
+  A64CodeBuilder b,
+  A64Gp dst,
+  A64Gp src,
+  A64Gp width,
+  A64Gp height,
+  A64Gp dstStride,
+  A64Gp srcStride, {
+  required PixelFormat dstFormat,
+  required PixelFormat srcFormat,
+  required int globalAlphaConst,
+  required Pointer<Uint8>? maskConst,
+  required int maskStrideConst,
+}
+) {
+  final hasMask = maskConst != null;
+  final hasGlobalAlpha = globalAlphaConst != 0 && globalAlphaConst != 255;
+  final needsMasking = hasMask || hasGlobalAlpha;
+  final needAlpha =
+      dstFormat == PixelFormat.xrgb32 || srcFormat == PixelFormat.xrgb32;
+
   final rowDst = b.newGpReg();
   final rowSrc = b.newGpReg();
   final xCount = b.newGpReg(sizeBits: 32);
@@ -719,11 +1146,23 @@ void _emitSrcOverA64(
   final maskAG = b.newGpReg(sizeBits: 32);
   final round = b.newGpReg(sizeBits: 32);
   final const255 = b.newGpReg(sizeBits: 32);
+  final alphaMask = needAlpha ? b.newGpReg(sizeBits: 32) : null;
+  final globalAlpha = hasGlobalAlpha ? b.newGpReg(sizeBits: 32) : null;
+  final m = b.newGpReg(sizeBits: 32);
+  final rowMask = b.newGpReg();
+  final maskStep = b.newGpReg();
+  final maskBytes = b.newGpReg();
 
   b.movImm32(maskRB, 0x00FF00FF);
   b.movImm32(maskAG, 0xFF00FF00);
   b.movImm32(round, 0x00800080);
   b.movImm32(const255, 255);
+  if (needAlpha) {
+    b.movImm32(alphaMask!, 0xFF000000);
+  }
+  if (hasGlobalAlpha) {
+    b.movImm32(globalAlpha!, globalAlphaConst);
+  }
 
   b.mov(rowDst, dst);
   b.mov(rowSrc, src);
@@ -731,12 +1170,23 @@ void _emitSrcOverA64(
   b.add(rowBytes, rowBytes, width);
   b.add(rowBytes, rowBytes, rowBytes);
   b.mov(yCount, height.w);
+  if (hasMask) {
+    _movImmPtrA64(b, rowMask, maskConst.address);
+    b.mov(maskBytes, width.w);
+    if (maskStrideConst != 0) {
+      b.movImm32(maskStep, maskStrideConst);
+      b.sub(maskStep, maskStep, maskBytes);
+    } else {
+      b.movImm32(maskStep, 0);
+    }
+  }
 
   final loopY = b.newLabel();
   final loopX = b.newLabel();
   final endRow = b.newLabel();
   final storeSrc = b.newLabel();
   final skipStore = b.newLabel();
+  final skipMask = b.newLabel();
   final storeDone = b.newLabel();
   final done = b.newLabel();
 
@@ -748,7 +1198,30 @@ void _emitSrcOverA64(
   b.cbz(xCount, endRow);
 
   b.ldr(s, rowSrc, 0);
+  if (srcFormat == PixelFormat.xrgb32) {
+    b.orr(s, s, alphaMask!);
+  }
   b.ldr(d, rowDst, 0);
+  if (dstFormat == PixelFormat.xrgb32) {
+    b.orr(d, d, alphaMask!);
+  }
+  if (needsMasking) {
+    if (hasMask) {
+      b.ldrb(m, rowMask, 0);
+      if (hasGlobalAlpha) {
+        b.mul(m, m, globalAlpha!);
+        _mulDiv255ScalarA64(b, m, tmp);
+      }
+      b.add(rowMask, rowMask, 1);
+    } else {
+      b.movImm32(m, globalAlphaConst == 0 ? 255 : globalAlphaConst);
+    }
+    b.cbz(m, skipStore);
+    b.eor(tmp, m, const255);
+    b.cbz(tmp, skipMask);
+    _applyMaskPRGB32A64(b, s, m, tmp, rb, ag, maskRB, round, maskAG);
+  }
+
   b.lsr(sa, s, 24);
   b.cbz(sa, skipStore);
   b.eor(tmp, sa, const255);
@@ -779,10 +1252,18 @@ void _emitSrcOverA64(
   b.and(rb, rb, maskRB);
   b.orr(ag, ag, rb);
   b.add(ag, ag, s);
+  if (dstFormat == PixelFormat.xrgb32) {
+    b.orr(ag, ag, alphaMask!);
+  }
   b.str(ag, rowDst, 0);
   b.b(storeDone);
 
+  b.label(skipMask);
+
   b.label(storeSrc);
+  if (dstFormat == PixelFormat.xrgb32) {
+    b.orr(s, s, alphaMask!);
+  }
   b.str(s, rowDst, 0);
   b.b(storeDone);
 
@@ -801,8 +1282,190 @@ void _emitSrcOverA64(
   b.mov(tmp2, dstStride.w);
   b.sub(tmp2, tmp2, rowBytes.w);
   b.add(rowDst, rowDst, tmp2.x);
+  if (hasMask) {
+    b.add(rowMask, rowMask, maskStep);
+  }
   b.sub(yCount, yCount, 1);
   b.b(loopY);
 
   b.label(done);
+}
+
+void _emitSrcOverA8A64(
+  A64CodeBuilder b,
+  A64Gp dst,
+  A64Gp src,
+  A64Gp width,
+  A64Gp height,
+  A64Gp dstStride,
+  A64Gp srcStride, {
+  required int globalAlphaConst,
+  required Pointer<Uint8>? maskConst,
+  required int maskStrideConst,
+}
+) {
+  final hasMask = maskConst != null;
+  final hasGlobalAlpha = globalAlphaConst != 0 && globalAlphaConst != 255;
+  final needsMasking = hasMask || hasGlobalAlpha;
+
+  final rowDst = b.newGpReg();
+  final rowSrc = b.newGpReg();
+  final xCount = b.newGpReg(sizeBits: 32);
+  final yCount = b.newGpReg(sizeBits: 32);
+  final rowBytes = b.newGpReg();
+  final tmp = b.newGpReg(sizeBits: 32);
+  final tmp2 = b.newGpReg(sizeBits: 32);
+  final s = b.newGpReg(sizeBits: 32);
+  final d = b.newGpReg(sizeBits: 32);
+  final inv = b.newGpReg(sizeBits: 32);
+  final const255 = b.newGpReg(sizeBits: 32);
+  final globalAlpha = hasGlobalAlpha ? b.newGpReg(sizeBits: 32) : null;
+  final m = b.newGpReg(sizeBits: 32);
+  final rowMask = b.newGpReg();
+  final maskStep = b.newGpReg();
+  final maskBytes = b.newGpReg();
+
+  b.movImm32(const255, 255);
+  if (hasGlobalAlpha) {
+    b.movImm32(globalAlpha!, globalAlphaConst);
+  }
+
+  b.mov(rowDst, dst);
+  b.mov(rowSrc, src);
+  b.mov(rowBytes, width);
+  b.mov(yCount, height.w);
+  if (hasMask) {
+    _movImmPtrA64(b, rowMask, maskConst.address);
+    b.mov(maskBytes, width.w);
+    if (maskStrideConst != 0) {
+      b.movImm32(maskStep, maskStrideConst);
+      b.sub(maskStep, maskStep, maskBytes);
+    } else {
+      b.movImm32(maskStep, 0);
+    }
+  }
+
+  final loopY = b.newLabel();
+  final loopX = b.newLabel();
+  final endRow = b.newLabel();
+  final skipStore = b.newLabel();
+  final storeDone = b.newLabel();
+  final done = b.newLabel();
+
+  b.label(loopY);
+  b.cbz(yCount, done);
+
+  b.mov(xCount, width.w);
+  b.label(loopX);
+  b.cbz(xCount, endRow);
+
+  b.ldrb(s, rowSrc, 0);
+  b.ldrb(d, rowDst, 0);
+
+  if (needsMasking) {
+    if (hasMask) {
+      b.ldrb(m, rowMask, 0);
+      if (hasGlobalAlpha) {
+        b.mul(m, m, globalAlpha!);
+        _mulDiv255ScalarA64(b, m, tmp);
+      }
+      b.add(rowMask, rowMask, 1);
+    } else {
+      b.movImm32(m, globalAlphaConst == 0 ? 255 : globalAlphaConst);
+    }
+    b.cbz(m, skipStore);
+    b.eor(tmp, m, const255);
+    b.cbz(tmp, storeDone);
+    b.mul(s, s, m);
+    _mulDiv255ScalarA64(b, s, tmp);
+  }
+
+  b.cbz(s, skipStore);
+  b.eor(tmp, s, const255);
+  b.cbz(tmp, storeDone);
+  b.sub(inv, const255, s);
+  b.mul(d, d, inv);
+  _mulDiv255ScalarA64(b, d, tmp);
+  b.add(s, s, d);
+
+  b.label(storeDone);
+  b.strb(s, rowDst, 0);
+
+  b.label(skipStore);
+  b.add(rowSrc, rowSrc, 1);
+  b.add(rowDst, rowDst, 1);
+  b.sub(xCount, xCount, 1);
+  b.b(loopX);
+
+  b.label(endRow);
+  b.mov(tmp2, srcStride.w);
+  b.sub(tmp2, tmp2, rowBytes.w);
+  b.add(rowSrc, rowSrc, tmp2.x);
+  b.mov(tmp2, dstStride.w);
+  b.sub(tmp2, tmp2, rowBytes.w);
+  b.add(rowDst, rowDst, tmp2.x);
+  if (hasMask) {
+    b.add(rowMask, rowMask, maskStep);
+  }
+  b.sub(yCount, yCount, 1);
+  b.b(loopY);
+
+  b.label(done);
+}
+
+void _mulDiv255ScalarA64(A64CodeBuilder b, A64Gp reg, A64Gp tmp) {
+  b.add(reg, reg, 128);
+  b.lsr(tmp, reg, 8);
+  b.add(reg, reg, tmp);
+  b.lsr(reg, reg, 8);
+}
+
+void _movImmPtrA64(A64CodeBuilder b, A64Gp rd, int value) {
+  final imm = value & 0xFFFFFFFFFFFFFFFF;
+  b.movz(rd, imm & 0xFFFF);
+  final part16 = (imm >> 16) & 0xFFFF;
+  if (part16 != 0) {
+    b.movk(rd, part16, shift: 16);
+  }
+  final part32 = (imm >> 32) & 0xFFFF;
+  if (part32 != 0) {
+    b.movk(rd, part32, shift: 32);
+  }
+  final part48 = (imm >> 48) & 0xFFFF;
+  if (part48 != 0) {
+    b.movk(rd, part48, shift: 48);
+  }
+}
+
+void _applyMaskPRGB32A64(
+  A64CodeBuilder b,
+  A64Gp s,
+  A64Gp m,
+  A64Gp tmp,
+  A64Gp rb,
+  A64Gp ag,
+  A64Gp maskRB,
+  A64Gp round,
+  A64Gp maskAG,
+) {
+  b.and(rb, s, maskRB);
+  b.lsr(ag, s, 8);
+  b.and(ag, ag, maskRB);
+  b.mul(rb, rb, m);
+  b.mul(ag, ag, m);
+  b.add(rb, rb, round);
+  b.add(ag, ag, round);
+  b.lsr(tmp, rb, 8);
+  b.and(tmp, tmp, maskRB);
+  b.add(rb, rb, tmp);
+  b.lsr(rb, rb, 8);
+  b.lsr(tmp, ag, 8);
+  b.and(tmp, tmp, maskRB);
+  b.add(ag, ag, tmp);
+  b.lsr(ag, ag, 8);
+  b.lsl(ag, ag, 8);
+  b.and(ag, ag, maskAG);
+  b.and(rb, rb, maskRB);
+  b.orr(ag, ag, rb);
+  b.mov(s, ag);
 }

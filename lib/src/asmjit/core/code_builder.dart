@@ -109,6 +109,11 @@ class X86CodeBuilder extends ir.BaseBuilder {
     inst(X86InstId.kMov, [_toOperand(dst), _toOperand(src)]);
   }
 
+  /// MOVZX (zero-extend move).
+  void movzx(Object dst, Object src) {
+    inst(X86InstId.kMovzx, [_toOperand(dst), _toOperand(src)]);
+  }
+
   /// MOVAPS (aligned move packed single)
   void movaps(Object dst, Object src) {
     inst(X86InstId.kMovaps, [_toOperand(dst), _toOperand(src)]);
