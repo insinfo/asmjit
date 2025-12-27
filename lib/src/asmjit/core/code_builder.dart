@@ -4,7 +4,7 @@
 /// the X86Assembler and Register Allocator.
 
 import 'package:asmjit/asmjit.dart';
-import 'package:asmjit/src/core/builder.dart' as ir;
+import 'package:asmjit/src/asmjit/core/builder.dart' as ir;
 
 /// A high-level code builder that uses virtual registers.
 ///

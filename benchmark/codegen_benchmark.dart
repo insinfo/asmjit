@@ -8,7 +8,7 @@
 // .\referencias\asmjit-master\build\asmjit_bench_codegen.exe --quick
 import 'dart:io';
 import 'package:asmjit/asmjit.dart';
-import 'package:asmjit/src/core/builder.dart' as ir;
+import 'package:asmjit/src/asmjit/core/builder.dart' as ir;
 
 const int kDefaultIterations = 100000;
 const int kQuickIterations = 1000;

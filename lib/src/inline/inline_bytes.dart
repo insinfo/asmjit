@@ -5,7 +5,7 @@
 
 import 'dart:typed_data';
 
-import '../core/labels.dart';
+import '../asmjit/core/labels.dart';
 
 /// Represents a pre-compiled block of machine code bytes.
 ///

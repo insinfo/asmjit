@@ -5,9 +5,9 @@
 
 import 'dart:typed_data';
 
-import '../core/code_holder.dart';
-import '../runtime/jit_runtime.dart';
-import '../x86/x86_assembler.dart';
+import '../asmjit/core/code_holder.dart';
+import '../asmjit/runtime/jit_runtime.dart';
+import '../asmjit/x86/x86_assembler.dart';
 import 'inline_bytes.dart';
 
 /// Inline Assembly Builder.

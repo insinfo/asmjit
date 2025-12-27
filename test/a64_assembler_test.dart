@@ -1,5 +1,5 @@
-import 'package:asmjit/src/arm/a64.dart';
-import 'package:asmjit/src/arm/a64_assembler.dart';
+import 'package:asmjit/src/asmjit/arm/a64.dart';
+import 'package:asmjit/src/asmjit/arm/a64_assembler.dart';
 import 'package:test/test.dart';
 
 void main() {

@@ -5,43 +5,43 @@
 library asmjit;
 
 // Core
-export 'src/core/error.dart';
-export 'src/core/globals.dart';
-export 'src/core/environment.dart';
-export 'src/core/arch.dart';
-export 'src/core/code_buffer.dart';
-export 'src/core/code_holder.dart';
-export 'src/core/labels.dart';
-export 'src/core/operand.dart';
-export 'src/core/const_pool.dart';
-export 'src/core/formatter.dart';
-export 'src/core/type.dart';
-export 'src/core/regalloc.dart';
-export 'src/core/code_builder.dart';
-export 'src/core/builder.dart' hide Operand;
+export 'src/asmjit/core/error.dart';
+export 'src/asmjit/core/globals.dart';
+export 'src/asmjit/core/environment.dart';
+export 'src/asmjit/core/arch.dart';
+export 'src/asmjit/core/code_buffer.dart';
+export 'src/asmjit/core/code_holder.dart';
+export 'src/asmjit/core/labels.dart';
+export 'src/asmjit/core/operand.dart';
+export 'src/asmjit/core/const_pool.dart';
+export 'src/asmjit/core/formatter.dart';
+export 'src/asmjit/core/type.dart';
+export 'src/asmjit/core/regalloc.dart';
+export 'src/asmjit/core/code_builder.dart';
+export 'src/asmjit/core/builder.dart' hide Operand;
 
 // Runtime
-export 'src/runtime/libc.dart';
-export 'src/runtime/virtmem.dart';
-export 'src/runtime/jit_runtime.dart';
-export 'src/runtime/cpuinfo.dart' show CpuInfo, CpuFeatures;
+export 'src/asmjit/runtime/libc.dart';
+export 'src/asmjit/runtime/virtmem.dart';
+export 'src/asmjit/runtime/jit_runtime.dart';
+export 'src/asmjit/runtime/cpuinfo.dart' show CpuInfo, CpuFeatures;
 
 // x86
-export 'src/x86/x86.dart';
-export 'src/x86/x86_operands.dart';
-export 'src/x86/x86_encoder.dart';
-export 'src/x86/x86_assembler.dart';
-export 'src/x86/x86_func.dart';
-export 'src/x86/x86_simd.dart';
-export 'src/x86/x86_inst_db.g.dart';
-export 'src/x86/x86_serializer.dart';
+export 'src/asmjit/x86/x86.dart';
+export 'src/asmjit/x86/x86_operands.dart';
+export 'src/asmjit/x86/x86_encoder.dart';
+export 'src/asmjit/x86/x86_assembler.dart';
+export 'src/asmjit/x86/x86_func.dart';
+export 'src/asmjit/x86/x86_simd.dart';
+export 'src/asmjit/x86/x86_inst_db.g.dart';
+export 'src/asmjit/x86/x86_serializer.dart';
 
 // ARM64
-export 'src/arm/a64.dart' hide sp;
-export 'src/arm/a64_assembler.dart';
-export 'src/arm/a64_code_builder.dart';
-export 'src/arm/a64_inst_db.g.dart';
-export 'src/arm/a64_serializer.dart';
+export 'src/asmjit/arm/a64.dart' hide sp;
+export 'src/asmjit/arm/a64_assembler.dart';
+export 'src/asmjit/arm/a64_code_builder.dart';
+export 'src/asmjit/arm/a64_inst_db.g.dart';
+export 'src/asmjit/arm/a64_serializer.dart';
 
 // Inline
 export 'src/inline/inline_bytes.dart';

@@ -5,16 +5,17 @@ import 'dart:io';
 import 'package:test/test.dart';
 
 import 'package:asmjit/asmjit.dart';
-import 'package:asmjit/src/x86/x86_dispatcher.g.dart';
-import 'package:asmjit/src/arm/a64_dispatcher.g.dart';
-import 'package:asmjit/src/core/builder.dart' as ir;
+import 'package:asmjit/src/asmjit/x86/x86_dispatcher.g.dart';
+import 'package:asmjit/src/asmjit/arm/a64_dispatcher.g.dart';
+import 'package:asmjit/src/asmjit/core/builder.dart' as ir;
 
 void main() {
   group('asmjit-testing parity (Dart port)', () {
     test('isa_x86.json unique instructions == X86InstId.kCount', () async {
       final file = File('assets/db/isa_x86.json');
       expect(file.existsSync(), isTrue,
-          reason: 'assets/db must contain isa_x86.json (copied from referencias)');
+          reason:
+              'assets/db must contain isa_x86.json (copied from referencias)');
 
       final jsonMap =
           json.decode(await file.readAsString()) as Map<String, dynamic>;
@@ -56,7 +57,8 @@ void main() {
     test('isa_aarch64.json unique instructions == A64InstId.kCount', () async {
       final file = File('assets/db/isa_aarch64.json');
       expect(file.existsSync(), isTrue,
-          reason: 'assets/db must contain isa_aarch64.json (copied from referencias)');
+          reason:
+              'assets/db must contain isa_aarch64.json (copied from referencias)');
 
       final jsonMap =
           json.decode(await file.readAsString()) as Map<String, dynamic>;

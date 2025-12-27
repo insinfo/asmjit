@@ -3,12 +3,12 @@
 /// Parses assembly source code and emits instructions via X86Assembler.
 
 import 'tokenizer.dart';
-import '../x86/x86.dart';
-import '../x86/x86_assembler.dart';
-import '../x86/x86_operands.dart';
-import '../x86/x86_simd.dart';
-import '../core/code_holder.dart';
-import '../core/labels.dart';
+import '../asmjit/x86/x86.dart';
+import '../asmjit/x86/x86_assembler.dart';
+import '../asmjit/x86/x86_operands.dart';
+import '../asmjit/x86/x86_simd.dart';
+import '../asmjit/core/code_holder.dart';
+import '../asmjit/core/labels.dart';
 
 /// Parser error with line/column information.
 class ParseError implements Exception {
