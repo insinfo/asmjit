@@ -117,6 +117,14 @@ class A64CodeBuilder extends ir.BaseBuilder {
     _inst(A64InstId.kEor, [rd, rn, rm]);
   }
 
+  void lsl(A64Gp rd, A64Gp rn, int shift) {
+    _inst(A64InstId.kLsl, [rd, rn, shift]);
+  }
+
+  void lsr(A64Gp rd, A64Gp rn, int shift) {
+    _inst(A64InstId.kLsr, [rd, rn, shift]);
+  }
+
   void b(Label label) => _inst(A64InstId.kB, [label]);
 
   void bl(Label label) => _inst(A64InstId.kBl, [label]);
@@ -135,6 +143,23 @@ class A64CodeBuilder extends ir.BaseBuilder {
 
   void str(A64Gp rt, A64Gp rn, [int offset = 0]) {
     _inst(A64InstId.kStr, [rt, rn, offset]);
+  }
+
+  void movz(A64Gp rd, int imm16, {int shift = 0}) {
+    _inst(A64InstId.kMovz, [rd, imm16, shift]);
+  }
+
+  void movk(A64Gp rd, int imm16, {int shift = 0}) {
+    _inst(A64InstId.kMovk, [rd, imm16, shift]);
+  }
+
+  void movImm32(A64Gp rd, int imm32) {
+    final value = imm32 & 0xFFFFFFFF;
+    movz(rd, value & 0xFFFF);
+    final high = (value >> 16) & 0xFFFF;
+    if (high != 0) {
+      movk(rd, high, shift: 16);
+    }
   }
 
   void ldrVec(A64Vec vt, A64Gp rn, [int offset = 0]) {
