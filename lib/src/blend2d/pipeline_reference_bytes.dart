@@ -137,6 +137,35 @@ void _copy32Bytes({
   required int srcStride,
 }) {
   final rowBytes = width * 4;
+  if (width > 0 && width <= 4) {
+    var dstRow = dstOffset;
+    var srcRow = srcOffset;
+    for (var y = 0; y < height; y++) {
+      var dstPixel = dstRow;
+      var srcPixel = srcRow;
+      if (width >= 1) {
+        dst.setUint32(dstPixel, src.getUint32(srcPixel, Endian.little), Endian.little);
+        dstPixel += 4;
+        srcPixel += 4;
+      }
+      if (width >= 2) {
+        dst.setUint32(dstPixel, src.getUint32(srcPixel, Endian.little), Endian.little);
+        dstPixel += 4;
+        srcPixel += 4;
+      }
+      if (width >= 3) {
+        dst.setUint32(dstPixel, src.getUint32(srcPixel, Endian.little), Endian.little);
+        dstPixel += 4;
+        srcPixel += 4;
+      }
+      if (width == 4) {
+        dst.setUint32(dstPixel, src.getUint32(srcPixel, Endian.little), Endian.little);
+      }
+      dstRow += dstStride;
+      srcRow += srcStride;
+    }
+    return;
+  }
   if (dstStride == rowBytes && srcStride == rowBytes) {
     final total = width * height;
     var dstPixel = dstOffset;
@@ -208,6 +237,35 @@ void _copyA8Bytes({
   required int srcStride,
 }) {
   final rowBytes = width;
+  if (width > 0 && width <= 4) {
+    var dstRow = dstOffset;
+    var srcRow = srcOffset;
+    for (var y = 0; y < height; y++) {
+      var dstPixel = dstRow;
+      var srcPixel = srcRow;
+      if (width >= 1) {
+        dst[dstPixel] = src[srcPixel];
+        dstPixel += 1;
+        srcPixel += 1;
+      }
+      if (width >= 2) {
+        dst[dstPixel] = src[srcPixel];
+        dstPixel += 1;
+        srcPixel += 1;
+      }
+      if (width >= 3) {
+        dst[dstPixel] = src[srcPixel];
+        dstPixel += 1;
+        srcPixel += 1;
+      }
+      if (width == 4) {
+        dst[dstPixel] = src[srcPixel];
+      }
+      dstRow += dstStride;
+      srcRow += srcStride;
+    }
+    return;
+  }
   if (dstStride == rowBytes && srcStride == rowBytes) {
     final total = width * height;
     var dstPixel = dstOffset;
@@ -267,6 +325,29 @@ void _fill32Bytes({
   required int color,
 }) {
   final rowBytes = width * 4;
+  if (width > 0 && width <= 4) {
+    var dstRow = dstOffset;
+    for (var y = 0; y < height; y++) {
+      var dstPixel = dstRow;
+      if (width >= 1) {
+        dst.setUint32(dstPixel, color, Endian.little);
+        dstPixel += 4;
+      }
+      if (width >= 2) {
+        dst.setUint32(dstPixel, color, Endian.little);
+        dstPixel += 4;
+      }
+      if (width >= 3) {
+        dst.setUint32(dstPixel, color, Endian.little);
+        dstPixel += 4;
+      }
+      if (width == 4) {
+        dst.setUint32(dstPixel, color, Endian.little);
+      }
+      dstRow += dstStride;
+    }
+    return;
+  }
   if (dstStride == rowBytes) {
     final total = width * height;
     var dstPixel = dstOffset;
@@ -318,6 +399,29 @@ void _fillA8Bytes({
   required int alpha,
 }) {
   final rowBytes = width;
+  if (width > 0 && width <= 4) {
+    var dstRow = dstOffset;
+    for (var y = 0; y < height; y++) {
+      var dstPixel = dstRow;
+      if (width >= 1) {
+        dst[dstPixel] = alpha;
+        dstPixel += 1;
+      }
+      if (width >= 2) {
+        dst[dstPixel] = alpha;
+        dstPixel += 1;
+      }
+      if (width >= 3) {
+        dst[dstPixel] = alpha;
+        dstPixel += 1;
+      }
+      if (width == 4) {
+        dst[dstPixel] = alpha;
+      }
+      dstRow += dstStride;
+    }
+    return;
+  }
   if (dstStride == rowBytes) {
     final total = width * height;
     var dstPixel = dstOffset;
@@ -377,6 +481,124 @@ void _srcOver32Bytes({
   required int maskStride,
 }) {
   final rowBytes = width * 4;
+  if (width > 0 && width <= 4) {
+    var dstRow = dstOffset;
+    var srcRow = srcOffset;
+    var maskRow = mask != null ? maskOffset : 0;
+    for (var y = 0; y < height; y++) {
+      var dstPixel = dstRow;
+      var srcPixel = srcRow;
+      var maskPixel = maskRow;
+      if (width >= 1) {
+        var s = src.getUint32(srcPixel, Endian.little);
+        var d = dst.getUint32(dstPixel, Endian.little);
+        if (srcFormat == PixelFormat.xrgb32) {
+          s = 0xFF000000 | (s & 0x00FFFFFF);
+        }
+        if (dstFormat == PixelFormat.xrgb32) {
+          d = 0xFF000000 | (d & 0x00FFFFFF);
+        }
+        var m = globalAlpha != 0 ? globalAlpha : 255;
+        if (mask != null) {
+          final maskValue = mask[maskPixel];
+          m = _mulDiv255(maskValue * m);
+          maskPixel += 1;
+        }
+        if (m != 255) {
+          s = _applyMaskPRGB32(s, m);
+        }
+        var out = _blendSrcOver(s, d);
+        if (dstFormat == PixelFormat.xrgb32) {
+          out = 0xFF000000 | (out & 0x00FFFFFF);
+        }
+        dst.setUint32(dstPixel, out, Endian.little);
+        srcPixel += 4;
+        dstPixel += 4;
+      }
+      if (width >= 2) {
+        var s = src.getUint32(srcPixel, Endian.little);
+        var d = dst.getUint32(dstPixel, Endian.little);
+        if (srcFormat == PixelFormat.xrgb32) {
+          s = 0xFF000000 | (s & 0x00FFFFFF);
+        }
+        if (dstFormat == PixelFormat.xrgb32) {
+          d = 0xFF000000 | (d & 0x00FFFFFF);
+        }
+        var m = globalAlpha != 0 ? globalAlpha : 255;
+        if (mask != null) {
+          final maskValue = mask[maskPixel];
+          m = _mulDiv255(maskValue * m);
+          maskPixel += 1;
+        }
+        if (m != 255) {
+          s = _applyMaskPRGB32(s, m);
+        }
+        var out = _blendSrcOver(s, d);
+        if (dstFormat == PixelFormat.xrgb32) {
+          out = 0xFF000000 | (out & 0x00FFFFFF);
+        }
+        dst.setUint32(dstPixel, out, Endian.little);
+        srcPixel += 4;
+        dstPixel += 4;
+      }
+      if (width >= 3) {
+        var s = src.getUint32(srcPixel, Endian.little);
+        var d = dst.getUint32(dstPixel, Endian.little);
+        if (srcFormat == PixelFormat.xrgb32) {
+          s = 0xFF000000 | (s & 0x00FFFFFF);
+        }
+        if (dstFormat == PixelFormat.xrgb32) {
+          d = 0xFF000000 | (d & 0x00FFFFFF);
+        }
+        var m = globalAlpha != 0 ? globalAlpha : 255;
+        if (mask != null) {
+          final maskValue = mask[maskPixel];
+          m = _mulDiv255(maskValue * m);
+          maskPixel += 1;
+        }
+        if (m != 255) {
+          s = _applyMaskPRGB32(s, m);
+        }
+        var out = _blendSrcOver(s, d);
+        if (dstFormat == PixelFormat.xrgb32) {
+          out = 0xFF000000 | (out & 0x00FFFFFF);
+        }
+        dst.setUint32(dstPixel, out, Endian.little);
+        srcPixel += 4;
+        dstPixel += 4;
+      }
+      if (width == 4) {
+        var s = src.getUint32(srcPixel, Endian.little);
+        var d = dst.getUint32(dstPixel, Endian.little);
+        if (srcFormat == PixelFormat.xrgb32) {
+          s = 0xFF000000 | (s & 0x00FFFFFF);
+        }
+        if (dstFormat == PixelFormat.xrgb32) {
+          d = 0xFF000000 | (d & 0x00FFFFFF);
+        }
+        var m = globalAlpha != 0 ? globalAlpha : 255;
+        if (mask != null) {
+          final maskValue = mask[maskPixel];
+          m = _mulDiv255(maskValue * m);
+          maskPixel += 1;
+        }
+        if (m != 255) {
+          s = _applyMaskPRGB32(s, m);
+        }
+        var out = _blendSrcOver(s, d);
+        if (dstFormat == PixelFormat.xrgb32) {
+          out = 0xFF000000 | (out & 0x00FFFFFF);
+        }
+        dst.setUint32(dstPixel, out, Endian.little);
+      }
+      dstRow += dstStride;
+      srcRow += srcStride;
+      if (mask != null) {
+        maskRow += maskStride;
+      }
+    }
+    return;
+  }
   final tight =
       dstStride == rowBytes && srcStride == rowBytes && maskStride == rowBytes;
   var dstRow = dstOffset;
@@ -480,6 +702,76 @@ void _srcOverA8Bytes({
   required int maskStride,
 }) {
   final rowBytes = width;
+  if (width > 0 && width <= 4) {
+    var dstRow = dstOffset;
+    var srcRow = srcOffset;
+    var maskRow = mask != null ? maskOffset : 0;
+    for (var y = 0; y < height; y++) {
+      var dstPixel = dstRow;
+      var srcPixel = srcRow;
+      var maskPixel = maskRow;
+      if (width >= 1) {
+        final s = src[srcPixel];
+        final d = dst[dstPixel];
+        var m = globalAlpha != 0 ? globalAlpha : 255;
+        if (mask != null) {
+          final maskValue = mask[maskPixel];
+          m = _mulDiv255(maskValue * m);
+          maskPixel += 1;
+        }
+        final sMasked = m == 255 ? s : _mulDiv255(s * m);
+        dst[dstPixel] = _srcOverA8Pixel(sMasked, d);
+        srcPixel += 1;
+        dstPixel += 1;
+      }
+      if (width >= 2) {
+        final s = src[srcPixel];
+        final d = dst[dstPixel];
+        var m = globalAlpha != 0 ? globalAlpha : 255;
+        if (mask != null) {
+          final maskValue = mask[maskPixel];
+          m = _mulDiv255(maskValue * m);
+          maskPixel += 1;
+        }
+        final sMasked = m == 255 ? s : _mulDiv255(s * m);
+        dst[dstPixel] = _srcOverA8Pixel(sMasked, d);
+        srcPixel += 1;
+        dstPixel += 1;
+      }
+      if (width >= 3) {
+        final s = src[srcPixel];
+        final d = dst[dstPixel];
+        var m = globalAlpha != 0 ? globalAlpha : 255;
+        if (mask != null) {
+          final maskValue = mask[maskPixel];
+          m = _mulDiv255(maskValue * m);
+          maskPixel += 1;
+        }
+        final sMasked = m == 255 ? s : _mulDiv255(s * m);
+        dst[dstPixel] = _srcOverA8Pixel(sMasked, d);
+        srcPixel += 1;
+        dstPixel += 1;
+      }
+      if (width == 4) {
+        final s = src[srcPixel];
+        final d = dst[dstPixel];
+        var m = globalAlpha != 0 ? globalAlpha : 255;
+        if (mask != null) {
+          final maskValue = mask[maskPixel];
+          m = _mulDiv255(maskValue * m);
+          maskPixel += 1;
+        }
+        final sMasked = m == 255 ? s : _mulDiv255(s * m);
+        dst[dstPixel] = _srcOverA8Pixel(sMasked, d);
+      }
+      dstRow += dstStride;
+      srcRow += srcStride;
+      if (mask != null) {
+        maskRow += maskStride;
+      }
+    }
+    return;
+  }
   final tight =
       dstStride == rowBytes && srcStride == rowBytes && maskStride == rowBytes;
   var dstRow = dstOffset;

@@ -347,6 +347,10 @@ class PipelineCompiler {
             heightArg,
             dstStrideArg,
             srcStrideArg,
+            widthConst: op.width,
+            heightConst: op.height,
+            dstStrideConst: op.dstStride,
+            srcStrideConst: op.srcStride,
             dstFormat: op.dstFormat,
             srcFormat: op.srcFormat,
             globalAlphaConst: op.globalAlpha,
@@ -517,6 +521,24 @@ void _emitSrcOver(
 ) {
   final isA8 = dstFormat == PixelFormat.a8 || srcFormat == PixelFormat.a8;
   if (isA8) {
+    if (widthConst > 0 && widthConst <= 4) {
+      _emitSrcOverA8X86FixedWidth(
+        b,
+        dst,
+        src,
+        height,
+        dstStride,
+        srcStride,
+        widthConst: widthConst,
+        heightConst: heightConst,
+        dstStrideConst: dstStrideConst,
+        srcStrideConst: srcStrideConst,
+        globalAlphaConst: globalAlphaConst,
+        maskConst: maskConst,
+        maskStrideConst: maskStrideConst,
+      );
+      return;
+    }
     _emitSrcOverA8X86(
       b,
       dst,
@@ -529,6 +551,26 @@ void _emitSrcOver(
       heightConst: heightConst,
       dstStrideConst: dstStrideConst,
       srcStrideConst: srcStrideConst,
+      globalAlphaConst: globalAlphaConst,
+      maskConst: maskConst,
+      maskStrideConst: maskStrideConst,
+    );
+    return;
+  }
+  if (widthConst > 0 && widthConst <= 4) {
+    _emitSrcOver32X86FixedWidth(
+      b,
+      dst,
+      src,
+      height,
+      dstStride,
+      srcStride,
+      widthConst: widthConst,
+      heightConst: heightConst,
+      dstStrideConst: dstStrideConst,
+      srcStrideConst: srcStrideConst,
+      dstFormat: dstFormat,
+      srcFormat: srcFormat,
       globalAlphaConst: globalAlphaConst,
       maskConst: maskConst,
       maskStrideConst: maskStrideConst,
@@ -553,6 +595,168 @@ void _emitSrcOver(
     maskConst: maskConst,
     maskStrideConst: maskStrideConst,
   );
+}
+
+void _emitSrcOver32X86FixedWidth(
+  X86CodeBuilder b,
+  VirtReg dst,
+  VirtReg src,
+  VirtReg height,
+  VirtReg dstStride,
+  VirtReg srcStride, {
+  required int widthConst,
+  required int heightConst,
+  required int dstStrideConst,
+  required int srcStrideConst,
+  required PixelFormat dstFormat,
+  required PixelFormat srcFormat,
+  required int globalAlphaConst,
+  required Pointer<Uint8>? maskConst,
+  required int maskStrideConst,
+}) {
+  final hasMask = maskConst != null;
+  final hasGlobalAlpha = globalAlphaConst != 0 && globalAlphaConst != 255;
+  final needsMasking = hasMask || hasGlobalAlpha;
+
+  final rowDst = b.newGpReg();
+  final rowSrc = b.newGpReg();
+  final yCount = b.newGpReg();
+  final rowBytes = b.newGpReg();
+  final tmp = b.newGpReg(size: 4);
+  final tmp64 = b.newGpReg();
+  final s = b.newGpReg(size: 4);
+  final d = b.newGpReg(size: 4);
+  final sa = b.newGpReg(size: 4);
+  final inv = b.newGpReg(size: 4);
+  final rb = b.newGpReg(size: 4);
+  final ag = b.newGpReg(size: 4);
+  final m = b.newGpReg(size: 4);
+  final rowMask = b.newGpReg();
+  final maskStep = b.newGpReg();
+  final maskBytes = b.newGpReg();
+
+  b.mov(rowDst, dst);
+  b.mov(rowSrc, src);
+  b.mov(rowBytes, widthConst * 4);
+  _loadInt(b, yCount, heightConst, height);
+  if (hasMask) {
+    b.mov(rowMask, maskConst.address);
+    b.mov(maskBytes, widthConst);
+    if (maskStrideConst != 0) {
+      b.mov(maskStep, maskStrideConst);
+      b.sub(maskStep, maskBytes);
+    } else {
+      b.mov(maskStep, 0);
+    }
+  }
+
+  final loopY = b.newLabel();
+  final done = b.newLabel();
+
+  b.label(loopY);
+  b.cmp(yCount, 0);
+  b.je(done);
+
+  for (var i = 0; i < widthConst; i++) {
+    final storeSrc = b.newLabel();
+    final skipStore = b.newLabel();
+    final skipMask = b.newLabel();
+    final storeDone = b.newLabel();
+
+    b.mov(s, X86Mem.baseDisp(rowSrc, 0, size: 4));
+    if (srcFormat == PixelFormat.xrgb32) {
+      b.or(s, 0xFF000000);
+    }
+    b.mov(d, X86Mem.baseDisp(rowDst, 0, size: 4));
+    if (dstFormat == PixelFormat.xrgb32) {
+      b.or(d, 0xFF000000);
+    }
+    if (needsMasking) {
+      if (hasMask) {
+        b.movzx(m, X86Mem.baseDisp(rowMask, 0, size: 1));
+        if (hasGlobalAlpha) {
+          b.imul(m, globalAlphaConst);
+          _mulDiv255ScalarX86(b, m, tmp);
+        }
+        b.add(rowMask, 1);
+      } else {
+        b.mov(m, globalAlphaConst == 0 ? 255 : globalAlphaConst);
+      }
+      b.cmp(m, 0);
+      b.je(skipStore);
+      b.cmp(m, 255);
+      b.je(skipMask);
+      _applyMaskPRGB32X86(b, s, m, tmp, rb, ag);
+    }
+
+    b.mov(sa, s);
+    b.shr(sa, 24);
+    b.cmp(sa, 0);
+    b.je(skipStore);
+    b.cmp(sa, 255);
+    b.je(storeSrc);
+
+    b.mov(inv, 255);
+    b.sub(inv, sa);
+
+    b.mov(rb, d);
+    b.and(rb, 0x00FF00FF);
+    b.mov(ag, d);
+    b.shr(ag, 8);
+    b.and(ag, 0x00FF00FF);
+    b.imul(rb, inv);
+    b.imul(ag, inv);
+    b.add(rb, 0x00800080);
+    b.add(ag, 0x00800080);
+    b.mov(tmp, rb);
+    b.shr(tmp, 8);
+    b.and(tmp, 0x00FF00FF);
+    b.add(rb, tmp);
+    b.shr(rb, 8);
+    b.mov(tmp, ag);
+    b.shr(tmp, 8);
+    b.and(tmp, 0x00FF00FF);
+    b.add(ag, tmp);
+    b.shr(ag, 8);
+    b.shl(ag, 8);
+    b.and(rb, 0x00FF00FF);
+    b.or(ag, rb);
+    b.add(ag, s);
+    if (dstFormat == PixelFormat.xrgb32) {
+      b.or(ag, 0xFF000000);
+    }
+    b.mov(X86Mem.baseDisp(rowDst, 0, size: 4), ag);
+    b.jmp(storeDone);
+
+    b.label(skipMask);
+
+    b.label(storeSrc);
+    if (dstFormat == PixelFormat.xrgb32) {
+      b.or(s, 0xFF000000);
+    }
+    b.mov(X86Mem.baseDisp(rowDst, 0, size: 4), s);
+    b.jmp(storeDone);
+
+    b.label(skipStore);
+    b.label(storeDone);
+
+    b.add(rowSrc, 4);
+    b.add(rowDst, 4);
+  }
+
+  _loadInt(b, tmp64, srcStrideConst, srcStride);
+  b.sub(tmp64, rowBytes);
+  b.add(rowSrc, tmp64);
+  _loadInt(b, tmp64, dstStrideConst, dstStride);
+  b.sub(tmp64, rowBytes);
+  b.add(rowDst, tmp64);
+  if (hasMask) {
+    b.add(rowMask, maskStep);
+  }
+  b.dec(yCount);
+  b.jmp(loopY);
+
+  b.label(done);
 }
 
 void _emitSrcOver32X86(
@@ -713,6 +917,126 @@ void _emitSrcOver32X86(
   b.jmp(loopX);
 
   b.label(endRow);
+  _loadInt(b, tmp64, srcStrideConst, srcStride);
+  b.sub(tmp64, rowBytes);
+  b.add(rowSrc, tmp64);
+  _loadInt(b, tmp64, dstStrideConst, dstStride);
+  b.sub(tmp64, rowBytes);
+  b.add(rowDst, tmp64);
+  if (hasMask) {
+    b.add(rowMask, maskStep);
+  }
+  b.dec(yCount);
+  b.jmp(loopY);
+
+  b.label(done);
+}
+
+void _emitSrcOverA8X86FixedWidth(
+  X86CodeBuilder b,
+  VirtReg dst,
+  VirtReg src,
+  VirtReg height,
+  VirtReg dstStride,
+  VirtReg srcStride, {
+  required int widthConst,
+  required int heightConst,
+  required int dstStrideConst,
+  required int srcStrideConst,
+  required int globalAlphaConst,
+  required Pointer<Uint8>? maskConst,
+  required int maskStrideConst,
+}) {
+  final hasMask = maskConst != null;
+  final hasGlobalAlpha = globalAlphaConst != 0 && globalAlphaConst != 255;
+  final needsMasking = hasMask || hasGlobalAlpha;
+
+  final rowDst = b.newGpReg();
+  final rowSrc = b.newGpReg();
+  final yCount = b.newGpReg();
+  final rowBytes = b.newGpReg();
+  final tmp = b.newGpReg(size: 4);
+  final tmp64 = b.newGpReg();
+  final s8 = b.newGpReg(size: 1);
+  final d8 = b.newGpReg(size: 1);
+  final s = b.newGpReg(size: 4);
+  final d = b.newGpReg(size: 4);
+  final inv = b.newGpReg(size: 4);
+  final out8 = b.newGpReg(size: 1);
+  final m = b.newGpReg(size: 4);
+  final rowMask = b.newGpReg();
+  final maskStep = b.newGpReg();
+  final maskBytes = b.newGpReg();
+
+  b.mov(rowDst, dst);
+  b.mov(rowSrc, src);
+  b.mov(rowBytes, widthConst);
+  _loadInt(b, yCount, heightConst, height);
+  if (hasMask) {
+    b.mov(rowMask, maskConst.address);
+    b.mov(maskBytes, widthConst);
+    if (maskStrideConst != 0) {
+      b.mov(maskStep, maskStrideConst);
+      b.sub(maskStep, maskBytes);
+    } else {
+      b.mov(maskStep, 0);
+    }
+  }
+
+  final loopY = b.newLabel();
+  final done = b.newLabel();
+
+  b.label(loopY);
+  b.cmp(yCount, 0);
+  b.je(done);
+
+  for (var i = 0; i < widthConst; i++) {
+    final skipStore = b.newLabel();
+    final storeDone = b.newLabel();
+
+    b.mov(s8, X86Mem.baseDisp(rowSrc, 0, size: 1));
+    b.mov(d8, X86Mem.baseDisp(rowDst, 0, size: 1));
+    b.movzx(s, s8);
+    b.movzx(d, d8);
+
+    if (needsMasking) {
+      if (hasMask) {
+        b.movzx(m, X86Mem.baseDisp(rowMask, 0, size: 1));
+        if (hasGlobalAlpha) {
+          b.imul(m, globalAlphaConst);
+          _mulDiv255ScalarX86(b, m, tmp);
+        }
+        b.add(rowMask, 1);
+      } else {
+        b.mov(m, globalAlphaConst == 0 ? 255 : globalAlphaConst);
+      }
+      b.cmp(m, 0);
+      b.je(skipStore);
+      b.cmp(m, 255);
+      b.je(storeDone);
+      b.imul(s, m);
+      _mulDiv255ScalarX86(b, s, tmp);
+    }
+
+    b.cmp(s, 0);
+    b.je(skipStore);
+    b.cmp(s, 255);
+    b.je(storeDone);
+    b.mov(inv, 255);
+    b.sub(inv, s);
+    b.imul(d, inv);
+    _mulDiv255ScalarX86(b, d, tmp);
+    b.add(s, d);
+
+    b.label(storeDone);
+    b.mov(out8, s);
+    b.mov(X86Mem.baseDisp(rowDst, 0, size: 1), out8);
+
+    b.label(skipStore);
+    b.add(rowSrc, 1);
+    b.add(rowDst, 1);
+  }
+
   _loadInt(b, tmp64, srcStrideConst, srcStride);
   b.sub(tmp64, rowBytes);
   b.add(rowSrc, tmp64);
@@ -1069,6 +1393,10 @@ void _emitSrcOverA64(
   A64Gp height,
   A64Gp dstStride,
   A64Gp srcStride, {
+  required int widthConst,
+  required int heightConst,
+  required int dstStrideConst,
+  required int srcStrideConst,
   required PixelFormat dstFormat,
   required PixelFormat srcFormat,
   required int globalAlphaConst,
@@ -1078,6 +1406,24 @@ void _emitSrcOverA64(
 ) {
   final isA8 = dstFormat == PixelFormat.a8 || srcFormat == PixelFormat.a8;
   if (isA8) {
+    if (widthConst > 0 && widthConst <= 4) {
+      _emitSrcOverA8A64FixedWidth(
+        b,
+        dst,
+        src,
+        height,
+        dstStride,
+        srcStride,
+        widthConst: widthConst,
+        heightConst: heightConst,
+        dstStrideConst: dstStrideConst,
+        srcStrideConst: srcStrideConst,
+        globalAlphaConst: globalAlphaConst,
+        maskConst: maskConst,
+        maskStrideConst: maskStrideConst,
+      );
+      return;
+    }
     _emitSrcOverA8A64(
       b,
       dst,
@@ -1086,6 +1432,26 @@ void _emitSrcOverA64(
       height,
       dstStride,
       srcStride,
+      globalAlphaConst: globalAlphaConst,
+      maskConst: maskConst,
+      maskStrideConst: maskStrideConst,
+    );
+    return;
+  }
+  if (widthConst > 0 && widthConst <= 4) {
+    _emitSrcOver32A64FixedWidth(
+      b,
+      dst,
+      src,
+      height,
+      dstStride,
+      srcStride,
+      widthConst: widthConst,
+      heightConst: heightConst,
+      dstStrideConst: dstStrideConst,
+      srcStrideConst: srcStrideConst,
+      dstFormat: dstFormat,
+      srcFormat: srcFormat,
       globalAlphaConst: globalAlphaConst,
       maskConst: maskConst,
       maskStrideConst: maskStrideConst,
@@ -1106,6 +1472,182 @@ void _emitSrcOverA64(
     maskConst: maskConst,
     maskStrideConst: maskStrideConst,
   );
+}
+
+void _emitSrcOver32A64FixedWidth(
+  A64CodeBuilder b,
+  A64Gp dst,
+  A64Gp src,
+  A64Gp height,
+  A64Gp dstStride,
+  A64Gp srcStride, {
+  required int widthConst,
+  required int heightConst,
+  required int dstStrideConst,
+  required int srcStrideConst,
+  required PixelFormat dstFormat,
+  required PixelFormat srcFormat,
+  required int globalAlphaConst,
+  required Pointer<Uint8>? maskConst,
+  required int maskStrideConst,
+}) {
+  final hasMask = maskConst != null;
+  final hasGlobalAlpha = globalAlphaConst != 0 && globalAlphaConst != 255;
+  final needsMasking = hasMask || hasGlobalAlpha;
+  final needAlpha =
+      dstFormat == PixelFormat.xrgb32 || srcFormat == PixelFormat.xrgb32;
+
+  final rowDst = b.newGpReg();
+  final rowSrc = b.newGpReg();
+  final yCount = b.newGpReg(sizeBits: 32);
+  final rowBytes = b.newGpReg(sizeBits: 32);
+  final tmp = b.newGpReg(sizeBits: 32);
+  final tmp2 = b.newGpReg(sizeBits: 32);
+  final s = b.newGpReg(sizeBits: 32);
+  final d = b.newGpReg(sizeBits: 32);
+  final sa = b.newGpReg(sizeBits: 32);
+  final inv = b.newGpReg(sizeBits: 32);
+  final rb = b.newGpReg(sizeBits: 32);
+  final ag = b.newGpReg(sizeBits: 32);
+  final maskRB = b.newGpReg(sizeBits: 32);
+  final maskAG = b.newGpReg(sizeBits: 32);
+  final round = b.newGpReg(sizeBits: 32);
+  final const255 = b.newGpReg(sizeBits: 32);
+  final alphaMask = needAlpha ? b.newGpReg(sizeBits: 32) : null;
+  final globalAlpha = hasGlobalAlpha ? b.newGpReg(sizeBits: 32) : null;
+  final m = b.newGpReg(sizeBits: 32);
+  final rowMask = b.newGpReg();
+  final maskStep = b.newGpReg(sizeBits: 32);
+  final maskBytes = b.newGpReg(sizeBits: 32);
+
+  b.movImm32(maskRB, 0x00FF00FF);
+  b.movImm32(maskAG, 0xFF00FF00);
+  b.movImm32(round, 0x00800080);
+  b.movImm32(const255, 255);
+  if (needAlpha) {
+    b.movImm32(alphaMask!, 0xFF000000);
+  }
+  if (hasGlobalAlpha) {
+    b.movImm32(globalAlpha!, globalAlphaConst);
+  }
+
+  b.mov(rowDst, dst);
+  b.mov(rowSrc, src);
+  b.movImm32(rowBytes, widthConst * 4);
+  _loadIntA64(b, yCount, heightConst, height);
+  if (hasMask) {
+    _movImmPtrA64(b, rowMask, maskConst.address);
+    b.movImm32(maskBytes, widthConst);
+    if (maskStrideConst != 0) {
+      b.movImm32(maskStep, maskStrideConst);
+      b.sub(maskStep, maskStep, maskBytes);
+    } else {
+      b.movImm32(maskStep, 0);
+    }
+  }
+
+  final loopY = b.newLabel();
+  final done = b.newLabel();
+
+  b.label(loopY);
+  b.cbz(yCount, done);
+
+  for (var i = 0; i < widthConst; i++) {
+    final storeSrc = b.newLabel();
+    final skipStore = b.newLabel();
+    final skipMask = b.newLabel();
+    final storeDone = b.newLabel();
+
+    b.ldr(s, rowSrc, 0);
+    if (srcFormat == PixelFormat.xrgb32) {
+      b.orr(s, s, alphaMask!);
+    }
+    b.ldr(d, rowDst, 0);
+    if (dstFormat == PixelFormat.xrgb32) {
+      b.orr(d, d, alphaMask!);
+    }
+    if (needsMasking) {
+      if (hasMask) {
+        b.ldrb(m, rowMask, 0);
+        if (hasGlobalAlpha) {
+          b.mul(m, m, globalAlpha!);
+          _mulDiv255ScalarA64(b, m, tmp);
+        }
+        b.add(rowMask, rowMask, 1);
+      } else {
+        b.movImm32(m, globalAlphaConst == 0 ? 255 : globalAlphaConst);
+      }
+      b.cbz(m, skipStore);
+      b.eor(tmp, m, const255);
+      b.cbz(tmp, skipMask);
+      _applyMaskPRGB32A64(b, s, m, tmp, rb, ag, maskRB, round, maskAG);
+    }
+
+    b.lsr(sa, s, 24);
+    b.cbz(sa, skipStore);
+    b.eor(tmp, sa, const255);
+    b.cbz(tmp, storeSrc);
+
+    b.sub(inv, const255, sa);
+
+    b.and(rb, d, maskRB);
+    b.lsr(ag, d, 8);
+    b.and(ag, ag, maskRB);
+
+    b.mul(rb, rb, inv);
+    b.mul(ag, ag, inv);
+    b.add(rb, rb, round);
+    b.add(ag, ag, round);
+
+    b.lsr(tmp, rb, 8);
+    b.and(tmp, tmp, maskRB);
+    b.add(rb, rb, tmp);
+    b.lsr(rb, rb, 8);
+
+    b.lsr(tmp, ag, 8);
+    b.and(tmp, tmp, maskRB);
+    b.add(ag, ag, tmp);
+    b.lsr(ag, ag, 8);
+    b.lsl(ag, ag, 8);
+    b.and(ag, ag, maskAG);
+    b.and(rb, rb, maskRB);
+    b.orr(ag, ag, rb);
+    b.add(ag, ag, s);
+    if (dstFormat == PixelFormat.xrgb32) {
+      b.orr(ag, ag, alphaMask!);
+    }
+    b.str(ag, rowDst, 0);
+    b.b(storeDone);
+
+    b.label(skipMask);
+
+    b.label(storeSrc);
+    if (dstFormat == PixelFormat.xrgb32) {
+      b.orr(s, s, alphaMask!);
+    }
+    b.str(s, rowDst, 0);
+    b.b(storeDone);
+
+    b.label(skipStore);
+    b.label(storeDone);
+
+    b.add(rowSrc, rowSrc, 4);
+    b.add(rowDst, rowDst, 4);
+  }
+
+  _loadIntA64(b, tmp2, srcStrideConst, srcStride);
+  b.sub(tmp2, tmp2, rowBytes);
+  b.add(rowSrc, rowSrc, tmp2);
+  _loadIntA64(b, tmp2, dstStrideConst, dstStride);
+  b.sub(tmp2, tmp2, rowBytes);
+  b.add(rowDst, rowDst, tmp2);
+  if (hasMask) {
+    b.add(rowMask, rowMask, maskStep);
+  }
+  b.sub(yCount, yCount, 1);
+  b.b(loopY);
+
+  b.label(done);
 }
 
 void _emitSrcOver32A64(
@@ -1291,6 +1833,123 @@ void _emitSrcOver32A64(
   b.label(done);
 }
 
+void _emitSrcOverA8A64FixedWidth(
+  A64CodeBuilder b,
+  A64Gp dst,
+  A64Gp src,
+  A64Gp height,
+  A64Gp dstStride,
+  A64Gp srcStride, {
+  required int widthConst,
+  required int heightConst,
+  required int dstStrideConst,
+  required int srcStrideConst,
+  required int globalAlphaConst,
+  required Pointer<Uint8>? maskConst,
+  required int maskStrideConst,
+}) {
+  final hasMask = maskConst != null;
+  final hasGlobalAlpha = globalAlphaConst != 0 && globalAlphaConst != 255;
+  final needsMasking = hasMask || hasGlobalAlpha;
+
+  final rowDst = b.newGpReg();
+  final rowSrc = b.newGpReg();
+  final yCount = b.newGpReg(sizeBits: 32);
+  final rowBytes = b.newGpReg(sizeBits: 32);
+  final tmp = b.newGpReg(sizeBits: 32);
+  final tmp2 = b.newGpReg(sizeBits: 32);
+  final s = b.newGpReg(sizeBits: 32);
+  final d = b.newGpReg(sizeBits: 32);
+  final inv = b.newGpReg(sizeBits: 32);
+  final const255 = b.newGpReg(sizeBits: 32);
+  final globalAlpha = hasGlobalAlpha ? b.newGpReg(sizeBits: 32) : null;
+  final m = b.newGpReg(sizeBits: 32);
+  final rowMask = b.newGpReg();
+  final maskStep = b.newGpReg(sizeBits: 32);
+  final maskBytes = b.newGpReg(sizeBits: 32);
+
+  b.movImm32(const255, 255);
+  if (hasGlobalAlpha) {
+    b.movImm32(globalAlpha!, globalAlphaConst);
+  }
+
+  b.mov(rowDst, dst);
+  b.mov(rowSrc, src);
+  b.movImm32(rowBytes, widthConst);
+  _loadIntA64(b, yCount, heightConst, height);
+  if (hasMask) {
+    _movImmPtrA64(b, rowMask, maskConst.address);
+    b.movImm32(maskBytes, widthConst);
+    if (maskStrideConst != 0) {
+      b.movImm32(maskStep, maskStrideConst);
+      b.sub(maskStep, maskStep, maskBytes);
+    } else {
+      b.movImm32(maskStep, 0);
+    }
+  }
+
+  final loopY = b.newLabel();
+  final done = b.newLabel();
+
+  b.label(loopY);
+  b.cbz(yCount, done);
+
+  for (var i = 0; i < widthConst; i++) {
+    final skipStore = b.newLabel();
+    final storeDone = b.newLabel();
+
+    b.ldrb(s, rowSrc, 0);
+    b.ldrb(d, rowDst, 0);
+
+    if (needsMasking) {
+      if (hasMask) {
+        b.ldrb(m, rowMask, 0);
+        if (hasGlobalAlpha) {
+          b.mul(m, m, globalAlpha!);
+          _mulDiv255ScalarA64(b, m, tmp);
+        }
+        b.add(rowMask, rowMask, 1);
+      } else {
+        b.movImm32(m, globalAlphaConst == 0 ? 255 : globalAlphaConst);
+      }
+      b.cbz(m, skipStore);
+      b.eor(tmp, m, const255);
+      b.cbz(tmp, storeDone);
+      b.mul(s, s, m);
+      _mulDiv255ScalarA64(b, s, tmp);
+    }
+
+    b.cbz(s, skipStore);
+    b.eor(tmp, s, const255);
+    b.cbz(tmp, storeDone);
+    b.sub(inv, const255, s);
+    b.mul(d, d, inv);
+    _mulDiv255ScalarA64(b, d, tmp);
+    b.add(s, s, d);
+
+    b.label(storeDone);
+    b.strb(s, rowDst, 0);
+
+    b.label(skipStore);
+    b.add(rowSrc, rowSrc, 1);
+    b.add(rowDst, rowDst, 1);
+  }
+
+  _loadIntA64(b, tmp2, srcStrideConst, srcStride);
+  b.sub(tmp2, tmp2, rowBytes);
+  b.add(rowSrc, rowSrc, tmp2);
+  _loadIntA64(b, tmp2, dstStrideConst, dstStride);
+  b.sub(tmp2, tmp2, rowBytes);
+  b.add(rowDst, rowDst, tmp2);
+  if (hasMask) {
+    b.add(rowMask, rowMask, maskStep);
+  }
+  b.sub(yCount, yCount, 1);
+  b.b(loopY);
+
+  b.label(done);
+}
+
 void _emitSrcOverA8A64(
   A64CodeBuilder b,
   A64Gp dst,
@@ -1434,6 +2093,14 @@ void _movImmPtrA64(A64CodeBuilder b, A64Gp rd, int value) {
   final part48 = (imm >> 48) & 0xFFFF;
   if (part48 != 0) {
     b.movk(rd, part48, shift: 48);
+  }
+}
+
+void _loadIntA64(A64CodeBuilder b, A64Gp dst, int constant, A64Gp fallback) {
+  if (constant != 0) {
+    b.movImm32(dst, constant);
+  } else {
+    b.mov(dst, fallback);
   }
 }
 
