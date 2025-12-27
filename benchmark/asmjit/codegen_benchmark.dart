@@ -2,13 +2,11 @@
 ///
 /// Port of asmjit-testing/bench/asmjit_bench_codegen_*.cpp
 /// Benchmarks the performance of code generation across different scenarios.
-// TODO: Match C++ bench parity (compiler paths, SSE/AVX mem forms, AVX512
-// sequences, and full instruction mixes where encoders/dispatchers are ready).
+// TODO: Match C++ bench parity (AVX512 sequences and remaining instruction mix).
 // dart compile exe benchmark/codegen_benchmark.dart -o  benchmark/codegen_benchmark.exe
 // .\referencias\asmjit-master\build\asmjit_bench_codegen.exe --quick
 import 'dart:io';
 import 'package:asmjit/asmjit.dart';
-import 'package:asmjit/src/asmjit/core/builder.dart' as ir;
 
 const int kDefaultIterations = 100000;
 const int kQuickIterations = 1000;
@@ -84,12 +82,6 @@ void printUnavailable(String arch, String emitter, String reason) {
   stdout.writeln();
 }
 
-void printCompilerUnavailable(String arch) {
-  // TODO: Wire real compiler backend once X86Compiler is implemented.
-  printUnavailable(arch, 'Compiler [no-asm]', 'TODO compiler backend');
-  printUnavailable(arch, 'Compiler [finalized]', 'TODO compiler backend');
-}
-
 /// Benchmark helper that runs a code generation function many times.
 BenchResult runBench(
   String name,
@@ -106,6 +98,28 @@ BenchResult runBench(
   sw.stop();
   final timeUs = sw.elapsedMicroseconds / iterations;
   return BenchResult(name, arch, emitter, codeSize, timeUs);
+}
+
+BenchResult runCompilerBench(
+  String name,
+  String arch,
+  String emitter,
+  int iterations,
+  void Function(X86Compiler compiler) generateFn, {
+  bool finalize = false,
+  FuncFrameAttr? frameAttrHint,
+}) {
+  return runBench(name, arch, emitter, iterations, () {
+    final compiler = X86Compiler.create();
+    if (frameAttrHint != null) {
+      compiler.configureFrameAttr(frameAttrHint);
+    }
+    generateFn(compiler);
+    if (finalize) {
+      return compiler.finalize(frameAttrHint: frameAttrHint).textBytes.length;
+    }
+    return compiler.code.text.buffer.length;
+  });
 }
 
 // =============================================================================
@@ -171,7 +185,18 @@ void benchmarkX86EmptyFunction(int iterations) {
     return builder.finalize().textBytes.length;
   }).print();
 
-  printCompilerUnavailable('X64');
+  // Compiler [no-asm]
+  runCompilerBench('Empty', 'X64', 'Compiler [no-asm]', iterations, (compiler) {
+    compiler.builder.mov(eax, 0);
+    compiler.builder.ret();
+  }).print();
+
+  // Compiler [finalized]
+  runCompilerBench('Empty', 'X64', 'Compiler [finalized]', iterations,
+      (compiler) {
+    compiler.builder.mov(eax, 0);
+    compiler.builder.ret();
+  }, finalize: true).print();
 
   print('');
 }
@@ -265,7 +290,29 @@ void benchmarkX86NOpsSequence(int iterations, int nOps) {
     return builder.finalize().textBytes.length;
   }).print();
 
-  printCompilerUnavailable('X64');
+  // Compiler [no-asm]
+  runCompilerBench('${nOps}Ops', 'X64', 'Compiler [no-asm]', iterations,
+      (compiler) {
+    for (var i = 0; i < nOps; i += 4) {
+      compiler.builder.add(eax, ebx);
+      compiler.builder.imul(eax, ecx);
+      compiler.builder.sub(eax, edx);
+      compiler.builder.imul(eax, ecx);
+    }
+    compiler.builder.ret();
+  }).print();
+
+  // Compiler [finalized]
+  runCompilerBench('${nOps}Ops', 'X64', 'Compiler [finalized]', iterations,
+      (compiler) {
+    for (var i = 0; i < nOps; i += 4) {
+      compiler.builder.add(eax, ebx);
+      compiler.builder.imul(eax, ecx);
+      compiler.builder.sub(eax, edx);
+      compiler.builder.imul(eax, ecx);
+    }
+    compiler.builder.ret();
+  }, finalize: true).print();
 
   print('');
 }
@@ -327,7 +374,18 @@ void benchmarkX86GpSequenceReg(int iterations) {
     return builder.finalize().textBytes.length;
   }).print();
 
-  printCompilerUnavailable('X64');
+  // Compiler [no-asm]
+  runCompilerBench('GpSeq', 'X64', 'Compiler [no-asm]', iterations, (compiler) {
+    _generateGpSequenceBuilder(compiler.builder);
+    compiler.builder.ret();
+  }).print();
+
+  // Compiler [finalized]
+  runCompilerBench('GpSeq', 'X64', 'Compiler [finalized]', iterations,
+      (compiler) {
+    _generateGpSequenceBuilder(compiler.builder);
+    compiler.builder.ret();
+  }, finalize: true).print();
 
   print('');
 }
@@ -364,7 +422,19 @@ void benchmarkX86GpSequenceMem(int iterations) {
     return code.finalize().textBytes.length;
   }).print();
 
-  printCompilerUnavailable('X64');
+  // Compiler [no-asm]
+  runCompilerBench('GpSeqMem', 'X64', 'Compiler [no-asm]', iterations,
+      (compiler) {
+    _generateGpSequenceMemBuilder(compiler.builder);
+    compiler.builder.ret();
+  }).print();
+
+  // Compiler [finalized]
+  runCompilerBench('GpSeqMem', 'X64', 'Compiler [finalized]', iterations,
+      (compiler) {
+    _generateGpSequenceMemBuilder(compiler.builder);
+    compiler.builder.ret();
+  }, finalize: true).print();
 
   print('');
 }
@@ -426,7 +496,19 @@ void benchmarkX86SseSequenceReg(int iterations) {
     return builder.finalize().textBytes.length;
   }).print();
 
-  printCompilerUnavailable('X64');
+  // Compiler [no-asm]
+  runCompilerBench('SseSeq', 'X64', 'Compiler [no-asm]', iterations,
+      (compiler) {
+    _generateSseSequenceBuilderReg(compiler.builder);
+    compiler.builder.ret();
+  }).print();
+
+  // Compiler [finalized]
+  runCompilerBench('SseSeq', 'X64', 'Compiler [finalized]', iterations,
+      (compiler) {
+    _generateSseSequenceBuilderReg(compiler.builder);
+    compiler.builder.ret();
+  }, finalize: true).print();
 
   print('');
 }
@@ -458,7 +540,19 @@ void benchmarkX86SseSequenceMem(int iterations) {
     return builder.finalize().textBytes.length;
   }).print();
 
-  printCompilerUnavailable('X64');
+  // Compiler [no-asm]
+  runCompilerBench('SseSeqMem', 'X64', 'Compiler [no-asm]', iterations,
+      (compiler) {
+    _generateSseSequenceBuilderMem(compiler.builder);
+    compiler.builder.ret();
+  }).print();
+
+  // Compiler [finalized]
+  runCompilerBench('SseSeqMem', 'X64', 'Compiler [finalized]', iterations,
+      (compiler) {
+    _generateSseSequenceBuilderMem(compiler.builder);
+    compiler.builder.ret();
+  }, finalize: true).print();
 
   print('');
 }
@@ -520,7 +614,19 @@ void benchmarkX86AvxSequenceReg(int iterations) {
     return builder.finalize().textBytes.length;
   }).print();
 
-  printCompilerUnavailable('X64');
+  // Compiler [no-asm]
+  runCompilerBench('AvxSeq', 'X64', 'Compiler [no-asm]', iterations,
+      (compiler) {
+    _generateAvxSequenceBuilderReg(compiler.builder);
+    compiler.builder.ret();
+  }).print();
+
+  // Compiler [finalized]
+  runCompilerBench('AvxSeq', 'X64', 'Compiler [finalized]', iterations,
+      (compiler) {
+    _generateAvxSequenceBuilderReg(compiler.builder);
+    compiler.builder.ret();
+  }, finalize: true).print();
 
   print('');
 }
@@ -552,7 +658,19 @@ void benchmarkX86AvxSequenceMem(int iterations) {
     return builder.finalize().textBytes.length;
   }).print();
 
-  printCompilerUnavailable('X64');
+  // Compiler [no-asm]
+  runCompilerBench('AvxSeqMem', 'X64', 'Compiler [no-asm]', iterations,
+      (compiler) {
+    _generateAvxSequenceBuilderMem(compiler.builder);
+    compiler.builder.ret();
+  }).print();
+
+  // Compiler [finalized]
+  runCompilerBench('AvxSeqMem', 'X64', 'Compiler [finalized]', iterations,
+      (compiler) {
+    _generateAvxSequenceBuilderMem(compiler.builder);
+    compiler.builder.ret();
+  }, finalize: true).print();
 
   print('');
 }
@@ -650,6 +768,27 @@ void _generateGpSequenceMem(X86Assembler asm) {
   asm.ret();
 }
 
+void _generateGpSequenceMemBuilder(X86CodeBuilder builder) {
+  builder.mov(rax, 0xAAAAAAAA);
+  builder.mov(rbx, 0xBBBBBBBB);
+  builder.mov(rcx, 0xCCCCCCCC);
+
+  final mem = X86Mem.ptr(rcx);
+  for (var i = 0; i < 10; i++) {
+    builder.add(rax, mem);
+    builder.add(rbx, mem);
+    builder.sub(rax, mem);
+    builder.sub(rbx, mem);
+    builder.and(rax, mem);
+    builder.or(rax, mem);
+    builder.xor(rax, mem);
+    builder.cmp(rax, mem);
+    builder.test(rax, mem);
+    builder.mov(rax, mem);
+    builder.mov(mem, rbx);
+  }
+}
+
 // SSE Sequence generator
 void _generateSseSequenceReg(X86Assembler asm) {
   asm.xorRR(eax, eax);
@@ -702,23 +841,50 @@ void _generateSseSequenceReg(X86Assembler asm) {
 }
 
 void _generateSseSequenceBuilderReg(X86CodeBuilder builder) {
-  // TODO: Expand SIMD dispatcher to support more SSE ops in Builder.
-  for (var i = 0; i < 20; i++) {
-    builder.inst(X86InstId.kAddps, [
-      ir.RegOperand(xmm0),
-      ir.RegOperand(xmm1),
-      ir.RegOperand(xmm2),
-    ]);
-    builder.inst(X86InstId.kAddpd, [
-      ir.RegOperand(xmm1),
-      ir.RegOperand(xmm2),
-      ir.RegOperand(xmm3),
-    ]);
-    builder.inst(X86InstId.kVxorps, [
-      ir.RegOperand(xmm0),
-      ir.RegOperand(xmm1),
-      ir.RegOperand(xmm2),
-    ]);
+  builder.xor(eax, eax);
+  builder.xorps(xmm0, xmm0);
+  builder.xorps(xmm1, xmm1);
+  builder.xorps(xmm2, xmm2);
+  builder.xorps(xmm3, xmm3);
+
+  for (var i = 0; i < 10; i++) {
+    builder.addps(xmm0, xmm1);
+    builder.addss(xmm0, xmm1);
+    builder.subps(xmm0, xmm1);
+    builder.subss(xmm0, xmm1);
+    builder.mulps(xmm0, xmm1);
+    builder.mulss(xmm0, xmm1);
+    builder.divps(xmm0, xmm1);
+    builder.divss(xmm0, xmm1);
+    builder.minps(xmm0, xmm1);
+    builder.maxps(xmm0, xmm1);
+    builder.movaps(xmm0, xmm1);
+    builder.movups(xmm1, xmm2);
+    builder.movsd(xmm2, xmm3);
+    builder.movss(xmm3, xmm0);
+    builder.addsd(xmm0, xmm1);
+    builder.subsd(xmm1, xmm2);
+    builder.mulsd(xmm2, xmm3);
+    builder.divsd(xmm3, xmm0);
+    builder.sqrtsd(xmm0, xmm1);
+    builder.sqrtss(xmm1, xmm2);
+    builder.xorps(xmm0, xmm1);
+    builder.pxor(xmm1, xmm2);
+    builder.xorpd(xmm2, xmm3);
+    builder.cvtsi2sd(xmm0, rax);
+    builder.cvttsd2si(rax, xmm0);
+    builder.cvtsi2ss(xmm1, rbx);
+    builder.cvttss2si(rbx, xmm1);
+    builder.cvtsd2ss(xmm2, xmm3);
+    builder.cvtss2sd(xmm3, xmm2);
+    builder.comisd(xmm0, xmm1);
+    builder.comiss(xmm2, xmm3);
+    builder.ucomisd(xmm1, xmm2);
+    builder.ucomiss(xmm3, xmm0);
+    builder.movd(xmm0, eax);
+    builder.movd(eax, xmm1);
+    builder.movq(xmm2, rax);
+    builder.movq(rax, xmm3);
   }
 }
 
@@ -767,23 +933,42 @@ void _generateAvxSequenceReg(X86Assembler asm) {
 }
 
 void _generateAvxSequenceBuilderReg(X86CodeBuilder builder) {
-  // TODO: Expand SIMD dispatcher to support more AVX ops in Builder.
-  for (var i = 0; i < 20; i++) {
-    builder.inst(X86InstId.kAddps, [
-      ir.RegOperand(xmm0),
-      ir.RegOperand(xmm1),
-      ir.RegOperand(xmm2),
-    ]);
-    builder.inst(X86InstId.kAddpd, [
-      ir.RegOperand(xmm1),
-      ir.RegOperand(xmm2),
-      ir.RegOperand(xmm3),
-    ]);
-    builder.inst(X86InstId.kVxorps, [
-      ir.RegOperand(xmm0),
-      ir.RegOperand(xmm1),
-      ir.RegOperand(xmm2),
-    ]);
+  builder.xor(eax, eax);
+  builder.vxorps(xmm0, xmm0, xmm0);
+  builder.vxorps(xmm1, xmm1, xmm1);
+  builder.vxorps(xmm2, xmm2, xmm2);
+  builder.vxorps(ymm0, ymm0, ymm0);
+  builder.vxorps(ymm1, ymm1, ymm1);
+  builder.vxorps(ymm2, ymm2, ymm2);
+
+  for (var i = 0; i < 10; i++) {
+    builder.vaddps(xmm0, xmm1, xmm2);
+    builder.vaddps(ymm0, ymm1, ymm2);
+    builder.vaddpd(xmm0, xmm1, xmm2);
+    builder.vaddpd(ymm0, ymm1, ymm2);
+    builder.vsubps(xmm0, xmm1, xmm2);
+    builder.vsubpd(xmm0, xmm1, xmm2);
+    builder.vsubps(ymm0, ymm1, ymm2);
+    builder.vsubpd(ymm0, ymm1, ymm2);
+    builder.vmulps(ymm0, ymm1, ymm2);
+    builder.vmulpd(ymm0, ymm1, ymm2);
+    builder.vaddsd(xmm0, xmm1, xmm2);
+    builder.vsubsd(xmm1, xmm2, xmm3);
+    builder.vmulsd(xmm2, xmm3, xmm0);
+    builder.vdivsd(xmm3, xmm0, xmm1);
+    builder.vxorps(xmm0, xmm1, xmm2);
+    builder.vxorps(ymm0, ymm1, ymm2);
+    builder.vpxor(xmm0, xmm1, xmm2);
+    builder.vpaddd(xmm0, xmm1, xmm2);
+    builder.vpaddd(ymm0, ymm1, ymm2);
+    builder.vpaddq(xmm1, xmm2, xmm3);
+    builder.vpmulld(xmm2, xmm3, xmm0);
+    builder.vfmadd132sd(xmm0, xmm1, xmm2);
+    builder.vfmadd231sd(xmm1, xmm2, xmm3);
+    builder.vmovaps(xmm0, xmm1);
+    builder.vmovaps(ymm0, ymm1);
+    builder.vmovups(xmm1, xmm2);
+    builder.vmovups(ymm1, ymm2);
   }
 }
 

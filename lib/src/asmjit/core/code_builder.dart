@@ -121,6 +121,16 @@ class X86CodeBuilder extends ir.BaseBuilder {
     inst(X86InstId.kMovsd, [_toOperand(dst), _toOperand(src)]);
   }
 
+  /// MOVD (move doubleword between XMM and GP/Mem)
+  void movd(Object dst, Object src) {
+    inst(X86InstId.kMovd, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// MOVQ (move quadword between XMM and GP)
+  void movq(Object dst, Object src) {
+    inst(X86InstId.kMovq, [_toOperand(dst), _toOperand(src)]);
+  }
+
   /// VMOVAPS (aligned AVX move packed single)
   void vmovaps(Object dst, Object src) {
     inst(X86InstId.kVmovaps, [_toOperand(dst), _toOperand(src)]);
@@ -151,9 +161,19 @@ class X86CodeBuilder extends ir.BaseBuilder {
     inst(X86InstId.kAddps, [_toOperand(dst), _toOperand(src)]);
   }
 
+  /// ADDSS (scalar single add)
+  void addss(Object dst, Object src) {
+    inst(X86InstId.kAddss, [_toOperand(dst), _toOperand(src)]);
+  }
+
   /// ADDPD (packed double add)
   void addpd(Object dst, Object src) {
     inst(X86InstId.kAddpd, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// ADDSD (scalar double add)
+  void addsd(Object dst, Object src) {
+    inst(X86InstId.kAddsd, [_toOperand(dst), _toOperand(src)]);
   }
 
   /// SUBPS (packed single sub)
@@ -161,9 +181,19 @@ class X86CodeBuilder extends ir.BaseBuilder {
     inst(X86InstId.kSubps, [_toOperand(dst), _toOperand(src)]);
   }
 
+  /// SUBSS (scalar single sub)
+  void subss(Object dst, Object src) {
+    inst(X86InstId.kSubss, [_toOperand(dst), _toOperand(src)]);
+  }
+
   /// SUBPD (packed double sub)
   void subpd(Object dst, Object src) {
     inst(X86InstId.kSubpd, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// SUBSD (scalar double sub)
+  void subsd(Object dst, Object src) {
+    inst(X86InstId.kSubsd, [_toOperand(dst), _toOperand(src)]);
   }
 
   /// MULPS (packed single mul)
@@ -171,9 +201,19 @@ class X86CodeBuilder extends ir.BaseBuilder {
     inst(X86InstId.kMulps, [_toOperand(dst), _toOperand(src)]);
   }
 
+  /// MULSS (scalar single mul)
+  void mulss(Object dst, Object src) {
+    inst(X86InstId.kMulss, [_toOperand(dst), _toOperand(src)]);
+  }
+
   /// MULPD (packed double mul)
   void mulpd(Object dst, Object src) {
     inst(X86InstId.kMulpd, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// MULSD (scalar double mul)
+  void mulsd(Object dst, Object src) {
+    inst(X86InstId.kMulsd, [_toOperand(dst), _toOperand(src)]);
   }
 
   /// DIVPS (packed single div)
@@ -181,9 +221,29 @@ class X86CodeBuilder extends ir.BaseBuilder {
     inst(X86InstId.kDivps, [_toOperand(dst), _toOperand(src)]);
   }
 
+  /// DIVSS (scalar single div)
+  void divss(Object dst, Object src) {
+    inst(X86InstId.kDivss, [_toOperand(dst), _toOperand(src)]);
+  }
+
   /// DIVPD (packed double div)
   void divpd(Object dst, Object src) {
     inst(X86InstId.kDivpd, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// DIVSD (scalar double div)
+  void divsd(Object dst, Object src) {
+    inst(X86InstId.kDivsd, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// SQRTSS (scalar single sqrt)
+  void sqrtss(Object dst, Object src) {
+    inst(X86InstId.kSqrtss, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// SQRTSD (scalar double sqrt)
+  void sqrtsd(Object dst, Object src) {
+    inst(X86InstId.kSqrtsd, [_toOperand(dst), _toOperand(src)]);
   }
 
   /// XORPS (packed single xor)
@@ -199,6 +259,76 @@ class X86CodeBuilder extends ir.BaseBuilder {
   /// PXOR (packed integer xor)
   void pxor(Object dst, Object src) {
     inst(X86InstId.kPxor, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// MINPS (packed single min)
+  void minps(Object dst, Object src) {
+    inst(X86InstId.kMinps, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// MAXPS (packed single max)
+  void maxps(Object dst, Object src) {
+    inst(X86InstId.kMaxps, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// MINPD (packed double min)
+  void minpd(Object dst, Object src) {
+    inst(X86InstId.kMinpd, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// MAXPD (packed double max)
+  void maxpd(Object dst, Object src) {
+    inst(X86InstId.kMaxpd, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// COMISS (unordered compare single)
+  void comiss(Object a, Object b) {
+    inst(X86InstId.kComiss, [_toOperand(a), _toOperand(b)]);
+  }
+
+  /// UCOMISS (unordered compare single)
+  void ucomiss(Object a, Object b) {
+    inst(X86InstId.kUcomiss, [_toOperand(a), _toOperand(b)]);
+  }
+
+  /// COMISD (unordered compare double)
+  void comisd(Object a, Object b) {
+    inst(X86InstId.kComisd, [_toOperand(a), _toOperand(b)]);
+  }
+
+  /// UCOMISD (unordered compare double)
+  void ucomisd(Object a, Object b) {
+    inst(X86InstId.kUcomisd, [_toOperand(a), _toOperand(b)]);
+  }
+
+  /// CVTSI2SD (convert int to scalar double)
+  void cvtsi2sd(Object dst, Object src) {
+    inst(X86InstId.kCvtsi2sd, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// CVTTSD2SI (convert scalar double to int)
+  void cvttsd2si(Object dst, Object src) {
+    inst(X86InstId.kCvttsd2si, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// CVTSI2SS (convert int to scalar single)
+  void cvtsi2ss(Object dst, Object src) {
+    inst(X86InstId.kCvtsi2ss, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// CVTTSS2SI (convert scalar single to int)
+  void cvttss2si(Object dst, Object src) {
+    inst(X86InstId.kCvttss2si, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// CVTSD2SS (convert scalar double to scalar single)
+  void cvtsd2ss(Object dst, Object src) {
+    inst(X86InstId.kCvtsd2ss, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// CVTSS2SD (convert scalar single to scalar double)
+  void cvtss2sd(Object dst, Object src) {
+    inst(X86InstId.kCvtss2sd, [_toOperand(dst), _toOperand(src)]);
   }
 
   /// VADDPS (packed single add)
@@ -311,6 +441,58 @@ class X86CodeBuilder extends ir.BaseBuilder {
     }
   }
 
+  /// VADDSD (scalar double add)
+  void vaddsd(Object dst, Object src1, [Object? src2]) {
+    if (src2 == null) {
+      addsd(dst, src1);
+    } else {
+      inst(X86InstId.kVaddsd,
+          [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+    }
+  }
+
+  /// VSUBSD (scalar double sub)
+  void vsubsd(Object dst, Object src1, [Object? src2]) {
+    if (src2 == null) {
+      subsd(dst, src1);
+    } else {
+      inst(X86InstId.kVsubsd,
+          [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+    }
+  }
+
+  /// VMULSD (scalar double mul)
+  void vmulsd(Object dst, Object src1, [Object? src2]) {
+    if (src2 == null) {
+      mulsd(dst, src1);
+    } else {
+      inst(X86InstId.kVmulsd,
+          [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+    }
+  }
+
+  /// VDIVSD (scalar double div)
+  void vdivsd(Object dst, Object src1, [Object? src2]) {
+    if (src2 == null) {
+      divsd(dst, src1);
+    } else {
+      inst(X86InstId.kVdivsd,
+          [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+    }
+  }
+
+  /// VFMADD132SD (fused multiply add)
+  void vfmadd132sd(Object dst, Object src1, Object src2) {
+    inst(X86InstId.kVfmadd132sd,
+        [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+  }
+
+  /// VFMADD231SD (fused multiply add)
+  void vfmadd231sd(Object dst, Object src1, Object src2) {
+    inst(X86InstId.kVfmadd231sd,
+        [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+  }
+
   /// VPADDD (packed integer add)
   void vpaddd(Object dst, Object src1, [Object? src2]) {
     if (src2 == null) {
@@ -319,6 +501,18 @@ class X86CodeBuilder extends ir.BaseBuilder {
       inst(X86InstId.kVpaddd,
           [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
     }
+  }
+
+  /// VPADDQ (packed integer add)
+  void vpaddq(Object dst, Object src1, Object src2) {
+    inst(X86InstId.kVpaddq,
+        [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
+  }
+
+  /// VPMULLD (packed integer mul)
+  void vpmulld(Object dst, Object src1, Object src2) {
+    inst(X86InstId.kVpmulld,
+        [_toOperand(dst), _toOperand(src1), _toOperand(src2)]);
   }
 
   // ---------------------------------------------------------------------------

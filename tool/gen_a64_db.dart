@@ -16,16 +16,16 @@ Future<void> main(List<String> args) async {
   final jsonPath = args.isNotEmpty ? args[0] : 'assets/db/isa_aarch64.json';
   await generateA64Db(
     jsonPath: jsonPath,
-    instOutputPath: 'lib/src/arm/a64_inst_db.g.dart',
-    dispatcherOutputPath: 'lib/src/arm/a64_dispatcher.g.dart',
+    instOutputPath: 'lib/src/asmjit/arm/a64_inst_db.g.dart',
+    dispatcherOutputPath: 'lib/src/asmjit/arm/a64_dispatcher.g.dart',
   );
 }
 
 /// Gera IDs e tabela de instruções AArch64 a partir do `isa_aarch64.json`.
 Future<void> generateA64Db({
   String jsonPath = 'assets/db/isa_aarch64.json',
-  String instOutputPath = 'lib/src/arm/a64_inst_db.g.dart',
-  String dispatcherOutputPath = 'lib/src/arm/a64_dispatcher.g.dart',
+  String instOutputPath = 'lib/src/asmjit/arm/a64_inst_db.g.dart',
+  String dispatcherOutputPath = 'lib/src/asmjit/arm/a64_dispatcher.g.dart',
 }) async {
   print('=== AsmJit AArch64 Instruction DB Generator ===');
   print('Input: $jsonPath');

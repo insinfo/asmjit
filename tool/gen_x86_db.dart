@@ -18,8 +18,8 @@ Future<void> main(List<String> args) async {
   final jsonPath = args.isNotEmpty ? args[0] : 'assets/db/isa_x86.json';
   await generateX86Db(
     jsonPath: jsonPath,
-    instOutputPath: 'lib/src/x86/x86_inst_db.g.dart',
-    dispatcherOutputPath: 'lib/src/x86/x86_dispatcher.g.dart',
+    instOutputPath: 'lib/src/asmjit/x86/x86_inst_db.g.dart',
+    dispatcherOutputPath: 'lib/src/asmjit/x86/x86_dispatcher.g.dart',
   );
 }
 
@@ -29,8 +29,8 @@ Future<void> main(List<String> args) async {
 /// assembler já expõe (mov/aritmética/shifts/jumps/cond/SIMD).
 Future<void> generateX86Db({
   String jsonPath = 'assets/db/isa_x86.json',
-  String instOutputPath = 'lib/src/x86/x86_inst_db.g.dart',
-  String dispatcherOutputPath = 'lib/src/x86/x86_dispatcher.g.dart',
+  String instOutputPath = 'lib/src/asmjit/x86/x86_inst_db.g.dart',
+  String dispatcherOutputPath = 'lib/src/asmjit/x86/x86_dispatcher.g.dart',
 }) async {
   print('=== AsmJit x86 Instruction DB Generator ===');
   print('Input: $jsonPath');
@@ -428,10 +428,36 @@ class X86DbGenerator {
       'cmovle',
       'cmovnle',
       // SIMD subset
+      'addss',
+      'subss',
+      'mulss',
+      'divss',
+      'sqrtss',
+      'addsd',
+      'subsd',
+      'mulsd',
+      'divsd',
+      'sqrtsd',
+      'minps',
+      'maxps',
+      'minpd',
+      'maxpd',
+      'comiss',
+      'ucomiss',
+      'comisd',
+      'ucomisd',
+      'cvtsi2sd',
+      'cvttsd2si',
+      'cvtsi2ss',
+      'cvttss2si',
+      'cvtsd2ss',
+      'cvtss2sd',
       'movss',
       'movsd',
       'movups',
       'movaps',
+      'movd',
+      'movq',
       'addps',
       'addpd',
       'subps',
@@ -443,8 +469,6 @@ class X86DbGenerator {
       'xorps',
       'xorpd',
       'pxor',
-      'movd',
-      'movq',
       'vmovaps',
       'vmovups',
       'vaddps',
@@ -464,6 +488,12 @@ class X86DbGenerator {
       'vpxorq',
       'vpandd',
       'vpandq',
+      'vaddsd',
+      'vsubsd',
+      'vmulsd',
+      'vdivsd',
+      'vfmadd132sd',
+      'vfmadd231sd',
       'cdq',
       'cqo',
       'idiv',
@@ -621,10 +651,54 @@ class X86DbGenerator {
         return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.movssXM(d, s) : asm.movssXX(d, s as X86Xmm), memXmm: (m, s) => asm.movssMX(m, s));';
       case 'movsd':
         return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.movsdXM(d, s) : asm.movsdXX(d, s as X86Xmm), memXmm: (m, s) => asm.movsdMX(m, s));';
+      case 'movd':
+        return '_movd(asm, ops);';
+      case 'movq':
+        return '_movq(asm, ops);';
       case 'movups':
         return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.movupsXM(d, s) : asm.movupsXX(d, s as X86Xmm), memXmm: (m, s) => asm.movupsMX(m, s));';
       case 'movaps':
         return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.movapsXM(d, s) : asm.movapsXX(d, s as X86Xmm), memXmm: (m, s) => asm.movapsMX(m, s));';
+      case 'addss':
+        return '_simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.addssXX(d, s); });';
+      case 'subss':
+        return '_simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.subssXX(d, s); });';
+      case 'mulss':
+        return '_simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.mulssXX(d, s); });';
+      case 'divss':
+        return '_simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.divssXX(d, s); });';
+      case 'sqrtss':
+        return '_simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.sqrtssXX(d, s); });';
+      case 'addsd':
+        return '_simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.addsdXX(d, s); });';
+      case 'subsd':
+        return '_simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.subsdXX(d, s); });';
+      case 'mulsd':
+        return '_simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.mulsdXX(d, s); });';
+      case 'divsd':
+        return '_simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.divsdXX(d, s); });';
+      case 'sqrtsd':
+        return '_simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.sqrtsdXX(d, s); });';
+      case 'comiss':
+        return '_simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.comissXX(d, s); });';
+      case 'ucomiss':
+        return '_simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.ucomissXX(d, s); });';
+      case 'comisd':
+        return '_simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.comisdXX(d, s); });';
+      case 'ucomisd':
+        return '_simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.ucomisdXX(d, s); });';
+      case 'cvtsi2sd':
+        return 'if (ops.length == 2 && ops[0] is X86Xmm && ops[1] is X86Gp) asm.cvtsi2sdXR(ops[0] as X86Xmm, ops[1] as X86Gp);';
+      case 'cvttsd2si':
+        return 'if (ops.length == 2 && ops[0] is X86Gp && ops[1] is X86Xmm) asm.cvttsd2siRX(ops[0] as X86Gp, ops[1] as X86Xmm);';
+      case 'cvtsi2ss':
+        return 'if (ops.length == 2 && ops[0] is X86Xmm && ops[1] is X86Gp) asm.cvtsi2ssXR(ops[0] as X86Xmm, ops[1] as X86Gp);';
+      case 'cvttss2si':
+        return 'if (ops.length == 2 && ops[0] is X86Gp && ops[1] is X86Xmm) asm.cvttss2siRX(ops[0] as X86Gp, ops[1] as X86Xmm);';
+      case 'cvtsd2ss':
+        return 'if (ops.length == 2 && ops[0] is X86Xmm && ops[1] is X86Xmm) asm.cvtsd2ssXX(ops[0] as X86Xmm, ops[1] as X86Xmm);';
+      case 'cvtss2sd':
+        return 'if (ops.length == 2 && ops[0] is X86Xmm && ops[1] is X86Xmm) asm.cvtss2sdXX(ops[0] as X86Xmm, ops[1] as X86Xmm);';
       case 'addps':
         return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.addpsXM(d, s) : asm.addps(d, s as X86Xmm));';
       case 'addpd':
@@ -737,7 +811,19 @@ class X86DbGenerator {
       case 'vpaddq':
         return "_simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vpaddqXXM(d, s1, s2) : asm.vpaddqXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vpaddqYYM(d, s1, s2) : asm.vpaddqYYY(d, s1, s2 as X86Ymm));";
       case 'vpmulld':
-        return "_simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vpmulldXXM(d, s1, s2) : asm.vpmulldXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vpmulldYYM(d, s1, s2) : asm.vpmulldYYY(d, s1, s2 as X86Ymm));";
+        return "_simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vpmulldXXM(d, s1, s2) : asm.vpmulldXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) { if (s2 is X86Mem) asm.vpmulldYYM(d, s1, s2); });";
+      case 'vaddsd':
+        return "_simd3(asm, ops, xmm: (d, s1, s2) { if (s2 is X86Xmm) asm.vaddsdXXX(d, s1, s2); });";
+      case 'vsubsd':
+        return "_simd3(asm, ops, xmm: (d, s1, s2) { if (s2 is X86Xmm) asm.vsubsdXXX(d, s1, s2); });";
+      case 'vmulsd':
+        return "_simd3(asm, ops, xmm: (d, s1, s2) { if (s2 is X86Xmm) asm.vmulsdXXX(d, s1, s2); });";
+      case 'vdivsd':
+        return "_simd3(asm, ops, xmm: (d, s1, s2) { if (s2 is X86Xmm) asm.vdivsdXXX(d, s1, s2); });";
+      case 'vfmadd132sd':
+        return "_simd3(asm, ops, xmm: (d, s1, s2) { if (s2 is X86Xmm) asm.vfmadd132sdXXX(d, s1, s2); });";
+      case 'vfmadd231sd':
+        return "_simd3(asm, ops, xmm: (d, s1, s2) { if (s2 is X86Xmm) asm.vfmadd231sdXXX(d, s1, s2); });";
       case 'vzeroupper':
         return 'asm.vzeroupper();';
       case 'vpord':
@@ -783,6 +869,32 @@ void _mov(X86Assembler asm, List<Object> ops) {
     asm.movMR(dst, src);
   } else if (dst is X86Mem && src is int) {
     asm.movMI(dst, src);
+  }
+}
+
+void _movd(X86Assembler asm, List<Object> ops) {
+  if (ops.length != 2) return;
+  final dst = ops[0];
+  final src = ops[1];
+  if (dst is X86Xmm && src is X86Gp) {
+    asm.movdXR(dst, src);
+  } else if (dst is X86Gp && src is X86Xmm) {
+    asm.movdRX(dst, src);
+  } else if (dst is X86Xmm && src is X86Mem) {
+    asm.movdXM(dst, src);
+  } else if (dst is X86Mem && src is X86Xmm) {
+    asm.movdMX(dst, src);
+  }
+}
+
+void _movq(X86Assembler asm, List<Object> ops) {
+  if (ops.length != 2) return;
+  final dst = ops[0];
+  final src = ops[1];
+  if (dst is X86Xmm && src is X86Gp) {
+    asm.movqXR(dst, src);
+  } else if (dst is X86Gp && src is X86Xmm) {
+    asm.movqRX(dst, src);
   }
 }
 

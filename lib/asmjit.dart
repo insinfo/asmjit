@@ -31,6 +31,7 @@ export 'src/asmjit/x86/x86.dart';
 export 'src/asmjit/x86/x86_operands.dart';
 export 'src/asmjit/x86/x86_encoder.dart';
 export 'src/asmjit/x86/x86_assembler.dart';
+export 'src/asmjit/x86/x86_compiler.dart';
 export 'src/asmjit/x86/x86_func.dart';
 export 'src/asmjit/x86/x86_simd.dart';
 export 'src/asmjit/x86/x86_inst_db.g.dart';

@@ -1,5 +1,4 @@
 import 'package:asmjit/asmjit.dart';
-import 'package:asmjit/src/asmjit/x86/x86_compiler.dart';
 import 'package:asmjit/src/asmjit/core/compiler.dart';
 import 'package:test/test.dart';
 
