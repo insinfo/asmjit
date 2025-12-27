@@ -3,6 +3,9 @@ import 'package:asmjit/src/asmjit/core/compiler.dart';
 import 'package:test/test.dart';
 
 void main() {
+  if (!Environment.host().isX86Family) {
+    return;
+  }
   group('CFGBuilder', () {
     test('Builds simple linear CFG', () {
       final builder = X86CodeBuilder.create();

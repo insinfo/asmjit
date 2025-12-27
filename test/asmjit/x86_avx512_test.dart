@@ -2,6 +2,9 @@ import 'package:asmjit/asmjit.dart';
 import 'package:test/test.dart';
 
 void main() {
+  if (!Environment.host().isX86Family) {
+    return;
+  }
   group('AVX-512 Tests', () {
     test('X86Serializer emits AVX-512 instructions', () {
       final code = CodeHolder(env: Environment.host());

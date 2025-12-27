@@ -6,6 +6,9 @@ import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
 
 void main() {
+  if (!Environment.host().isX86Family) {
+    return;
+  }
   group('CpuFeatures', () {
     test('baseline has required x86-64 features', () {
       const baseline = CpuFeatures.baseline();

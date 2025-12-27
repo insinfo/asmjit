@@ -18,6 +18,9 @@ typedef NativeTwoArgs = Int64 Function(Int64, Int64);
 typedef DartTwoArgs = int Function(int, int);
 
 void main() {
+  if (!Environment.host().isX86Family) {
+    return;
+  }
   group('InlineBytes', () {
     test('creates from list', () {
       final inline = InlineBytes.fromList([0x90, 0x90, 0xC3]);

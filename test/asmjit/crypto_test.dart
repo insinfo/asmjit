@@ -20,6 +20,9 @@ typedef NativeThreeArgs = Int64 Function(Int64, Int64, Int64);
 typedef DartThreeArgs = int Function(int, int, int);
 
 void main() {
+  if (!Environment.host().isX86Family) {
+    return;
+  }
   group('X86Encoder - High-precision Arithmetic', () {
     late CodeBuffer buffer;
     late X86Encoder encoder;

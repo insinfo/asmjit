@@ -3,6 +3,9 @@ import 'package:test/test.dart';
 import 'package:asmjit/src/asmjit/core/builder.dart' as ir;
 
 void main() {
+  if (!Environment.host().isX86Family) {
+    return;
+  }
   group('X86CodeBuilder Compiler Tests', () {
     test('Builds function with Prologue and Epilogue when spills occur', () {
       final builder = X86CodeBuilder.create();

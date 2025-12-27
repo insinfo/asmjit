@@ -10,6 +10,8 @@ import 'package:asmjit/src/asmjit/arm/a64_dispatcher.g.dart';
 import 'package:asmjit/src/asmjit/core/builder.dart' as ir;
 
 void main() {
+  final isX86 = Environment.host().isX86Family;
+
   group('asmjit-testing parity (Dart port)', () {
     test('isa_x86.json unique instructions == X86InstId.kCount', () async {
       final file = File('assets/db/isa_x86.json');
@@ -43,7 +45,7 @@ void main() {
       expect(names.length, X86InstId.kCount,
           reason:
               'Ported DB generator should stay in sync with assets/db/isa_x86.json');
-    });
+    }, skip: !isX86);
 
     test('inst db lookup basic mnemonics', () {
       final add = x86InstByName('add');
@@ -52,7 +54,7 @@ void main() {
       expect(add?.id, X86InstId.kAdd);
       expect(mov?.id, X86InstId.kMov);
       expect(ret?.id, X86InstId.kRet);
-    });
+    }, skip: !isX86);
 
     test('isa_aarch64.json unique instructions == A64InstId.kCount', () async {
       final file = File('assets/db/isa_aarch64.json');
@@ -92,7 +94,7 @@ void main() {
       x86Dispatch(asm, X86InstId.kRet, const []);
 
       expect(code.text.buffer.length, greaterThan(0));
-    });
+    }, skip: !isX86);
 
     test('A64 dispatcher encodes mov/add/ret without fallback', () {
       final env = Environment.host();
@@ -119,7 +121,7 @@ void main() {
       final bytes = code.text.buffer.bytes;
       expect(bytes.isNotEmpty, isTrue);
       expect(bytes.last, equals(0xC3)); // ret
-    });
+    }, skip: !isX86);
 
     test('asmjit_test_assembler_x86.cpp (scaffold)', () {
       final env = Environment.host();
@@ -133,7 +135,8 @@ void main() {
       final bytes = code.text.buffer.bytes;
       expect(bytes.isNotEmpty, isTrue);
       expect(bytes.last, equals(0xC3)); // ret
-    });
+    }, skip: !isX86);
+
     test('asmjit_test_compiler_x86.cpp (port completo)', () {
       final runtime = JitRuntime();
 
@@ -304,7 +307,7 @@ void main() {
       }
 
       runtime.dispose();
-    });
+    }, skip: !isX86);
     test('asmjit_test_compiler_a64.cpp', () {
       final env = Environment.aarch64();
 
@@ -439,7 +442,7 @@ void main() {
       final bytes = code.text.buffer.bytes;
       expect(bytes.length, equals(3));
       expect(bytes, equals([0x90, 0xCC, 0xC3]));
-    });
+    }, skip: !isX86);
 
     test('asmjit_test_instinfo.cpp (parcial)', () {
       final add = x86InstByName('add');
@@ -485,7 +488,7 @@ void main() {
       final bytes = code.finalize().textBytes;
       expect(bytes.length, greaterThan(0));
       expect(bytes.last, equals(0xC3));
-    });
+    }, skip: !isX86);
   });
 }
 

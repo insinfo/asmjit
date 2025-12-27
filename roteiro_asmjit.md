@@ -118,6 +118,16 @@ Atualizacoes recentes:
 - X86CodeBuilder agora cria labels via CodeHolder e faz shuffle seguro de argumentos.
 - Scaffold inicial de asmjit_test_assembler_x86/x64 (sanity encoding) sem depender de referencias/.
 - Suite asmjit_test_compiler_a64 portada (prologo/epilogo, branches, NEON/FP encode).
+
+## ⚠️ Crash / JIT Pipeline (Blend2D)
+
+- Windows x64: `pipeline_src_over_test.dart` crash dentro do stub JIT ao ler `dst`.
+- Load simples via JIT funciona, indicando que o problema nao parece ser alocacao de memoria e sim pipeline/ABI/registros.
+
+## 🧪 ARM64 Testes
+
+- Dockerfile ARM64: `docker/linux-arm64-test.Dockerfile`.
+- Rodar com `--platform linux/arm64` (ver exemplos no Dockerfile).
 - Suite asmjit_bench_codegen_x86 portada (loop de codegen e validacao de bytes).
 - JitRuntime agora tem pipeline cache (addCached/addBytesCached).
 - A64CodeBuilder agora tem RA + spills (GP/NEON) com slots em stack.

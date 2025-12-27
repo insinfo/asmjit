@@ -6,6 +6,9 @@ import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
 
 void main() {
+  if (!Environment.host().isX86Family) {
+    return;
+  }
   group('X86 SIMD Registers', () {
     test('XMM registers have correct properties', () {
       expect(xmm0.id, equals(0));

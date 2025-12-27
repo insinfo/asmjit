@@ -3,6 +3,9 @@ import 'package:test/test.dart';
 import 'package:asmjit/asmtk.dart';
 
 void main() {
+  if (!Environment.host().isX86Family) {
+    return;
+  }
   group('AsmTokenizer', () {
     test('tokenizes simple instruction', () {
       final tokenizer = AsmTokenizer('mov rax, rbx');

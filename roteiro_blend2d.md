@@ -15,6 +15,22 @@ mantenha este roteiro atualizado
 FOCO em PERFORMACE micro otimização é importante otimizar o maximo possivel
 ---
 
+## 🧪 Status de Testes / Crash
+
+**Data**: 27 Dezembro 2025  
+**Crash**: `test/blend2d/pipeline_src_over_test.dart` (Windows x64, Dart 3.6.0)
+- CRASH ao executar pipeline JIT (PC dentro do stub JIT) ao fazer load do dst pixel.
+- O mesmo stub funciona quando `globalAlpha == 0` (early-return) e falha quando percorre o loop.
+- Executando via Docker Linux x64: sem crash, mas divergencia em pixels e falhas de alpha.
+
+**Falhas de testes (Linux x64/Docker)**:
+- `blend2d_context_test.dart`: `BLContext globalAlpha fill` (alpha sai 0).
+- `blend2d_pipeline_alpha_test.dart`: casos alpha 0.0 e 0.5 falham.
+
+**Hipotese atual**: nao parece ser alocacao de memoria (load simples via JIT funciona), mais provavel erro de pipeline JIT/ABI/registros.
+
+---
+
 ## 📊 Status Atual da Portação
 
 ### ✅ Implementado (baseline)
@@ -78,6 +94,20 @@ Blend2D possui um vasto módulo Core com tipos fundamentais que ainda NÃO estã
 | **Reference - Fetch** | `fetchgeneric_p.h` (40 KB) | ❌ | Portar fetchers (gradient, pattern) |
 | **Reference - Fill** | `fillgeneric_p.h` (12 KB) | ❌ Parcial | Rect/span fills avançados |
 | **Reference - Pixel** | `pixelgeneric_p.h` (34 KB) | ❌ | Operações pixel SIMD emuladas |
+
+---
+
+## ✅ Ajustes Recentes (Blend2D)
+
+- A64 JIT: apply de constantes (width/height/stride/color) antes do emit de cada op.
+- Removidos fallbacks que transformavam `globalAlpha==0` em `255` no JIT.
+
+---
+
+## 🧩 ARM64 / AArch64
+
+- Dockerfile dedicado: `docker/linux-arm64-test.Dockerfile` (rodar com `--platform linux/arm64`).
+- Objetivo imediato: estabilizar pipeline A64 e reproduzir testes de alpha no ARM.
 | **JIT - CompOpPart** | `compoppart.cpp` (153 KB) | ❌ | Geração JIT de 30+ comp ops |
 | **JIT - FetchGradient** | `fetchgradientpart.cpp` (48 KB) | ❌ | JIT de gradientes lineares/radiais/cônicos |
 | **JIT - FetchPattern** | `fetchpatternpart.cpp` (80 KB) | ❌ | JIT de patterns com extend modes |

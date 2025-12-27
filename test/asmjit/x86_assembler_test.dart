@@ -7,6 +7,9 @@ import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
 
 void main() {
+  if (!Environment.host().isX86Family) {
+    return;
+  }
   group('X86Assembler', () {
     test('creates assembler with code holder', () {
       final code = CodeHolder();

@@ -3,6 +3,9 @@ import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
 
 void main() {
+  if (!Environment.host().isX86Family) {
+    return;
+  }
   Uint8List getBytes(CodeHolder code) {
     return code.text.buffer.bytes;
   }

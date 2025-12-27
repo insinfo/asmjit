@@ -8,6 +8,8 @@ import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
 
 void main() {
+  final isX86 = Environment.host().isX86Family;
+
   group('asmjit_test_emitters port', () {
     group('X86 Assembler', () {
       test('basic instruction emission', () {
@@ -86,7 +88,7 @@ void main() {
         expect(bytes.isNotEmpty, isTrue);
         expect(bytes.last, equals(0xC3));
       });
-    });
+    }, skip: !isX86);
 
     group('X86 Builder', () {
       test('basic IR to Assembler', () {
@@ -177,7 +179,7 @@ void main() {
         fn.dispose();
         runtime.dispose();
       });
-    });
+    }, skip: !isX86);
 
     group('A64 Assembler', () {
       test('basic instruction emission', () {
@@ -315,6 +317,6 @@ void main() {
         expect(
             a64Bytes, equals([0x1F, 0x20, 0x03, 0xD5, 0xC0, 0x03, 0x5F, 0xD6]));
       });
-    });
+    }, skip: !isX86);
   });
 }

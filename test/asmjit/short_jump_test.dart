@@ -11,6 +11,9 @@ typedef NativeOneArg = Int64 Function(Int64);
 typedef DartOneArg = int Function(int);
 
 void main() {
+  if (!Environment.host().isX86Family) {
+    return;
+  }
   group('Short Jump - Backward Jump Encoding', () {
     test('short jmp is used for close backward jumps', () {
       final code = CodeHolder();

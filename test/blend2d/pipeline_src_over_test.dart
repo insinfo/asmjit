@@ -63,7 +63,7 @@ void main() {
 
       final runtime = JitRuntime();
       final compiler = PipelineCompiler();
-      final fn = compiler.compile(
+      final program = compiler.compileProgram(
         runtime,
         const [
           PipelineOp.compSrcOver(
@@ -73,22 +73,16 @@ void main() {
             srcStride: strideBytes,
           ),
         ],
+        backend: PipelineBackend.auto,
       );
 
       try {
-        final entry = fn.pointer.cast<NativeFunction<_NativePipeline>>();
-        final func = entry.asFunction<_DartPipeline>();
-        func(
-          dst.address,
-          src.address,
-          0,
-          0,
-          0,
-          0,
-          0,
+        program.execute(
+          dst: dst.cast(),
+          src: src.cast(),
         );
       } finally {
-        fn.dispose();
+        program.dispose();
         runtime.dispose();
       }
 

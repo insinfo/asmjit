@@ -17,6 +17,9 @@ typedef NativeTwoArgs = Int64 Function(Int64, Int64);
 typedef DartTwoArgs = int Function(int, int);
 
 void main() {
+  if (!Environment.host().isX86Family) {
+    return;
+  }
   group('X86Encoder - Unary Instructions', () {
     late CodeBuffer buffer;
     late X86Encoder encoder;

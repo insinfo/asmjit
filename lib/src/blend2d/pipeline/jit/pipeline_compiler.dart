@@ -346,6 +346,22 @@ class PipelineCompiler {
     final colorArg = builder.getArgReg(6);
 
     for (final op in ops) {
+      if (op.width != 0) {
+        builder.movImm32(widthArg, op.width);
+      }
+      if (op.height != 0) {
+        builder.movImm32(heightArg, op.height);
+      }
+      if (op.dstStride != 0) {
+        builder.movImm32(dstStrideArg, op.dstStride);
+      }
+      if (op.srcStride != 0) {
+        builder.movImm32(srcStrideArg, op.srcStride);
+      }
+      if (op.color != 0) {
+        builder.movImm32(colorArg, op.color);
+      }
+
       switch (op.kind) {
         case PipelineOpKind.copy:
         case PipelineOpKind.blit:
@@ -357,6 +373,10 @@ class PipelineCompiler {
             heightArg,
             dstStrideArg,
             srcStrideArg,
+            widthConst: op.width,
+            heightConst: op.height,
+            dstStrideConst: op.dstStride,
+            srcStrideConst: op.srcStride,
             dstFormat: op.dstFormat,
             srcFormat: op.srcFormat,
           );
@@ -1491,6 +1511,10 @@ void _emitCopyA64(
   A64Gp height,
   A64Gp dstStride,
   A64Gp srcStride, {
+  int widthConst = 0,
+  int heightConst = 0,
+  int dstStrideConst = 0,
+  int srcStrideConst = 0,
   required PixelFormat dstFormat,
   required PixelFormat srcFormat,
 }) {
@@ -1508,12 +1532,12 @@ void _emitCopyA64(
 
   b.mov(rowDst, dst);
   b.mov(rowSrc, src);
-  b.mov(rowBytes, width);
+  _loadIntA64(b, rowBytes, widthConst, width);
   if (!isA8) {
     b.add(rowBytes, rowBytes, width);
     b.add(rowBytes, rowBytes, rowBytes);
   }
-  b.mov(yCount, height);
+  _loadIntA64(b, yCount, heightConst, height.w);
   if (needAlpha) {
     b.movImm32(alphaMask!, 0xFF000000);
   }
@@ -1526,7 +1550,7 @@ void _emitCopyA64(
   b.label(loopY);
   b.cbz(yCount, done);
 
-  b.mov(xCount, width);
+  _loadIntA64(b, xCount, widthConst, width);
   b.label(loopX);
   b.cbz(xCount, endRow);
 
@@ -1548,10 +1572,10 @@ void _emitCopyA64(
   b.b(loopX);
 
   b.label(endRow);
-  b.mov(tmp, srcStride);
+  _loadIntA64(b, tmp, srcStrideConst, srcStride);
   b.sub(tmp, tmp, rowBytes);
   b.add(rowSrc, rowSrc, tmp);
-  b.mov(tmp, dstStride);
+  _loadIntA64(b, tmp, dstStrideConst, dstStride);
   b.sub(tmp, tmp, rowBytes);
   b.add(rowDst, rowDst, tmp);
   b.sub(yCount, yCount, 1);
@@ -1907,6 +1931,10 @@ void _emitSrcOverA64(
       height,
       dstStride,
       srcStride,
+      widthConst: widthConst,
+      heightConst: heightConst,
+      dstStrideConst: dstStrideConst,
+      srcStrideConst: srcStrideConst,
       globalAlphaConst: globalAlphaConst,
       maskConst: maskConst,
       maskStrideConst: maskStrideConst,
@@ -1941,6 +1969,10 @@ void _emitSrcOverA64(
     height,
     dstStride,
     srcStride,
+    widthConst: widthConst,
+    heightConst: heightConst,
+    dstStrideConst: dstStrideConst,
+    srcStrideConst: srcStrideConst,
     dstFormat: dstFormat,
     srcFormat: srcFormat,
     globalAlphaConst: globalAlphaConst,
@@ -2133,6 +2165,10 @@ void _emitSrcOver32A64(
   A64Gp height,
   A64Gp dstStride,
   A64Gp srcStride, {
+  int widthConst = 0,
+  int heightConst = 0,
+  int dstStrideConst = 0,
+  int srcStrideConst = 0,
   required PixelFormat dstFormat,
   required PixelFormat srcFormat,
   required int globalAlphaConst,
@@ -2182,13 +2218,13 @@ void _emitSrcOver32A64(
 
   b.mov(rowDst, dst);
   b.mov(rowSrc, src);
-  b.mov(rowBytes, width);
+  _loadIntA64(b, rowBytes, widthConst, width);
   b.add(rowBytes, rowBytes, width);
   b.add(rowBytes, rowBytes, rowBytes);
-  b.mov(yCount, height.w);
+  _loadIntA64(b, yCount, heightConst, height);
   if (hasMask) {
     _movImmPtrA64(b, rowMask, maskConst.address);
-    b.mov(maskBytes, width.w);
+    _loadIntA64(b, maskBytes, widthConst, width.w);
     if (maskStrideConst != 0) {
       b.movImm32(maskStep, maskStrideConst);
       b.sub(maskStep, maskStep, maskBytes);
@@ -2209,7 +2245,7 @@ void _emitSrcOver32A64(
   b.label(loopY);
   b.cbz(yCount, done);
 
-  b.mov(xCount, width.w);
+  _loadIntA64(b, xCount, widthConst, width.w);
   b.label(loopX);
   b.cbz(xCount, endRow);
 
@@ -2292,10 +2328,10 @@ void _emitSrcOver32A64(
   b.b(loopX);
 
   b.label(endRow);
-  b.mov(tmp2, srcStride.w);
+  _loadIntA64(b, tmp2, srcStrideConst, srcStride);
   b.sub(tmp2, tmp2, rowBytes.w);
   b.add(rowSrc, rowSrc, tmp2.x);
-  b.mov(tmp2, dstStride.w);
+  _loadIntA64(b, tmp2, dstStrideConst, dstStride);
   b.sub(tmp2, tmp2, rowBytes.w);
   b.add(rowDst, rowDst, tmp2.x);
   if (hasMask) {
@@ -2432,6 +2468,10 @@ void _emitSrcOverA8A64(
   A64Gp height,
   A64Gp dstStride,
   A64Gp srcStride, {
+  int widthConst = 0,
+  int heightConst = 0,
+  int dstStrideConst = 0,
+  int srcStrideConst = 0,
   required int globalAlphaConst,
   required Pointer<Uint8>? maskConst,
   required int maskStrideConst,
@@ -2464,11 +2504,11 @@ void _emitSrcOverA8A64(
 
   b.mov(rowDst, dst);
   b.mov(rowSrc, src);
-  b.mov(rowBytes, width);
-  b.mov(yCount, height.w);
+  _loadIntA64(b, rowBytes, widthConst, width);
+  _loadIntA64(b, yCount, heightConst, height.w);
   if (hasMask) {
     _movImmPtrA64(b, rowMask, maskConst.address);
-    b.mov(maskBytes, width.w);
+    _loadIntA64(b, maskBytes, widthConst, width.w);
     if (maskStrideConst != 0) {
       b.movImm32(maskStep, maskStrideConst);
       b.sub(maskStep, maskStep, maskBytes);
@@ -2487,7 +2527,7 @@ void _emitSrcOverA8A64(
   b.label(loopY);
   b.cbz(yCount, done);
 
-  b.mov(xCount, width.w);
+  _loadIntA64(b, xCount, widthConst, width.w);
   b.label(loopX);
   b.cbz(xCount, endRow);
 
@@ -2530,10 +2570,10 @@ void _emitSrcOverA8A64(
   b.b(loopX);
 
   b.label(endRow);
-  b.mov(tmp2, srcStride.w);
+  _loadIntA64(b, tmp2, srcStrideConst, srcStride.w);
   b.sub(tmp2, tmp2, rowBytes.w);
   b.add(rowSrc, rowSrc, tmp2.x);
-  b.mov(tmp2, dstStride.w);
+  _loadIntA64(b, tmp2, dstStrideConst, dstStride.w);
   b.sub(tmp2, tmp2, rowBytes.w);
   b.add(rowDst, rowDst, tmp2.x);
   if (hasMask) {
