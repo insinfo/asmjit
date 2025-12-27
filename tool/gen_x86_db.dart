@@ -740,7 +740,7 @@ class X86DbGenerator {
       case 'pshufd':
         return 'if (ops.length == 3 && ops[0] is X86Xmm && ops[1] is X86Xmm && ops[2] is int) asm.pshufdXXI(ops[0] as X86Xmm, ops[1] as X86Xmm, ops[2] as int);';
       case 'vmovups':
-        return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vmovupsXM(d, s) : asm.vmovups(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vmovupsYM(d, s) : asm.vmovupsY(d, s as X86Ymm), memXmm: (m, s) => asm.vmovupsMX(m, s), memYmm: (m, s) => asm.vmovupsMY(m, s));';
+        return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vmovupsXM(d, s) : asm.vmovups(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vmovupsYM(d, s) : asm.vmovupsY(d, s as X86Ymm), zmm: (d, s) => s is X86Mem ? asm.vmovupsZmmMem(d, s) : asm.vmovupsZmm(d, s as X86Zmm), memXmm: (m, s) => asm.vmovupsMX(m, s), memYmm: (m, s) => asm.vmovupsMY(m, s), memZmm: (m, s) => asm.vmovupsMemZmm(m, s));';
       case 'vmovaps':
         return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vmovapsXM(d, s) : asm.vmovaps(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vmovapsYM(d, s) : asm.vmovapsY(d, s as X86Ymm), memXmm: (m, s) => asm.vmovapsMX(m, s), memYmm: (m, s) => asm.vmovapsMY(m, s));';
       case 'vaddps':

@@ -5,6 +5,8 @@ roteiro bem prático (e incremental) para portar o AsmJit (C++) C:\MyDartProject
 micro otimzações são vitais para extrair o maximo de performace 
 assumir Dart Native (VM/AOT) em desktop/servidor. No iOS (e alguns ambientes “hardened”) JIT/memória executável costuma ser bloqueado por política do sistema — então trate como alvo “não suportado” ou “modo AOT/sem JIT”.
 
+mantenha este roteiro atualizado
+
 nada no codigo ou em testes podem depender de C:\MyDartProjects\asmjit\referencias
 copie o que for necessario paras diretorios apropriados por exemplo C:\MyDartProjects\asmjit\assets
 
@@ -55,7 +57,27 @@ docker run --rm --platform linux/arm64 dart:stable bash -lc "uname -m"
 **Testes**: nao executado nesta revisao  
 **Warnings**: nao verificado
 
-Atualizações recentes:
+Atualizacoes recentes:
+- **IR deduplicado**: `core/ir.dart` agora reexporta `builder.dart`/`compiler.dart` (sem definicoes duplicadas).
+- **Imediatos vetoriais (nao-zero)**: `invoke()` agora materializa constantes em XMM/YMM/ZMM via scratch na pilha.
+- **serializeNodes expandido**: casos `func/funcRet/invoke/section/constPool/embedLabel/jump` agora sao no-op.
+- **CodeWriter inicial**: `core/code_writer.dart` criado com emissao sequencial em `CodeHolder` e troca de section.
+- **InstAPI parcial**: metadata de read/write adicionada para instrucoes x86 mais comuns.
+- **Opcoes de encoding/diagnostico**: `X86Compiler` agora propaga `encodingOptions` e `diagnosticOptions` para o assembler.
+- **Addressing via vetores**: `Mem` com base/index em registradores vetoriais agora usa os bits baixos via `movq/movd` para GP temporario.
+- **Stack args de memoria**: `_emitCallStackArg()` agora aceita `MemOperand`, carregando via `r11` antes de armazenar na pilha.
+- **Imediatos vetoriais (zero)**: `invoke()` agora aceita imediato `0` para argumentos vetoriais (zera XMM/YMM via `pxor/vpxor`).
+- **Stack args vetoriais**: argumentos vetoriais ZMM agora podem ser passados na pilha via `vmovups`.
+- **Args vetoriais fixos**: prologo agora move argumentos XMM/YMM/ZMM a partir dos registradores ABI (xmm0..xmm7 / xmm0..xmm3).
+- **Retorno spill vetorial**: `invoke()` com retorno vetorial em spill agora armazena a partir de `xmm0/ymm0/zmm0`.
+- **Args em regs fisicos**: `setArg()` agora aceita registradores fisicos e faz o move do ABI para o reg fixo (GP).
+- **Retorno spill em chamadas**: se o retorno da `invoke()` cair em spill (GP), o builder move via `r11` e armazena no slot de stack.
+- **Retorno default vetorial**: `endFunc()` agora zera `xmm0/ymm0/zmm0` para retornos vetoriais quando nenhum retorno e definido.
+- **Call moves sem temp**: quando nao ha registrador temporario livre em shuffles de argumentos, o builder usa `push`/`pop` para quebrar ciclos.
+- **Invoke sem assinatura**: chamadas sem `FuncSignature` agora emitem `call` direto e movem retorno a partir de `rax/xmm0/ymm0/zmm0` quando solicitado.
+- **ZMM em chamadas**: movs de argumentos/retornos ZMM agora usam `vmovups` no builder; dispatcher x86 passou a suportar ZMM em `vmovups` (reg/mem).
+- **IR Serialization corrigida**: `serializeNodes` agora possui `break` em todos os `case`, evitando fallthrough e serialização inválida (impacta `Builder [finalized]`).
+- **Dispatcher A64 expandido**: `ldur`/`stur` incluídos no `gen_a64_db.dart` e regenerado `a64_dispatcher.g.dart`.
 - **Implementações AVX Completas**: vandps/pd, vorps/pd, vpor, vpand, vpaddq (XMM/YMM + memória) adicionadas ao Encoder e Assembler
 - **Expansão Despachante SIMD X86**: Adicionadas 20+ novas instruções SSE/AVX ao dispatcher (andps/pd, orps/pd, minps/pd, maxps/pd, sqrtps/pd, rcpps, rsqrtps, vandps/pd, vor ps/pd, vpor, vpand, vpaddd/q, vpmulld) com suporte para formas de registro e memória (XMM/YMM).
 - **AVX Implementado**: Adicionado instruções `vsubps` e `vsubpd` (XMM/YMM) no Encoder e Assembler.
@@ -89,7 +111,7 @@ Atualizações recentes:
 - Benchmarks Dart executados (quick): `codegen_benchmark.dart`, `overhead_benchmark.dart`,
   `regalloc_benchmark.dart`, `serializer_benchmark.dart`.
 - Divergencias notaveis com o C++:
-  - `codegen_benchmark.dart`: `Builder [finalized]` sem gerar bytes (CodeSize 0).
+  - `codegen_benchmark.dart`: `Builder [finalized]` sem gerar bytes (CodeSize 0) **corrigido via** `serializeNodes` com `break` (revalidar benchmark).
   - `regalloc_benchmark.dart`: AArch64 falha com `labelAlreadyBound`.
   - Falta paridade de cenarios/emitters nas suites de benchmark.
 

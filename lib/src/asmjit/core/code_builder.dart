@@ -25,8 +25,15 @@ class X86CodeBuilder extends ir.BaseBuilder {
   /// Calling convention.
   final CallingConvention callingConvention;
 
+  /// Encoding options forwarded to the assembler.
+  int encodingOptions = EncodingOptions.kNone;
+
+  /// Diagnostic options forwarded to the compiler pipeline.
+  int diagnosticOptions = DiagnosticOptions.kNone;
+
   /// Argument virtual registers.
   final List<VirtReg?> _argRegs = [];
+  final List<BaseReg?> _fixedArgRegs = [];
 
   // ignore: unused_field - reserved for future return value tracking
   VirtReg? _returnReg;
@@ -583,11 +590,64 @@ class X86CodeBuilder extends ir.BaseBuilder {
           if (phys != null) {
             node.ret = phys;
           } else if (ret.isSpilled) {
-            // TODO: Support spilled return values by storing to stack.
+            final mem = _spillMemFor(ret);
+            if (mem != null && ret.regClass == RegClass.gp) {
+              final temp = _sizedGpTempFor(ret.size);
+              node.ret = temp;
+              nodes.insertAfter(
+                  ir.InstNode(
+                      X86InstId.kMov,
+                      [ir.MemOperand(mem), ir.RegOperand(temp)]),
+                  node);
+            } else {
+              final sizedMem =
+                  mem == null || ret.size == 0 ? mem : mem.withSize(ret.size);
+              if (sizedMem != null && ret.regClass == RegClass.xmm) {
+                node.ret = xmm0;
+                nodes.insertAfter(
+                    ir.InstNode(
+                        X86InstId.kMovups,
+                        [ir.MemOperand(sizedMem), ir.RegOperand(xmm0)]),
+                    node);
+              } else if (sizedMem != null && ret.regClass == RegClass.ymm) {
+                node.ret = ymm0;
+                nodes.insertAfter(
+                    ir.InstNode(
+                        X86InstId.kVmovups,
+                        [ir.MemOperand(sizedMem), ir.RegOperand(ymm0)]),
+                    node);
+              } else if (sizedMem != null && ret.regClass == RegClass.zmm) {
+                node.ret = zmm0;
+                nodes.insertAfter(
+                    ir.InstNode(
+                        X86InstId.kVmovups,
+                        [ir.MemOperand(sizedMem), ir.RegOperand(zmm0)]),
+                    node);
+              }
+            }
           }
         }
       }
     }
+  }
+
+  X86Mem? _spillMemFor(VirtReg vreg) {
+    if (!vreg.isSpilled) return null;
+    final slotIndex = vreg.spillOffset ~/ 8;
+    int offset = 0;
+    if (_funcFrame != null) {
+      offset = _funcFrame!.getLocalOffset(slotIndex);
+    } else {
+      offset = -8 - vreg.spillOffset;
+    }
+    return X86Mem.baseDisp(rbp, offset);
+  }
+
+  X86Gp _sizedGpTempFor(int size) {
+    if (size <= 1) return r11.r8;
+    if (size == 2) return r11.r16;
+    if (size == 4) return r11.r32;
+    return r11;
   }
 
   void _rewriteOperandList(ir.BaseNode anchor, List<ir.Operand> operands) {
@@ -651,7 +711,17 @@ class X86CodeBuilder extends ir.BaseBuilder {
             anchor);
         return temp;
       }
-      // TODO: Support vector regs in memory addressing.
+      final physVec = reg.physXmm;
+      if (physVec != null) {
+        final dst = is64Bit ? temp : temp.r32;
+        final instId = is64Bit ? X86InstId.kMovq : X86InstId.kMovd;
+        // Use the low bits of the vector register as an address base/index.
+        nodes.insertBefore(
+            ir.InstNode(
+                instId, [ir.RegOperand(dst), ir.RegOperand(physVec)]),
+            anchor);
+        return dst;
+      }
       return reg;
     }
     return reg;
@@ -684,7 +754,10 @@ class X86CodeBuilder extends ir.BaseBuilder {
       }
       _argRegs[index] = reg;
     } else {
-      // TODO: Support binding physical registers as arguments.
+      while (_fixedArgRegs.length <= index) {
+        _fixedArgRegs.add(null);
+      }
+      _fixedArgRegs[index] = reg;
     }
   }
 
@@ -705,7 +778,7 @@ class X86CodeBuilder extends ir.BaseBuilder {
   void _lowerInvokeNode(ir.InvokeNode node) {
     final signature = node.signature;
     if (signature is! FuncSignature) {
-      // TODO: Support invocations without signature metadata.
+      _emitCallWithoutSignature(node);
       return;
     }
 
@@ -768,6 +841,53 @@ class X86CodeBuilder extends ir.BaseBuilder {
     }
   }
 
+  void _emitCallWithoutSignature(ir.InvokeNode node) {
+    // No ABI metadata: assume caller already placed arguments.
+    if (node.target is Label) {
+      nodes.insertBefore(
+          ir.InstNode(X86InstId.kCall, [ir.LabelOperand(node.target as Label)]),
+          node);
+    } else if (node.target is BaseReg) {
+      nodes.insertBefore(
+          ir.InstNode(X86InstId.kCall, [ir.RegOperand(node.target as BaseReg)]),
+          node);
+    } else if (node.target is int) {
+      nodes.insertBefore(
+          ir.InstNode(X86InstId.kCall, [ir.ImmOperand(node.target as int)]),
+          node);
+    }
+
+    final ret = node.ret;
+    if (ret == null) return;
+    if (ret is X86Gp && ret != rax) {
+      nodes.insertBefore(
+          ir.InstNode(
+              X86InstId.kMov, [ir.RegOperand(ret), ir.RegOperand(rax)]),
+          node);
+      return;
+    }
+    if (ret is X86Xmm && ret.id != 0) {
+      nodes.insertBefore(
+          ir.InstNode(
+              X86InstId.kMovups, [ir.RegOperand(ret), ir.RegOperand(xmm0)]),
+          node);
+      return;
+    }
+    if (ret is X86Ymm && ret.id != 0) {
+      nodes.insertBefore(
+          ir.InstNode(
+              X86InstId.kVmovups, [ir.RegOperand(ret), ir.RegOperand(ymm0)]),
+          node);
+      return;
+    }
+    if (ret is X86Zmm && ret.id != 0) {
+      nodes.insertBefore(
+          ir.InstNode(
+              X86InstId.kVmovups, [ir.RegOperand(ret), ir.RegOperand(zmm0)]),
+          node);
+    }
+  }
+
   void _emitCallMoves(ir.BaseNode anchor, List<_CallMove> moves) {
     if (moves.isEmpty) return;
 
@@ -800,11 +920,20 @@ class X86CodeBuilder extends ir.BaseBuilder {
         moves.insert(0, _CallMove(move.dst, ir.RegOperand(temp)));
         used.add(temp);
       } else {
-        // TODO: Spill to stack if no temp is available.
-        nodes.insertBefore(
-            ir.InstNode(
-                X86InstId.kMov, [ir.RegOperand(move.dst), move.src]),
-            anchor);
+        if (move.src is ir.RegOperand &&
+            (move.src as ir.RegOperand).reg is X86Gp) {
+          final srcReg = (move.src as ir.RegOperand).reg as X86Gp;
+          nodes.insertBefore(
+              ir.InstNode(X86InstId.kPush, [ir.RegOperand(srcReg)]),
+              anchor);
+          nodes.insertBefore(
+              ir.InstNode(X86InstId.kPop, [ir.RegOperand(move.dst)]), anchor);
+        } else {
+          nodes.insertBefore(
+              ir.InstNode(
+                  X86InstId.kMov, [ir.RegOperand(move.dst), move.src]),
+              anchor);
+        }
       }
     }
   }
@@ -830,7 +959,18 @@ class X86CodeBuilder extends ir.BaseBuilder {
       ir.BaseNode anchor, FuncValue argInfo, ir.Operand arg) {
     final regType = argInfo.regType;
     if (regType == FuncRegType.zmm) {
-      // TODO: Add AVX-512 dispatcher support for ZMM moves.
+      final dst = X86Zmm(argInfo.regId);
+      const instId = X86InstId.kVmovups;
+      if (arg is ir.RegOperand &&
+          (arg.reg is X86Xmm || arg.reg is X86Ymm || arg.reg is X86Zmm)) {
+        nodes.insertBefore(
+            ir.InstNode(instId, [ir.RegOperand(dst), arg]), anchor);
+      } else if (arg is ir.MemOperand) {
+        nodes.insertBefore(
+            ir.InstNode(instId, [ir.RegOperand(dst), arg]), anchor);
+      } else if (arg is ir.ImmOperand) {
+        _emitVecImmMove(anchor, dst, arg.value);
+      }
       return;
     }
 
@@ -848,19 +988,79 @@ class X86CodeBuilder extends ir.BaseBuilder {
       nodes.insertBefore(
           ir.InstNode(instId, [ir.RegOperand(dst), arg]), anchor);
     } else if (arg is ir.ImmOperand) {
-      // TODO: Support immediate to vector register moves.
+      if (arg.value == 0) {
+        if (regType == FuncRegType.ymm) {
+          nodes.insertBefore(
+              ir.InstNode(X86InstId.kVpxor,
+                  [ir.RegOperand(dst), ir.RegOperand(dst), ir.RegOperand(dst)]),
+              anchor);
+        } else {
+          nodes.insertBefore(
+              ir.InstNode(
+                  X86InstId.kPxor, [ir.RegOperand(dst), ir.RegOperand(dst)]),
+              anchor);
+        }
+      } else {
+        _emitVecImmMove(anchor, dst, arg.value);
+      }
     }
+  }
+
+  void _emitVecImmMove(ir.BaseNode anchor, BaseReg dst, int immValue) {
+    final bytes = dst is X86Zmm
+        ? 64
+        : dst is X86Ymm
+            ? 32
+            : 16;
+    nodes.insertBefore(
+        ir.InstNode(
+            X86InstId.kSub, [ir.RegOperand(rsp), ir.ImmOperand(bytes)]),
+        anchor);
+    nodes.insertBefore(
+        ir.InstNode(X86InstId.kMov, [ir.RegOperand(r11), ir.ImmOperand(immValue)]),
+        anchor);
+    for (int offset = 0; offset < bytes; offset += 8) {
+      nodes.insertBefore(
+          ir.InstNode(
+              X86InstId.kMov,
+              [ir.MemOperand(X86Mem.baseDisp(rsp, offset)), ir.RegOperand(r11)]),
+          anchor);
+    }
+    final instId =
+        dst is X86Xmm ? X86InstId.kMovups : X86InstId.kVmovups;
+    nodes.insertBefore(
+        ir.InstNode(instId, [ir.RegOperand(dst), ir.MemOperand(X86Mem.baseDisp(rsp, 0))]),
+        anchor);
+    nodes.insertBefore(
+        ir.InstNode(
+            X86InstId.kAdd, [ir.RegOperand(rsp), ir.ImmOperand(bytes)]),
+        anchor);
   }
 
   void _emitCallStackArg(
       ir.BaseNode anchor, FuncValue argInfo, ir.Operand arg) {
     final mem = X86Mem.baseDisp(rsp, argInfo.stackOffset + 8);
+    if (arg is ir.RegOperand && arg.reg is VirtReg) {
+      final vreg = arg.reg as VirtReg;
+      final phys = _physRegForVirt(vreg);
+      if (phys != null) {
+        arg = ir.RegOperand(phys);
+      } else if (vreg.isSpilled) {
+        final spill = _spillMemFor(vreg);
+        if (spill != null) {
+          arg = ir.MemOperand(spill.withSize(vreg.size));
+        }
+      }
+    }
     if (arg is ir.RegOperand && arg.reg is X86Gp) {
       nodes.insertBefore(
           ir.InstNode(X86InstId.kMov, [ir.MemOperand(mem), arg]), anchor);
     } else if (arg is ir.ImmOperand) {
       final immValue = arg.value;
-      if (immValue >= -2147483648 && immValue <= 2147483647) {
+      final sizeBytes = argInfo.typeId.sizeInBytes;
+      if (sizeBytes > 8) {
+        _emitStackImmFill(anchor, mem, sizeBytes, immValue);
+      } else if (immValue >= -2147483648 && immValue <= 2147483647) {
         nodes.insertBefore(
             ir.InstNode(X86InstId.kMov, [ir.MemOperand(mem), arg]), anchor);
       } else {
@@ -872,13 +1072,59 @@ class X86CodeBuilder extends ir.BaseBuilder {
             anchor);
       }
     } else if (arg is ir.RegOperand &&
-        (arg.reg is X86Xmm || arg.reg is X86Ymm)) {
+        (arg.reg is X86Xmm || arg.reg is X86Ymm || arg.reg is X86Zmm)) {
       final instId =
-          arg.reg is X86Ymm ? X86InstId.kVmovups : X86InstId.kMovups;
+          (arg.reg is X86Ymm || arg.reg is X86Zmm)
+              ? X86InstId.kVmovups
+              : X86InstId.kMovups;
       nodes.insertBefore(
           ir.InstNode(instId, [ir.MemOperand(mem), arg]), anchor);
+    } else if (arg is ir.MemOperand && arg.mem is X86Mem) {
+      nodes.insertBefore(
+          ir.InstNode(
+              X86InstId.kMov, [ir.RegOperand(r11), arg]),
+          anchor);
+      nodes.insertBefore(
+          ir.InstNode(
+              X86InstId.kMov, [ir.MemOperand(mem), ir.RegOperand(r11)]),
+          anchor);
     } else {
       // TODO: Support additional stack argument kinds.
+    }
+  }
+
+  void _emitStackImmFill(
+      ir.BaseNode anchor, X86Mem baseMem, int sizeBytes, int immValue) {
+    nodes.insertBefore(
+        ir.InstNode(
+            X86InstId.kMov, [ir.RegOperand(r11), ir.ImmOperand(immValue)]),
+        anchor);
+
+    var offset = 0;
+    var remaining = sizeBytes;
+    while (remaining >= 8) {
+      nodes.insertBefore(
+          ir.InstNode(
+              X86InstId.kMov,
+              [
+                ir.MemOperand(baseMem.withDisplacement(baseMem.displacement + offset).withSize(8)),
+                ir.RegOperand(r11)
+              ]),
+          anchor);
+      remaining -= 8;
+      offset += 8;
+    }
+
+    if (remaining > 0) {
+      final reg = _sizedGpTempFor(remaining);
+      nodes.insertBefore(
+          ir.InstNode(
+              X86InstId.kMov,
+              [
+                ir.MemOperand(baseMem.withDisplacement(baseMem.displacement + offset).withSize(remaining)),
+                ir.RegOperand(reg)
+              ]),
+          anchor);
     }
   }
 
@@ -897,7 +1143,16 @@ class X86CodeBuilder extends ir.BaseBuilder {
     }
 
     if (retInfo.regType == FuncRegType.zmm) {
-      // TODO: Add AVX-512 dispatcher support for ZMM return moves.
+      if (ret is X86Zmm) {
+        final src = X86Zmm(retInfo.regId);
+        if (ret.id != src.id) {
+          nodes.insertBefore(
+              ir.InstNode(
+                  X86InstId.kVmovups,
+                  [ir.RegOperand(ret), ir.RegOperand(src)]),
+              anchor);
+        }
+      }
       return;
     }
 
@@ -1181,7 +1436,43 @@ class X86CodeBuilder extends ir.BaseBuilder {
 
   /// Ends the current function by emitting a return.
   void endFunc() {
-    // TODO: Emit a default return value based on signature if needed.
+    final signature = _currentFunc?.signature;
+    if (_returnReg == null && signature is FuncSignature && signature.hasRet) {
+      final retType = signature.retType.deabstract(is64Bit ? 8 : 4);
+      if (retType.isInt) {
+        final size = retType.sizeInBytes;
+        final reg = size <= 1
+            ? al
+            : size == 2
+                ? ax
+                : size == 4
+                    ? eax
+                    : rax;
+        mov(reg, 0);
+      } else if (retType.isFloat) {
+        if (retType == TypeId.float64 || retType == TypeId.float80) {
+          xorpd(xmm0, xmm0);
+        } else {
+          xorps(xmm0, xmm0);
+        }
+      } else if (retType.isVec) {
+        final bytes = retType.sizeInBytes;
+        if (bytes <= 16) {
+          inst(X86InstId.kPxor, [ir.RegOperand(xmm0), ir.RegOperand(xmm0)]);
+        } else if (bytes <= 32) {
+          inst(X86InstId.kVpxor,
+              [ir.RegOperand(ymm0), ir.RegOperand(ymm0), ir.RegOperand(ymm0)]);
+        } else {
+          inst(X86InstId.kVpxord,
+              [ir.RegOperand(zmm0), ir.RegOperand(zmm0), ir.RegOperand(zmm0)]);
+        }
+      } else if (retType.isMask || retType.isMmx) {
+        // TODO: Model mask/MMX return registers (k0/mm0) instead of GP fallback.
+        mov(rax, 0);
+      } else {
+        mov(rax, 0);
+      }
+    }
     ret();
   }
 
@@ -1235,6 +1526,9 @@ class X86CodeBuilder extends ir.BaseBuilder {
   }
 
   void _emitToAssembler(X86Assembler asm, {FuncFrameAttr? frameAttrHint}) {
+    asm.encodingOptions = encodingOptions;
+    asm.diagnosticOptions = diagnosticOptions;
+
     // 1. Run register allocation on IR
     _ra.allocate(nodes);
 
@@ -1270,9 +1564,9 @@ class X86CodeBuilder extends ir.BaseBuilder {
     _lowerInvokeNodes();
 
     if (_funcFrame != null) {
-      _frameEmitter = FuncFrameEmitter(_funcFrame!, asm);
-      _frameEmitter!.emitPrologue();
-    }
+    _frameEmitter = FuncFrameEmitter(_funcFrame!, asm);
+    _frameEmitter!.emitPrologue();
+  }
 
     // 4. Move Arguments (Prologue)
     _emitArgMoves(asm);
@@ -1285,18 +1579,57 @@ class X86CodeBuilder extends ir.BaseBuilder {
 
   void _emitArgMoves(X86Assembler asm) {
     final physArgRegs = _getPhysicalArgRegs();
+    final physVecArgRegs = _getPhysicalVecArgRegs();
     final moves = <_ArgMove>[];
 
     // Spills must be stored before any register moves that could clobber sources.
     for (int i = 0; i < _argRegs.length && i < physArgRegs.length; i++) {
       final argVreg = _argRegs[i];
+      final fixed = i < _fixedArgRegs.length ? _fixedArgRegs[i] : null;
       if (argVreg == null) continue;
+      if (fixed != null) continue;
       final physArg = physArgRegs[i];
       if (argVreg.isSpilled) {
         final offset = argVreg.spillOffset;
         asm.movMR(X86Mem.baseDisp(rbp, -8 - offset), physArg);
       } else if (argVreg.physReg != null && argVreg.physReg != physArg) {
         moves.add(_ArgMove(argVreg.physReg!, physArg));
+      }
+    }
+
+    for (int i = 0; i < _fixedArgRegs.length && i < physArgRegs.length; i++) {
+      final fixed = _fixedArgRegs[i];
+      if (fixed == null) continue;
+      final physArg = physArgRegs[i];
+      if (fixed is X86Gp) {
+        if (fixed != physArg) {
+          moves.add(_ArgMove(fixed, physArg));
+        }
+      } else {
+        // Handled in the vector-arg pass below.
+      }
+    }
+
+    for (int i = 0; i < _fixedArgRegs.length && i < physVecArgRegs.length; i++) {
+      final fixed = _fixedArgRegs[i];
+      if (fixed == null) continue;
+      if (fixed is X86Xmm || fixed is X86Ymm || fixed is X86Zmm) {
+        final srcXmm = physVecArgRegs[i];
+        if (fixed is X86Xmm) {
+          if (fixed.id != srcXmm.id) {
+            asm.movupsXX(fixed, srcXmm);
+          }
+        } else if (fixed is X86Ymm) {
+          final src = X86Ymm(srcXmm.id);
+          if (fixed.id != src.id) {
+            asm.vmovupsYY(fixed, src);
+          }
+        } else if (fixed is X86Zmm) {
+          final src = X86Zmm(srcXmm.id);
+          if (fixed.id != src.id) {
+            asm.vmovupsZmm(fixed, src);
+          }
+        }
       }
     }
 
@@ -1373,6 +1706,14 @@ class X86CodeBuilder extends ir.BaseBuilder {
       return [rcx, rdx, r8, r9];
     } else {
       return [rdi, rsi, rdx, rcx, r8, r9];
+    }
+  }
+
+  List<X86Xmm> _getPhysicalVecArgRegs() {
+    if (callingConvention == CallingConvention.win64) {
+      return [xmm0, xmm1, xmm2, xmm3];
+    } else {
+      return [xmm0, xmm1, xmm2, xmm3, xmm4, xmm5, xmm6, xmm7];
     }
   }
 }

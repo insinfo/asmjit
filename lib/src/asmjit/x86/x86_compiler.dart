@@ -191,12 +191,12 @@ class X86Compiler {
 
   /// Adds encoding options (placeholder).
   void addEncodingOptions(int options) {
-    // TODO: Wire encoding options into assembler/codegen.
+    _builder.encodingOptions |= options;
   }
 
   /// Adds diagnostic options (placeholder).
   void addDiagnosticOptions(int options) {
-    // TODO: Wire diagnostic options into RA/validation passes.
+    _builder.diagnosticOptions |= options;
   }
 
   /// Finalize the compiler output without allocating executable memory.

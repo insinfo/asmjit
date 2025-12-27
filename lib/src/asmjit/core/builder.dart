@@ -711,21 +711,35 @@ void serializeNodes(NodeList nodes, SerializerContext ctx) {
     switch (node.nodeType) {
       case NodeType.label:
         ctx.onLabel((node as LabelNode).label);
+        break;
       case NodeType.inst:
         final inst = node as InstNode;
         ctx.onInst(inst.instId, inst.operands, inst.options);
+        break;
       case NodeType.align:
         final align = node as AlignNode;
         ctx.onAlign(align.alignMode, align.alignment);
+        break;
       case NodeType.embedData:
         final data = node as EmbedDataNode;
         ctx.onEmbedData(data.data, data.typeSize);
+        break;
       case NodeType.comment:
         ctx.onComment((node as CommentNode).text);
+        break;
       case NodeType.sentinel:
         ctx.onSentinel((node as SentinelNode).sentinelType);
+        break;
+      case NodeType.func:
+      case NodeType.funcRet:
+      case NodeType.invoke:
+      case NodeType.section:
+      case NodeType.constPool:
+      case NodeType.embedLabel:
+      case NodeType.jump:
+        // These nodes are either handled by higher-level passes or ignored.
+        break;
       default:
-        // Other node types are ignored during serialization
         break;
     }
   }

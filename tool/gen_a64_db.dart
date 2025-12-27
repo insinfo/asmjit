@@ -296,8 +296,10 @@ class A64DbGenerator {
       'ldrsb',
       'ldrsh',
       'ldrsw',
+      'ldur',
       'strb',
       'strh',
+      'stur',
       'ldp',
       'stp',
       // Multiply/Divide

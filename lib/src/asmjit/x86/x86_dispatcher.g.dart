@@ -386,7 +386,7 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vmovapsXM(d, s) : asm.vmovaps(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vmovapsYM(d, s) : asm.vmovapsY(d, s as X86Ymm), memXmm: (m, s) => asm.vmovapsMX(m, s), memYmm: (m, s) => asm.vmovapsMY(m, s));
       break;
     case X86InstId.kVmovups:
-      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vmovupsXM(d, s) : asm.vmovups(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vmovupsYM(d, s) : asm.vmovupsY(d, s as X86Ymm), memXmm: (m, s) => asm.vmovupsMX(m, s), memYmm: (m, s) => asm.vmovupsMY(m, s));
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vmovupsXM(d, s) : asm.vmovups(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vmovupsYM(d, s) : asm.vmovupsY(d, s as X86Ymm), zmm: (d, s) => s is X86Mem ? asm.vmovupsZmmMem(d, s) : asm.vmovupsZmm(d, s as X86Zmm), memXmm: (m, s) => asm.vmovupsMX(m, s), memYmm: (m, s) => asm.vmovupsMY(m, s), memZmm: (m, s) => asm.vmovupsMemZmm(m, s));
       break;
     case X86InstId.kVmulpd:
       _simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vmulpdXXM(d, s1, s2) : asm.vmulpdXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vmulpdYYM(d, s1, s2) : asm.vmulpdYYY(d, s1, s2 as X86Ymm));

@@ -4,9 +4,11 @@
 **Target**: `C:\MyDartProjects\asmjit\lib\src\blend2d`  
 **Objetivo**: Biblioteca gráficos 2D alta performance multiplataforma (Windows, Linux, macOS, Android, iOS)
 
+mantenha este roteiro atualizado
+
 **Estratégia**: Duas implementações:  
 1. **JIT-acelerada** usando AsmJit (`lib/src/asmjit`)  
-2. **Reference/Pure Dart** sem dependências (portável)
+2. **Reference/Pure Dart** sem dependências (portátil)
 
 **IMPORTANTE**: Manter `blend2d/`, `asmjit/`, `asmtk/` completamente separados (futuros pacotes independentes).
 

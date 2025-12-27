@@ -5,6 +5,7 @@
 
 import '../core/code_holder.dart';
 import '../core/code_buffer.dart';
+import '../core/emitter.dart';
 import '../core/labels.dart';
 import '../core/environment.dart';
 import '../core/arch.dart';
@@ -27,6 +28,12 @@ class X86Assembler {
 
   /// The instruction encoder.
   late final X86Encoder _enc;
+
+  /// Encoding options (used by higher-level pipelines).
+  int encodingOptions = EncodingOptions.kNone;
+
+  /// Diagnostic options (used by higher-level pipelines).
+  int diagnosticOptions = DiagnosticOptions.kNone;
 
   /// Creates an x86 assembler for the given code holder.
   X86Assembler(this.code) {
@@ -1623,5 +1630,4 @@ class X86Assembler {
   void vpmulldYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
       _enc.vpmulldYmmYmmMem(dst, src1, mem);
 
-  // TODO: AVX versions (vandps, vorps, etc.) - need encoder implementations
 }
