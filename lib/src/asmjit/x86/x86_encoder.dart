@@ -2118,6 +2118,54 @@ class X86Encoder {
     buffer.emit8(0xC0 | (src.encoding << 3) | dst.encoding);
   }
 
+  /// KMOVW k, r32 (move 16-bit from GP to mask) - VEX.L0.0F.W0 92 /r
+  void kmovwKRegR32(X86KReg dst, X86Gp src) {
+    _emitVex3(dst.isExtended, false, src.isExtended, _vexMmmmm0F, false, 0,
+        false, _vexPpNone);
+    buffer.emit8(0x92);
+    emitModRmReg(dst.encoding, src);
+  }
+
+  /// KMOVW r32, k (move 16-bit from mask to GP) - VEX.L0.0F.W0 92 /r
+  void kmovwR32KReg(X86Gp dst, X86KReg src) {
+    _emitVex3(dst.isExtended, false, src.isExtended, _vexMmmmm0F, false, 0,
+        false, _vexPpNone);
+    buffer.emit8(0x92);
+    emitModRmReg(dst.encoding, src);
+  }
+
+  /// KMOVD k, r32 (move 32-bit from GP to mask) - VEX.L0.F2.0F.W0 92 /r
+  void kmovdKRegR32(X86KReg dst, X86Gp src) {
+    _emitVex3(dst.isExtended, false, src.isExtended, _vexMmmmm0F, false, 0,
+        false, _vexPpF2);
+    buffer.emit8(0x92);
+    emitModRmReg(dst.encoding, src);
+  }
+
+  /// KMOVD r32, k (move 32-bit from mask to GP) - VEX.L0.F2.0F.W0 92 /r
+  void kmovdR32KReg(X86Gp dst, X86KReg src) {
+    _emitVex3(dst.isExtended, false, src.isExtended, _vexMmmmm0F, false, 0,
+        false, _vexPpF2);
+    buffer.emit8(0x92);
+    emitModRmReg(dst.encoding, src);
+  }
+
+  /// KMOVQ k, r64 (move 64-bit from GP to mask) - VEX.L0.F2.0F.W1 92 /r
+  void kmovqKRegR64(X86KReg dst, X86Gp src) {
+    _emitVex3(dst.isExtended, false, src.isExtended, _vexMmmmm0F, true, 0,
+        false, _vexPpF2);
+    buffer.emit8(0x92);
+    emitModRmReg(dst.encoding, src);
+  }
+
+  /// KMOVQ r64, k (move 64-bit from mask to GP) - VEX.L0.F2.0F.W1 92 /r
+  void kmovqR64KReg(X86Gp dst, X86KReg src) {
+    _emitVex3(dst.isExtended, false, src.isExtended, _vexMmmmm0F, true, 0,
+        false, _vexPpF2);
+    buffer.emit8(0x92);
+    emitModRmReg(dst.encoding, src);
+  }
+
   // ===========================================================================
   // VEX prefix helpers (for AVX instructions)
   // ===========================================================================

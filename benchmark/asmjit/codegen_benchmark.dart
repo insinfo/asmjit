@@ -2,7 +2,7 @@
 ///
 /// Port of asmjit-testing/bench/asmjit_bench_codegen_*.cpp
 /// Benchmarks the performance of code generation across different scenarios.
-// TODO: Match C++ bench parity (AVX512 sequences and remaining instruction mix).
+// AVX-512 sequences are included to keep parity with the C++ benchmark mix.
 // dart compile exe benchmark/codegen_benchmark.dart -o  benchmark/codegen_benchmark.exe
 // .\referencias\asmjit-master\build\asmjit_bench_codegen.exe --quick
 import 'dart:io';
@@ -32,6 +32,8 @@ void main(List<String> args) {
   benchmarkX86SseSequenceMem(iterations);
   benchmarkX86AvxSequenceReg(iterations);
   benchmarkX86AvxSequenceMem(iterations);
+  benchmarkX86Avx512SequenceReg(iterations);
+  benchmarkX86Avx512SequenceMem(iterations);
 
   print('');
 
@@ -675,6 +677,124 @@ void benchmarkX86AvxSequenceMem(int iterations) {
   print('');
 }
 
+void benchmarkX86Avx512SequenceReg(int iterations) {
+  print('Avx512Sequence<Reg> (sequence of AVX-512 instructions - reg-only):');
+
+  // Assembler [raw]
+  runBench('Avx512Seq', 'X64', 'Assembler [raw]', iterations, () {
+    final code = CodeHolder(env: Environment.host());
+    final asm = X86Assembler(code);
+    _generateAvx512SequenceReg(asm);
+    return code.text.buffer.length;
+  }).print();
+
+  // Assembler [validated]
+  runBench('Avx512Seq', 'X64', 'Assembler [validated]', iterations, () {
+    final code = CodeHolder(env: Environment.host());
+    final asm = X86Assembler(code);
+    _generateAvx512SequenceReg(asm);
+    return code.finalize().textBytes.length;
+  }).print();
+
+  // Assembler with prolog/epilog
+  runBench('Avx512Seq', 'X64', 'Assembler [prolog/epilog]', iterations, () {
+    final code = CodeHolder(env: Environment.host());
+    final asm = X86Assembler(code);
+    asm.push(rbp);
+    asm.movRR(rbp, rsp);
+    _generateAvx512SequenceReg(asm);
+    asm.movRR(rsp, rbp);
+    asm.pop(rbp);
+    asm.ret();
+    return code.finalize().textBytes.length;
+  }).print();
+
+  // Builder [no-asm]
+  runBench('Avx512Seq', 'X64', 'Builder [no-asm]', iterations, () {
+    final builder = X86CodeBuilder.create();
+    _generateAvx512SequenceBuilderReg(builder);
+    builder.ret();
+    return builder.code.text.buffer.length;
+  }).print();
+
+  // Builder [finalized]
+  runBench('Avx512Seq', 'X64', 'Builder [finalized]', iterations, () {
+    final builder = X86CodeBuilder.create();
+    _generateAvx512SequenceBuilderReg(builder);
+    builder.ret();
+    return builder.finalize().textBytes.length;
+  }).print();
+
+  // Builder [prolog/epilog]
+  runBench('Avx512Seq', 'X64', 'Builder [prolog/epilog]', iterations, () {
+    final builder = X86CodeBuilder.create();
+    builder.configureFrameAttr(FuncFrameAttr.nonLeaf());
+    _generateAvx512SequenceBuilderReg(builder);
+    builder.ret();
+    return builder.finalize().textBytes.length;
+  }).print();
+
+  // Compiler [no-asm]
+  runCompilerBench('Avx512Seq', 'X64', 'Compiler [no-asm]', iterations,
+      (compiler) {
+    _generateAvx512SequenceBuilderReg(compiler.builder);
+    compiler.builder.ret();
+  }).print();
+
+  // Compiler [finalized]
+  runCompilerBench('Avx512Seq', 'X64', 'Compiler [finalized]', iterations,
+      (compiler) {
+    _generateAvx512SequenceBuilderReg(compiler.builder);
+    compiler.builder.ret();
+  }, finalize: true).print();
+
+  print('');
+}
+
+void benchmarkX86Avx512SequenceMem(int iterations) {
+  print('Avx512Sequence<Mem> (sequence of AVX-512 instructions - reg/mem):');
+
+  // Assembler [raw]
+  runBench('Avx512SeqMem', 'X64', 'Assembler [raw]', iterations, () {
+    final code = CodeHolder(env: Environment.host());
+    final asm = X86Assembler(code);
+    _generateAvx512SequenceMem(asm);
+    return code.text.buffer.length;
+  }).print();
+
+  // Assembler [validated]
+  runBench('Avx512SeqMem', 'X64', 'Assembler [validated]', iterations, () {
+    final code = CodeHolder(env: Environment.host());
+    final asm = X86Assembler(code);
+    _generateAvx512SequenceMem(asm);
+    return code.finalize().textBytes.length;
+  }).print();
+
+  // Builder [finalized]
+  runBench('Avx512SeqMem', 'X64', 'Builder [finalized]', iterations, () {
+    final builder = X86CodeBuilder.create();
+    _generateAvx512SequenceBuilderMem(builder);
+    builder.ret();
+    return builder.finalize().textBytes.length;
+  }).print();
+
+  // Compiler [no-asm]
+  runCompilerBench('Avx512SeqMem', 'X64', 'Compiler [no-asm]', iterations,
+      (compiler) {
+    _generateAvx512SequenceBuilderMem(compiler.builder);
+    compiler.builder.ret();
+  }).print();
+
+  // Compiler [finalized]
+  runCompilerBench('Avx512SeqMem', 'X64', 'Compiler [finalized]', iterations,
+      (compiler) {
+    _generateAvx512SequenceBuilderMem(compiler.builder);
+    compiler.builder.ret();
+  }, finalize: true).print();
+
+  print('');
+}
+
 // GP Sequence generator - reg only
 void _generateGpSequenceReg(X86Assembler asm) {
   asm.movRI(rax, 0xAAAAAAAA);
@@ -1013,6 +1133,68 @@ void _generateAvxSequenceBuilderMem(X86CodeBuilder builder) {
     builder.vxorps(ymm2, ymm3, mem);
     builder.vpxor(xmm0, xmm1, mem);
     builder.vpxor(ymm0, ymm1, mem);
+  }
+}
+
+void _generateAvx512SequenceReg(X86Assembler asm) {
+  asm.xorRR(eax, eax);
+  asm.vxorpsZmm(zmm0, zmm0, zmm0);
+  asm.vxorpsZmm(zmm1, zmm1, zmm1);
+  asm.vxorpsZmm(zmm2, zmm2, zmm2);
+  asm.vxorpsZmm(zmm3, zmm3, zmm3);
+
+  for (var i = 0; i < 10; i++) {
+    asm.vaddpsZmm(zmm0, zmm1, zmm2);
+    asm.vaddpdZmm(zmm1, zmm2, zmm3);
+    asm.vpanddZmm(zmm2, zmm0, zmm1);
+    asm.vpordZmm(zmm3, zmm1, zmm2);
+    asm.vpxordZmm(zmm0, zmm2, zmm3);
+    asm.vxorpsZmm(zmm1, zmm1, zmm1);
+    asm.vmovupsZmm(zmm2, zmm3);
+    asm.vmovupdZmm(zmm3, zmm0);
+  }
+
+  asm.ret();
+}
+
+void _generateAvx512SequenceBuilderReg(X86CodeBuilder builder) {
+  builder.xor(eax, eax);
+  builder.vaddps(zmm0, zmm1, zmm2);
+  builder.vaddpd(zmm1, zmm2, zmm3);
+  builder.vmovups(zmm2, zmm3);
+  builder.vmovupd(zmm3, zmm0);
+
+  for (var i = 0; i < 10; i++) {
+    builder.vaddps(zmm0, zmm1, zmm2);
+    builder.vaddpd(zmm1, zmm2, zmm3);
+    builder.vmovups(zmm2, zmm3);
+    builder.vmovupd(zmm3, zmm0);
+  }
+}
+
+void _generateAvx512SequenceMem(X86Assembler asm) {
+  final mem = X86Mem.ptr(rcx);
+  for (var i = 0; i < 10; i++) {
+    asm.vmovupsZmmMem(zmm0, mem);
+    asm.vmovupdZmmMem(zmm1, mem);
+    asm.vaddpsZmm(zmm2, zmm0, zmm1);
+    asm.vaddpdZmm(zmm3, zmm1, zmm2);
+    asm.vmovupsMemZmm(mem, zmm2);
+    asm.vmovupdMemZmm(mem, zmm3);
+  }
+
+  asm.ret();
+}
+
+void _generateAvx512SequenceBuilderMem(X86CodeBuilder builder) {
+  final mem = X86Mem.ptr(rcx);
+  for (var i = 0; i < 10; i++) {
+    builder.vmovups(zmm0, mem);
+    builder.vmovupd(zmm1, mem);
+    builder.vaddps(zmm2, zmm0, zmm1);
+    builder.vaddpd(zmm3, zmm1, zmm2);
+    builder.vmovups(mem, zmm2);
+    builder.vmovupd(mem, zmm3);
   }
 }
 

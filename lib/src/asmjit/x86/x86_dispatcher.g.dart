@@ -193,6 +193,15 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
     case X86InstId.kJz:
       _jcc(asm, instId, ops);
       break;
+    case X86InstId.kKmovd:
+      _kmovd(asm, ops);
+      break;
+    case X86InstId.kKmovq:
+      _kmovq(asm, ops);
+      break;
+    case X86InstId.kKmovw:
+      _kmovw(asm, ops);
+      break;
     case X86InstId.kLea:
       if (ops.length == 2 && ops[0] is X86Gp && ops[1] is X86Mem) asm.lea(ops[0] as X86Gp, ops[1] as X86Mem);
       break;
@@ -488,6 +497,39 @@ void _movq(X86Assembler asm, List<Object> ops) {
     asm.movqXR(dst, src);
   } else if (dst is X86Gp && src is X86Xmm) {
     asm.movqRX(dst, src);
+  }
+}
+
+void _kmovw(X86Assembler asm, List<Object> ops) {
+  if (ops.length != 2) return;
+  final dst = ops[0];
+  final src = ops[1];
+  if (dst is X86KReg && src is X86Gp) {
+    asm.kmovwKR(dst, src);
+  } else if (dst is X86Gp && src is X86KReg) {
+    asm.kmovwRK(dst, src);
+  }
+}
+
+void _kmovd(X86Assembler asm, List<Object> ops) {
+  if (ops.length != 2) return;
+  final dst = ops[0];
+  final src = ops[1];
+  if (dst is X86KReg && src is X86Gp) {
+    asm.kmovdKR(dst, src);
+  } else if (dst is X86Gp && src is X86KReg) {
+    asm.kmovdRK(dst, src);
+  }
+}
+
+void _kmovq(X86Assembler asm, List<Object> ops) {
+  if (ops.length != 2) return;
+  final dst = ops[0];
+  final src = ops[1];
+  if (dst is X86KReg && src is X86Gp) {
+    asm.kmovqKR(dst, src);
+  } else if (dst is X86Gp && src is X86KReg) {
+    asm.kmovqRK(dst, src);
   }
 }
 

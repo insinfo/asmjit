@@ -1423,6 +1423,7 @@ class X86CodeBuilder extends ir.BaseBuilder {
   ir.FuncNode func(String name, {FuncFrame? frame, FuncFrameAttr? attr}) {
     final node = ir.FuncNode(name, frame: frame);
     addNode(node);
+    _currentFunc ??= node;
     if (frame != null) {
       _funcFrame = frame;
     } else if (attr != null) {
@@ -1482,14 +1483,145 @@ class X86CodeBuilder extends ir.BaseBuilder {
           inst(X86InstId.kVpxord,
               [ir.RegOperand(zmm0), ir.RegOperand(zmm0), ir.RegOperand(zmm0)]);
         }
-      } else if (retType.isMask || retType.isMmx) {
-        // TODO: Model mask/MMX return registers (k0/mm0) instead of GP fallback.
+      } else if (retType.isMask) {
+        final bytes = retType.sizeInBytes;
+        if (bytes <= 2) {
+          mov(eax, 0);
+          inst(X86InstId.kKmovw, [_toOperand(k0), _toOperand(eax)]);
+        } else if (bytes <= 4) {
+          mov(eax, 0);
+          inst(X86InstId.kKmovd, [_toOperand(k0), _toOperand(eax)]);
+        } else {
+          mov(rax, 0);
+          inst(X86InstId.kKmovq, [_toOperand(k0), _toOperand(rax)]);
+        }
+      } else if (retType.isMmx) {
+        // TODO: Model MMX return registers (mm0) instead of GP fallback.
         mov(rax, 0);
       } else {
         mov(rax, 0);
       }
     }
     ret();
+  }
+
+  void _lowerFuncNodes() {
+    final nodesToRemove = <ir.BaseNode>[];
+    for (final node in nodes.nodes) {
+      if (node is ir.FuncNode) {
+        _currentFunc ??= node;
+        if (node.frame is FuncFrame) {
+          _funcFrame ??= node.frame as FuncFrame;
+        }
+        nodesToRemove.add(node);
+      } else if (node is ir.FuncRetNode) {
+        final signature = _currentFunc?.signature;
+        if (_returnReg == null &&
+            signature is FuncSignature &&
+            signature.hasRet) {
+          _emitDefaultReturnBefore(node, signature);
+        }
+        nodes.insertBefore(ir.InstNode(X86InstId.kRet, const []), node);
+        nodesToRemove.add(node);
+      }
+    }
+
+    for (final node in nodesToRemove) {
+      nodes.remove(node);
+    }
+  }
+
+  void _emitDefaultReturnBefore(ir.BaseNode anchor, FuncSignature signature) {
+    final retType = signature.retType.deabstract(is64Bit ? 8 : 4);
+    if (retType.isInt) {
+      final size = retType.sizeInBytes;
+      final reg = size <= 1
+          ? al
+          : size == 2
+              ? ax
+              : size == 4
+                  ? eax
+                  : rax;
+      nodes.insertBefore(
+          ir.InstNode(
+              X86InstId.kMov, [ir.RegOperand(reg), ir.ImmOperand(0)]),
+          anchor);
+    } else if (retType.isFloat) {
+      if (retType == TypeId.float64 || retType == TypeId.float80) {
+        nodes.insertBefore(
+            ir.InstNode(
+                X86InstId.kXorpd, [ir.RegOperand(xmm0), ir.RegOperand(xmm0)]),
+            anchor);
+      } else {
+        nodes.insertBefore(
+            ir.InstNode(
+                X86InstId.kXorps, [ir.RegOperand(xmm0), ir.RegOperand(xmm0)]),
+            anchor);
+      }
+    } else if (retType.isVec) {
+      final bytes = retType.sizeInBytes;
+      if (bytes <= 16) {
+        nodes.insertBefore(
+            ir.InstNode(
+                X86InstId.kPxor, [ir.RegOperand(xmm0), ir.RegOperand(xmm0)]),
+            anchor);
+      } else if (bytes <= 32) {
+        nodes.insertBefore(
+            ir.InstNode(X86InstId.kVpxor, [
+              ir.RegOperand(ymm0),
+              ir.RegOperand(ymm0),
+              ir.RegOperand(ymm0)
+            ]),
+            anchor);
+      } else {
+        nodes.insertBefore(
+            ir.InstNode(X86InstId.kVpxord, [
+              ir.RegOperand(zmm0),
+              ir.RegOperand(zmm0),
+              ir.RegOperand(zmm0)
+            ]),
+            anchor);
+      }
+    } else if (retType.isMask) {
+      final bytes = retType.sizeInBytes;
+      if (bytes <= 2) {
+        nodes.insertBefore(
+            ir.InstNode(
+                X86InstId.kMov, [ir.RegOperand(eax), ir.ImmOperand(0)]),
+            anchor);
+        nodes.insertBefore(
+            ir.InstNode(X86InstId.kKmovw,
+                [ir.RegOperand(k0), ir.RegOperand(eax)]),
+            anchor);
+      } else if (bytes <= 4) {
+        nodes.insertBefore(
+            ir.InstNode(
+                X86InstId.kMov, [ir.RegOperand(eax), ir.ImmOperand(0)]),
+            anchor);
+        nodes.insertBefore(
+            ir.InstNode(X86InstId.kKmovd,
+                [ir.RegOperand(k0), ir.RegOperand(eax)]),
+            anchor);
+      } else {
+        nodes.insertBefore(
+            ir.InstNode(
+                X86InstId.kMov, [ir.RegOperand(rax), ir.ImmOperand(0)]),
+            anchor);
+        nodes.insertBefore(
+            ir.InstNode(X86InstId.kKmovq,
+                [ir.RegOperand(k0), ir.RegOperand(rax)]),
+            anchor);
+      }
+    } else if (retType.isMmx) {
+      // TODO: Model MMX return registers (mm0) instead of GP fallback.
+      nodes.insertBefore(
+          ir.InstNode(X86InstId.kMov, [ir.RegOperand(rax), ir.ImmOperand(0)]),
+          anchor);
+    } else {
+      nodes.insertBefore(
+      ir.InstNode(X86InstId.kMov, [ir.RegOperand(rax), ir.ImmOperand(0)]),
+          anchor);
+    }
   }
 
   /// Add a basic block (label).
@@ -1544,6 +1676,8 @@ class X86CodeBuilder extends ir.BaseBuilder {
   void _emitToAssembler(X86Assembler asm, {FuncFrameAttr? frameAttrHint}) {
     asm.encodingOptions = encodingOptions;
     asm.diagnosticOptions = diagnosticOptions;
+
+    _lowerFuncNodes();
 
     // 1. Run register allocation on IR
     _ra.allocate(nodes);

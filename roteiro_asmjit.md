@@ -51,6 +51,25 @@ docker run --rm --platform linux/arm64 dart:stable bash -lc "uname -m"
 
 ---
 
+## 🧩 Blend2D Porting Readiness (Avaliação Crítica)
+
+**Status**: 🟠 **Parcialmente Bloqueante**
+
+Para iniciar o porte da parte **JIT** do Blend2D (`pipecompiler.cpp`), o AsmJit Dart precisa evoluir em:
+
+1.  🔴 **Compiler IR & CodeGen (Crítico)**:
+    - O Blend2D usa intensivamente `Compiler` para construir pipelines (`PipeCompiler`).
+    - Atualmente, `builder.dart` tem a estrutura de nós (`FuncNode`, `BlockNode`), mas **não gera código de máquina** a partir deles (falta `serializeNodes` tratar `Func/Invoke` e converter para instruções do `Assembler`).
+    - Falta **Register Allocator** integrado que reescreva registradores virtuais para físicos no stream de instruções.
+
+2.  🟡 **Heavy Test Suites**:
+    - Antes de confiar no JIT para renderização de pixels (onde bugs visuais são difíceis de debugar), precisamos rodar as suites pesadas: `asmjit_test_assembler_x86`, `asmjit_test_compiler_x86`.
+
+3.  🟢 **AArch64 Completo**:
+    - Necessário para targets mobile (Android/iOS), mas o desenvolvimento pode começar focando em x86_64.
+
+**Conclusão**: O porte do **Reference Pathway** (Pure Dart) do Blend2D pode começar imediatamente. O porte do **JIT Pathway** deve aguardar a estabilização do `Compiler` (M21/M25).
+
 ## 📊 Status Atual
 
 **Data**: 27 Dezembro 2025  
@@ -58,8 +77,11 @@ docker run --rm --platform linux/arm64 dart:stable bash -lc "uname -m"
 **Warnings**: nao verificado
 
 Atualizacoes recentes:
+- **Codegen benchmark com AVX-512**: sequencias ZMM (reg/mem) adicionadas, removendo o TODO de paridade.
 - **Overhead benchmark alinhado**: inclui caminhos de Compiler/Builder + RT e reinit com reset de nodes.
 - **Regalloc benchmark com memoria**: tabela agora reporta estimativas de memoria (CodeHolder/nodes).
+- **Retorno mask default**: `endFunc()` agora zera `k0` via `kmovw/d/q` conforme tamanho do retorno.
+- **KMOV no dispatcher**: encoder/assembler/dispatcher suportam `kmovw/d/q` (reg <-> k).
 - **Stack args com labels**: `invoke()` aceita `LabelOperand` para stack arg quando a label ja esta bound (usa offset imediato).
 - **IR deduplicado**: `core/ir.dart` agora reexporta `builder.dart`/`compiler.dart` (sem definicoes duplicadas).
 - **Imediatos vetoriais (nao-zero)**: `invoke()` agora materializa constantes em XMM/YMM/ZMM via scratch na pilha.
@@ -314,6 +336,14 @@ Atualizacoes recentes:
 // - Update BaseBuilder to manage generic nodes
 ```
 
+### M22: AArch64 Backend & Tools
+- [ ] **Gen A64 Dispatcher**: Implementar gerador de dispatcher/serializer para AARCH64 (`gen_a64_db.dart`) similar ao x86.
+- [ ] **Gen A64 Serializer**: Gerar `a64_dispatcher.g.dart` e ligar ao Assembler.
+
+### M24: Verification & Optimization
+- [ ] **Heavy Suites**: Portar `asmjit_test_assembler_x64`, `asmjit_test_compiler_x86` e `asmjit_test_emitters`.
+- [ ] **Pipeline Caching**: Verificar e otimizar `JitRuntime` caching (revalidar M23).
+
 
 ---
 
@@ -434,9 +464,9 @@ em Dart e lista o que ainda falta portar ou alinhar.
 
 ## Benchmarks (paridade com C++)
 - `benchmark/codegen_benchmark.dart`:
-  - Falta `validated`, `builder [no-asm]`, `builder [prolog/epilog]` e `compiler`.
-  - Cobertura de sequencias GP/SSE/AVX e A64 e muito menor que o C++.
-  - `Builder [finalized]` gera `CodeSize: 0` (nao serializa/gera codigo).
+  - Cobertura expandida com sequencias AVX-512 (ZMM reg/mem).
+  - Ainda sem paridade total do mix de instrucoes do C++.
+  - `Builder [finalized]` gera `CodeSize: 0` **corrigido** via `serializeNodes` com `break` (revalidar benchmark).
 - `benchmark/overhead_benchmark.dart`:
   - Alinhado com caminhos de `compiler`/`builder` e cobertura de RT em A64.
   - Ainda sem `code.init()`/`attach()` e error handler (nao existem no Dart).

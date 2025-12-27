@@ -1131,6 +1131,24 @@ class X86Assembler {
   /// MOVD r32, xmm (move doubleword from XMM to GP)
   void movdRX(X86Gp dst, X86Xmm src) => _enc.movdR32Xmm(dst, src);
 
+  /// KMOVW k, r32 (move 16-bit from GP to mask)
+  void kmovwKR(X86KReg dst, X86Gp src) => _enc.kmovwKRegR32(dst, src);
+
+  /// KMOVW r32, k (move 16-bit from mask to GP)
+  void kmovwRK(X86Gp dst, X86KReg src) => _enc.kmovwR32KReg(dst, src);
+
+  /// KMOVD k, r32 (move 32-bit from GP to mask)
+  void kmovdKR(X86KReg dst, X86Gp src) => _enc.kmovdKRegR32(dst, src);
+
+  /// KMOVD r32, k (move 32-bit from mask to GP)
+  void kmovdRK(X86Gp dst, X86KReg src) => _enc.kmovdR32KReg(dst, src);
+
+  /// KMOVQ k, r64 (move 64-bit from GP to mask)
+  void kmovqKR(X86KReg dst, X86Gp src) => _enc.kmovqKRegR64(dst, src);
+
+  /// KMOVQ r64, k (move 64-bit from mask to GP)
+  void kmovqRK(X86Gp dst, X86KReg src) => _enc.kmovqR64KReg(dst, src);
+
   // ===========================================================================
   // AVX - Move instructions (VEX-encoded)
   // ===========================================================================

@@ -140,6 +140,9 @@ class X86KReg extends BaseReg {
   @override
   RegGroup get group => RegGroup.mask;
 
+  /// Whether this register uses the extended encoding (k8-k15).
+  bool get isExtended => id >= 8;
+
   /// Gets the 3-bit encoding for ModR/M.
   int get encoding => id & 0x7;
 

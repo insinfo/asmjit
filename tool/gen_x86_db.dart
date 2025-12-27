@@ -458,6 +458,9 @@ class X86DbGenerator {
       'movaps',
       'movd',
       'movq',
+      'kmovw',
+      'kmovd',
+      'kmovq',
       'addps',
       'addpd',
       'subps',
@@ -655,6 +658,12 @@ class X86DbGenerator {
         return '_movd(asm, ops);';
       case 'movq':
         return '_movq(asm, ops);';
+      case 'kmovw':
+        return '_kmovw(asm, ops);';
+      case 'kmovd':
+        return '_kmovd(asm, ops);';
+      case 'kmovq':
+        return '_kmovq(asm, ops);';
       case 'movups':
         return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.movupsXM(d, s) : asm.movupsXX(d, s as X86Xmm), memXmm: (m, s) => asm.movupsMX(m, s));';
       case 'movaps':
@@ -895,6 +904,39 @@ void _movq(X86Assembler asm, List<Object> ops) {
     asm.movqXR(dst, src);
   } else if (dst is X86Gp && src is X86Xmm) {
     asm.movqRX(dst, src);
+  }
+}
+
+void _kmovw(X86Assembler asm, List<Object> ops) {
+  if (ops.length != 2) return;
+  final dst = ops[0];
+  final src = ops[1];
+  if (dst is X86KReg && src is X86Gp) {
+    asm.kmovwKR(dst, src);
+  } else if (dst is X86Gp && src is X86KReg) {
+    asm.kmovwRK(dst, src);
+  }
+}
+
+void _kmovd(X86Assembler asm, List<Object> ops) {
+  if (ops.length != 2) return;
+  final dst = ops[0];
+  final src = ops[1];
+  if (dst is X86KReg && src is X86Gp) {
+    asm.kmovdKR(dst, src);
+  } else if (dst is X86Gp && src is X86KReg) {
+    asm.kmovdRK(dst, src);
+  }
+}
+
+void _kmovq(X86Assembler asm, List<Object> ops) {
+  if (ops.length != 2) return;
+  final dst = ops[0];
+  final src = ops[1];
+  if (dst is X86KReg && src is X86Gp) {
+    asm.kmovqKR(dst, src);
+  } else if (dst is X86Gp && src is X86KReg) {
+    asm.kmovqRK(dst, src);
   }
 }
 
