@@ -700,9 +700,9 @@ class X86DbGenerator {
       case 'cvtss2sd':
         return 'if (ops.length == 2 && ops[0] is X86Xmm && ops[1] is X86Xmm) asm.cvtss2sdXX(ops[0] as X86Xmm, ops[1] as X86Xmm);';
       case 'addps':
-        return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.addpsXM(d, s) : asm.addps(d, s as X86Xmm));';
+        return '_simd3(asm, ops, xmm: (d, s1, s2) => asm.vaddpsXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => asm.vaddpsYYY(d, s1, s2 as X86Ymm), zmm: (d, s1, s2) => asm.vaddpsZmm(d, s1, s2 as X86Zmm));';
       case 'addpd':
-        return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.addpdXM(d, s) : asm.addpd(d, s as X86Xmm));';
+        return '_simd3(asm, ops, xmm: (d, s1, s2) => asm.vaddpdXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => asm.vaddpdYYY(d, s1, s2 as X86Ymm), zmm: (d, s1, s2) => asm.vaddpdZmm(d, s1, s2 as X86Zmm));';
       case 'subps':
         return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.subpsXM(d, s) : asm.subps(d, s as X86Xmm));';
       case 'subpd':

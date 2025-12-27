@@ -15,6 +15,8 @@ export 'src/asmjit/core/labels.dart';
 export 'src/asmjit/core/operand.dart';
 export 'src/asmjit/core/const_pool.dart';
 export 'src/asmjit/core/formatter.dart';
+export 'src/asmjit/core/emitter.dart';
+export 'src/asmjit/core/inst_api.dart';
 export 'src/asmjit/core/type.dart';
 export 'src/asmjit/core/regalloc.dart';
 export 'src/asmjit/core/code_builder.dart';

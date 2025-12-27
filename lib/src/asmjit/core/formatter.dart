@@ -5,6 +5,7 @@
 /// - Hex dump
 /// - Instruction logging
 
+import 'dart:io';
 import 'dart:typed_data';
 
 import '../x86/x86.dart';
@@ -176,6 +177,52 @@ class AsmLogger {
 
   @override
   String toString() => format();
+}
+
+/// Formatting flags for logger output.
+class FormatFlags {
+  static const int kNone = 0;
+  static const int kMachineCode = 1 << 0;
+  static const int kShowAliases = 1 << 1;
+  static const int kExplainImms = 1 << 2;
+  static const int kRegCasts = 1 << 3;
+}
+
+/// Base logger interface compatible with AsmJit-style logging.
+abstract class BaseLogger {
+  int flags = FormatFlags.kNone;
+
+  void log(String message);
+}
+
+/// Logger that stores output in-memory.
+class StringLogger extends BaseLogger {
+  final StringBuffer _buffer = StringBuffer();
+
+  @override
+  void log(String message) {
+    _buffer.writeln(message);
+  }
+
+  @override
+  String toString() => _buffer.toString();
+
+  /// Returns the logged data as a string.
+  String data() => _buffer.toString();
+
+  void clear() => _buffer.clear();
+}
+
+/// Logger that writes to an [IOSink].
+class FileLogger extends BaseLogger {
+  final IOSink _sink;
+
+  FileLogger(this._sink);
+
+  @override
+  void log(String message) {
+    _sink.writeln(message);
+  }
 }
 
 /// Kind of log entry.

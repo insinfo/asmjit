@@ -26,7 +26,7 @@ class X86CodeBuilder extends ir.BaseBuilder {
   final CallingConvention callingConvention;
 
   /// Argument virtual registers.
-  final List<VirtReg> _argRegs = [];
+  final List<VirtReg?> _argRegs = [];
 
   // ignore: unused_field - reserved for future return value tracking
   VirtReg? _returnReg;
@@ -36,6 +36,9 @@ class X86CodeBuilder extends ir.BaseBuilder {
 
   // Function frame emitter
   FuncFrameEmitter? _frameEmitter;
+
+  // ignore: unused_field - reserved for function tracking in compiler mode.
+  FuncNode? _currentFunc;
 
   X86CodeBuilder._({
     required this.code,
@@ -67,6 +70,11 @@ class X86CodeBuilder extends ir.BaseBuilder {
     return _ra.newVirtReg(size: size, regClass: RegClass.gp);
   }
 
+  /// Creates a new virtual XMM register.
+  VirtReg newXmmReg() {
+    return _ra.newVirtReg(size: 16, regClass: RegClass.xmm);
+  }
+
   /// Creates a new virtual YMM register.
   VirtReg newYmmReg() {
     return _ra.newVirtReg(size: 32, regClass: RegClass.ymm);
@@ -81,10 +89,10 @@ class X86CodeBuilder extends ir.BaseBuilder {
   VirtReg getArgReg(int index) {
     // Ensure we have enough arg registers
     while (_argRegs.length <= index) {
-      final arg = _ra.newVirtReg();
-      _argRegs.add(arg);
+      _argRegs.add(null);
     }
-    return _argRegs[index];
+    _argRegs[index] ??= _ra.newVirtReg();
+    return _argRegs[index]!;
   }
 
   @override
@@ -518,82 +526,389 @@ class X86CodeBuilder extends ir.BaseBuilder {
   // ---------------------------------------------------------------------------
 
   void _rewriteRegisters() {
-    for (final node in nodes.instructions) {
-      for (int i = 0; i < node.operands.length; i++) {
-        final op = node.operands[i];
-        if (op is ir.RegOperand && op.reg is VirtReg) {
-          final vreg = op.reg as VirtReg;
-          if (vreg.physReg != null) {
-            // Replace with physical register
-            node.operands[i] = ir.RegOperand(vreg.physReg!);
-          } else if (vreg.physXmm != null) {
-            // Handle vector registers (XMM/YMM/ZMM)
-            BaseReg phys = vreg.physXmm!;
-            if (vreg.regClass == RegClass.ymm) {
-              phys = (phys as X86Xmm).ymm;
-            } else if (vreg.regClass == RegClass.zmm) {
-              phys = (phys as X86Xmm).zmm;
-            }
-            node.operands[i] = ir.RegOperand(phys);
-          } else if (vreg.isSpilled) {
-            // Rewrite to MemOperand [rbp - offset]
-            // We need correct offset from RBP, considering saved registers.
-            // SimpleRegAlloc gives spillOffset as index*8.
-            final slotIndex = vreg.spillOffset ~/ 8;
-            int offset = 0;
-            if (_funcFrame != null) {
-              offset = _funcFrame!.getLocalOffset(slotIndex);
-              // getLocalOffset returns negative offset from RBP
-            } else {
-              // Fallback (shouldn't happen if build order is correct)
-              offset = -8 - vreg.spillOffset;
-            }
-            node.operands[i] = ir.MemOperand(X86Mem.baseDisp(rbp, offset));
+    for (final node in nodes.nodes) {
+      if (node is ir.InstNode) {
+        _rewriteOperandList(node, node.operands);
+
+        // Check for mov [mem], imm (might require 64-bit size but encoder defaults to 32-bit?)
+        // Safe option: Rewrite to mov r11, imm; mov [mem], r11
+        if (node.instId == X86InstId.kMov &&
+            node.operands.length == 2 &&
+            node.operands[0] is ir.MemOperand &&
+            node.operands[1] is ir.ImmOperand) {
+          final immSrc = node.operands[1] as ir.ImmOperand;
+
+          // Insert MOV r11, imm before
+          final movNode =
+              ir.InstNode(X86InstId.kMov, [ir.RegOperand(r11), immSrc]);
+          nodes.insertBefore(movNode, node);
+
+          // Replace current node with MOV [mem], r11
+          // We modify source operand to be r11.
+          node.operands[1] = ir.RegOperand(r11);
+        }
+
+        if (_rewriteUnsupportedMemOps(node)) {
+          continue;
+        }
+
+        // Check for double memory operands (illegal in x86)
+        // We assume binary instructions with 2 operands for now.
+        if (node.operands.length == 2 &&
+            node.operands[0] is ir.MemOperand &&
+            node.operands[1] is ir.MemOperand) {
+          // illegal: op [mem], [mem]
+          // Fix: mov r11, [mem_src]
+          //      op [mem_dst], r11
+          final memSrc = node.operands[1] as ir.MemOperand;
+
+          // Insert MOV r11, memSrc before this node
+          final movNode =
+              ir.InstNode(X86InstId.kMov, [ir.RegOperand(r11), memSrc]);
+          nodes.insertBefore(movNode, node);
+
+          // Replace source operand with r11
+          node.operands[1] = ir.RegOperand(r11);
+        }
+      } else if (node is ir.InvokeNode) {
+        _rewriteOperandList(node, node.args);
+        final ret = node.ret;
+        if (ret is VirtReg) {
+          final phys = _physRegForVirt(ret);
+          if (phys != null) {
+            node.ret = phys;
+          } else if (ret.isSpilled) {
+            // TODO: Support spilled return values by storing to stack.
           }
         }
       }
+    }
+  }
 
-      // Check for mov [mem], imm (might require 64-bit size but encoder defaults to 32-bit?)
-      // Safe option: Rewrite to mov r11, imm; mov [mem], r11
-      if (node.instId == X86InstId.kMov &&
-          node.operands.length == 2 &&
-          node.operands[0] is ir.MemOperand &&
-          node.operands[1] is ir.ImmOperand) {
-        final immSrc = node.operands[1] as ir.ImmOperand;
-
-        // Insert MOV r11, imm before
-        final movNode =
-            ir.InstNode(X86InstId.kMov, [ir.RegOperand(r11), immSrc]);
-        nodes.insertBefore(movNode, node);
-
-        // Replace current node with MOV [mem], r11
-        // We modify source operand to be r11.
-        node.operands[1] = ir.RegOperand(r11);
+  void _rewriteOperandList(ir.BaseNode anchor, List<ir.Operand> operands) {
+    for (int i = 0; i < operands.length; i++) {
+      final op = operands[i];
+      if (op is ir.RegOperand && op.reg is VirtReg) {
+        final vreg = op.reg as VirtReg;
+        final phys = _physRegForVirt(vreg);
+        if (phys != null) {
+          operands[i] = ir.RegOperand(phys);
+        } else if (vreg.isSpilled) {
+          final slotIndex = vreg.spillOffset ~/ 8;
+          int offset = 0;
+          if (_funcFrame != null) {
+            offset = _funcFrame!.getLocalOffset(slotIndex);
+          } else {
+            offset = -8 - vreg.spillOffset;
+          }
+          operands[i] = ir.MemOperand(X86Mem.baseDisp(rbp, offset));
+        }
+      } else if (op is ir.MemOperand && op.mem is X86Mem) {
+        final mem = op.mem as X86Mem;
+        final rewritten = _rewriteMemOperand(anchor, mem);
+        if (rewritten != mem) {
+          operands[i] = ir.MemOperand(rewritten);
+        }
       }
+    }
+  }
 
-      if (_rewriteUnsupportedMemOps(node)) {
+  X86Mem _rewriteMemOperand(ir.BaseNode anchor, X86Mem mem) {
+    final base = _rewriteMemReg(anchor, mem.base, r11);
+    final index = _rewriteMemReg(anchor, mem.index, r10);
+
+    if (base == mem.base && index == mem.index) return mem;
+    return X86Mem(
+      base: base,
+      index: index,
+      scale: mem.scale,
+      displacement: mem.displacement,
+      size: mem.size,
+      segment: mem.segment,
+    );
+  }
+
+  BaseReg? _rewriteMemReg(ir.BaseNode anchor, BaseReg? reg, X86Gp temp) {
+    if (reg is VirtReg) {
+      final phys = _physRegForVirt(reg);
+      if (phys is X86Gp) return phys;
+      if (reg.isSpilled) {
+        final slotIndex = reg.spillOffset ~/ 8;
+        int offset = 0;
+        if (_funcFrame != null) {
+          offset = _funcFrame!.getLocalOffset(slotIndex);
+        } else {
+          offset = -8 - reg.spillOffset;
+        }
+        nodes.insertBefore(
+            ir.InstNode(
+                X86InstId.kMov, [ir.RegOperand(temp), ir.MemOperand(X86Mem.baseDisp(rbp, offset))]),
+            anchor);
+        return temp;
+      }
+      // TODO: Support vector regs in memory addressing.
+      return reg;
+    }
+    return reg;
+  }
+
+  BaseReg? _physRegForVirt(VirtReg vreg) {
+    if (vreg.physReg != null) {
+      return vreg.physReg;
+    }
+    if (vreg.physXmm != null) {
+      BaseReg phys = vreg.physXmm!;
+      if (vreg.regClass == RegClass.ymm) {
+        phys = (phys as X86Xmm).ymm;
+      } else if (vreg.regClass == RegClass.zmm) {
+        phys = (phys as X86Xmm).zmm;
+      }
+      return phys;
+    }
+    return null;
+  }
+
+  void _setFuncArg(int index, BaseReg reg) {
+    if (reg is VirtReg) {
+      while (_argRegs.length <= index) {
+        _argRegs.add(null);
+      }
+      _argRegs[index] = reg;
+    } else {
+      // TODO: Support binding physical registers as arguments.
+    }
+  }
+
+  void _lowerInvokeNodes() {
+    final nodesToLower = <ir.InvokeNode>[];
+    for (final node in nodes.nodes) {
+      if (node is ir.InvokeNode) {
+        nodesToLower.add(node);
+      }
+    }
+
+    for (final node in nodesToLower) {
+      _lowerInvokeNode(node);
+      nodes.remove(node);
+    }
+  }
+
+  void _lowerInvokeNode(ir.InvokeNode node) {
+    final signature = node.signature;
+    if (signature is! FuncSignature) {
+      // TODO: Support invocations without signature metadata.
+      return;
+    }
+
+    final detail = FuncDetail(signature, cc: callingConvention);
+    final stackSize = _alignStack(detail.stackArgsSize);
+
+    if (stackSize > 0) {
+      nodes.insertBefore(
+          ir.InstNode(
+              X86InstId.kSub, [ir.RegOperand(rsp), ir.ImmOperand(stackSize)]),
+          node);
+    }
+
+    final moves = <_CallMove>[];
+
+    for (int i = 0; i < detail.argValues.length; i++) {
+      if (i >= node.args.length) break;
+      final argInfo = detail.argValues[i];
+      final arg = node.args[i];
+
+      if (argInfo.isReg) {
+        if (argInfo.regType == FuncRegType.gp) {
+          final dst = argInfo.gpReg!;
+          moves.add(_CallMove(dst, arg));
+        } else if (argInfo.regType == FuncRegType.xmm ||
+            argInfo.regType == FuncRegType.ymm ||
+            argInfo.regType == FuncRegType.zmm) {
+          _emitCallVecMove(node, argInfo, arg);
+        }
+      } else if (argInfo.isStack) {
+        _emitCallStackArg(node, argInfo, arg);
+      }
+    }
+
+    _emitCallMoves(node, moves);
+
+    if (node.target is Label) {
+      nodes.insertBefore(
+          ir.InstNode(X86InstId.kCall, [ir.LabelOperand(node.target as Label)]),
+          node);
+    } else if (node.target is BaseReg) {
+      nodes.insertBefore(
+          ir.InstNode(X86InstId.kCall, [ir.RegOperand(node.target as BaseReg)]),
+          node);
+    } else if (node.target is int) {
+      nodes.insertBefore(
+          ir.InstNode(X86InstId.kCall, [ir.ImmOperand(node.target as int)]),
+          node);
+    }
+
+    if (stackSize > 0) {
+      nodes.insertBefore(
+          ir.InstNode(
+              X86InstId.kAdd, [ir.RegOperand(rsp), ir.ImmOperand(stackSize)]),
+          node);
+    }
+
+    if (node.ret != null) {
+      _emitCallReturnMove(node, node.ret!, detail.retValue);
+    }
+  }
+
+  void _emitCallMoves(ir.BaseNode anchor, List<_CallMove> moves) {
+    if (moves.isEmpty) return;
+
+    final used = <X86Gp>{};
+    for (final move in moves) {
+      used.add(move.dst);
+      if (move.src is ir.RegOperand &&
+          (move.src as ir.RegOperand).reg is X86Gp) {
+        used.add((move.src as ir.RegOperand).reg as X86Gp);
+      }
+    }
+
+    while (moves.isNotEmpty) {
+      final idx = _findIndependentCallMove(moves);
+      if (idx != -1) {
+        final move = moves.removeAt(idx);
+        nodes.insertBefore(
+            ir.InstNode(
+                X86InstId.kMov, [ir.RegOperand(move.dst), move.src]),
+            anchor);
         continue;
       }
 
-      // Check for double memory operands (illegal in x86)
-      // We assume binary instructions with 2 operands for now.
-      if (node.operands.length == 2 &&
-          node.operands[0] is ir.MemOperand &&
-          node.operands[1] is ir.MemOperand) {
-        // illegal: op [mem], [mem]
-        // Fix: mov r11, [mem_src]
-        //      op [mem_dst], r11
-        final memSrc = node.operands[1] as ir.MemOperand;
-
-        // Insert MOV r11, memSrc before this node
-        final movNode =
-            ir.InstNode(X86InstId.kMov, [ir.RegOperand(r11), memSrc]);
-        nodes.insertBefore(movNode, node);
-
-        // Replace source operand with r11
-        node.operands[1] = ir.RegOperand(r11);
+      final temp = _findTempReg(used);
+      final move = moves.removeAt(0);
+      if (temp != null) {
+        nodes.insertBefore(
+            ir.InstNode(X86InstId.kMov, [ir.RegOperand(temp), move.src]),
+            anchor);
+        moves.insert(0, _CallMove(move.dst, ir.RegOperand(temp)));
+        used.add(temp);
+      } else {
+        // TODO: Spill to stack if no temp is available.
+        nodes.insertBefore(
+            ir.InstNode(
+                X86InstId.kMov, [ir.RegOperand(move.dst), move.src]),
+            anchor);
       }
     }
+  }
+
+  int _findIndependentCallMove(List<_CallMove> moves) {
+    for (var i = 0; i < moves.length; i++) {
+      final dst = moves[i].dst;
+      var usedAsSrc = false;
+      for (var j = 0; j < moves.length; j++) {
+        if (i == j) continue;
+        final src = moves[j].src;
+        if (src is ir.RegOperand && src.reg == dst) {
+          usedAsSrc = true;
+          break;
+        }
+      }
+      if (!usedAsSrc) return i;
+    }
+    return -1;
+  }
+
+  void _emitCallVecMove(
+      ir.BaseNode anchor, FuncValue argInfo, ir.Operand arg) {
+    final regType = argInfo.regType;
+    if (regType == FuncRegType.zmm) {
+      // TODO: Add AVX-512 dispatcher support for ZMM moves.
+      return;
+    }
+
+    final BaseReg dst = regType == FuncRegType.ymm
+        ? X86Ymm(argInfo.regId)
+        : X86Xmm(argInfo.regId);
+    final instId =
+        regType == FuncRegType.ymm ? X86InstId.kVmovups : X86InstId.kMovups;
+
+    if (arg is ir.RegOperand &&
+        (arg.reg is X86Xmm || arg.reg is X86Ymm || arg.reg is X86Zmm)) {
+      nodes.insertBefore(
+          ir.InstNode(instId, [ir.RegOperand(dst), arg]), anchor);
+    } else if (arg is ir.MemOperand) {
+      nodes.insertBefore(
+          ir.InstNode(instId, [ir.RegOperand(dst), arg]), anchor);
+    } else if (arg is ir.ImmOperand) {
+      // TODO: Support immediate to vector register moves.
+    }
+  }
+
+  void _emitCallStackArg(
+      ir.BaseNode anchor, FuncValue argInfo, ir.Operand arg) {
+    final mem = X86Mem.baseDisp(rsp, argInfo.stackOffset + 8);
+    if (arg is ir.RegOperand && arg.reg is X86Gp) {
+      nodes.insertBefore(
+          ir.InstNode(X86InstId.kMov, [ir.MemOperand(mem), arg]), anchor);
+    } else if (arg is ir.ImmOperand) {
+      final immValue = arg.value;
+      if (immValue >= -2147483648 && immValue <= 2147483647) {
+        nodes.insertBefore(
+            ir.InstNode(X86InstId.kMov, [ir.MemOperand(mem), arg]), anchor);
+      } else {
+        nodes.insertBefore(
+            ir.InstNode(X86InstId.kMov, [ir.RegOperand(r11), arg]), anchor);
+        nodes.insertBefore(
+            ir.InstNode(
+                X86InstId.kMov, [ir.MemOperand(mem), ir.RegOperand(r11)]),
+            anchor);
+      }
+    } else if (arg is ir.RegOperand &&
+        (arg.reg is X86Xmm || arg.reg is X86Ymm)) {
+      final instId =
+          arg.reg is X86Ymm ? X86InstId.kVmovups : X86InstId.kMovups;
+      nodes.insertBefore(
+          ir.InstNode(instId, [ir.MemOperand(mem), arg]), anchor);
+    } else {
+      // TODO: Support additional stack argument kinds.
+    }
+  }
+
+  void _emitCallReturnMove(
+      ir.BaseNode anchor, BaseReg ret, FuncValue retInfo) {
+    if (!retInfo.isReg) return;
+    if (retInfo.regType == FuncRegType.gp) {
+      final src = retInfo.gpReg;
+      if (src != null && ret is X86Gp && src != ret) {
+        nodes.insertBefore(
+            ir.InstNode(
+                X86InstId.kMov, [ir.RegOperand(ret), ir.RegOperand(src)]),
+            anchor);
+      }
+      return;
+    }
+
+    if (retInfo.regType == FuncRegType.zmm) {
+      // TODO: Add AVX-512 dispatcher support for ZMM return moves.
+      return;
+    }
+
+    final BaseReg src = retInfo.regType == FuncRegType.ymm
+        ? X86Ymm(retInfo.regId)
+        : X86Xmm(retInfo.regId);
+    final instId =
+        retInfo.regType == FuncRegType.ymm ? X86InstId.kVmovups : X86InstId.kMovups;
+
+    if (ret.runtimeType == src.runtimeType && ret.id != src.id) {
+      nodes.insertBefore(
+          ir.InstNode(
+              instId, [ir.RegOperand(ret), ir.RegOperand(src)]),
+          anchor);
+    }
+  }
+
+  int _alignStack(int size) {
+    if (size == 0) return 0;
+    return (size + 15) & ~15;
   }
 
   bool _rewriteUnsupportedMemOps(ir.InstNode node) {
@@ -836,6 +1151,31 @@ class X86CodeBuilder extends ir.BaseBuilder {
     return node;
   }
 
+  /// Adds a function with the given signature.
+  ir.FuncNode addFunc(FuncSignature signature,
+      {String name = 'func', FuncFrame? frame, FuncFrameAttr? attr}) {
+    final node = ir.FuncNode(
+      name,
+      frame: frame,
+      signature: signature,
+      argSetter: _setFuncArg,
+    );
+    addNode(node);
+    _currentFunc = node;
+    if (frame != null) {
+      _funcFrame = frame;
+    } else if (attr != null) {
+      _funcFrame = FuncFrame.host(attr: attr);
+    }
+    return node;
+  }
+
+  /// Ends the current function by emitting a return.
+  void endFunc() {
+    // TODO: Emit a default return value based on signature if needed.
+    ret();
+  }
+
   /// Add a basic block (label).
   ir.BlockNode block(Label label) {
     final node = ir.BlockNode(label);
@@ -865,6 +1205,24 @@ class X86CodeBuilder extends ir.BaseBuilder {
     final asm = X86Assembler(code);
     _emitToAssembler(asm, frameAttrHint: frameAttrHint);
     return code.finalize();
+  }
+
+  /// Emits a raw instruction by ID with generic operands.
+  void emitInst(int instId, List<Object> ops, {int options = 0}) {
+    inst(instId, ops.map(_toOperand).toList(), options: options);
+  }
+
+  /// Emits an invocation node (call with signature).
+  ir.InvokeNode invoke(Object target, FuncSignature signature,
+      {List<Object> args = const [], BaseReg? ret}) {
+    final node = ir.InvokeNode(
+      target: target,
+      args: args.map(_toOperand).toList(),
+      ret: ret,
+      signature: signature,
+    );
+    addNode(node);
+    return node;
   }
 
   void _emitToAssembler(X86Assembler asm, {FuncFrameAttr? frameAttrHint}) {
@@ -899,6 +1257,9 @@ class X86CodeBuilder extends ir.BaseBuilder {
     // 3. Rewrite IR with physical registers (now that we have frame offsets)
     _rewriteRegisters();
 
+    // 3.5 Lower invoke nodes into actual call sequences.
+    _lowerInvokeNodes();
+
     if (_funcFrame != null) {
       _frameEmitter = FuncFrameEmitter(_funcFrame!, asm);
       _frameEmitter!.emitPrologue();
@@ -920,6 +1281,7 @@ class X86CodeBuilder extends ir.BaseBuilder {
     // Spills must be stored before any register moves that could clobber sources.
     for (int i = 0; i < _argRegs.length && i < physArgRegs.length; i++) {
       final argVreg = _argRegs[i];
+      if (argVreg == null) continue;
       final physArg = physArgRegs[i];
       if (argVreg.isSpilled) {
         final offset = argVreg.spillOffset;
@@ -1011,6 +1373,13 @@ class _ArgMove {
   final X86Gp src;
 
   _ArgMove(this.dst, this.src);
+}
+
+class _CallMove {
+  final X86Gp dst;
+  final ir.Operand src;
+
+  _CallMove(this.dst, this.src);
 }
 
 class _FuncSerializer extends X86Serializer {

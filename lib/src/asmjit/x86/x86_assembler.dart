@@ -12,6 +12,7 @@ import 'x86.dart';
 import 'x86_operands.dart';
 import 'x86_encoder.dart';
 import 'x86_simd.dart';
+import 'x86_dispatcher.g.dart';
 
 /// x86/x64 Assembler.
 ///
@@ -31,6 +32,11 @@ class X86Assembler {
   X86Assembler(this.code) {
     _buf = code.text.buffer;
     _enc = X86Encoder(_buf);
+  }
+
+  /// Emits a raw instruction by ID with generic operands.
+  void emit(int instId, List<Object> ops) {
+    x86Dispatch(this, instId, ops);
   }
 
   /// Creates an x86 assembler with a new code holder.

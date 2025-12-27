@@ -5,7 +5,6 @@
 
 import '../core/operand.dart';
 import '../core/labels.dart';
-import 'x86.dart';
 
 /// x86/x64 memory operand.
 ///
@@ -13,10 +12,10 @@ import 'x86.dart';
 /// `[base + index*scale + displacement]`
 class X86Mem extends BaseMem {
   /// The base register, or null if none.
-  final X86Gp? base;
+  final BaseReg? base;
 
   /// The index register, or null if none.
-  final X86Gp? index;
+  final BaseReg? index;
 
   /// The scale factor (1, 2, 4, or 8).
   final int scale;
@@ -42,21 +41,21 @@ class X86Mem extends BaseMem {
   });
 
   /// Creates a memory operand from a pointer (base register + displacement).
-  static X86Mem ptr(X86Gp base, [int disp = 0]) =>
+  static X86Mem ptr(BaseReg base, [int disp = 0]) =>
       X86Mem.base(base, disp: disp);
 
   /// Creates a memory operand with just a base register.
-  const X86Mem.base(X86Gp base, {int disp = 0, int size = 0})
+  const X86Mem.base(BaseReg base, {int disp = 0, int size = 0})
       : this(base: base, displacement: disp, size: size);
 
   /// Creates a memory operand with base + displacement.
-  const X86Mem.baseDisp(X86Gp base, int disp, {int size = 0})
+  const X86Mem.baseDisp(BaseReg base, int disp, {int size = 0})
       : this(base: base, displacement: disp, size: size);
 
   /// Creates a memory operand with base + index*scale + displacement.
   const X86Mem.baseIndexScale(
-    X86Gp base,
-    X86Gp index,
+    BaseReg base,
+    BaseReg index,
     int scale, {
     int disp = 0,
     int size = 0,
@@ -233,26 +232,26 @@ enum X86Seg {
 /// Helper functions for creating memory operands.
 
 /// Creates a memory operand: [base + disp]
-X86Mem ptr(X86Gp base, [int disp = 0]) => X86Mem.base(base, disp: disp);
+X86Mem ptr(BaseReg base, [int disp = 0]) => X86Mem.base(base, disp: disp);
 
 /// Creates a byte memory operand: byte ptr [base]
-X86Mem bytePtr(X86Gp base, [int disp = 0]) =>
+X86Mem bytePtr(BaseReg base, [int disp = 0]) =>
     X86Mem.baseDisp(base, disp, size: 1);
 
 /// Creates a word memory operand: word ptr [base]
-X86Mem wordPtr(X86Gp base, [int disp = 0]) =>
+X86Mem wordPtr(BaseReg base, [int disp = 0]) =>
     X86Mem.baseDisp(base, disp, size: 2);
 
 /// Creates a dword memory operand: dword ptr [base]
-X86Mem dwordPtr(X86Gp base, [int disp = 0]) =>
+X86Mem dwordPtr(BaseReg base, [int disp = 0]) =>
     X86Mem.baseDisp(base, disp, size: 4);
 
 /// Creates a qword memory operand: qword ptr [base]
-X86Mem qwordPtr(X86Gp base, [int disp = 0]) =>
+X86Mem qwordPtr(BaseReg base, [int disp = 0]) =>
     X86Mem.baseDisp(base, disp, size: 8);
 
 /// Creates an xmmword memory operand: xmmword ptr [base]
-X86Mem xmmwordPtr(X86Gp base, [int disp = 0]) =>
+X86Mem xmmwordPtr(BaseReg base, [int disp = 0]) =>
     X86Mem.baseDisp(base, disp, size: 16);
 
 /// RIP-relative memory operand (for x86-64).

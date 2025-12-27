@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import 'code_buffer.dart';
 import 'environment.dart';
 import 'error.dart';
+import 'formatter.dart';
 import 'labels.dart';
 
 /// A section of code or data.
@@ -134,6 +135,9 @@ class CodeHolder {
   /// The text (code) section.
   late final Section text;
 
+  /// Optional logger attached to this code holder.
+  BaseLogger? logger;
+
   /// All sections.
   final List<Section> _sections = [];
 
@@ -185,6 +189,26 @@ class CodeHolder {
   /// Binds a label to the current position in the text section.
   void bind(Label label) {
     _labelManager.bind(label, text.buffer.length);
+  }
+
+  /// Attaches a logger to the code holder.
+  void attach(BaseLogger logger) {
+    this.logger = logger;
+  }
+
+  /// Sets a logger (alias for attach).
+  void setLogger(BaseLogger logger) {
+    attach(logger);
+  }
+
+  /// Detaches the current logger.
+  void detach() {
+    logger = null;
+  }
+
+  /// Resets the logger (alias for detach).
+  void resetLogger() {
+    detach();
   }
 
   /// Binds a label to a specific offset.

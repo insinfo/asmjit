@@ -246,12 +246,40 @@ class FuncNode extends BaseNode {
   /// Function name.
   final String name;
 
+  /// Optional function signature metadata.
+  final Object? signature;
+
   /// Function frame (generic).
   /// Casting to specific frame type (e.g. FuncFrame) is required.
   final dynamic frame;
 
-  FuncNode(this.name, {this.frame})
-      : super(NodeType.func, NodeFlags.isInformative);
+  /// Assigned argument registers (if any).
+  final List<BaseReg?> _args = [];
+
+  final void Function(int index, BaseReg reg)? _argSetter;
+
+  FuncNode(this.name,
+      {this.frame, this.signature, void Function(int, BaseReg)? argSetter})
+      : _argSetter = argSetter,
+        super(NodeType.func, NodeFlags.isInformative);
+
+  /// Number of assigned arguments.
+  int get argCount => _args.length;
+
+  /// Returns the assigned argument register at [index].
+  BaseReg? argAt(int index) => index < _args.length ? _args[index] : null;
+
+  /// Assigns an argument register.
+  void setArg(int index, BaseReg reg) {
+    if (index < 0) {
+      throw RangeError.index(index, _args, 'index');
+    }
+    while (_args.length <= index) {
+      _args.add(null);
+    }
+    _args[index] = reg;
+    _argSetter?.call(index, reg);
+  }
 
   @override
   String toString() => 'FuncNode("$name")';
@@ -274,13 +302,34 @@ class InvokeNode extends BaseNode {
   final List<Operand> args;
 
   /// Optional return register (virtual or physical).
-  final BaseReg? ret;
+  BaseReg? ret;
+
+  /// Optional signature metadata.
+  final Object? signature;
 
   InvokeNode({
     required this.target,
-    this.args = const [],
+    List<Operand> args = const [],
     this.ret,
-  }) : super(NodeType.invoke, NodeFlags.isCode);
+    this.signature,
+  })  : args = List<Operand>.from(args),
+        super(NodeType.invoke, NodeFlags.isCode);
+
+  /// Assigns an argument operand at [index].
+  void setArg(int index, Object op) {
+    if (index < 0) {
+      throw RangeError.index(index, args, 'index');
+    }
+    while (args.length <= index) {
+      args.add(Operand.from(0));
+    }
+    args[index] = Operand.from(op);
+  }
+
+  /// Assigns return register.
+  void setRet(BaseReg reg) {
+    ret = reg;
+  }
 
   @override
   String toString() => 'InvokeNode(target: $target, args: ${args.length})';

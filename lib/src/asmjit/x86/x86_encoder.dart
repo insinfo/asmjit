@@ -4,10 +4,11 @@
 /// Ported from asmjit/x86/x86assembler.cpp (encoding parts)
 
 import '../core/code_buffer.dart';
+import '../core/error.dart';
+import '../core/operand.dart';
 import 'x86.dart';
 import 'x86_operands.dart';
 import 'x86_simd.dart';
-import '../core/operand.dart';
 
 /// x86/x64 instruction encoder.
 ///
@@ -17,6 +18,16 @@ class X86Encoder {
   final CodeBuffer buffer;
 
   X86Encoder(this.buffer);
+
+  X86Gp? _memBase(X86Mem mem) => _asGp(mem.base, 'base');
+  X86Gp? _memIndex(X86Mem mem) => _asGp(mem.index, 'index');
+
+  X86Gp? _asGp(BaseReg? reg, String role) {
+    if (reg == null) return null;
+    if (reg is X86Gp) return reg;
+    throw AsmJitException.invalidArgument(
+        'X86Mem $role must be X86Gp, got ${reg.runtimeType}');
+  }
 
   // ===========================================================================
   // EVEX Encoding (AVX-512)
@@ -171,8 +182,10 @@ class X86Encoder {
 
   /// Emits a REX prefix for a register and memory operand.
   void emitRexForRegMem(X86Gp reg, X86Mem mem, {bool w = false}) {
-    final baseExt = mem.base?.isExtended ?? false;
-    final indexExt = mem.index?.isExtended ?? false;
+    final base = _memBase(mem);
+    final index = _memIndex(mem);
+    final baseExt = base?.isExtended ?? false;
+    final indexExt = index?.isExtended ?? false;
     final needsRex = w || reg.isExtended || baseExt || indexExt;
     if (needsRex) {
       emitRex(w, reg.isExtended, indexExt, baseExt);
@@ -223,8 +236,8 @@ class X86Encoder {
 
   /// Emits ModR/M and optional SIB/displacement for memory operand.
   void emitModRmMem(int regOp, X86Mem mem) {
-    final base = mem.base;
-    final index = mem.index;
+    final base = _memBase(mem);
+    final index = _memIndex(mem);
     final disp = mem.displacement;
 
     // Special case: no base or index (absolute address)
@@ -1368,10 +1381,10 @@ class X86Encoder {
   /// MOVAPS xmm, [mem] (move aligned packed single-precision)
   void movapsXmmMem(X86Xmm dst, X86Mem mem) {
     if (dst.isExtended ||
-        mem.base?.isExtended == true ||
-        mem.index?.isExtended == true) {
-      emitRex(false, dst.isExtended, mem.index?.isExtended ?? false,
-          mem.base?.isExtended ?? false);
+        _memBase(mem)?.isExtended == true ||
+        _memIndex(mem)?.isExtended == true) {
+      emitRex(false, dst.isExtended, _memIndex(mem)?.isExtended ?? false,
+          _memBase(mem)?.isExtended ?? false);
     }
     buffer.emit8(0x0F);
     buffer.emit8(0x28);
@@ -1381,10 +1394,10 @@ class X86Encoder {
   /// MOVAPS [mem], xmm (move aligned packed single-precision)
   void movapsMemXmm(X86Mem mem, X86Xmm src) {
     if (src.isExtended ||
-        mem.base?.isExtended == true ||
-        mem.index?.isExtended == true) {
-      emitRex(false, src.isExtended, mem.index?.isExtended ?? false,
-          mem.base?.isExtended ?? false);
+        _memBase(mem)?.isExtended == true ||
+        _memIndex(mem)?.isExtended == true) {
+      emitRex(false, src.isExtended, _memIndex(mem)?.isExtended ?? false,
+          _memBase(mem)?.isExtended ?? false);
     }
     buffer.emit8(0x0F);
     buffer.emit8(0x29);
@@ -2131,14 +2144,14 @@ class X86Encoder {
     else if (dst is X86Ymm) dstIsExtended = dst.isExtended;
 
     final needsVex3 = dstIsExtended ||
-        (mem.base?.isExtended ?? false) ||
-        (mem.index?.isExtended ?? false) ||
+        (_memBase(mem)?.isExtended ?? false) ||
+        (_memIndex(mem)?.isExtended ?? false) ||
         w ||
         mmmmm != _vexMmmmm0F;
 
     if (needsVex3) {
-      _emitVex3(dstIsExtended, mem.index?.isExtended ?? false,
-          mem.base?.isExtended ?? false, mmmmm, w, src1.id, l, pp);
+      _emitVex3(dstIsExtended, _memIndex(mem)?.isExtended ?? false,
+          _memBase(mem)?.isExtended ?? false, mmmmm, w, src1.id, l, pp);
     } else {
       _emitVex2(dstIsExtended, src1.id, l, pp);
     }
@@ -3563,8 +3576,8 @@ class X86Encoder {
 
   /// MOV [mem], imm32 - Move immediate to memory (64-bit mode writes 32-bit)
   void movMemImm32(X86Mem mem, int imm32) {
-    final baseExt = mem.base?.isExtended ?? false;
-    final indexExt = mem.index?.isExtended ?? false;
+    final baseExt = _memBase(mem)?.isExtended ?? false;
+    final indexExt = _memIndex(mem)?.isExtended ?? false;
     if (baseExt || indexExt) {
       emitRex(true, false, indexExt, baseExt);
     } else {
@@ -3577,8 +3590,8 @@ class X86Encoder {
 
   /// ADD [mem], imm32 - Add immediate to memory
   void addMemImm32(X86Mem mem, int imm32) {
-    final baseExt = mem.base?.isExtended ?? false;
-    final indexExt = mem.index?.isExtended ?? false;
+    final baseExt = _memBase(mem)?.isExtended ?? false;
+    final indexExt = _memIndex(mem)?.isExtended ?? false;
     if (baseExt || indexExt) {
       emitRex(true, false, indexExt, baseExt);
     } else {
@@ -3591,8 +3604,8 @@ class X86Encoder {
 
   /// CMP [mem], imm32 - Compare memory with immediate
   void cmpMemImm32(X86Mem mem, int imm32) {
-    final baseExt = mem.base?.isExtended ?? false;
-    final indexExt = mem.index?.isExtended ?? false;
+    final baseExt = _memBase(mem)?.isExtended ?? false;
+    final indexExt = _memIndex(mem)?.isExtended ?? false;
     if (baseExt || indexExt) {
       emitRex(true, false, indexExt, baseExt);
     } else {
@@ -3951,8 +3964,8 @@ class X86Encoder {
       regExt = reg.isExtended;
     else if (reg is X86Zmm) regExt = reg.isExtended;
 
-    final baseExt = mem.base?.isExtended ?? false;
-    final indexExt = mem.index?.isExtended ?? false;
+    final baseExt = _memBase(mem)?.isExtended ?? false;
+    final indexExt = _memIndex(mem)?.isExtended ?? false;
     if (regExt || baseExt || indexExt) {
       emitRex(false, regExt, indexExt, baseExt);
     }

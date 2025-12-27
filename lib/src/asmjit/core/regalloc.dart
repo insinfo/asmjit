@@ -4,6 +4,7 @@
 /// Based on concepts from asmjit's RA (register allocator).
 
 import 'package:asmjit/asmjit.dart';
+import '../core/builder.dart' as ir;
 
 /// Virtual register - represents a value that needs a physical register.
 class VirtReg extends BaseReg {
@@ -225,7 +226,7 @@ class SimpleRegAlloc {
   ///
   /// If [nodes] is provided, it scans the instruction list to build live intervals.
   /// Otherwise, it assumes uses have been recorded via [recordUse].
-  void allocate([NodeList? nodes]) {
+  void allocate([ir.NodeList? nodes]) {
     if (nodes != null) {
       _buildIntervals(nodes);
     }
@@ -413,33 +414,24 @@ class SimpleRegAlloc {
   }
 
   /// Build intervals by iterating over the node list.
-  void _buildIntervals(NodeList nodes) {
+  void _buildIntervals(ir.NodeList nodes) {
     int pos = 0;
 
     for (final node in nodes.nodes) {
-      if (node is InstNode) {
-        for (final op in node.operands) {
-          if (op is RegOperand) {
-            final reg = op.reg;
-            if (reg is VirtReg) {
-              recordUse(reg, pos);
-            }
-          } else if (op is MemOperand) {
-            // Handle memory operands that use virtual registers
-            // This requires MemOperand definition inspection.
-            // Assuming MemOperand might contain VirtReg in index/base.
-            // For now, complex memory operand reg alloc might need more work if MemOperand stores BaseReg.
-            // check if op.mem is BaseMem, and check base/index.
-            _scanMemOperand(op, pos);
-          }
+      if (node is ir.InstNode) {
+        _recordOperands(node.operands, pos);
+        pos += 2;
+      } else if (node is ir.InvokeNode) {
+        _recordOperands(node.args, pos);
+        if (node.ret is VirtReg) {
+          recordUse(node.ret as VirtReg, pos);
         }
-        pos +=
-            2; // Increment by 2 to allow for insertion between instructions if needed (standard RA trick)
+        pos += 2;
       }
     }
   }
 
-  void _scanMemOperand(MemOperand op, int pos) {
+  void _scanMemOperand(ir.MemOperand op, int pos) {
     final mem = op.mem;
     if (mem is X86Mem) {
       if (mem.base is VirtReg) {
@@ -447,6 +439,19 @@ class SimpleRegAlloc {
       }
       if (mem.index is VirtReg) {
         recordUse(mem.index as VirtReg, pos);
+      }
+    }
+  }
+
+  void _recordOperands(List<ir.Operand> operands, int pos) {
+    for (final op in operands) {
+      if (op is ir.RegOperand) {
+        final reg = op.reg;
+        if (reg is VirtReg) {
+          recordUse(reg, pos);
+        }
+      } else if (op is ir.MemOperand) {
+        _scanMemOperand(op, pos);
       }
     }
   }

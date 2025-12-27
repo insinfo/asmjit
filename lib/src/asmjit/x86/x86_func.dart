@@ -488,6 +488,26 @@ class FuncValue {
     );
   }
 
+  /// Creates a value passed in a YMM register.
+  factory FuncValue.ymmReg(TypeId type, int regId) {
+    return FuncValue._(
+      typeId: type,
+      isReg: true,
+      regId: regId,
+      regType: FuncRegType.ymm,
+    );
+  }
+
+  /// Creates a value passed in a ZMM register.
+  factory FuncValue.zmmReg(TypeId type, int regId) {
+    return FuncValue._(
+      typeId: type,
+      isReg: true,
+      regId: regId,
+      regType: FuncRegType.zmm,
+    );
+  }
+
   /// Creates a value passed on stack.
   factory FuncValue.stack(TypeId type, int offset) {
     return FuncValue._(
@@ -574,17 +594,28 @@ class FuncDetail {
 
     for (int i = 0; i < signature.argCount; i++) {
       final type = signature.arg(i);
+      final size = type.sizeInBytes > 0 ? type.sizeInBytes : 8;
 
-      if (type.isFloat) {
-        // Float/double go in XMM registers
+      if (type.isVec || type.isFloat) {
+        // Float and vector types go in SIMD registers.
         if (xmmIndex < xmmOrder.length) {
-          argValues.add(FuncValue.xmmReg(type, xmmOrder[xmmIndex++]));
+          if (type.isVec256) {
+            argValues.add(FuncValue.ymmReg(type, xmmOrder[xmmIndex++]));
+          } else if (type.isVec512) {
+            argValues.add(FuncValue.zmmReg(type, xmmOrder[xmmIndex++]));
+          } else {
+            argValues.add(FuncValue.xmmReg(type, xmmOrder[xmmIndex++]));
+          }
           if (callingConvention == CallingConvention.win64) {
             gpIndex++; // Win64: XMM and GP share slots
           }
         } else {
+          if (type.isVec && (stackOffset & 15) != 0) {
+            stackOffset = (stackOffset + 15) & ~15;
+          }
           argValues.add(FuncValue.stack(type, stackOffset));
-          stackOffset += 8;
+          final slotSize = size < 8 ? 8 : size;
+          stackOffset += slotSize;
         }
       } else {
         // Integer types go in GP registers
@@ -605,6 +636,15 @@ class FuncDetail {
 
   /// Allocate return value register.
   FuncValue _allocateReturnValue(TypeId type) {
+    if (type.isVec) {
+      if (type.isVec256) {
+        return FuncValue.ymmReg(type, 0);
+      }
+      if (type.isVec512) {
+        return FuncValue.zmmReg(type, 0);
+      }
+      return FuncValue.xmmReg(type, 0);
+    }
     if (type.isFloat) {
       return FuncValue.xmmReg(type, 0); // XMM0
     } else {
