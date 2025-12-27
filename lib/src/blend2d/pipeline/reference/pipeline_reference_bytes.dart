@@ -502,7 +502,7 @@ void _srcOver32Bytes({
         if (dstFormat == PixelFormat.xrgb32) {
           d = 0xFF000000 | (d & 0x00FFFFFF);
         }
-        var m = globalAlpha != 0 ? globalAlpha : 255;
+        var m = globalAlpha;
         if (mask != null) {
           final maskValue = mask[maskPixel];
           m = _mulDiv255(maskValue * m);
@@ -528,7 +528,7 @@ void _srcOver32Bytes({
         if (dstFormat == PixelFormat.xrgb32) {
           d = 0xFF000000 | (d & 0x00FFFFFF);
         }
-        var m = globalAlpha != 0 ? globalAlpha : 255;
+        var m = globalAlpha;
         if (mask != null) {
           final maskValue = mask[maskPixel];
           m = _mulDiv255(maskValue * m);
@@ -554,7 +554,7 @@ void _srcOver32Bytes({
         if (dstFormat == PixelFormat.xrgb32) {
           d = 0xFF000000 | (d & 0x00FFFFFF);
         }
-        var m = globalAlpha != 0 ? globalAlpha : 255;
+        var m = globalAlpha;
         if (mask != null) {
           final maskValue = mask[maskPixel];
           m = _mulDiv255(maskValue * m);
@@ -580,7 +580,7 @@ void _srcOver32Bytes({
         if (dstFormat == PixelFormat.xrgb32) {
           d = 0xFF000000 | (d & 0x00FFFFFF);
         }
-        var m = globalAlpha != 0 ? globalAlpha : 255;
+        var m = globalAlpha;
         if (mask != null) {
           final maskValue = mask[maskPixel];
           m = _mulDiv255(maskValue * m);
@@ -625,7 +625,7 @@ void _srcOver32Bytes({
           d = 0xFF000000 | (d & 0x00FFFFFF);
         }
 
-        var m = globalAlpha != 0 ? globalAlpha : 255;
+        var m = globalAlpha;
         if (mask != null) {
           final maskValue = mask[maskPixel];
           m = _mulDiv255(maskValue * m);
@@ -656,7 +656,7 @@ void _srcOver32Bytes({
         d = 0xFF000000 | (d & 0x00FFFFFF);
       }
 
-      var m = globalAlpha != 0 ? globalAlpha : 255;
+      var m = globalAlpha;
       if (mask != null) {
         final maskValue = mask[maskPixel];
         m = _mulDiv255(maskValue * m);
@@ -717,7 +717,7 @@ void _srcOverA8Bytes({
       if (width >= 1) {
         final s = src[srcPixel];
         final d = dst[dstPixel];
-        var m = globalAlpha != 0 ? globalAlpha : 255;
+        var m = globalAlpha;
         if (mask != null) {
           final maskValue = mask[maskPixel];
           m = _mulDiv255(maskValue * m);
@@ -731,7 +731,7 @@ void _srcOverA8Bytes({
       if (width >= 2) {
         final s = src[srcPixel];
         final d = dst[dstPixel];
-        var m = globalAlpha != 0 ? globalAlpha : 255;
+        var m = globalAlpha;
         if (mask != null) {
           final maskValue = mask[maskPixel];
           m = _mulDiv255(maskValue * m);
@@ -745,7 +745,7 @@ void _srcOverA8Bytes({
       if (width >= 3) {
         final s = src[srcPixel];
         final d = dst[dstPixel];
-        var m = globalAlpha != 0 ? globalAlpha : 255;
+        var m = globalAlpha;
         if (mask != null) {
           final maskValue = mask[maskPixel];
           m = _mulDiv255(maskValue * m);
@@ -759,7 +759,7 @@ void _srcOverA8Bytes({
       if (width == 4) {
         final s = src[srcPixel];
         final d = dst[dstPixel];
-        var m = globalAlpha != 0 ? globalAlpha : 255;
+        var m = globalAlpha;
         if (mask != null) {
           final maskValue = mask[maskPixel];
           m = _mulDiv255(maskValue * m);
@@ -791,7 +791,7 @@ void _srcOverA8Bytes({
       for (var i = 0; i < 4; i++) {
         final s = src[srcPixel];
         final d = dst[dstPixel];
-        var m = globalAlpha != 0 ? globalAlpha : 255;
+        var m = globalAlpha;
         if (mask != null) {
           final maskValue = mask[maskPixel];
           m = _mulDiv255(maskValue * m);
@@ -808,7 +808,7 @@ void _srcOverA8Bytes({
     while (x < width) {
       final s = src[srcPixel];
       final d = dst[dstPixel];
-      var m = globalAlpha != 0 ? globalAlpha : 255;
+      var m = globalAlpha;
       if (mask != null) {
         final maskValue = mask[maskPixel];
         m = _mulDiv255(maskValue * m);

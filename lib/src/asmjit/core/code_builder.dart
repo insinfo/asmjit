@@ -47,6 +47,10 @@ class X86CodeBuilder extends ir.BaseBuilder {
   // ignore: unused_field - reserved for function tracking in compiler mode.
   ir.FuncNode? _currentFunc;
 
+  // Tracks whether the frame was provided explicitly (skip recomputation).
+  bool _frameProvided = false;
+  bool _argsMaterialized = false;
+
   X86CodeBuilder._({
     required this.code,
     required this.is64Bit,
@@ -1436,8 +1440,10 @@ class X86CodeBuilder extends ir.BaseBuilder {
     _currentFunc ??= node;
     if (frame != null) {
       _funcFrame = frame;
+      _frameProvided = true;
     } else if (attr != null) {
       _funcFrame = FuncFrame.host(attr: attr);
+      _frameProvided = true;
     }
     return node;
   }
@@ -1455,9 +1461,103 @@ class X86CodeBuilder extends ir.BaseBuilder {
     _currentFunc = node;
     if (frame != null) {
       _funcFrame = frame;
-    } else if (attr != null) {
-      _funcFrame = FuncFrame.host(attr: attr);
+      _frameProvided = true;
+    } else {
+      final finalAttr = attr ?? FuncFrameAttr.nonLeaf();
+      _funcFrame = FuncFrame.host(attr: finalAttr);
+      _frameProvided = attr != null;
     }
+
+    // Emit code to load arguments into virtual registers
+    if (_funcFrame != null) {
+      final detail = FuncDetail(signature, cc: callingConvention);
+
+      for (int i = 0; i < signature.argCount; i++) {
+        final arg = detail.getArg(i);
+        final type = signature.arg(i);
+        final size = type.sizeInBytes > 0 ? type.sizeInBytes : 8;
+
+        // Ensure vreg exists with correct properties
+        while (_argRegs.length <= i) _argRegs.add(null);
+        if (_argRegs[i] == null) {
+          var regClass = RegClass.gp;
+          if (type.isVec || type.isFloat) {
+            if (type.isVec512)
+              regClass = RegClass.zmm;
+            else if (type.isVec256)
+              regClass = RegClass.ymm;
+            else
+              regClass = RegClass.xmm;
+          }
+          _argRegs[i] = _ra.newVirtReg(size: size, regClass: regClass);
+        }
+        final vreg = _argRegs[i]!;
+
+        if (arg.isReg) {
+          if (arg.regType == FuncRegType.gp) {
+            final srcReg = size <= 1
+                ? X86Gp.r8(arg.regId)
+                : size == 2
+                    ? X86Gp.r16(arg.regId)
+                    : size == 4
+                        ? X86Gp.r32(arg.regId)
+                        : X86Gp.r64(arg.regId);
+            mov(vreg, srcReg);
+          } else if (arg.regType == FuncRegType.xmm ||
+              arg.regType == FuncRegType.ymm ||
+              arg.regType == FuncRegType.zmm) {
+            // Use register of appropriate size
+            Object srcReg;
+            if (arg.regType == FuncRegType.xmm)
+              srcReg = X86Xmm(arg.regId);
+            else if (arg.regType == FuncRegType.ymm)
+              srcReg = X86Ymm(arg.regId);
+            else
+              srcReg = X86Zmm(arg.regId);
+
+            if (type == TypeId.float32) {
+              movss(vreg, srcReg);
+            } else if (type == TypeId.float64) {
+              movsd(vreg, srcReg);
+            } else if (type.isVec) {
+              if (type.sizeInBytes == 32)
+                vmovups(vreg, srcReg);
+              else if (type.sizeInBytes == 64)
+                vmovups(vreg, srcReg); // Logic for zmm? vmovups works?
+              else
+                movups(vreg, srcReg);
+            } else {
+              // Default fallback
+              if (size == 4)
+                movd(vreg, srcReg);
+              else
+                movq(vreg, srcReg);
+            }
+          }
+        } else if (arg.isStack) {
+          final offset =
+              _funcFrame!.getStackArgOffset(i, includeShadowSpace: true);
+          final mem = X86Mem.baseDisp(rbp, offset);
+
+          if (type.isFloat) {
+            if (type == TypeId.float32)
+              movss(vreg, mem);
+            else
+              movsd(vreg, mem);
+          } else if (type.isVec) {
+            if (type.sizeInBytes == 32)
+              vmovups(vreg, mem);
+            else if (type.sizeInBytes == 64)
+              vmovups(vreg, mem);
+            else
+              movups(vreg, mem);
+          } else {
+            mov(vreg, mem);
+          }
+        }
+      }
+    }
+    _argsMaterialized = true;
     return node;
   }
 
@@ -1685,6 +1785,7 @@ class X86CodeBuilder extends ir.BaseBuilder {
 
   /// Imports nodes from [src] and resets builder state.
   void importNodes(ir.NodeList src) {
+    final imported = src.nodes.toList();
     clear();
     _ra.reset();
     _argRegs.clear();
@@ -1693,8 +1794,10 @@ class X86CodeBuilder extends ir.BaseBuilder {
     _funcFrame = null;
     _frameEmitter = null;
     _currentFunc = null;
+    _frameProvided = false;
+    _argsMaterialized = false;
 
-    for (final node in src.nodes) {
+    for (final node in imported) {
       addNode(node);
     }
   }
@@ -1713,9 +1816,15 @@ class X86CodeBuilder extends ir.BaseBuilder {
     // 1. Run register allocation on IR
     _ra.allocate(nodes);
 
+    final signature = _currentFunc?.signature;
+    final hasStackArgs = signature is FuncSignature
+        ? FuncDetail(signature, cc: callingConvention).stackArgCount > 0
+        : false;
+    final allowRedZone = callingConvention == CallingConvention.sysV64;
+
     // 2. Calculate Frame (Prologue)
-    if (_funcFrame == null) {
-      // Determine used callee-saved registers
+    if (_funcFrame == null || !_frameProvided) {
+      // Determine used callee-saved registers.
       final usedRegs = <X86Gp>{};
       for (final vreg in _ra.virtualRegs) {
         if (vreg.physReg != null) usedRegs.add(vreg.physReg!);
@@ -1730,12 +1839,39 @@ class X86CodeBuilder extends ir.BaseBuilder {
       }
 
       final spillSize = _ra.spillAreaSize;
-      final attr = frameAttrHint ??
-          (spillSize > 0 || preserved.isNotEmpty
-              ? FuncFrameAttr.nonLeaf(
-                  localStackSize: spillSize, preservedRegs: preserved)
-              : FuncFrameAttr.leaf());
-      _funcFrame = FuncFrame.host(attr: attr);
+      final needsNonLeaf = hasStackArgs || spillSize > 0 || preserved.isNotEmpty;
+      if (_funcFrame == null) {
+        final attr = frameAttrHint ??
+            (needsNonLeaf
+                ? FuncFrameAttr.nonLeaf(
+                    localStackSize: spillSize, preservedRegs: preserved)
+                : FuncFrameAttr(
+                    preserveFramePointer: false,
+                    localStackSize: 0,
+                    alignStack: false,
+                    useRedZone: allowRedZone,
+                  ));
+        _funcFrame = FuncFrame.host(attr: attr);
+      } else {
+        final baseAttr = _funcFrame!.attr;
+        final mergedPreserved = <X86Gp>{
+          ...baseAttr.preservedRegs,
+          ...preserved,
+        }.toList();
+        final preserveFramePointer =
+            baseAttr.preserveFramePointer || needsNonLeaf;
+        _funcFrame = FuncFrame.host(
+          attr: FuncFrameAttr(
+            preserveFramePointer: preserveFramePointer,
+            localStackSize: baseAttr.localStackSize + spillSize,
+            alignStack: baseAttr.alignStack,
+            preservedRegs: mergedPreserved,
+            useRedZone: preserveFramePointer
+                ? false
+                : (baseAttr.useRedZone && allowRedZone),
+          ),
+        );
+      }
     }
 
     // 3. Rewrite IR with physical registers (now that we have frame offsets)
@@ -1750,7 +1886,10 @@ class X86CodeBuilder extends ir.BaseBuilder {
   }
 
     // 4. Move Arguments (Prologue)
-    _emitArgMoves(asm);
+    if (!_argsMaterialized &&
+        (_argRegs.isNotEmpty || _fixedArgRegs.isNotEmpty)) {
+      _emitArgMoves(asm);
+    }
 
     // 5. Serialize the body (Nodes)
     // Use custom serializer to handle RET -> Epilogue
@@ -1771,8 +1910,11 @@ class X86CodeBuilder extends ir.BaseBuilder {
       if (fixed != null) continue;
       final physArg = physArgRegs[i];
       if (argVreg.isSpilled) {
-        final offset = argVreg.spillOffset;
-        asm.movMR(X86Mem.baseDisp(rbp, -8 - offset), physArg);
+        final slotIndex = argVreg.spillOffset ~/ 8;
+        final offset = _funcFrame != null
+            ? _funcFrame!.getLocalOffset(slotIndex)
+            : (-8 - argVreg.spillOffset);
+        asm.movMR(X86Mem.baseDisp(rbp, offset), physArg);
       } else if (argVreg.physReg != null && argVreg.physReg != physArg) {
         moves.add(_ArgMove(argVreg.physReg!, physArg));
       }

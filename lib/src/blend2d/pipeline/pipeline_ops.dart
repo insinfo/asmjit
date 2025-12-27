@@ -2,6 +2,7 @@
 import 'pipeline_types.dart';
 
 enum PixelFormat {
+  none,
   prgb32,
   xrgb32,
   a8,
@@ -29,8 +30,8 @@ class PipelineOp {
   final PipelineMask? mask;
   final int maskStride;
 
-  const PipelineOp._(
-    this.kind, {
+  const PipelineOp({
+    required this.kind,
     this.dst,
     this.src,
     this.width = 0,
@@ -40,7 +41,7 @@ class PipelineOp {
     this.color = 0,
     this.dstFormat = PixelFormat.prgb32,
     this.srcFormat = PixelFormat.prgb32,
-    this.globalAlpha = 0,
+    this.globalAlpha = 255,
     this.mask,
     this.maskStride = 0,
   });
@@ -54,11 +55,11 @@ class PipelineOp {
     int srcStride = 0,
     PixelFormat dstFormat = PixelFormat.prgb32,
     PixelFormat srcFormat = PixelFormat.prgb32,
-    int globalAlpha = 0,
+    int globalAlpha = 255,
     PipelineMask? mask,
     int maskStride = 0,
-  }) : this._(
-          PipelineOpKind.copy,
+  }) : this(
+          kind: PipelineOpKind.copy,
           dst: dst,
           src: src,
           width: width,
@@ -79,11 +80,11 @@ class PipelineOp {
     int dstStride = 0,
     int color = 0,
     PixelFormat dstFormat = PixelFormat.prgb32,
-    int globalAlpha = 0,
+    int globalAlpha = 255,
     PipelineMask? mask,
     int maskStride = 0,
-  }) : this._(
-          PipelineOpKind.fill,
+  }) : this(
+          kind: PipelineOpKind.fill,
           dst: dst,
           width: width,
           height: height,
@@ -104,11 +105,11 @@ class PipelineOp {
     int srcStride = 0,
     PixelFormat dstFormat = PixelFormat.prgb32,
     PixelFormat srcFormat = PixelFormat.prgb32,
-    int globalAlpha = 0,
+    int globalAlpha = 255,
     PipelineMask? mask,
     int maskStride = 0,
-  }) : this._(
-          PipelineOpKind.blit,
+  }) : this(
+          kind: PipelineOpKind.blit,
           dst: dst,
           src: src,
           width: width,
@@ -131,11 +132,11 @@ class PipelineOp {
     int srcStride = 0,
     PixelFormat dstFormat = PixelFormat.prgb32,
     PixelFormat srcFormat = PixelFormat.prgb32,
-    int globalAlpha = 0,
+    int globalAlpha = 255,
     PipelineMask? mask,
     int maskStride = 0,
-  }) : this._(
-          PipelineOpKind.compSrcOver,
+  }) : this(
+          kind: PipelineOpKind.compSrcOver,
           dst: dst,
           src: src,
           width: width,

@@ -18,6 +18,7 @@ import 'virtmem.dart';
 class JitFunction {
   final JitRuntime _runtime;
   final VirtMemBlock _block;
+  bool _disposed = false;
 
   JitFunction._({
     required JitRuntime runtime,
@@ -47,7 +48,9 @@ class JitFunction {
 
   /// Disposes the JIT function, freeing the executable memory.
   void dispose() {
-    _runtime._release(_block);
+    if (_disposed) return;
+    _disposed = true;
+    _runtime._releaseFunction(this);
   }
 }
 
@@ -233,10 +236,11 @@ class JitRuntime {
 
   /// Clears the pipeline cache.
   void clearCache() {
-    for (final fn in _pipelineCache.values) {
+    final cached = List<JitFunction>.from(_pipelineCache.values);
+    _pipelineCache.clear();
+    for (final fn in cached) {
       fn.dispose();
     }
-    _pipelineCache.clear();
   }
 
   String _makeCacheKey(Uint8List bytes) {
@@ -260,6 +264,11 @@ class JitRuntime {
   void _release(VirtMemBlock block) {
     _allocatedBlocks.remove(block);
     VirtMem.release(block);
+  }
+
+  void _releaseFunction(JitFunction fn) {
+    _pipelineCache.removeWhere((_, value) => identical(value, fn));
+    _release(fn._block);
   }
 
   /// Releases a JIT function.

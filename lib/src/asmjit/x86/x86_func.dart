@@ -328,7 +328,7 @@ class FuncFrame {
   /// For Win64, args 0-3 are in registers, arg 4+ on stack.
   /// For SysV, args 0-5 are in registers, arg 6+ on stack.
   /// This returns the offset from RBP (after standard prologue).
-  int getStackArgOffset(int argIndex) {
+  int getStackArgOffset(int argIndex, {bool includeShadowSpace = false}) {
     final registerArgs = isWin64 ? 4 : 6;
     if (argIndex < registerArgs) {
       throw ArgumentError(
@@ -340,7 +340,8 @@ class FuncFrame {
     // [RBP+8]:  return address
     // [RBP+0]:  saved RBP (frame pointer)
     final stackIndex = argIndex - registerArgs;
-    return 16 + (stackIndex * stackSlotSize);
+    final shadow = includeShadowSpace && isWin64 ? shadowSpaceSize : 0;
+    return 16 + shadow + (stackIndex * stackSlotSize);
   }
 
   /// Get the offset for accessing a local variable from RBP.

@@ -1,4 +1,5 @@
 import 'dart:ffi';
+import 'dart:typed_data';
 
 import 'package:asmjit/asmjit.dart';
 import '../pipeline_ops.dart';
@@ -33,6 +34,7 @@ enum PipelineBackend {
   js,
 }
 
+
 class PipelineProgram {
   final PipelineBackend backend;
   final List<PipelineOp> _ops;
@@ -46,8 +48,8 @@ class PipelineProgram {
         _jit = null,
         _entry = null;
 
-  PipelineProgram._jit(this.backend, JitFunction jit)
-      : _ops = const [],
+  PipelineProgram._jit(this.backend, JitFunction jit, List<PipelineOp> ops)
+      : _ops = ops,
         _reference = null,
         _jit = jit,
         _entry = jit.pointer
@@ -73,6 +75,12 @@ class PipelineProgram {
           'JIT pipeline does not accept runtime global alpha/mask overrides',
         );
       }
+      final baked = _ops.isNotEmpty ? _ops.first : null;
+      width = width != 0 ? width : (baked?.width ?? 0);
+      height = height != 0 ? height : (baked?.height ?? 0);
+      dstStride = dstStride != 0 ? dstStride : (baked?.dstStride ?? 0);
+      srcStride = srcStride != 0 ? srcStride : (baked?.srcStride ?? 0);
+      color = color != 0 ? color : (baked?.color ?? 0);
       entry(
         dst.address,
         src.address,
@@ -159,12 +167,12 @@ class PipelineCompiler {
         if (_requiresReference(ops)) {
           throw UnsupportedError('X86 JIT does not support mask/alpha/formats');
         }
-        final fn = compile(
-          runtime,
-          ops,
-          cacheKey: cacheKey,
-        );
-        return PipelineProgram._jit(PipelineBackend.jitX86, fn);
+      final fn = compile(
+        runtime,
+        ops,
+        cacheKey: cacheKey,
+      );
+        return PipelineProgram._jit(PipelineBackend.jitX86, fn, ops);
       case PipelineBackend.jitA64:
         if (_requiresReference(ops)) {
           throw UnsupportedError('A64 JIT does not support mask/alpha/formats');
@@ -199,7 +207,11 @@ class PipelineCompiler {
   }
 
   FuncSignature _defaultSignature() {
+    final callConv = env.callingConvention == CallingConvention.win64
+        ? CallConvId.x64Windows
+        : CallConvId.x64SystemV;
     return FuncSignature(
+      callConvId: callConv,
       retType: TypeId.void_,
       args: const [
         TypeId.intPtr, // dst
@@ -228,6 +240,24 @@ class PipelineCompiler {
     final colorArg = builder.getArgReg(6);
 
     for (final op in ops) {
+      // If the caller passes zero for baked constants, replace with the
+      // compile-time value so cached pipelines work without explicit params.
+      if (op.width != 0) {
+        builder.mov(widthArg, op.width);
+      }
+      if (op.height != 0) {
+        builder.mov(heightArg, op.height);
+      }
+      if (op.dstStride != 0) {
+        builder.mov(dstStrideArg, op.dstStride);
+      }
+      if (op.srcStride != 0) {
+        builder.mov(srcStrideArg, op.srcStride);
+      }
+      if (op.color != 0) {
+        builder.mov(colorArg, op.color);
+      }
+
       final widthConst = op.width;
       final heightConst = op.height;
       final dstStrideConst = op.dstStride;
@@ -270,6 +300,9 @@ class PipelineCompiler {
             dstStrideConst: dstStrideConst,
             colorConst: colorConst,
             dstFormat: dstFormat,
+            globalAlphaConst: globalAlphaConst,
+            maskConst: maskConst,
+            maskStrideConst: maskStrideConst,
           );
         case PipelineOpKind.compSrcOver:
           _emitSrcOver(
@@ -337,6 +370,9 @@ class PipelineCompiler {
             colorArg,
             dstFormat: op.dstFormat,
             colorConst: op.color,
+            globalAlphaConst: op.globalAlpha,
+            maskConst: op.mask as Pointer<Uint8>?,
+            maskStrideConst: op.maskStride,
           );
         case PipelineOpKind.compSrcOver:
           _emitSrcOverA64(
@@ -362,7 +398,7 @@ class PipelineCompiler {
 
     builder.ret();
     final fn = builder.build(runtime, useCache: true, cacheKey: cacheKey);
-    return PipelineProgram._jit(PipelineBackend.jitA64, fn);
+    return PipelineProgram._jit(PipelineBackend.jitA64, fn, ops);
   }
 }
 
@@ -449,30 +485,168 @@ void _emitFill(
   int dstStrideConst = 0,
   int colorConst = 0,
   required PixelFormat dstFormat,
+  required int globalAlphaConst,
+  required Pointer<Uint8>? maskConst,
+  required int maskStrideConst,
 }) {
+  if (globalAlphaConst == 0) {
+    return;
+  }
   final isA8 = dstFormat == PixelFormat.a8;
-  final bpp = isA8 ? 1 : 4;
+  final hasMask = maskConst != null;
+  final hasGlobalAlpha = globalAlphaConst != 255;
+  final needsMasking = hasMask || hasGlobalAlpha;
+
+  if (isA8) {
+    final rowDst = b.newGpReg();
+    final xCount = b.newGpReg();
+    final yCount = b.newGpReg();
+    final rowBytes = b.newGpReg();
+    final tmp = b.newGpReg(size: 4);
+    final base = b.newGpReg(size: 4);
+    final s = b.newGpReg(size: 4);
+    final d = b.newGpReg(size: 4);
+    final inv = b.newGpReg(size: 4);
+    final m = b.newGpReg(size: 4);
+    final rowMask = b.newGpReg();
+    final maskStep = b.newGpReg();
+    final maskBytes = b.newGpReg();
+
+    b.mov(rowDst, dst);
+    _loadInt(b, rowBytes, widthConst, width);
+    _loadInt(b, base, colorConst, color);
+    b.and(base, 0xFF);
+    _loadInt(b, yCount, heightConst, height);
+    if (hasMask) {
+      b.mov(rowMask, maskConst.address);
+      _loadInt(b, maskBytes, widthConst, width);
+      if (maskStrideConst != 0) {
+        b.mov(maskStep, maskStrideConst);
+        b.sub(maskStep, maskBytes);
+      } else {
+        b.mov(maskStep, 0);
+      }
+    }
+
+    final loopY = b.newLabel();
+    final loopX = b.newLabel();
+    final endRow = b.newLabel();
+    final storeSrc = b.newLabel();
+    final skipStore = b.newLabel();
+    final skipMask = b.newLabel();
+    final storeDone = b.newLabel();
+    final done = b.newLabel();
+
+    b.label(loopY);
+    b.cmp(yCount, 0);
+    b.je(done);
+
+    _loadInt(b, xCount, widthConst, width);
+    b.label(loopX);
+    b.cmp(xCount, 0);
+    b.je(endRow);
+
+    b.mov(s, base);
+    if (needsMasking) {
+      if (hasMask) {
+        b.movzx(m, X86Mem.baseDisp(rowMask, 0, size: 1));
+        if (hasGlobalAlpha) {
+          b.imul(m, globalAlphaConst);
+          _mulDiv255ScalarX86(b, m, tmp);
+        }
+        b.add(rowMask, 1);
+      } else {
+        b.mov(m, globalAlphaConst);
+      }
+      b.cmp(m, 0);
+      b.je(skipStore);
+      b.cmp(m, 255);
+      b.je(skipMask);
+      b.imul(s, m);
+      _mulDiv255ScalarX86(b, s, tmp);
+    }
+
+    b.label(skipMask);
+    b.movzx(d, X86Mem.baseDisp(rowDst, 0, size: 1));
+    b.cmp(s, 0);
+    b.je(skipStore);
+    b.cmp(s, 255);
+    b.je(storeSrc);
+    b.mov(inv, 255);
+    b.sub(inv, s);
+    b.imul(d, inv);
+    _mulDiv255ScalarX86(b, d, tmp);
+    b.add(s, d);
+
+    b.label(storeSrc);
+    b.mov(X86Mem.baseDisp(rowDst, 0, size: 1), s);
+    b.jmp(storeDone);
+
+    b.label(skipStore);
+    b.label(storeDone);
+
+    b.add(rowDst, 1);
+    b.dec(xCount);
+    b.jmp(loopX);
+
+    b.label(endRow);
+    _loadInt(b, tmp, dstStrideConst, dstStride);
+    b.sub(tmp, rowBytes);
+    b.add(rowDst, tmp);
+    if (hasMask) {
+      b.add(rowMask, maskStep);
+    }
+    b.dec(yCount);
+    b.jmp(loopY);
+
+    b.label(done);
+    return;
+  }
+
   final rowDst = b.newGpReg();
   final xCount = b.newGpReg();
   final yCount = b.newGpReg();
   final rowBytes = b.newGpReg();
-  final tmp = b.newGpReg();
-  final pixel = b.newGpReg(size: isA8 ? 1 : 4);
+  final tmp = b.newGpReg(size: 4);
+  final tmp64 = b.newGpReg();
+  final base = b.newGpReg(size: 4);
+  final s = b.newGpReg(size: 4);
+  final d = b.newGpReg(size: 4);
+  final sa = b.newGpReg(size: 4);
+  final inv = b.newGpReg(size: 4);
+  final rb = b.newGpReg(size: 4);
+  final ag = b.newGpReg(size: 4);
+  final m = b.newGpReg(size: 4);
+  final rowMask = b.newGpReg();
+  final maskStep = b.newGpReg();
+  final maskBytes = b.newGpReg();
 
   b.mov(rowDst, dst);
   _loadInt(b, rowBytes, widthConst, width);
-  if (!isA8) {
-    b.shl(rowBytes, 2);
-  }
-  _loadInt(b, pixel, colorConst, color);
-  if (!isA8 && dstFormat == PixelFormat.xrgb32) {
-    b.or(pixel, 0xFF000000);
+  b.shl(rowBytes, 2);
+  _loadInt(b, base, colorConst, color);
+  if (dstFormat == PixelFormat.xrgb32) {
+    b.or(base, 0xFF000000);
   }
   _loadInt(b, yCount, heightConst, height);
+  if (hasMask) {
+    b.mov(rowMask, maskConst.address);
+    _loadInt(b, maskBytes, widthConst, width);
+    if (maskStrideConst != 0) {
+      b.mov(maskStep, maskStrideConst);
+      b.sub(maskStep, maskBytes);
+    } else {
+      b.mov(maskStep, 0);
+    }
+  }
 
   final loopY = b.newLabel();
   final loopX = b.newLabel();
   final endRow = b.newLabel();
+  final storeSrc = b.newLabel();
+  final skipStore = b.newLabel();
+  final skipMask = b.newLabel();
+  final storeDone = b.newLabel();
   final done = b.newLabel();
 
   b.label(loopY);
@@ -484,15 +658,91 @@ void _emitFill(
   b.cmp(xCount, 0);
   b.je(endRow);
 
-  b.mov(X86Mem.baseDisp(rowDst, 0, size: bpp), pixel);
-  b.add(rowDst, bpp);
+  b.mov(s, base);
+  if (needsMasking) {
+    if (hasMask) {
+      b.movzx(m, X86Mem.baseDisp(rowMask, 0, size: 1));
+      if (hasGlobalAlpha) {
+        b.imul(m, globalAlphaConst);
+        _mulDiv255ScalarX86(b, m, tmp);
+      }
+      b.add(rowMask, 1);
+    } else {
+      b.mov(m, globalAlphaConst);
+    }
+    b.cmp(m, 0);
+    b.je(skipStore);
+    b.cmp(m, 255);
+    b.je(skipMask);
+    _applyMaskPRGB32X86(b, s, m, tmp, rb, ag);
+  }
+
+  b.label(skipMask);
+  b.mov(d, X86Mem.baseDisp(rowDst, 0, size: 4));
+  if (dstFormat == PixelFormat.xrgb32) {
+    b.or(d, 0xFF000000);
+  }
+  b.mov(sa, s);
+  b.shr(sa, 24);
+  b.cmp(sa, 0);
+  b.je(skipStore);
+  b.cmp(sa, 255);
+  b.je(storeSrc);
+
+  b.mov(inv, 255);
+  b.sub(inv, sa);
+
+  b.mov(rb, d);
+  b.and(rb, 0x00FF00FF);
+  b.mov(ag, d);
+  b.shr(ag, 8);
+  b.and(ag, 0x00FF00FF);
+  b.imul(rb, inv);
+  b.imul(ag, inv);
+  b.add(rb, 0x00800080);
+  b.add(ag, 0x00800080);
+  b.mov(tmp, rb);
+  b.shr(tmp, 8);
+  b.and(tmp, 0x00FF00FF);
+  b.add(rb, tmp);
+  b.shr(rb, 8);
+  b.mov(tmp, ag);
+  b.shr(tmp, 8);
+  b.and(tmp, 0x00FF00FF);
+  b.add(ag, tmp);
+  b.shr(ag, 8);
+  b.shl(ag, 8);
+  b.and(ag, 0xFF00FF00);
+  b.and(rb, 0x00FF00FF);
+  b.or(ag, rb);
+  b.add(ag, s);
+  if (dstFormat == PixelFormat.xrgb32) {
+    b.or(ag, 0xFF000000);
+  }
+  b.mov(X86Mem.baseDisp(rowDst, 0, size: 4), ag);
+  b.jmp(storeDone);
+
+  b.label(storeSrc);
+  if (dstFormat == PixelFormat.xrgb32) {
+    b.or(s, 0xFF000000);
+  }
+  b.mov(X86Mem.baseDisp(rowDst, 0, size: 4), s);
+  b.jmp(storeDone);
+
+  b.label(skipStore);
+  b.label(storeDone);
+
+  b.add(rowDst, 4);
   b.dec(xCount);
   b.jmp(loopX);
 
   b.label(endRow);
-  _loadInt(b, tmp, dstStrideConst, dstStride);
-  b.sub(tmp, rowBytes);
-  b.add(rowDst, tmp);
+  _loadInt(b, tmp64, dstStrideConst, dstStride);
+  b.sub(tmp64, rowBytes);
+  b.add(rowDst, tmp64);
+  if (hasMask) {
+    b.add(rowMask, maskStep);
+  }
   b.dec(yCount);
   b.jmp(loopY);
 
@@ -517,6 +767,9 @@ void _emitSrcOver(
   required Pointer<Uint8>? maskConst,
   required int maskStrideConst,
 }) {
+  if (globalAlphaConst == 0) {
+    return;
+  }
   final isA8 = dstFormat == PixelFormat.a8 || srcFormat == PixelFormat.a8;
   if (isA8) {
     if (widthConst > 0 && widthConst <= 4) {
@@ -613,7 +866,7 @@ void _emitSrcOver32X86FixedWidth(
   required int maskStrideConst,
 }) {
   final hasMask = maskConst != null;
-  final hasGlobalAlpha = globalAlphaConst != 0 && globalAlphaConst != 255;
+  final hasGlobalAlpha = globalAlphaConst != 255;
   final needsMasking = hasMask || hasGlobalAlpha;
 
   final rowDst = b.newGpReg();
@@ -678,7 +931,7 @@ void _emitSrcOver32X86FixedWidth(
         }
         b.add(rowMask, 1);
       } else {
-        b.mov(m, globalAlphaConst == 0 ? 255 : globalAlphaConst);
+        b.mov(m, globalAlphaConst);
       }
       b.cmp(m, 0);
       b.je(skipStore);
@@ -717,6 +970,7 @@ void _emitSrcOver32X86FixedWidth(
     b.add(ag, tmp);
     b.shr(ag, 8);
     b.shl(ag, 8);
+    b.and(ag, 0xFF00FF00);
     b.and(rb, 0x00FF00FF);
     b.or(ag, rb);
     b.add(ag, s);
@@ -776,7 +1030,7 @@ void _emitSrcOver32X86(
   required int maskStrideConst,
 }) {
   final hasMask = maskConst != null;
-  final hasGlobalAlpha = globalAlphaConst != 0 && globalAlphaConst != 255;
+  final hasGlobalAlpha = globalAlphaConst != 255;
   final needsMasking = hasMask || hasGlobalAlpha;
 
   final rowDst = b.newGpReg();
@@ -848,7 +1102,7 @@ void _emitSrcOver32X86(
       }
       b.add(rowMask, 1);
     } else {
-      b.mov(m, globalAlphaConst == 0 ? 255 : globalAlphaConst);
+      b.mov(m, globalAlphaConst);
     }
     b.cmp(m, 0);
     b.je(skipStore);
@@ -887,6 +1141,7 @@ void _emitSrcOver32X86(
   b.add(ag, tmp);
   b.shr(ag, 8);
   b.shl(ag, 8);
+  b.and(ag, 0xFF00FF00);
   b.and(rb, 0x00FF00FF);
   b.or(ag, rb);
   b.add(ag, s);
@@ -945,7 +1200,7 @@ void _emitSrcOverA8X86FixedWidth(
   required int maskStrideConst,
 }) {
   final hasMask = maskConst != null;
-  final hasGlobalAlpha = globalAlphaConst != 0 && globalAlphaConst != 255;
+  final hasGlobalAlpha = globalAlphaConst != 255;
   final needsMasking = hasMask || hasGlobalAlpha;
 
   final rowDst = b.newGpReg();
@@ -1005,7 +1260,7 @@ void _emitSrcOverA8X86FixedWidth(
         }
         b.add(rowMask, 1);
       } else {
-        b.mov(m, globalAlphaConst == 0 ? 255 : globalAlphaConst);
+        b.mov(m, globalAlphaConst);
       }
       b.cmp(m, 0);
       b.je(skipStore);
@@ -1066,7 +1321,7 @@ void _emitSrcOverA8X86(
   required int maskStrideConst,
 }) {
   final hasMask = maskConst != null;
-  final hasGlobalAlpha = globalAlphaConst != 0 && globalAlphaConst != 255;
+  final hasGlobalAlpha = globalAlphaConst != 255;
   final needsMasking = hasMask || hasGlobalAlpha;
 
   final rowDst = b.newGpReg();
@@ -1132,7 +1387,7 @@ void _emitSrcOverA8X86(
       }
       b.add(rowMask, 1);
     } else {
-      b.mov(m, globalAlphaConst == 0 ? 255 : globalAlphaConst);
+      b.mov(m, globalAlphaConst);
     }
     b.cmp(m, 0);
     b.je(skipStore);
@@ -1214,6 +1469,7 @@ void _applyMaskPRGB32X86(
   b.add(ag, tmp);
   b.shr(ag, 8);
   b.shl(ag, 8);
+  b.and(ag, 0xFF00FF00);
   b.and(rb, 0x00FF00FF);
   b.or(ag, rb);
   b.mov(s, ag);
@@ -1313,66 +1569,289 @@ void _emitFillA64(
   A64Gp color, {
   required PixelFormat dstFormat,
   required int colorConst,
+  required int globalAlphaConst,
+  required Pointer<Uint8>? maskConst,
+  required int maskStrideConst,
 }) {
+  if (globalAlphaConst == 0) {
+    return;
+  }
   final isA8 = dstFormat == PixelFormat.a8;
+  final hasMask = maskConst != null;
+  final hasGlobalAlpha = globalAlphaConst != 255;
+  final needsMasking = hasMask || hasGlobalAlpha;
+
+  if (isA8) {
+    final rowDst = b.newGpReg();
+    final xCount = b.newGpReg(sizeBits: 32);
+    final yCount = b.newGpReg(sizeBits: 32);
+    final rowBytes = b.newGpReg(sizeBits: 32);
+    final tmp = b.newGpReg(sizeBits: 32);
+    final tmp2 = b.newGpReg(sizeBits: 32);
+    final base = b.newGpReg(sizeBits: 32);
+    final s = b.newGpReg(sizeBits: 32);
+    final d = b.newGpReg(sizeBits: 32);
+    final inv = b.newGpReg(sizeBits: 32);
+    final m = b.newGpReg(sizeBits: 32);
+    final rowMask = b.newGpReg();
+    final maskStep = b.newGpReg(sizeBits: 32);
+    final maskBytes = b.newGpReg(sizeBits: 32);
+    final const255 = b.newGpReg(sizeBits: 32);
+    final byteMask = b.newGpReg(sizeBits: 32);
+    final globalAlpha = hasGlobalAlpha ? b.newGpReg(sizeBits: 32) : null;
+
+    b.mov(rowDst, dst);
+    b.mov(rowBytes, width.w);
+    b.mov(yCount, height.w);
+    if (colorConst != 0) {
+      b.movImm32(base, colorConst);
+    } else {
+      b.mov(base, color.w);
+    }
+    b.movImm32(byteMask, 0xFF);
+    b.and(base, base, byteMask);
+    b.movImm32(const255, 255);
+    if (hasGlobalAlpha) {
+      b.movImm32(globalAlpha!, globalAlphaConst);
+    }
+    if (hasMask) {
+      _movImmPtrA64(b, rowMask, maskConst.address);
+      b.mov(maskBytes, width.w);
+      if (maskStrideConst != 0) {
+        b.movImm32(maskStep, maskStrideConst);
+        b.sub(maskStep, maskStep, maskBytes);
+      } else {
+        b.movImm32(maskStep, 0);
+      }
+    }
+
+    final loopY = b.newLabel();
+    final loopX = b.newLabel();
+    final endRow = b.newLabel();
+    final storeSrc = b.newLabel();
+    final skipStore = b.newLabel();
+    final skipMask = b.newLabel();
+    final storeDone = b.newLabel();
+    final done = b.newLabel();
+
+    b.label(loopY);
+    b.cbz(yCount, done);
+
+    b.mov(xCount, width.w);
+    b.label(loopX);
+    b.cbz(xCount, endRow);
+
+    b.mov(s, base);
+    if (needsMasking) {
+      if (hasMask) {
+        b.ldrb(m, rowMask, 0);
+        if (hasGlobalAlpha) {
+          b.mul(m, m, globalAlpha!);
+          _mulDiv255ScalarA64(b, m, tmp);
+        }
+        b.add(rowMask, rowMask, 1);
+      } else {
+        b.movImm32(m, globalAlphaConst);
+      }
+      b.cbz(m, skipStore);
+      b.eor(tmp, m, const255);
+      b.cbz(tmp, skipMask);
+      b.mul(s, s, m);
+      _mulDiv255ScalarA64(b, s, tmp);
+    }
+
+    b.label(skipMask);
+    b.ldrb(d, rowDst, 0);
+    b.cbz(s, skipStore);
+    b.eor(tmp, s, const255);
+    b.cbz(tmp, storeSrc);
+    b.sub(inv, const255, s);
+    b.mul(d, d, inv);
+    _mulDiv255ScalarA64(b, d, tmp);
+    b.add(s, s, d);
+
+    b.label(storeSrc);
+    b.strb(s, rowDst, 0);
+    b.b(storeDone);
+
+    b.label(skipStore);
+    b.label(storeDone);
+
+    b.add(rowDst, rowDst, 1);
+    b.sub(xCount, xCount, 1);
+    b.b(loopX);
+
+    b.label(endRow);
+    b.mov(tmp2, dstStride.w);
+    b.sub(tmp2, tmp2, rowBytes);
+    b.add(rowDst, rowDst, tmp2.x);
+    if (hasMask) {
+      b.add(rowMask, rowMask, maskStep);
+    }
+    b.sub(yCount, yCount, 1);
+    b.b(loopY);
+
+    b.label(done);
+    return;
+  }
+
   final rowDst = b.newGpReg();
-  final xCount = b.newGpReg();
-  final yCount = b.newGpReg();
+  final xCount = b.newGpReg(sizeBits: 32);
+  final yCount = b.newGpReg(sizeBits: 32);
   final rowBytes = b.newGpReg();
-  final tmp = b.newGpReg();
-  final pixel = b.newGpReg(sizeBits: 32);
-  final alphaMask = !isA8 && dstFormat == PixelFormat.xrgb32
+  final tmp = b.newGpReg(sizeBits: 32);
+  final tmp2 = b.newGpReg(sizeBits: 32);
+  final base = b.newGpReg(sizeBits: 32);
+  final s = b.newGpReg(sizeBits: 32);
+  final d = b.newGpReg(sizeBits: 32);
+  final sa = b.newGpReg(sizeBits: 32);
+  final inv = b.newGpReg(sizeBits: 32);
+  final rb = b.newGpReg(sizeBits: 32);
+  final ag = b.newGpReg(sizeBits: 32);
+  final maskRB = b.newGpReg(sizeBits: 32);
+  final maskAG = b.newGpReg(sizeBits: 32);
+  final round = b.newGpReg(sizeBits: 32);
+  final const255 = b.newGpReg(sizeBits: 32);
+  final alphaMask = dstFormat == PixelFormat.xrgb32
       ? b.newGpReg(sizeBits: 32)
       : null;
-  final byteMask = b.newGpReg(sizeBits: 32);
+  final m = b.newGpReg(sizeBits: 32);
+  final rowMask = b.newGpReg();
+  final maskStep = b.newGpReg(sizeBits: 32);
+  final maskBytes = b.newGpReg(sizeBits: 32);
+  final globalAlpha = hasGlobalAlpha ? b.newGpReg(sizeBits: 32) : null;
+
+  b.movImm32(maskRB, 0x00FF00FF);
+  b.movImm32(maskAG, 0xFF00FF00);
+  b.movImm32(round, 0x00800080);
+  b.movImm32(const255, 255);
+  if (alphaMask != null) {
+    b.movImm32(alphaMask, 0xFF000000);
+  }
+  if (hasGlobalAlpha) {
+    b.movImm32(globalAlpha!, globalAlphaConst);
+  }
 
   b.mov(rowDst, dst);
   b.mov(rowBytes, width);
-  if (!isA8) {
-    b.add(rowBytes, rowBytes, width);
-    b.add(rowBytes, rowBytes, rowBytes);
-  }
-  b.mov(yCount, height);
+  b.add(rowBytes, rowBytes, width);
+  b.add(rowBytes, rowBytes, rowBytes);
+  b.mov(yCount, height.w);
   if (colorConst != 0) {
-    b.movImm32(pixel, colorConst);
+    b.movImm32(base, colorConst);
   } else {
-    b.mov(pixel, color);
-  }
-  if (isA8) {
-    b.movImm32(byteMask, 0xFF);
-    b.and(pixel, pixel, byteMask);
+    b.mov(base, color.w);
   }
   if (alphaMask != null) {
-    b.movImm32(alphaMask, 0xFF000000);
-    b.orr(pixel, pixel, alphaMask);
+    b.orr(base, base, alphaMask);
+  }
+  if (hasMask) {
+    _movImmPtrA64(b, rowMask, maskConst.address);
+    b.mov(maskBytes, width.w);
+    if (maskStrideConst != 0) {
+      b.movImm32(maskStep, maskStrideConst);
+      b.sub(maskStep, maskStep, maskBytes);
+    } else {
+      b.movImm32(maskStep, 0);
+    }
   }
 
   final loopY = b.newLabel();
   final loopX = b.newLabel();
   final endRow = b.newLabel();
+  final storeSrc = b.newLabel();
+  final skipStore = b.newLabel();
+  final skipMask = b.newLabel();
+  final storeDone = b.newLabel();
   final done = b.newLabel();
 
   b.label(loopY);
   b.cbz(yCount, done);
 
-  b.mov(xCount, width);
+  b.mov(xCount, width.w);
   b.label(loopX);
   b.cbz(xCount, endRow);
 
-  if (isA8) {
-    b.strb(pixel, rowDst, 0);
-    b.add(rowDst, rowDst, 1);
-  } else {
-    b.str(pixel, rowDst, 0);
-    b.add(rowDst, rowDst, 4);
+  b.mov(s, base);
+  if (needsMasking) {
+    if (hasMask) {
+      b.ldrb(m, rowMask, 0);
+      if (hasGlobalAlpha) {
+        b.mul(m, m, globalAlpha!);
+        _mulDiv255ScalarA64(b, m, tmp);
+      }
+      b.add(rowMask, rowMask, 1);
+    } else {
+      b.movImm32(m, globalAlphaConst);
+    }
+    b.cbz(m, skipStore);
+    b.eor(tmp, m, const255);
+    b.cbz(tmp, skipMask);
+    _applyMaskPRGB32A64(b, s, m, tmp, rb, ag, maskRB, round, maskAG);
   }
+
+  b.label(skipMask);
+  b.ldr(d, rowDst, 0);
+  if (alphaMask != null) {
+    b.orr(d, d, alphaMask);
+  }
+  b.lsr(sa, s, 24);
+  b.cbz(sa, skipStore);
+  b.eor(tmp, sa, const255);
+  b.cbz(tmp, storeSrc);
+
+  b.sub(inv, const255, sa);
+
+  b.and(rb, d, maskRB);
+  b.lsr(ag, d, 8);
+  b.and(ag, ag, maskRB);
+
+  b.mul(rb, rb, inv);
+  b.mul(ag, ag, inv);
+  b.add(rb, rb, round);
+  b.add(ag, ag, round);
+
+  b.lsr(tmp, rb, 8);
+  b.and(tmp, tmp, maskRB);
+  b.add(rb, rb, tmp);
+  b.lsr(rb, rb, 8);
+
+  b.lsr(tmp, ag, 8);
+  b.and(tmp, tmp, maskRB);
+  b.add(ag, ag, tmp);
+  b.lsr(ag, ag, 8);
+  b.lsl(ag, ag, 8);
+  b.and(ag, ag, maskAG);
+  b.and(rb, rb, maskRB);
+  b.orr(ag, ag, rb);
+  b.add(ag, ag, s);
+  if (alphaMask != null) {
+    b.orr(ag, ag, alphaMask);
+  }
+  b.str(ag, rowDst, 0);
+  b.b(storeDone);
+
+  b.label(storeSrc);
+  if (alphaMask != null) {
+    b.orr(s, s, alphaMask);
+  }
+  b.str(s, rowDst, 0);
+  b.b(storeDone);
+
+  b.label(skipStore);
+  b.label(storeDone);
+
+  b.add(rowDst, rowDst, 4);
   b.sub(xCount, xCount, 1);
   b.b(loopX);
 
   b.label(endRow);
-  b.mov(tmp, dstStride);
-  b.sub(tmp, tmp, rowBytes);
-  b.add(rowDst, rowDst, tmp);
+  b.mov(tmp2, dstStride.w);
+  b.sub(tmp2, tmp2, rowBytes.w);
+  b.add(rowDst, rowDst, tmp2.x);
+  if (hasMask) {
+    b.add(rowMask, rowMask, maskStep);
+  }
   b.sub(yCount, yCount, 1);
   b.b(loopY);
 
@@ -1397,6 +1876,9 @@ void _emitSrcOverA64(
   required Pointer<Uint8>? maskConst,
   required int maskStrideConst,
 }) {
+  if (globalAlphaConst == 0) {
+    return;
+  }
   final isA8 = dstFormat == PixelFormat.a8 || srcFormat == PixelFormat.a8;
   if (isA8) {
     if (widthConst > 0 && widthConst <= 4) {
@@ -1485,7 +1967,7 @@ void _emitSrcOver32A64FixedWidth(
   required int maskStrideConst,
 }) {
   final hasMask = maskConst != null;
-  final hasGlobalAlpha = globalAlphaConst != 0 && globalAlphaConst != 255;
+  final hasGlobalAlpha = globalAlphaConst != 255;
   final needsMasking = hasMask || hasGlobalAlpha;
   final needAlpha =
       dstFormat == PixelFormat.xrgb32 || srcFormat == PixelFormat.xrgb32;
@@ -1568,7 +2050,7 @@ void _emitSrcOver32A64FixedWidth(
         }
         b.add(rowMask, rowMask, 1);
       } else {
-        b.movImm32(m, globalAlphaConst == 0 ? 255 : globalAlphaConst);
+        b.movImm32(m, globalAlphaConst);
       }
       b.cbz(m, skipStore);
       b.eor(tmp, m, const255);
@@ -1658,7 +2140,7 @@ void _emitSrcOver32A64(
   required int maskStrideConst,
 }) {
   final hasMask = maskConst != null;
-  final hasGlobalAlpha = globalAlphaConst != 0 && globalAlphaConst != 255;
+  final hasGlobalAlpha = globalAlphaConst != 255;
   final needsMasking = hasMask || hasGlobalAlpha;
   final needAlpha =
       dstFormat == PixelFormat.xrgb32 || srcFormat == PixelFormat.xrgb32;
@@ -1748,7 +2230,7 @@ void _emitSrcOver32A64(
       }
       b.add(rowMask, rowMask, 1);
     } else {
-      b.movImm32(m, globalAlphaConst == 0 ? 255 : globalAlphaConst);
+      b.movImm32(m, globalAlphaConst);
     }
     b.cbz(m, skipStore);
     b.eor(tmp, m, const255);
@@ -1841,7 +2323,7 @@ void _emitSrcOverA8A64FixedWidth(
   required int maskStrideConst,
 }) {
   final hasMask = maskConst != null;
-  final hasGlobalAlpha = globalAlphaConst != 0 && globalAlphaConst != 255;
+  final hasGlobalAlpha = globalAlphaConst != 255;
   final needsMasking = hasMask || hasGlobalAlpha;
 
   final rowDst = b.newGpReg();
@@ -1902,7 +2384,7 @@ void _emitSrcOverA8A64FixedWidth(
         }
         b.add(rowMask, rowMask, 1);
       } else {
-        b.movImm32(m, globalAlphaConst == 0 ? 255 : globalAlphaConst);
+        b.movImm32(m, globalAlphaConst);
       }
       b.cbz(m, skipStore);
       b.eor(tmp, m, const255);
@@ -1955,7 +2437,7 @@ void _emitSrcOverA8A64(
   required int maskStrideConst,
 }) {
   final hasMask = maskConst != null;
-  final hasGlobalAlpha = globalAlphaConst != 0 && globalAlphaConst != 255;
+  final hasGlobalAlpha = globalAlphaConst != 255;
   final needsMasking = hasMask || hasGlobalAlpha;
 
   final rowDst = b.newGpReg();
@@ -2021,7 +2503,7 @@ void _emitSrcOverA8A64(
       }
       b.add(rowMask, rowMask, 1);
     } else {
-      b.movImm32(m, globalAlphaConst == 0 ? 255 : globalAlphaConst);
+      b.movImm32(m, globalAlphaConst);
     }
     b.cbz(m, skipStore);
     b.eor(tmp, m, const255);

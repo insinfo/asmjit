@@ -55,23 +55,30 @@ class PipelineReference {
           }
         case PipelineOpKind.fill:
           if (dstFormat == PixelFormat.a8) {
-            _fillA8(
+            _fillA8WithAlpha(
               dst: dst,
               width: w,
               height: h,
               dstStride: dstStep,
               alpha: fillColor & 0xFF,
+              globalAlpha: ga,
+              mask: maskPtr,
+              maskStride: maskStep,
             );
           } else {
             final color32 = dstFormat == PixelFormat.xrgb32
                 ? 0xFF000000 | (fillColor & 0x00FFFFFF)
                 : fillColor;
-            _fill32(
+            _fill32WithAlpha(
               dst: dst,
               width: w,
               height: h,
               dstStride: dstStep,
               color: color32,
+              dstFormat: dstFormat,
+              globalAlpha: ga,
+              mask: maskPtr,
+              maskStride: maskStep,
             );
           }
         case PipelineOpKind.compSrcOver:
@@ -191,6 +198,46 @@ void _fillA8({
   }
 }
 
+void _fillA8WithAlpha({
+  required Pointer<Uint8> dst,
+  required int width,
+  required int height,
+  required int dstStride,
+  required int alpha,
+  required int globalAlpha,
+  required PipelineMask? mask,
+  required int maskStride,
+}) {
+  // globalAlpha and mask behave like a solid source blended over dst.
+  if (globalAlpha == 0) return;
+  final ga = globalAlpha;
+
+  final maskRowBase = (mask as Pointer<Uint8>?)?.address ?? 0;
+  var dstRow = dst.address;
+  var maskRow = maskRowBase;
+  for (var y = 0; y < height; y++) {
+    var dstPixel = dstRow;
+    var maskPixel = maskRow;
+    for (var x = 0; x < width; x++) {
+      var m = ga;
+      if (maskPixel != 0) {
+        final mv = Pointer<Uint8>.fromAddress(maskPixel).value;
+        m = _mulDiv255(mv * m);
+        maskPixel += 1;
+      }
+      if (m != 0) {
+        final sMasked = m == 255 ? alpha : _mulDiv255(alpha * m);
+        final d = Pointer<Uint8>.fromAddress(dstPixel).value;
+        Pointer<Uint8>.fromAddress(dstPixel).value =
+            _srcOverA8Pixel(sMasked, d);
+      }
+      dstPixel += 1;
+    }
+    dstRow += dstStride;
+    if (maskRow != 0) maskRow += maskStride;
+  }
+}
+
 void _srcOver32({
   required Pointer<Uint8> dst,
   required Pointer<Uint8> src,
@@ -221,22 +268,24 @@ void _srcOver32({
         d = 0xFF000000 | (d & 0x00FFFFFF);
       }
 
-      var m = globalAlpha != 0 ? globalAlpha : 255;
+      var m = globalAlpha;
       if (maskPixel != 0) {
         final maskValue = Pointer<Uint8>.fromAddress(maskPixel).value;
         m = _mulDiv255(maskValue * m);
         maskPixel += 1;
       }
 
-      if (m != 255) {
-        s = _applyMaskPRGB32(s, m);
-      }
+      if (m != 0) {
+        if (m != 255) {
+          s = _applyMaskPRGB32(s, m);
+        }
 
-      var out = _blendSrcOver(s, d);
-      if (dstFormat == PixelFormat.xrgb32) {
-        out = 0xFF000000 | (out & 0x00FFFFFF);
+        var out = _blendSrcOver(s, d);
+        if (dstFormat == PixelFormat.xrgb32) {
+          out = 0xFF000000 | (out & 0x00FFFFFF);
+        }
+        Pointer<Uint32>.fromAddress(dstPixel).value = out;
       }
-      Pointer<Uint32>.fromAddress(dstPixel).value = out;
       srcPixel += 4;
       dstPixel += 4;
     }
@@ -269,15 +318,17 @@ void _srcOverA8({
     for (var x = 0; x < width; x++) {
       final s = Pointer<Uint8>.fromAddress(srcPixel).value;
       final d = Pointer<Uint8>.fromAddress(dstPixel).value;
-      var m = globalAlpha != 0 ? globalAlpha : 255;
+      var m = globalAlpha;
       if (maskPixel != 0) {
         final maskValue = Pointer<Uint8>.fromAddress(maskPixel).value;
         m = _mulDiv255(maskValue * m);
         maskPixel += 1;
       }
-      final sMasked = m == 255 ? s : _mulDiv255(s * m);
-      final out = _srcOverA8Pixel(sMasked, d);
-      Pointer<Uint8>.fromAddress(dstPixel).value = out;
+      if (m != 0) {
+        final sMasked = m == 255 ? s : _mulDiv255(s * m);
+        final out = _srcOverA8Pixel(sMasked, d);
+        Pointer<Uint8>.fromAddress(dstPixel).value = out;
+      }
       srcPixel += 1;
       dstPixel += 1;
     }
@@ -345,4 +396,54 @@ int _applyMaskPRGB32(int s, int m) {
 int _mulDiv255(int x) {
   final t = x + 128;
   return (t + (t >> 8)) >> 8;
+}
+
+void _fill32WithAlpha({
+  required Pointer<Uint8> dst,
+  required int width,
+  required int height,
+  required int dstStride,
+  required int color,
+  required PixelFormat dstFormat,
+  required int globalAlpha,
+  required PipelineMask? mask,
+  required int maskStride,
+}) {
+  if (globalAlpha == 0) return;
+  final ga = globalAlpha;
+
+  final maskRowBase = (mask as Pointer<Uint8>?)?.address ?? 0;
+  final baseColor = dstFormat == PixelFormat.xrgb32
+      ? 0xFF000000 | (color & 0x00FFFFFF)
+      : color;
+
+  var dstRow = dst.address;
+  var maskRow = maskRowBase;
+  for (var y = 0; y < height; y++) {
+    var dstPixel = dstRow;
+    var maskPixel = maskRow;
+    for (var x = 0; x < width; x++) {
+      var m = ga;
+      if (maskPixel != 0) {
+        final mv = Pointer<Uint8>.fromAddress(maskPixel).value;
+        m = _mulDiv255(mv * m);
+        maskPixel += 1;
+      }
+      if (m != 0) {
+        var s = m == 255 ? baseColor : _applyMaskPRGB32(baseColor, m);
+        var d = Pointer<Uint32>.fromAddress(dstPixel).value;
+        if (dstFormat == PixelFormat.xrgb32) {
+          d = 0xFF000000 | (d & 0x00FFFFFF);
+        }
+        var out = _blendSrcOver(s, d);
+        if (dstFormat == PixelFormat.xrgb32) {
+          out = 0xFF000000 | (out & 0x00FFFFFF);
+        }
+        Pointer<Uint32>.fromAddress(dstPixel).value = out;
+      }
+      dstPixel += 4;
+    }
+    dstRow += dstStride;
+    if (maskRow != 0) maskRow += maskStride;
+  }
 }

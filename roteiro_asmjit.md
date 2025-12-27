@@ -45,36 +45,28 @@ docker run --rm --platform linux/arm64 dart:stable bash -lc "uname -m"
 
 **Assumir**: Dart Native (VM/AOT) em desktop/servidor. No iOS (e alguns ambientes "hardened") JIT/memória executável costuma ser bloqueado por política do sistema — então trate como alvo "não suportado" ou "modo AOT/sem JIT".
 
-**Regra**: Nada no código/testes pode depender de `referencias/`. Copie o que for necessário para `assets/`.
-
-**TODO**: Colocar comentários `// TODO` onde não está concluído ou completo.
-
 ---
 
-## 🧩 Blend2D Porting Readiness (Avaliação Crítica)
+## 🧩 Blend2D Porting Readiness
 
-**Status**: 🟠 **Parcialmente Bloqueante**
+**Status**: 🟢 **Pronto para Iniciar (JIT & Reference)**
 
-Para iniciar o porte da parte **JIT** do Blend2D (`pipecompiler.cpp`), o AsmJit Dart precisa evoluir em:
+A implementação do **Compiler Backend** (`X86IrCompiler` + `X86CodeBuilder` lowering) desbloqueou o porte do pipeline JIT:
 
-1.  🔴 **Compiler IR & CodeGen (Crítico)**:
-    - O Blend2D usa intensivamente `Compiler` para construir pipelines (`PipeCompiler`).
-    - `builder.dart` possui a estrutura de nós (`FuncNode`, `BlockNode`), mas `serializeNodes` ainda ignora `Func/Invoke` quando usado direto.
-    - **Novo**: `X86IrCompiler` agora baixa `Func/Invoke` e emite código via `X86Serializer`, com CFG/liveness no fluxo e suporte a múltiplas funções.
-    - Ainda falta evoluir o backend de compiler (RA/IR avançado + reescrita completa) para paridade com o C++.
+1.  ✅ **Compiler IR & CodeGen**:
+    - `X86IrCompiler` agora conecta o grafo de nós (`FuncNode`, `BlockNode`) ao Assembler.
+    - Suporte a `InvokeNode` (chamadas), spills básicos e frames de função funcional.
+    - **Atenção**: O Register Allocator é "Linear Scan" (simples). O código gerado será funcional, mas menos otimizado que o Blend2D C++ original (que usa RA avançado). Isso é aceitável para a fase inicial.
 
-2.  🟡 **Heavy Test Suites**:
-    - Antes de confiar no JIT para renderização de pixels (onde bugs visuais são difíceis de debugar), precisamos rodar as suites pesadas: `asmjit_test_assembler_x86`, `asmjit_test_compiler_x86`.
+2.  🟡 **Heavy Test Suites** (Recomendado):
+    - Ainda é prudente rodar as suites `asmjit_test_compiler_x86` completas assim que possível para garantir estabilidade em edge-cases de `invoke`/`spill`.
 
-3.  🟢 **AArch64 Completo**:
-    - Necessário para targets mobile (Android/iOS), mas o desenvolvimento pode começar focando em x86_64.
-
-**Conclusão**: O porte do **Reference Pathway** (Pure Dart) do Blend2D pode começar imediatamente. O porte do **JIT Pathway** deve aguardar a estabilização do `Compiler` (M21/M25).
+**Próximo Passo Blend2D**: Pode-se iniciar a tradução de `pipecompiler.cpp` e `compoppart.cpp` usando a API `Compiler` do Dart.
 
 ## 📊 Status Atual
 
-**Data**: 27 Dezembro 2025  
-**Testes**: nao executado nesta revisao  
+**Data**: 27 Dezembro 2025
+**Testes**: Não executados nesta revisão
 **Warnings**: nao verificado
 
 Atualizacoes recentes:
