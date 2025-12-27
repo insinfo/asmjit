@@ -2,8 +2,6 @@
 ///
 /// Port of asmjit-testing/bench/asmjit_bench_overhead.cpp
 /// Benchmarks the cost of initialization, reset, and code execution.
-// TODO: Align with C++ overhead bench (code.reset/init vs reinit semantics,
-// error handler attachment, compiler paths, and RT coverage parity).
 
 import 'dart:io';
 import 'package:asmjit/asmjit.dart';
@@ -86,8 +84,7 @@ void runX86Benchmarks(int n) {
     for (var i = 0; i < n; i++) {
       final code = CodeHolder(env: env);
       final asm = X86Assembler(code);
-      asm.movRI(eax, 0);
-      asm.ret();
+      _emitX86RawFunc(asm);
     }
   });
 
@@ -98,8 +95,7 @@ void runX86Benchmarks(int n) {
     for (var i = 0; i < n; i++) {
       final code = CodeHolder(env: env);
       final asm = X86Assembler(code);
-      asm.movRI(eax, 0);
-      asm.ret();
+      _emitX86RawFunc(asm);
       final fn = runtime.add(code);
       runtime.release(fn);
     }
@@ -118,8 +114,7 @@ void runX86Benchmarks(int n) {
   testPerf('Builder + Func', 'init/reset', n, () {
     for (var i = 0; i < n; i++) {
       final builder = X86CodeBuilder.create();
-      builder.mov(eax, 0);
-      builder.ret();
+      _emitX86BuilderRaw(builder);
     }
   });
 
@@ -127,8 +122,7 @@ void runX86Benchmarks(int n) {
   testPerf('Builder + Func + Finalize', 'init/reset', n, () {
     for (var i = 0; i < n; i++) {
       final builder = X86CodeBuilder.create();
-      builder.mov(eax, 0);
-      builder.ret();
+      _emitX86BuilderRaw(builder);
       builder.finalize();
     }
   });
@@ -138,9 +132,45 @@ void runX86Benchmarks(int n) {
     final runtime = JitRuntime();
     for (var i = 0; i < n; i++) {
       final builder = X86CodeBuilder.create();
-      builder.mov(eax, 0);
-      builder.ret();
+      _emitX86BuilderRaw(builder);
       final fn = builder.build(runtime);
+      fn.dispose();
+    }
+    runtime.dispose();
+  });
+
+  // Compiler (init/reset)
+  testPerf('Compiler', 'init/reset', n, () {
+    for (var i = 0; i < n; i++) {
+      final compiler = X86Compiler.create();
+      compiler.code.text.buffer.length; // touch it
+    }
+  });
+
+  // Compiler + Func (init/reset)
+  testPerf('Compiler + Func', 'init/reset', n, () {
+    for (var i = 0; i < n; i++) {
+      final compiler = X86Compiler.create();
+      _emitX86CompilerRaw(compiler);
+    }
+  });
+
+  // Compiler + Func + Finalize (init/reset)
+  testPerf('Compiler + Func + Finalize', 'init/reset', n, () {
+    for (var i = 0; i < n; i++) {
+      final compiler = X86Compiler.create();
+      _emitX86CompilerRaw(compiler);
+      compiler.finalize();
+    }
+  });
+
+  // Compiler + Func + Finalize + RT (init/reset)
+  testPerf('Compiler + Func + Finalize + RT', 'init/reset', n, () {
+    final runtime = JitRuntime();
+    for (var i = 0; i < n; i++) {
+      final compiler = X86Compiler.create();
+      _emitX86CompilerRaw(compiler);
+      final fn = compiler.build(runtime);
       fn.dispose();
     }
     runtime.dispose();
@@ -175,8 +205,7 @@ void runX86Benchmarks(int n) {
     final asm = X86Assembler(code);
     for (var i = 0; i < n; i++) {
       code.reinit();
-      asm.movRI(eax, 0);
-      asm.ret();
+      _emitX86RawFunc(asm);
     }
   });
 
@@ -188,10 +217,99 @@ void runX86Benchmarks(int n) {
     final runtime = JitRuntime();
     for (var i = 0; i < n; i++) {
       code.reinit();
-      asm.movRI(eax, 0);
-      asm.ret();
+      _emitX86RawFunc(asm);
       final fn = runtime.add(code);
       runtime.release(fn);
+    }
+    runtime.dispose();
+  });
+
+  // Builder reinit
+  testPerf('Builder', 'reinit', n, () {
+    final builder = X86CodeBuilder.create();
+    for (var i = 0; i < n; i++) {
+      builder.code.reinit();
+      builder.clear();
+      builder.offset; // touch it
+    }
+  });
+
+  // Builder + Func reinit
+  testPerf('Builder + Func', 'reinit', n, () {
+    final builder = X86CodeBuilder.create();
+    for (var i = 0; i < n; i++) {
+      builder.code.reinit();
+      builder.clear();
+      _emitX86BuilderRaw(builder);
+    }
+  });
+
+  // Builder + Func + Finalize reinit
+  testPerf('Builder + Func + Finalize', 'reinit', n, () {
+    final builder = X86CodeBuilder.create();
+    for (var i = 0; i < n; i++) {
+      builder.code.reinit();
+      builder.clear();
+      _emitX86BuilderRaw(builder);
+      builder.finalize();
+    }
+  });
+
+  // Builder + Func + Finalize + RT reinit
+  testPerf('Builder + Func + Finalize + RT', 'reinit', n, () {
+    final runtime = JitRuntime();
+    final builder = X86CodeBuilder.create();
+    for (var i = 0; i < n; i++) {
+      builder.code.reinit();
+      builder.clear();
+      _emitX86BuilderRaw(builder);
+      final fn = builder.build(runtime);
+      fn.dispose();
+    }
+    runtime.dispose();
+  });
+
+  // Compiler reinit
+  testPerf('Compiler', 'reinit', n, () {
+    final compiler = X86Compiler.create();
+    for (var i = 0; i < n; i++) {
+      compiler.code.reinit();
+      compiler.builder.clear();
+      compiler.code.text.buffer.length; // touch it
+    }
+  });
+
+  // Compiler + Func reinit
+  testPerf('Compiler + Func', 'reinit', n, () {
+    final compiler = X86Compiler.create();
+    for (var i = 0; i < n; i++) {
+      compiler.code.reinit();
+      compiler.builder.clear();
+      _emitX86CompilerRaw(compiler);
+    }
+  });
+
+  // Compiler + Func + Finalize reinit
+  testPerf('Compiler + Func + Finalize', 'reinit', n, () {
+    final compiler = X86Compiler.create();
+    for (var i = 0; i < n; i++) {
+      compiler.code.reinit();
+      compiler.builder.clear();
+      _emitX86CompilerRaw(compiler);
+      compiler.finalize();
+    }
+  });
+
+  // Compiler + Func + Finalize + RT reinit
+  testPerf('Compiler + Func + Finalize + RT', 'reinit', n, () {
+    final runtime = JitRuntime();
+    final compiler = X86Compiler.create();
+    for (var i = 0; i < n; i++) {
+      compiler.code.reinit();
+      compiler.builder.clear();
+      _emitX86CompilerRaw(compiler);
+      final fn = compiler.build(runtime);
+      fn.dispose();
     }
     runtime.dispose();
   });
@@ -223,9 +341,22 @@ void runA64Benchmarks(int n) {
     for (var i = 0; i < n; i++) {
       final code = CodeHolder(env: env);
       final asm = A64Assembler(code);
-      asm.movz(w0, 0);
-      asm.ret();
+      _emitA64RawFunc(asm);
     }
+  });
+
+  // Assembler + Func + RT (init/reset)
+  testPerf('A64Assembler + Func + RT', 'init/reset', n, () {
+    final env = Environment.aarch64();
+    final runtime = JitRuntime();
+    for (var i = 0; i < n; i++) {
+      final code = CodeHolder(env: env);
+      final asm = A64Assembler(code);
+      _emitA64RawFunc(asm);
+      final fn = runtime.add(code);
+      runtime.release(fn);
+    }
+    runtime.dispose();
   });
 
   // Builder (init/reset)
@@ -242,8 +373,7 @@ void runA64Benchmarks(int n) {
     final env = Environment.aarch64();
     for (var i = 0; i < n; i++) {
       final builder = A64CodeBuilder.create(env: env);
-      builder.mov(w0, xzr);
-      builder.ret();
+      _emitA64BuilderRaw(builder);
     }
   });
 
@@ -252,10 +382,22 @@ void runA64Benchmarks(int n) {
     final env = Environment.aarch64();
     for (var i = 0; i < n; i++) {
       final builder = A64CodeBuilder.create(env: env);
-      builder.mov(w0, xzr);
-      builder.ret();
+      _emitA64BuilderRaw(builder);
       builder.finalize();
     }
+  });
+
+  // Builder + Func + Finalize + RT (init/reset)
+  testPerf('A64Builder + Func + Finalize + RT', 'init/reset', n, () {
+    final env = Environment.aarch64();
+    final runtime = JitRuntime();
+    for (var i = 0; i < n; i++) {
+      final builder = A64CodeBuilder.create(env: env);
+      _emitA64BuilderRaw(builder);
+      final fn = builder.build(runtime);
+      fn.dispose();
+    }
+    runtime.dispose();
   });
 
   print('');
@@ -287,10 +429,98 @@ void runA64Benchmarks(int n) {
     final asm = A64Assembler(code);
     for (var i = 0; i < n; i++) {
       code.reinit();
-      asm.movz(w0, 0);
-      asm.ret();
+      _emitA64RawFunc(asm);
     }
   });
+
+  // A64Assembler + Func + RT reinit
+  testPerf('A64Assembler + Func + RT', 'reinit', n, () {
+    final env = Environment.aarch64();
+    final code = CodeHolder(env: env);
+    final asm = A64Assembler(code);
+    final runtime = JitRuntime();
+    for (var i = 0; i < n; i++) {
+      code.reinit();
+      _emitA64RawFunc(asm);
+      final fn = runtime.add(code);
+      runtime.release(fn);
+    }
+    runtime.dispose();
+  });
+
+  // A64Builder reinit
+  testPerf('A64Builder', 'reinit', n, () {
+    final env = Environment.aarch64();
+    final builder = A64CodeBuilder.create(env: env);
+    for (var i = 0; i < n; i++) {
+      builder.code.reinit();
+      builder.clear();
+      builder.offset; // touch it
+    }
+  });
+
+  // A64Builder + Func reinit
+  testPerf('A64Builder + Func', 'reinit', n, () {
+    final env = Environment.aarch64();
+    final builder = A64CodeBuilder.create(env: env);
+    for (var i = 0; i < n; i++) {
+      builder.code.reinit();
+      builder.clear();
+      _emitA64BuilderRaw(builder);
+    }
+  });
+
+  // A64Builder + Func + Finalize reinit
+  testPerf('A64Builder + Func + Finalize', 'reinit', n, () {
+    final env = Environment.aarch64();
+    final builder = A64CodeBuilder.create(env: env);
+    for (var i = 0; i < n; i++) {
+      builder.code.reinit();
+      builder.clear();
+      _emitA64BuilderRaw(builder);
+      builder.finalize();
+    }
+  });
+
+  // A64Builder + Func + Finalize + RT reinit
+  testPerf('A64Builder + Func + Finalize + RT', 'reinit', n, () {
+    final env = Environment.aarch64();
+    final runtime = JitRuntime();
+    final builder = A64CodeBuilder.create(env: env);
+    for (var i = 0; i < n; i++) {
+      builder.code.reinit();
+      builder.clear();
+      _emitA64BuilderRaw(builder);
+      final fn = builder.build(runtime);
+      fn.dispose();
+    }
+    runtime.dispose();
+  });
+}
+
+void _emitX86RawFunc(X86Assembler asm) {
+  asm.movRI(eax, 0);
+  asm.ret();
+}
+
+void _emitX86BuilderRaw(X86CodeBuilder builder) {
+  builder.mov(eax, 0);
+  builder.ret();
+}
+
+void _emitX86CompilerRaw(X86Compiler compiler) {
+  compiler.addFunc(FuncSignature.noArgs(ret: TypeId.int32));
+  compiler.endFunc();
+}
+
+void _emitA64RawFunc(A64Assembler asm) {
+  asm.movz(w0, 0);
+  asm.ret();
+}
+
+void _emitA64BuilderRaw(A64CodeBuilder builder) {
+  builder.mov(w0, xzr);
+  builder.ret();
 }
 
 void testPerf(

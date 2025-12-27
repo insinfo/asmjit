@@ -2,8 +2,6 @@
 ///
 /// Port of asmjit-testing/bench/asmjit_bench_regalloc.cpp
 /// Benchmarks the performance of register allocation with varying complexity.
-// TODO: Use compiler/RA pipeline parity with C++ bench, report memory stats,
-// and ensure finalize/labels match original behavior.
 
 import 'package:asmjit/asmjit.dart';
 
@@ -78,6 +76,9 @@ class RegAllocBenchResult {
   final int labelCount;
   final int regCount;
   final int codeSize;
+  final double codeHolderKiB;
+  final double compilerKiB;
+  final double passTempKiB;
   final double emitTimeMs;
   final double regAllocTimeMs;
   final String? error;
@@ -88,6 +89,9 @@ class RegAllocBenchResult {
     required this.labelCount,
     required this.regCount,
     required this.codeSize,
+    required this.codeHolderKiB,
+    required this.compilerKiB,
+    required this.passTempKiB,
     required this.emitTimeMs,
     required this.regAllocTimeMs,
     this.error,
@@ -95,7 +99,7 @@ class RegAllocBenchResult {
 
   String toTableRow() {
     final errorStr = error != null ? ' (err: $error)' : '';
-    return '| ${arch.padRight(6)} | ${complexity.toString().padLeft(10)} | ${labelCount.toString().padLeft(6)} | ${regCount.toString().padLeft(8)} | ${codeSize.toString().padLeft(9)} | ${'-'.padLeft(9)} | ${'-'.padLeft(9)} | ${'-'.padLeft(9)} | ${emitTimeMs.toStringAsFixed(3).padLeft(12)} | ${regAllocTimeMs.toStringAsFixed(3).padLeft(12)} |$errorStr';
+    return '| ${arch.padRight(6)} | ${complexity.toString().padLeft(10)} | ${labelCount.toString().padLeft(6)} | ${regCount.toString().padLeft(8)} | ${codeSize.toString().padLeft(9)} | ${codeHolderKiB.toStringAsFixed(1).padLeft(9)} | ${compilerKiB.toStringAsFixed(1).padLeft(9)} | ${passTempKiB.toStringAsFixed(1).padLeft(9)} | ${emitTimeMs.toStringAsFixed(3).padLeft(12)} | ${regAllocTimeMs.toStringAsFixed(3).padLeft(12)} |$errorStr';
   }
 }
 
@@ -172,13 +176,20 @@ RegAllocBenchResult runRegAllocBenchmark(int complexity, bool verbose) {
 
   String? error;
   int codeSize = 0;
+  double codeHolderKiB = 0;
+  double compilerKiB = 0;
+  double passTempKiB = 0;
 
   try {
     final finalized = builder.finalize();
     codeSize = finalized.textBytes.length;
+    codeHolderKiB = builder.code.text.buffer.length / 1024.0;
+    compilerKiB = builder.nodeCount * 64 / 1024.0;
   } catch (e, st) {
     error = e.toString().split(':').first;
     codeSize = builder.code.text.buffer.length;
+    codeHolderKiB = builder.code.text.buffer.length / 1024.0;
+    compilerKiB = builder.nodeCount * 64 / 1024.0;
     if (verbose) {
       // Ignore: debugging bench failures only.
       // ignore: avoid_print
@@ -197,6 +208,9 @@ RegAllocBenchResult runRegAllocBenchmark(int complexity, bool verbose) {
     labelCount: labelCount,
     regCount: regCount,
     codeSize: codeSize,
+    codeHolderKiB: codeHolderKiB,
+    compilerKiB: compilerKiB,
+    passTempKiB: passTempKiB,
     emitTimeMs: emitTimeMs,
     regAllocTimeMs: regAllocTimeMs,
     error: error,
@@ -280,13 +294,20 @@ RegAllocBenchResult runA64RegAllocBenchmark(int complexity, bool verbose) {
 
   String? error;
   int codeSize = 0;
+  double codeHolderKiB = 0;
+  double compilerKiB = 0;
+  double passTempKiB = 0;
 
   try {
     final finalized = builder.finalize();
     codeSize = finalized.textBytes.length;
+    codeHolderKiB = builder.code.text.buffer.length / 1024.0;
+    compilerKiB = builder.nodeCount * 64 / 1024.0;
   } catch (e, st) {
     error = e.toString().split(':').first;
-    codeSize = 0;
+    codeSize = builder.code.text.buffer.length;
+    codeHolderKiB = builder.code.text.buffer.length / 1024.0;
+    compilerKiB = builder.nodeCount * 64 / 1024.0;
     if (verbose) {
       // Ignore: debugging bench failures only.
       // ignore: avoid_print
@@ -305,6 +326,9 @@ RegAllocBenchResult runA64RegAllocBenchmark(int complexity, bool verbose) {
     labelCount: labelCount,
     regCount: regCount,
     codeSize: codeSize,
+    codeHolderKiB: codeHolderKiB,
+    compilerKiB: compilerKiB,
+    passTempKiB: passTempKiB,
     emitTimeMs: emitTimeMs,
     regAllocTimeMs: regAllocTimeMs,
     error: error,

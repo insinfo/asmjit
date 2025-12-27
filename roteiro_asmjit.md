@@ -58,6 +58,9 @@ docker run --rm --platform linux/arm64 dart:stable bash -lc "uname -m"
 **Warnings**: nao verificado
 
 Atualizacoes recentes:
+- **Overhead benchmark alinhado**: inclui caminhos de Compiler/Builder + RT e reinit com reset de nodes.
+- **Regalloc benchmark com memoria**: tabela agora reporta estimativas de memoria (CodeHolder/nodes).
+- **Stack args com labels**: `invoke()` aceita `LabelOperand` para stack arg quando a label ja esta bound (usa offset imediato).
 - **IR deduplicado**: `core/ir.dart` agora reexporta `builder.dart`/`compiler.dart` (sem definicoes duplicadas).
 - **Imediatos vetoriais (nao-zero)**: `invoke()` agora materializa constantes em XMM/YMM/ZMM via scratch na pilha.
 - **serializeNodes expandido**: casos `func/funcRet/invoke/section/constPool/embedLabel/jump` agora sao no-op.
@@ -435,10 +438,10 @@ em Dart e lista o que ainda falta portar ou alinhar.
   - Cobertura de sequencias GP/SSE/AVX e A64 e muito menor que o C++.
   - `Builder [finalized]` gera `CodeSize: 0` (nao serializa/gera codigo).
 - `benchmark/overhead_benchmark.dart`:
-  - Nao replica `code.reset()/init()` e `attach()` como no C++.
-  - Falta caminho de `compiler` e cobertura de RT para A64.
+  - Alinhado com caminhos de `compiler`/`builder` e cobertura de RT em A64.
+  - Ainda sem `code.init()`/`attach()` e error handler (nao existem no Dart).
 - `benchmark/regalloc_benchmark.dart`:
-  - Nao usa pipeline de compiler/RA do C++; nao mede memoria.
+  - Tabela agora mostra estimativas de memoria (CodeHolder/nodes); pipeline ainda simplificado vs C++.
   - `CodeSize` sai `0` e A64 falha com `labelAlreadyBound`.
 - `benchmark/serializer_benchmark.dart`:
   - Benchmark custom (nao tem equivalente direto no C++).

@@ -1088,8 +1088,24 @@ class X86CodeBuilder extends ir.BaseBuilder {
           ir.InstNode(
               X86InstId.kMov, [ir.MemOperand(mem), ir.RegOperand(r11)]),
           anchor);
+    } else if (arg is ir.LabelOperand) {
+      final labelOffset = code.getLabelOffset(arg.label);
+      if (labelOffset == null) {
+        throw AsmJitException(
+            AsmJitError.invalidLabel,
+            'Unbound label used as stack argument: L${arg.label.id}');
+      }
+      nodes.insertBefore(
+          ir.InstNode(
+              X86InstId.kMov, [ir.RegOperand(r11), ir.ImmOperand(labelOffset)]),
+          anchor);
+      nodes.insertBefore(
+          ir.InstNode(
+              X86InstId.kMov, [ir.MemOperand(mem), ir.RegOperand(r11)]),
+          anchor);
     } else {
-      // TODO: Support additional stack argument kinds.
+      throw AsmJitException.invalidArgument(
+          'Unsupported stack argument kind: ${arg.runtimeType}');
     }
   }
 
