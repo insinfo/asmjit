@@ -1,12 +1,27 @@
 import '../core/compiler.dart';
-import '../core/builder.dart';
-import '../core/operand.dart';
 import '../core/labels.dart';
-import 'x86_inst_db.g.dart'; // For instructions
+import '../core/rapass.dart';
+import '../core/environment.dart';
+import 'x86_inst_db.g.dart';
+import 'x86.dart';
+import 'x86_operands.dart';
 
 /// X86 Compiler.
 class X86Compiler extends BaseCompiler {
-  X86Compiler() : super();
+// ...
+  @override
+  BaseMem newStackSlot(int baseId, int offset, int size) {
+    // Assuming baseId is SP/FP which are usually 64-bit in 64-bit mode.
+    // Ideally use ArchTraits to know size? Or assume standard stack pointer size.
+    final base = X86Gp.r64(baseId);
+    return X86Mem.base(base, disp: offset, size: size);
+  }
+
+  X86Compiler({Environment? env}) : super(env: env) {
+    // Passes must be ordered!
+    addPass(CFGBuilder(this, X86InstructionAnalyzer()));
+    addPass(RAPass(this));
+  }
 
   // ===========================================================================
   // Basic instructions

@@ -4,7 +4,7 @@
 /// ported faithfully from the C++ AsmJit implementation.
 
 import 'globals.dart';
-import 'operand.dart' show RegGroup;
+import 'operand.dart';
 import 'support.dart' as support;
 
 /// Work register identifier (RA).
@@ -562,6 +562,7 @@ class RATiedReg {
 class RAWorkReg {
   final RAWorkId _workId;
   final RegGroup _group;
+  final BaseReg virtReg;
 
   int _homeRegId = RAAssignment.kPhysNone;
   int _allocatedMask = 0;
@@ -571,7 +572,7 @@ class RAWorkReg {
   final RALiveSpans _liveSpans = RALiveSpans();
   final RALiveStats _liveStats = RALiveStats();
 
-  RAWorkReg(this._workId, this._group);
+  RAWorkReg(this._workId, this._group, this.virtReg);
 
   RAWorkId get workId => _workId;
   RegGroup get group => _group;
@@ -595,6 +596,8 @@ class RAWorkReg {
 
   bool get isWithinSingleBasicBlock =>
       hasFlag(RAWorkRegFlags.kWithinSingleBlock);
+
+  int stackOffset = 0;
 }
 
 /// Flags for RAWorkReg.

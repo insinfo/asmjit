@@ -3,7 +3,9 @@
 /// Base classes for operands (registers, memory, immediates).
 /// Ported from asmjit/core/operand.h
 
+import 'globals.dart';
 import 'labels.dart';
+
 import 'reg_type.dart';
 
 const _gpRegTypes = {
@@ -190,7 +192,7 @@ abstract class BaseReg extends Operand {
   bool get isMask => type == RegType.mask;
 
   /// Whether this is a physical register (not virtual).
-  bool get isPhysical => id >= 0;
+  bool get isPhysical => id < Globals.kMaxPhysRegs && id >= 0;
 
   /// Creates a physical register of the same type with the given ID.
   BaseReg toPhys(int physId);

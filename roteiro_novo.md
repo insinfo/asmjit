@@ -419,7 +419,7 @@ O "cérebro" do AsmJit. A maior discrepância está na infraestrutura de Compila
 | `emitter.h/.cpp` | ~50 KB | `emitter.dart` (1.5 KB) | 🔴 Crítico | A classe base `Emitter` no C++ tem muita lógica compartilhada de validação e encoding que não está no Dart (está dispersa ou ausente). |
 | `codewriter.cpp` | ~8 KB | `code_writer.dart` (1 KB) | 🔴 Crítico | Utilitário de escrita de código (hex dump, logging avançado) praticamente inexistente. |
 
-**Ação Necessária**: Priorizar o porting de `Compiler` infraestrutura para suportar o backend JIT do Blend2D.
+**Ação Necessária**: Priorizar o porting de `Compiler` infraestrutura e o RAGlobal para suportar o backend JIT do Blend2D.
 
 ---
 
@@ -434,7 +434,7 @@ O backend x86 está mais maduro que o ARM, mas ainda longe da completude da API 
 | `x86compiler.cpp` | 36 KB | `x86_compiler.dart` (Skeleton) | 🟡 Estágio Inicial | Criado esqueleto de `X86Compiler` e `X86InstructionAnalyzer`. Falta implementação de métodos de instrução. |
 | `x86emithelper.cpp`| 21 KB | `emit_helper.dart` (13 KB)* | 🟡 Médio | Helpers genéricos existem, mas faltam os específicos de x86 para shuffle de argumentos vetoriais complexos. |
 
-**Ação Necessária**: Completar `x86_assembler.dart` com todos os grupos de instruções (AVX-512 completo, FPU legacy se necessário, AMX, etc).
+**Ação Necessária**: Completar `x86_assembler.dart` com todos os grupos de instruções (AVX-512 completo, FPU legacy , AMX, etc).
 
 ---
 

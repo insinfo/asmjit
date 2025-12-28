@@ -10,7 +10,7 @@
 
 import 'arch.dart';
 import 'error.dart';
-import 'operand.dart' show RegGroup;
+import 'operand.dart' show RegGroup, BaseReg;
 import 'radefs.dart';
 import 'raassignment.dart';
 import 'support.dart' as support;
@@ -848,9 +848,9 @@ class RALocalAllocator {
   RARegMask get availableRegs => _availableRegs;
 
   /// Add a work register.
-  RAWorkReg addWorkReg(RegGroup group) {
+  RAWorkReg addWorkReg(RegGroup group, BaseReg virtReg) {
     final workId = _workRegs.length;
-    final workReg = RAWorkReg(workId, group);
+    final workReg = RAWorkReg(workId, group, virtReg);
     _workRegs.add(workReg);
     return workReg;
   }

@@ -48,6 +48,9 @@ abstract final class Globals {
 
   /// Maximum physical registers per group.
   static const int kMaxPhysRegs = 32;
+
+  /// Minimum virtual register ID.
+  static const int kMinVirtId = 64;
 }
 
 /// Constant alias for max function arguments.

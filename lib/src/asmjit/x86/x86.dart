@@ -205,13 +205,13 @@ class X86Gp extends BaseReg {
 
     switch (bits) {
       case 64:
-        return names64[id];
+        return id < names64.length ? names64[id] : 'r64($id)';
       case 32:
-        return names32[id];
+        return id < names32.length ? names32[id] : 'r32($id)';
       case 16:
-        return names16[id];
+        return id < names16.length ? names16[id] : 'r16($id)';
       case 8:
-        return names8[id];
+        return id < names8.length ? names8[id] : 'r8($id)';
       default:
         return 'gp$id($bits)';
     }

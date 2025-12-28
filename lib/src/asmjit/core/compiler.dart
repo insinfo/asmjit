@@ -9,10 +9,10 @@ import 'environment.dart';
 import 'func.dart';
 import 'globals.dart';
 import 'labels.dart';
-import 'operand.dart';
 import 'error.dart';
 import 'builder.dart';
 import 'reg_utils.dart';
+import 'arch.dart';
 
 export 'builder.dart';
 
@@ -194,22 +194,35 @@ abstract class InstructionAnalyzer {
 /// BaseCompiler implementation.
 class BaseCompiler extends BaseBuilder {
   FuncNode? _func;
+  Environment _env;
 
-  BaseCompiler();
+  BaseCompiler({Environment? env}) : _env = env ?? Environment.host();
+
+  Environment get env => _env;
+  Arch get arch => _env.arch;
 
   FuncNode? get func => _func;
 
+  int _virtIdCounter = Globals.kMinVirtId;
+
+  int newVirtId() => _virtIdCounter++;
+
   FuncNode newFunc(FuncSignature signature) {
     final func = FuncNode();
-    // Initialize func detail with signature...
-    // Requires Environment. Using host for now or need to pass it.
-    // C++ add_func uses internal state.
-    // We should implement fully later.
+    final err = func.funcDetail.init(signature, _env);
+    if (err != AsmJitError.ok) {
+      throw AsmJitException(err, "Failed to initialize function detail");
+    }
     return func;
   }
 
   FuncNode addFunc(FuncNode func) {
     addNode(func);
+
+    // Create and add entry block
+    final entryBlock = BlockNode(newLabel());
+    addNode(entryBlock);
+
     // Add logic to insert ExitLabel and EndFunc
     final exitNode = LabelNode(newLabel());
     final endNode = SentinelNode(SentinelType.funcEnd);
@@ -264,6 +277,10 @@ class BaseCompiler extends BaseBuilder {
   void emitSave(Operand dst, Operand src) {
     // Usually same as move
     emitMove(dst, src);
+  }
+
+  BaseMem newStackSlot(int baseId, int offset, int size) {
+    throw UnimplementedError();
   }
 }
 
