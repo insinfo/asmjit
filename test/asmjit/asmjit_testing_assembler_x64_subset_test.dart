@@ -63,6 +63,26 @@ void main() {
       _testInst('4839c8', (a) => a.cmpRR(rax, rcx));
     });
 
+    test('cmp r8, r9 (regs estendidos - REX.WRB)', () {
+      _testInst('4d39c8', (a) => a.cmpRR(r8, r9));
+    });
+
+    test('test r8, r9 (regs estendidos - REX.WRB)', () {
+      _testInst('4d85c8', (a) => a.testRR(r8, r9));
+    });
+
+    test('and r8, r9 (regs estendidos - REX.WRB)', () {
+      _testInst('4d21c8', (a) => a.andRR(r8, r9));
+    });
+
+    test('or r8, r9 (regs estendidos - REX.WRB)', () {
+      _testInst('4d09c8', (a) => a.orRR(r8, r9));
+    });
+
+    test('xor r8, r9 (regs estendidos - REX.WRB)', () {
+      _testInst('4d31c8', (a) => a.xorRR(r8, r9));
+    });
+
     test('cmp rax, 1', () {
       _testInst('483d01000000', (a) => a.cmpRI(rax, 1));
     });
@@ -95,6 +115,34 @@ void main() {
 
     test('adc rax, rcx', () {
       _testInst('4811c8', (a) => a.adcRR(rax, rcx));
+    });
+
+    test('adc cl, 1', () {
+      _testInst('80d101', (a) => a.adcRI(cl, 1));
+    });
+
+    test('adc ch, 1', () {
+      _testInst('80d501', (a) => a.adcRI(ch, 1));
+    });
+
+    test('adc cx, 1', () {
+      _testInst('6683d101', (a) => a.adcRI(cx, 1));
+    });
+
+    test('adc ecx, 1', () {
+      _testInst('83d101', (a) => a.adcRI(ecx, 1));
+    });
+
+    test('adc rcx, 1', () {
+      _testInst('4883d101', (a) => a.adcRI(rcx, 1));
+    });
+
+    test('adc spl, 1 (REX obrigatório para SPL)', () {
+      _testInst('4080d401', (a) => a.adcRI(X86Gp.r8(4), 1));
+    });
+
+    test('adc ah, 1 (sem REX; high-byte)', () {
+      _testInst('80d401', (a) => a.adcRI(ah, 1));
     });
 
     test('adc rax, 1', () {
@@ -143,6 +191,26 @@ void main() {
 
     test('sbb rax, 0x12345678 (imm32 forma curta em rax)', () {
       _testInst('481d78563412', (a) => a.sbbRI(rax, 0x12345678));
+    });
+
+    test('sbb cl, 1', () {
+      _testInst('80d901', (a) => a.sbbRI(cl, 1));
+    });
+
+    test('sbb ch, 1', () {
+      _testInst('80dd01', (a) => a.sbbRI(ch, 1));
+    });
+
+    test('sbb cx, 1', () {
+      _testInst('6683d901', (a) => a.sbbRI(cx, 1));
+    });
+
+    test('sbb ecx, 1', () {
+      _testInst('83d901', (a) => a.sbbRI(ecx, 1));
+    });
+
+    test('sbb rcx, 1', () {
+      _testInst('4883d901', (a) => a.sbbRI(rcx, 1));
     });
 
     test('sbb rcx, 0x12345678 (imm32 /3)', () {
@@ -329,6 +397,34 @@ void main() {
       _testInst('c4a2fbf6d1', (a) => a.mulx(rdx, rax, rcx));
     });
 
+    test('bzhi rax, rcx, rdx (BMI2)', () {
+      _testInst('c4e2e8f5c1', (a) => a.bzhi(rax, rcx, rdx));
+    });
+
+    test('pdep rax, rcx, rdx (BMI2)', () {
+      _testInst('c4e2f3f5c2', (a) => a.pdep(rax, rcx, rdx));
+    });
+
+    test('pext rax, rcx, rdx (BMI2)', () {
+      _testInst('c4e2f2f5c2', (a) => a.pext(rax, rcx, rdx));
+    });
+
+    test('rorx rax, rcx, 5 (BMI2)', () {
+      _testInst('c4e3fbf0c105', (a) => a.rorx(rax, rcx, 5));
+    });
+
+    test('sarx rax, rcx, rdx (BMI2)', () {
+      _testInst('c4e2eaf7c1', (a) => a.sarx(rax, rcx, rdx));
+    });
+
+    test('shlx rax, rcx, rdx (BMI2)', () {
+      _testInst('c4e2e9f7c1', (a) => a.shlx(rax, rcx, rdx));
+    });
+
+    test('shrx rax, rcx, rdx (BMI2)', () {
+      _testInst('c4e2ebf7c1', (a) => a.shrx(rax, rcx, rdx));
+    });
+
     test('div rcx', () {
       _testInst('48f7f1', (a) => a.div(rcx));
     });
@@ -385,6 +481,20 @@ void main() {
 
     test('and rax, [rsp + 16] (SIB obrigatório por base=rsp)', () {
       _testInst('4823442410', (a) => a.andRM(rax, qwordPtr(rsp, 16)));
+    });
+
+    test('and rax, [r8 + r9*4 + 16] (REX.X + REX.B + SIB)', () {
+      _testInst('4b23448810', (a) {
+        final mem = X86Mem.baseIndexScale(r8, r9, 4, disp: 16, size: 8);
+        a.andRM(rax, mem);
+      });
+    });
+
+    test('cmp r11, [r8 + r9*2 + 128] (REX.R + REX.X + REX.B + SIB disp32)', () {
+      _testInst('4f3b9c4880000000', (a) {
+        final mem = X86Mem.baseIndexScale(r8, r9, 2, disp: 128, size: 8);
+        a.cmpRM(r11, mem);
+      });
     });
 
     test('cmp rax, [rsp + 16] (SIB obrigatório por base=rsp)', () {
@@ -455,6 +565,46 @@ void main() {
     test('mov rax, [rsp] (base=rsp requer SIB)', () {
       _testInst('488b0424', (a) {
         a.movRM(rax, qwordPtr(rsp));
+      });
+    });
+
+    test('mov rax, [r12] (base=r12 requer SIB obrigatório)', () {
+      _testInst('498b0424', (a) {
+        a.movRM(rax, qwordPtr(r12));
+      });
+    });
+
+    test('mov rax, [r13] (base=r13 requer disp8=0)', () {
+      _testInst('498b4500', (a) {
+        a.movRM(rax, qwordPtr(r13));
+      });
+    });
+
+    test('mov rax, [r8 + rcx*2 + 16] (base estendida + index normal)', () {
+      _testInst('498b444810', (a) {
+        final mem = X86Mem.baseIndexScale(r8, rcx, 2, disp: 16, size: 8);
+        a.movRM(rax, mem);
+      });
+    });
+
+    test('and rax, [rcx + r9*4 + 16] (base normal + index estendido)', () {
+      _testInst('4a23448910', (a) {
+        final mem = X86Mem.baseIndexScale(rcx, r9, 4, disp: 16, size: 8);
+        a.andRM(rax, mem);
+      });
+    });
+
+    test('and rax, [rcx + r12*2 + 16] (index=r12 força REX.X; index=100b)', () {
+      _testInst('4a23446110', (a) {
+        final mem = X86Mem.baseIndexScale(rcx, r12, 2, disp: 16, size: 8);
+        a.andRM(rax, mem);
+      });
+    });
+
+    test('cmp r11, [r8 + r9*8 + 128] (base/index estendidos + scale 8 + disp32)', () {
+      _testInst('4f3b9cc880000000', (a) {
+        final mem = X86Mem.baseIndexScale(r8, r9, 8, disp: 128, size: 8);
+        a.cmpRM(r11, mem);
       });
     });
 

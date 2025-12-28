@@ -6,11 +6,205 @@ roteiro bem prático (e incremental) para portar o AsmJit (C++) C:\MyDartProject
 porte os testes para dart
 C:\MyDartProjects\asmjit\referencias\asmjit-master\asmjit-testing
 
-bporte os enchmark para dart
+porte os benchmarks para dart
 
 porte os geradores e tools para dart
 C:\MyDartProjects\asmjit\referencias\asmjit-master\db
 C:\MyDartProjects\asmjit\referencias\asmjit-master\tools
+
+---
+
+## Objetivo e regras (não negociável)
+
+- **[paridade 1:1]** a lógica tem que ser idêntica ao C++ (mesma decisão, mesma ordem, mesmos masks/flags, mesmos casos-limite). Se divergir, vai falhar em cenários reais.
+- **[sem stubs]** não criar TODOs, stubs ou implementações mínimas. Só portar implementação completa e real.
+- **[incremental]** cada passo adiciona valor e é validado por testes/benchmarks antes de avançar.
+
+---
+
+# Roteiro incremental (prático) de portação
+
+## Fase 0 — Base de comparação e “harness” (obrigatório)
+
+- **[congelar referência C++]** escolher um commit do `asmjit-master` / `asmtk-master` e manter como baseline.
+- **[mapeamento de fontes]** para cada arquivo Dart, manter uma referência explícita do(s) arquivo(s) C++ equivalente(s) (ex: `func.dart` ⇆ `func.h/func.cpp`).
+- **[modo de auditoria]** decidir como comparar comportamento:
+  - testes de assembler: comparar bytes emitidos (golden/expected)
+  - compiler/RA: validar invariantes (assignments, spills, preservação de regs, frame layout)
+  - DB/tools: validar outputs gerados (arquivos `.g.dart` idênticos semânticamente ao que o C++ gera)
+
+**Pronto quando**:
+- `dart test` roda e falha/sucesso de forma determinística
+- existe um lugar único para colocar novos testes portados (estrutura de pastas definida)
+
+---
+
+## Fase 1 — Core (infra mínima que desbloqueia todo o resto)
+
+Ordem sugerida (mantendo 1:1 com C++):
+
+1. `support.*`, `globals`, `error`, `logger` (se existir) — invariantes e helpers usados em tudo.
+2. `type`, `operand`, `reg`, `arch` — base de tipos e registradores.
+3. `code_buffer`, `code_holder`, `section`, reloc (o que for necessário para testes de encoding).
+4. `func.*` (`FuncDetail`, `FuncFrame`, `FuncArgsContext`) — ABI, layout de stack, args/ret.
+5. `emitter`/`builder` base — APIs coerentes com o C++ (sem APIs “inventadas”).
+6. `compiler` base — nós, blocos, ligação com frame, etc.
+
+**Pronto quando**:
+- testes básicos de `func/frame` (layout, alinhamento, preserved regs) passam
+- chamadas simples com assinatura/ABI geram o mesmo layout do C++
+
+---
+
+## Fase 2 — x86 Assembler (paridade por encoding)
+
+Meta: garantir que **emitir instruções** no Dart produza os mesmos bytes do C++.
+
+**Pronto quando**:
+- a suite de testes do assembler x86 (portada) cobre os grupos principais e valida bytes
+- instruções já existentes no Dart passam com comparação byte-a-byte
+
+---
+
+## Fase 3 — A64 Assembler (mesma abordagem do x86)
+
+Meta: cobertura massiva de instruções com comparação por encoding.
+
+**Pronto quando**:
+- testes do assembler A64 (portados) validam bytes para um conjunto grande e representativo
+
+---
+
+## Fase 4 — Compiler + RA (local → global) e integração
+
+Meta: desbloquear Blend2D/pipelines reais.
+
+Ordem sugerida:
+
+1. integrar `RALocal` com o `Compiler` real (pipeline equivalente ao C++)
+2. portar passes necessários para atingir o comportamento do C++
+3. implementar `RAGlobal` (coloring/splitting/coalescing) quando os testes do compiler exigirem
+
+**Pronto quando**:
+- `asmjit_test_compiler` portado passa (ou pelo menos o subconjunto inicial, expandindo incrementalmente)
+
+---
+
+# Portação de TESTES (C++ asmjit-testing → Dart)
+
+## Objetivo
+
+Portar a suite `C:\MyDartProjects\asmjit\referencias\asmjit-master\asmjit-testing` para garantir:
+
+- **[assembler]** bytes idênticos
+- **[instdb]** metadados consistentes
+- **[compiler/RA]** invariantes e decisões equivalentes
+
+## Estratégia prática (incremental)
+
+### 1) Espelho de estrutura
+
+- criar correspondência 1:1 por arquivo de teste (nome e escopo)
+- cada teste Dart deve apontar claramente qual teste C++ ele espelha
+
+### 2) Testes de assembler por “vetor de casos”
+
+- extrair do C++ os casos (inputs) e os bytes esperados
+- no Dart, emitir com o mesmo assembler e comparar o buffer
+- começar por um subset pequeno (smoke) e crescer até cobrir tudo
+
+**Pronto quando**:
+- comparação de bytes passa (mesmo endianness/layout)
+- falhas mostram diff útil (offset/byte esperado vs obtido)
+
+### 3) Testes de instdb
+
+- validar integridade: `mnemonic`, `opCount`, `flags`, `features`, leitura/escrita (RWInfo)
+- comparar propriedades “derivadas” que o compiler usa (não só valores brutos)
+
+### 4) Testes de compiler
+
+- começar com testes determinísticos (prolog/epilog, chamadas simples)
+- depois controle de fluxo e pressão de registradores
+- por fim casos grandes (stress) que exercitam spill/reload/shuffle
+
+---
+
+# Portação de BENCHMARKS (C++ → Dart)
+
+## Objetivo
+
+Portar benchmarks do C++ preservando:
+
+- o cenário (mesmas sequências de emissão)
+- a métrica (tempo/iteração, bytes gerados, contagens)
+
+## Estratégia prática
+
+- manter os benchmarks como executáveis Dart (ex: em `benchmark/asmjit/`)
+- garantir warmup e repetição suficiente para reduzir ruído
+- registrar:
+  - tempo total
+  - tempo por iteração
+  - bytes emitidos
+  - contadores específicos (se houver)
+
+**Pronto quando**:
+- a “carga” executada é equivalente ao C++ (mesma quantidade de instruções/loops)
+- resultados são estáveis o suficiente para detectar regressão
+
+---
+
+# Portação de DB/TOOLS/GERADORES (C++ → Dart)
+
+Referências:
+
+- `C:\MyDartProjects\asmjit\referencias\asmjit-master\db`
+- `C:\MyDartProjects\asmjit\referencias\asmjit-master\tools`
+
+## Objetivo
+
+Gerar os mesmos artefatos (ex: `*_inst_db.g.dart`) com o mesmo conteúdo semântico do C++.
+
+## Estratégia prática
+
+- portar primeiro os geradores que produzem arquivos já consumidos pelo Dart
+- padronizar:
+  - input: JSON/DB
+  - transformação: regras idênticas
+  - output: Dart gerado determinístico
+
+**Pronto quando**:
+- gerar duas vezes produz exatamente o mesmo output (determinístico)
+- bater checks básicos (contagens, hashes, invariantes)
+
+---
+
+# Procedimento de auditoria contínua (arquivo por arquivo)
+
+## Regra
+
+Para cada arquivo portado/corrigido, garantir:
+
+- mesma ordem de branches
+- mesmos masks/shifts
+- mesmas condições de erro
+- mesmas conversões de tipo e sign-extension
+- mesmo comportamento em 32/64-bit
+
+## Checklist por arquivo
+
+- **[mapear equivalentes]** qual `.h/.cpp` corresponde ao `.dart`
+- **[enumerar símbolos]** classes/funções/constantes principais
+- **[comparar decisões]** switches, tabelas, fallthroughs, flags
+- **[comparar invariantes]** asserts/validações equivalentes
+- **[testar]** adicionar/ajustar testes que capturam o caso-limite
+
+## Comandos recomendados (Windows)
+
+- usar `rg` para localizar símbolos e casos-limite
+- usar `sed` para edições mecânicas (com cuidado para não alterar semântica)
+
 
 # Relatório de Inconsistências: Dart vs C++ AsmJit
 

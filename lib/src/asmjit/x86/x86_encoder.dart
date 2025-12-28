@@ -174,18 +174,22 @@ class X86Encoder {
 
   /// Emits a REX prefix for a single register operand.
   void emitRexForReg(X86Gp reg, {bool w = false}) {
-    final needsRex = w || reg.isExtended;
-    if (needsRex) {
-      emitRex(w, false, false, reg.isExtended);
+    final needsRex = w || reg.needsRex;
+    if (!needsRex) return;
+    if (reg.isHighByte) {
+      throw ArgumentError('High-byte registers (AH/CH/DH/BH) cannot be used with REX prefix');
     }
+    emitRex(w, false, false, reg.isExtended);
   }
 
   /// Emits a REX prefix for two register operands (reg, r/m).
   void emitRexForRegRm(X86Gp reg, X86Gp rm, {bool w = false}) {
-    final needsRex = w || reg.isExtended || rm.isExtended;
-    if (needsRex) {
-      emitRex(w, reg.isExtended, false, rm.isExtended);
+    final needsRex = w || reg.needsRex || rm.needsRex;
+    if (!needsRex) return;
+    if (reg.isHighByte || rm.isHighByte) {
+      throw ArgumentError('High-byte registers (AH/CH/DH/BH) cannot be used with REX prefix');
     }
+    emitRex(w, reg.isExtended, false, rm.isExtended);
   }
 
   /// Emits a REX prefix for a register and memory operand.
@@ -194,10 +198,30 @@ class X86Encoder {
     final index = _memIndex(mem);
     final baseExt = base?.isExtended ?? false;
     final indexExt = index?.isExtended ?? false;
-    final needsRex = w || reg.isExtended || baseExt || indexExt;
-    if (needsRex) {
-      emitRex(w, reg.isExtended, indexExt, baseExt);
+    final needsRex = w || reg.needsRex || baseExt || indexExt;
+    if (!needsRex) return;
+    if (reg.isHighByte) {
+      throw ArgumentError('High-byte registers (AH/CH/DH/BH) cannot be used with REX prefix');
     }
+    emitRex(w, reg.isExtended, indexExt, baseExt);
+  }
+
+  void _emitOp66If16(X86Gp regOrRm) {
+    if (regOrRm.bits == 16) {
+      buffer.emit8(0x66);
+    }
+  }
+
+  void _emitOpSizeAndRexForRegRm(X86Gp reg, X86Gp rm) {
+    _emitOp66If16(reg);
+    final w = reg.bits == 64;
+    emitRexForRegRm(reg, rm, w: w);
+  }
+
+  void _emitOpSizeAndRexForReg(X86Gp reg) {
+    _emitOp66If16(reg);
+    final w = reg.bits == 64;
+    emitRexForReg(reg, w: w);
   }
 
   // ===========================================================================
@@ -236,10 +260,8 @@ class X86Encoder {
 
   /// Emits ModR/M for register-to-register.
   void emitModRmReg(int regOp, BaseReg rm) {
-    // Note: Assuming encoding matches id & 7 for now, or using dynamic for specific properties.
-    // Ideally BaseReg should define encoding if it's universal for x86.
-    // For now we use id & 7 which is standard for Gp/Vec (except AH..BH).
-    emitModRm(3, regOp, rm.id & 0x7);
+    final rmEnc = (rm is X86Gp) ? rm.encoding : (rm.id & 0x7);
+    emitModRm(3, regOp & 0x7, rmEnc);
   }
 
   /// Emits ModR/M and optional SIB/displacement for memory operand.
@@ -1181,6 +1203,61 @@ class X86Encoder {
     emitModRmReg(src.encoding, dst);
   }
 
+  /// ADC r/m(8|16|32|64), r(8|16|32|64) - Add with carry.
+  void adcRR(X86Gp dst, X86Gp src) {
+    if (dst.bits != src.bits) {
+      throw ArgumentError('adcRR requires same operand size');
+    }
+    _emitOpSizeAndRexForRegRm(src, dst);
+    buffer.emit8(dst.bits == 8 ? 0x10 : 0x11);
+    emitModRmReg(src.encoding, dst);
+  }
+
+  /// ADC r/m(8|16|32|64), imm8 (sign-extended for 16/32/64).
+  void adcImm8(X86Gp dst, int imm8) {
+    _emitOpSizeAndRexForReg(dst);
+    buffer.emit8(dst.bits == 8 ? 0x80 : 0x83);
+    emitModRmReg(2, dst);
+    buffer.emit8(imm8);
+  }
+
+  /// ADC r/m(16|32|64), imm(16|32) (sign-extended by CPU rules; for 64 uses imm32).
+  void adcImmFull(X86Gp dst, int imm) {
+    if (dst.bits == 8) {
+      throw ArgumentError('adcImmFull is not valid for 8-bit operands');
+    }
+
+    // Accumulator short forms.
+    if (dst.id == 0) {
+      if (dst.bits == 16) {
+        buffer.emit8(0x66);
+        buffer.emit8(0x15);
+        buffer.emit16(imm);
+        return;
+      }
+      if (dst.bits == 32) {
+        buffer.emit8(0x15);
+        buffer.emit32(imm);
+        return;
+      }
+      if (dst.bits == 64) {
+        buffer.emit8(0x48);
+        buffer.emit8(0x15);
+        buffer.emit32(imm);
+        return;
+      }
+    }
+
+    _emitOpSizeAndRexForReg(dst);
+    buffer.emit8(0x81);
+    emitModRmReg(2, dst);
+    if (dst.bits == 16) {
+      buffer.emit16(imm);
+    } else {
+      buffer.emit32(imm);
+    }
+  }
+
   /// ADC r64, imm8 - Add with carry (sign-extended imm8)
   void adcR64Imm8(X86Gp dst, int imm8) {
     emitRexForReg(dst, w: true);
@@ -1209,6 +1286,61 @@ class X86Encoder {
     emitRexForRegRm(src, dst, w: true);
     buffer.emit8(0x19);
     emitModRmReg(src.encoding, dst);
+  }
+
+  /// SBB r/m(8|16|32|64), r(8|16|32|64) - Subtract with borrow.
+  void sbbRR(X86Gp dst, X86Gp src) {
+    if (dst.bits != src.bits) {
+      throw ArgumentError('sbbRR requires same operand size');
+    }
+    _emitOpSizeAndRexForRegRm(src, dst);
+    buffer.emit8(dst.bits == 8 ? 0x18 : 0x19);
+    emitModRmReg(src.encoding, dst);
+  }
+
+  /// SBB r/m(8|16|32|64), imm8 (sign-extended for 16/32/64).
+  void sbbImm8(X86Gp dst, int imm8) {
+    _emitOpSizeAndRexForReg(dst);
+    buffer.emit8(dst.bits == 8 ? 0x80 : 0x83);
+    emitModRmReg(3, dst);
+    buffer.emit8(imm8);
+  }
+
+  /// SBB r/m(16|32|64), imm(16|32) (for 64 uses imm32).
+  void sbbImmFull(X86Gp dst, int imm) {
+    if (dst.bits == 8) {
+      throw ArgumentError('sbbImmFull is not valid for 8-bit operands');
+    }
+
+    // Accumulator short forms.
+    if (dst.id == 0) {
+      if (dst.bits == 16) {
+        buffer.emit8(0x66);
+        buffer.emit8(0x1D);
+        buffer.emit16(imm);
+        return;
+      }
+      if (dst.bits == 32) {
+        buffer.emit8(0x1D);
+        buffer.emit32(imm);
+        return;
+      }
+      if (dst.bits == 64) {
+        buffer.emit8(0x48);
+        buffer.emit8(0x1D);
+        buffer.emit32(imm);
+        return;
+      }
+    }
+
+    _emitOpSizeAndRexForReg(dst);
+    buffer.emit8(0x81);
+    emitModRmReg(3, dst);
+    if (dst.bits == 16) {
+      buffer.emit16(imm);
+    } else {
+      buffer.emit32(imm);
+    }
   }
 
   /// SBB r64, imm8 - Subtract with borrow (sign-extended imm8)

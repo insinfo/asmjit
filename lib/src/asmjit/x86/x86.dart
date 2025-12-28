@@ -73,13 +73,26 @@ class X86Gp extends BaseReg {
   RegGroup get group => RegGroup.gp;
 
   /// Whether this register needs REX prefix (R8-R15 or 64-bit).
-  bool get needsRex => id >= 8 || bits == 64;
+  bool get needsRex {
+    // In 64-bit mode:
+    // - R8-R15 always need REX.
+    // - 64-bit operand size needs REX.W.
+    // - 8-bit low registers SPL/BPL/SIL/DIL (ids 4-7) need a REX prefix to
+    //   disambiguate them from AH/CH/DH/BH.
+    if (id >= 8 || bits == 64) return true;
+    if (!isHighByte && bits == 8 && id >= 4) return true;
+    return false;
+  }
 
   /// Whether this register uses the extended encoding (R8-R15).
   bool get isExtended => id >= 8;
 
   /// Gets the 3-bit encoding for ModR/M.
-  int get encoding => id & 0x7;
+  int get encoding {
+    // High-byte registers are encoded as 4-7 (AH/CH/DH/BH).
+    if (isHighByte) return (id + 4) & 0x7;
+    return id & 0x7;
+  }
 
   X86Gp get as8 => X86Gp.r8(id);
   X86Gp get as8h => X86Gp.r8h(id);

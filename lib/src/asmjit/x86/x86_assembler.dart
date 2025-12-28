@@ -823,29 +823,39 @@ class X86Assembler extends BaseEmitter {
 
   /// ADC dst, src - Add with carry
   void adcRR(X86Gp dst, X86Gp src) {
-    _enc.adcR64R64(dst, src);
+    _enc.adcRR(dst, src);
   }
 
   /// ADC dst, imm - Add with carry
   void adcRI(X86Gp dst, int imm) {
+    if (dst.bits == 8) {
+      _enc.adcImm8(dst, imm);
+      return;
+    }
+
     if (imm >= -128 && imm <= 127) {
-      _enc.adcR64Imm8(dst, imm);
+      _enc.adcImm8(dst, imm);
     } else {
-      _enc.adcR64Imm32(dst, imm);
+      _enc.adcImmFull(dst, imm);
     }
   }
 
   /// SBB dst, src - Subtract with borrow
   void sbbRR(X86Gp dst, X86Gp src) {
-    _enc.sbbR64R64(dst, src);
+    _enc.sbbRR(dst, src);
   }
 
   /// SBB dst, imm - Subtract with borrow
   void sbbRI(X86Gp dst, int imm) {
+    if (dst.bits == 8) {
+      _enc.sbbImm8(dst, imm);
+      return;
+    }
+
     if (imm >= -128 && imm <= 127) {
-      _enc.sbbR64Imm8(dst, imm);
+      _enc.sbbImm8(dst, imm);
     } else {
-      _enc.sbbR64Imm32(dst, imm);
+      _enc.sbbImmFull(dst, imm);
     }
   }
 
@@ -857,6 +867,45 @@ class X86Assembler extends BaseEmitter {
   /// MULX hi, lo, src (BMI2) - Unsigned multiply without flags
   void mulx(X86Gp hi, X86Gp lo, X86Gp src) {
     _enc.mulxR64R64R64(hi, lo, src);
+  }
+
+  // ==========================================================================
+  // BMI2
+  // ==========================================================================
+
+  /// BZHI dst, src, idx (BMI2) - Zero high bits starting from idx.
+  void bzhi(X86Gp dst, X86Gp src, X86Gp idx) {
+    _enc.bzhiR64R64R64(dst, src, idx);
+  }
+
+  /// PDEP dst, src, mask (BMI2) - Parallel bit deposit.
+  void pdep(X86Gp dst, X86Gp src, X86Gp mask) {
+    _enc.pdepR64R64R64(dst, src, mask);
+  }
+
+  /// PEXT dst, src, mask (BMI2) - Parallel bit extract.
+  void pext(X86Gp dst, X86Gp src, X86Gp mask) {
+    _enc.pextR64R64R64(dst, src, mask);
+  }
+
+  /// RORX dst, src, imm8 (BMI2) - Rotate right without affecting flags.
+  void rorx(X86Gp dst, X86Gp src, int imm8) {
+    _enc.rorxR64R64Imm8(dst, src, imm8);
+  }
+
+  /// SARX dst, src, shift (BMI2) - Arithmetic shift right without affecting flags.
+  void sarx(X86Gp dst, X86Gp src, X86Gp shift) {
+    _enc.sarxR64R64R64(dst, src, shift);
+  }
+
+  /// SHLX dst, src, shift (BMI2) - Logical shift left without affecting flags.
+  void shlx(X86Gp dst, X86Gp src, X86Gp shift) {
+    _enc.shlxR64R64R64(dst, src, shift);
+  }
+
+  /// SHRX dst, src, shift (BMI2) - Logical shift right without affecting flags.
+  void shrx(X86Gp dst, X86Gp src, X86Gp shift) {
+    _enc.shrxR64R64R64(dst, src, shift);
   }
 
   /// ADCX dst, src (ADX) - Add with carry (uses CF only)

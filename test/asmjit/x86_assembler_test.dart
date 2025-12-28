@@ -272,4 +272,22 @@ void main() {
       expect(CallConvId.x64Windows, isNotNull);
     });
   });
+
+  group('X86Gp encoding rules', () {
+    test('high-byte registers use encoding 4..7 (AH/CH/DH/BH)', () {
+      expect(ah.encoding, equals(4));
+      expect(ch.encoding, equals(5));
+      expect(dh.encoding, equals(6));
+      expect(bh.encoding, equals(7));
+    });
+
+    test('spl/bpl/sil/dil (ids 4..7) require REX in 64-bit mode', () {
+      // SPL/BPL/SIL/DIL are the low 8-bit regs of SP/BP/SI/DI.
+      // In x86-64 they need a REX prefix to disambiguate from AH/CH/DH/BH.
+      expect(X86Gp.r8(4).needsRex, isTrue); // spl
+      expect(X86Gp.r8(5).needsRex, isTrue); // bpl
+      expect(X86Gp.r8(6).needsRex, isTrue); // sil
+      expect(X86Gp.r8(7).needsRex, isTrue); // dil
+    });
+  });
 }
