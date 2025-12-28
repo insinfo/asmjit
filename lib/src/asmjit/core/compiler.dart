@@ -13,6 +13,7 @@ import 'error.dart';
 import 'builder.dart';
 import 'reg_utils.dart';
 import 'arch.dart';
+import 'const_pool.dart';
 
 export 'builder.dart';
 
@@ -203,6 +204,15 @@ abstract class InstructionAnalyzer {
 class BaseCompiler extends BaseBuilder {
   FuncNode? _func;
   Environment _env;
+  
+  /// Stores array of virtual registers.
+  final List<BaseReg> _virtRegs = [];
+  
+  /// Stores jump annotations.
+  final List<JumpAnnotation> _jumpAnnotations = [];
+  
+  /// Local and global constant pools.
+  final ConstPool? _constPools = ConstPool();
 
   BaseCompiler({Environment? env, LabelManager? labelManager})
       : _env = env ?? Environment.host(),
@@ -212,6 +222,15 @@ class BaseCompiler extends BaseBuilder {
   Arch get arch => _env.arch;
 
   FuncNode? get func => _func;
+  
+  /// Get virtual registers.
+  List<BaseReg> get virtRegs => List.unmodifiable(_virtRegs);
+  
+  /// Get jump annotations.
+  List<JumpAnnotation> get jumpAnnotations => List.unmodifiable(_jumpAnnotations);
+  
+  /// Get constant pools.
+  ConstPool? get constPools => _constPools;
 
   int _virtIdCounter = Globals.kMinVirtId;
 
@@ -280,6 +299,48 @@ class BaseCompiler extends BaseBuilder {
 
     _func = null;
     return AsmJitError.ok;
+  }
+  
+  /// Create new FuncRetNode.
+  FuncRetNode newFuncRetNode(Operand o0, Operand o1) {
+    return FuncRetNode([o0, o1]);
+  }
+  
+  /// Add FuncRetNode to instruction stream.
+  FuncRetNode addFuncRetNode(Operand o0, Operand o1) {
+    final node = newFuncRetNode(o0, o1);
+    addNode(node);
+    return node;
+  }
+  
+  /// Add return instruction.
+  AsmJitError addRet(Operand o0, Operand o1) {
+    addFuncRetNode(o0, o1);
+    return AsmJitError.ok;
+  }
+  
+  /// Create new InvokeNode.
+  InvokeNode newInvokeNode(int instId, Operand target, FuncSignature signature) {
+    final node = InvokeNode(instId, [target]);
+    final err = node.init(signature, _env);
+    if (err != AsmJitError.ok) {
+      throw AsmJitException(err, "Failed to initialize invoke node");
+    }
+    return node;
+  }
+  
+  /// Add InvokeNode to instruction stream.
+  InvokeNode addInvokeNode(int instId, Operand target, FuncSignature signature) {
+    final node = newInvokeNode(instId, target, signature);
+    addNode(node);
+    return node;
+  }
+  
+  /// Create new jump annotation.
+  JumpAnnotation newJumpAnnotation() {
+    final annotation = JumpAnnotation(this, _jumpAnnotations.length);
+    _jumpAnnotations.add(annotation);
+    return annotation;
   }
   // ===========================================================================
   // RA Emission Interface

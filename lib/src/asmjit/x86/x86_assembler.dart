@@ -201,21 +201,22 @@ class X86Assembler extends BaseEmitter {
 
   /// ADD dst, src (register to register).
   void addRR(X86Gp dst, X86Gp src) {
-    if (dst.bits == 64 || src.bits == 64) {
-      _enc.addR64R64(dst, src);
-    } else {
-      _enc.addR32R32(dst, src);
-    }
+    _enc.addRR(dst, src);
   }
 
-  /// ADD r64, imm.
+  /// ADD reg, imm.
   void addRI(X86Gp dst, int imm) {
-    if (imm >= -128 && imm <= 127) {
-      _enc.addR64Imm8(dst, imm);
-    } else {
-      _enc.addR64Imm32(dst, imm);
-    }
+    _enc.addRI(dst, imm);
   }
+
+  /// ADD reg, [mem].
+  void addRM(X86Gp dst, X86Mem mem) => _enc.addRM(dst, mem);
+
+  /// ADD [mem], reg.
+  void addMR(X86Mem mem, X86Gp src) => _enc.addMR(mem, src);
+
+  /// ADD [mem], imm.
+  void addMI(X86Mem mem, int imm) => _enc.addMI(mem, imm);
 
   /// SUB dst, src.
   void subRR(X86Gp dst, X86Gp src) {
@@ -231,14 +232,17 @@ class X86Assembler extends BaseEmitter {
     }
   }
 
-  /// ADD r64, [mem].
-  void addRM(X86Gp dst, X86Mem mem) => _enc.addR64Mem(dst, mem);
-
   /// SUB r64, [mem].
   void subRM(X86Gp dst, X86Mem mem) => _enc.subR64Mem(dst, mem);
 
   /// AND r64, [mem].
-  void andRM(X86Gp dst, X86Mem mem) => _enc.andR64Mem(dst, mem);
+  void andRM(X86Gp dst, X86Mem mem) => _enc.andRM(dst, mem);
+
+  /// AND [mem], reg.
+  void andMR(X86Mem mem, X86Gp src) => _enc.andMR(mem, src);
+
+  /// AND [mem], imm.
+  void andMI(X86Mem mem, int imm) => _enc.andMI(mem, imm);
 
   /// OR r64, [mem].
   void orRM(X86Gp dst, X86Mem mem) => _enc.orR64Mem(dst, mem);
@@ -282,7 +286,7 @@ class X86Assembler extends BaseEmitter {
 
   /// AND dst, src.
   void andRR(X86Gp dst, X86Gp src) {
-    _enc.andR64R64(dst, src);
+    _enc.andRR(dst, src);
   }
 
   /// OR dst, src.
@@ -312,11 +316,7 @@ class X86Assembler extends BaseEmitter {
 
   /// AND r64, imm.
   void andRI(X86Gp dst, int imm) {
-    if (imm >= -128 && imm <= 127) {
-      _enc.andR64Imm8(dst, imm);
-    } else {
-      _enc.andR64Imm32(dst, imm);
-    }
+    _enc.andRI(dst, imm);
   }
 
   /// OR r64, imm.
@@ -840,6 +840,21 @@ class X86Assembler extends BaseEmitter {
     }
   }
 
+  /// ADC dst, [mem] - Add with carry (register <- register + memory)
+  void adcRM(X86Gp dst, X86Mem src) {
+    _enc.adcRM(dst, src);
+  }
+
+  /// ADC [mem], src - Add with carry (memory <- memory + register)
+  void adcMR(X86Mem dst, X86Gp src) {
+    _enc.adcMR(dst, src);
+  }
+
+  /// ADC [mem], imm - Add with carry (memory <- memory + immediate)
+  void adcMI(X86Mem dst, int imm) {
+    _enc.adcMI(dst, imm);
+  }
+
   /// SBB dst, src - Subtract with borrow
   void sbbRR(X86Gp dst, X86Gp src) {
     _enc.sbbRR(dst, src);
@@ -857,6 +872,11 @@ class X86Assembler extends BaseEmitter {
     } else {
       _enc.sbbImmFull(dst, imm);
     }
+  }
+
+  /// SBB dst, [mem] - Subtract with borrow (register <- register - memory)
+  void sbbRM(X86Gp dst, X86Mem src) {
+    _enc.sbbRM(dst, src);
   }
 
   /// MUL src - Unsigned multiply RDX:RAX = RAX * src

@@ -59,20 +59,20 @@ class X86FuncInternal {
         case CallConvId.cdecl:
           break;
         case CallConvId.stdCall:
-          cc.addFlags(CallConvFlags.kCalleePopsStack);
+          cc.setFlags(CallConvFlags.kCalleePopsStack);
           break;
         case CallConvId.fastCall:
-          cc.addFlags(CallConvFlags.kCalleePopsStack);
+          cc.setFlags(CallConvFlags.kCalleePopsStack);
           cc.setPassedOrder(RegGroup.gp, kZcx, kZdx);
           break;
         case CallConvId.vectorCall:
-          cc.addFlags(CallConvFlags.kCalleePopsStack);
+          cc.setFlags(CallConvFlags.kCalleePopsStack);
           cc.setPassedOrder(RegGroup.gp, kZcx, kZdx);
           cc.setPassedOrder(RegGroup.vec, 0, 1, 2, 3, 4, 5);
           break;
         case CallConvId.thisCall:
           if (winAbi) {
-            cc.addFlags(CallConvFlags.kCalleePopsStack);
+            cc.setFlags(CallConvFlags.kCalleePopsStack);
             cc.setPassedOrder(RegGroup.gp, kZcx);
           } else {
             id = CallConvId.cdecl;
@@ -91,7 +91,7 @@ class X86FuncInternal {
         case CallConvId.lightCall3:
         case CallConvId.lightCall4:
           int n = id.index - CallConvId.lightCall2.index + 2;
-          cc.addFlags(CallConvFlags.kPassFloatsByVec);
+          cc.setFlags(CallConvFlags.kPassFloatsByVec);
           cc.setPassedOrder(RegGroup.gp, kZax, kZdx, kZcx, kZsi, kZdi);
           cc.setPassedOrder(RegGroup.vec, 0, 1, 2, 3, 4, 5, 6, 7);
           cc.setPassedOrder(RegGroup.mask, 0, 1, 2, 3, 4, 5, 6, 7);
@@ -288,8 +288,7 @@ class X86FuncInternal {
 
             if (typeId.isFloat && !cc.hasFlag(CallConvFlags.kPassFloatsByVec)) {
               regId = Reg.kIdBad;
-            } else if (typeId.isVec &&
-                signature.hasVarArgs &&
+            } else if (signature.hasVarArgs &&
                 arch.is32Bit &&
                 cc.hasFlag(CallConvFlags.kPassVecByStackIfVA)) {
               regId = Reg.kIdBad;

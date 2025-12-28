@@ -453,30 +453,46 @@ void main() {
       _testInst('f3480fbcc1', (a) => a.tzcnt(rax, rcx));
     });
 
-    test('add rax, [rcx + 16]', () {
-      _testInst('48034110', (a) {
-        a.addRM(rax, qwordPtr(rcx, 16));
+    test('adc al, byte ptr [rbx+rcx*2+5]', () {
+      _testInst('12 4C 4B 05', (a) {
+        a.adcRM(al, bytePtrSIB(rbx, rcx, 2, 5));
+      });
+    });
+    test('adc ax, word ptr [rbx+rcx*2+5]', () {
+      _testInst('66 13 4C 4B 05', (a) {
+        a.adcRM(ax, wordPtrSIB(rbx, rcx, 2, 5));
+      });
+    });
+    test('adc eax, dword ptr [rbx+rcx*2+5]', () {
+      _testInst('13 4C 4B 05', (a) {
+        a.adcRM(eax, dwordPtrSIB(rbx, rcx, 2, 5));
+      });
+    });
+    test('adc rax, qword ptr [rbx+rcx*2+5]', () {
+      _testInst('48 13 4C 4B 05', (a) {
+        a.adcRM(rax, qwordPtrSIB(rbx, rcx, 2, 5));
       });
     });
 
-    test('and rax, [rcx + 16]', () {
-      _testInst('48234110', (a) => a.andRM(rax, qwordPtr(rcx, 16)));
+    test('sbb al, byte ptr [rbx+rcx*2+5]', () {
+      _testInst('1A 4C 4B 05', (a) {
+        a.sbbRM(al, bytePtrSIB(rbx, rcx, 2, 5));
+      });
     });
-
-    test('or rax, [rcx + 16]', () {
-      _testInst('480b4110', (a) => a.orRM(rax, qwordPtr(rcx, 16)));
+    test('sbb ax, word ptr [rbx+rcx*2+5]', () {
+      _testInst('66 1B 4C 4B 05', (a) {
+        a.sbbRM(ax, wordPtrSIB(rbx, rcx, 2, 5));
+      });
     });
-
-    test('xor rax, [rcx + 16]', () {
-      _testInst('48334110', (a) => a.xorRM(rax, qwordPtr(rcx, 16)));
+    test('sbb eax, dword ptr [rbx+rcx*2+5]', () {
+      _testInst('1B 4C 4B 05', (a) {
+        a.sbbRM(eax, dwordPtrSIB(rbx, rcx, 2, 5));
+      });
     });
-
-    test('cmp rax, [rcx + 16]', () {
-      _testInst('483b4110', (a) => a.cmpRM(rax, qwordPtr(rcx, 16)));
-    });
-
-    test('test rax, [rcx + 16]', () {
-      _testInst('48854110', (a) => a.testRM(rax, qwordPtr(rcx, 16)));
+    test('sbb rax, qword ptr [rbx+rcx*2+5]', () {
+      _testInst('48 1B 4C 4B 05', (a) {
+        a.sbbRM(rax, qwordPtrSIB(rbx, rcx, 2, 5));
+      });
     });
 
     test('and rax, [rsp + 16] (SIB obrigatório por base=rsp)', () {

@@ -82,6 +82,14 @@ class Environment {
     );
   }
 
+  /// Creates an x86 environment (32-bit).
+  factory Environment.x86() {
+    return const Environment(
+      arch: Arch.x86,
+      objectFormat: ObjectFormat.jit,
+    );
+  }
+
   /// Creates an AArch64 environment.
   factory Environment.aarch64() {
     return Environment(

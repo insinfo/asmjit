@@ -238,21 +238,57 @@ X86Mem ptr(BaseReg base, [int disp = 0]) => X86Mem.base(base, disp: disp);
 X86Mem bytePtr(BaseReg base, [int disp = 0]) =>
     X86Mem.baseDisp(base, disp, size: 1);
 
+/// Creates a byte memory operand: byte ptr [base + index*scale + disp]
+X86Mem bytePtrSIB(BaseReg base, BaseReg index, int scale, [int disp = 0]) =>
+    X86Mem.baseIndexScale(base, index, scale, disp: disp, size: 1);
+
 /// Creates a word memory operand: word ptr [base]
 X86Mem wordPtr(BaseReg base, [int disp = 0]) =>
     X86Mem.baseDisp(base, disp, size: 2);
+
+/// Creates a word memory operand: word ptr [base + index*scale + disp]
+X86Mem wordPtrSIB(BaseReg base, BaseReg index, int scale, [int disp = 0]) =>
+    X86Mem.baseIndexScale(base, index, scale, disp: disp, size: 2);
 
 /// Creates a dword memory operand: dword ptr [base]
 X86Mem dwordPtr(BaseReg base, [int disp = 0]) =>
     X86Mem.baseDisp(base, disp, size: 4);
 
+/// Creates a dword memory operand: dword ptr [base + index*scale + disp]
+X86Mem dwordPtrSIB(BaseReg base, BaseReg index, int scale, [int disp = 0]) =>
+    X86Mem.baseIndexScale(base, index, scale, disp: disp, size: 4);
+
 /// Creates a qword memory operand: qword ptr [base]
 X86Mem qwordPtr(BaseReg base, [int disp = 0]) =>
     X86Mem.baseDisp(base, disp, size: 8);
 
+/// Creates a qword memory operand: qword ptr [base + index*scale + disp]
+X86Mem qwordPtrSIB(BaseReg base, BaseReg index, int scale, [int disp = 0]) =>
+    X86Mem.baseIndexScale(base, index, scale, disp: disp, size: 8);
+
 /// Creates an xmmword memory operand: xmmword ptr [base]
 X86Mem xmmwordPtr(BaseReg base, [int disp = 0]) =>
     X86Mem.baseDisp(base, disp, size: 16);
+
+/// Creates an xmmword memory operand: xmmword ptr [base + index*scale + disp]
+X86Mem xmmwordPtrSIB(BaseReg base, BaseReg index, int scale, [int disp = 0]) =>
+    X86Mem.baseIndexScale(base, index, scale, disp: disp, size: 16);
+
+/// Creates a ymmword memory operand: ymmword ptr [base]
+X86Mem ymmwordPtr(BaseReg base, [int disp = 0]) =>
+    X86Mem.baseDisp(base, disp, size: 32);
+
+/// Creates a ymmword memory operand: ymmword ptr [base + index*scale + disp]
+X86Mem ymmwordPtrSIB(BaseReg base, BaseReg index, int scale, [int disp = 0]) =>
+    X86Mem.baseIndexScale(base, index, scale, disp: disp, size: 32);
+
+/// Creates a zmmword memory operand: zmmword ptr [base]
+X86Mem zmmwordPtr(BaseReg base, [int disp = 0]) =>
+    X86Mem.baseDisp(base, disp, size: 64);
+
+/// Creates a zmmword memory operand: zmmword ptr [base + index*scale + disp]
+X86Mem zmmwordPtrSIB(BaseReg base, BaseReg index, int scale, [int disp = 0]) =>
+    X86Mem.baseIndexScale(base, index, scale, disp: disp, size: 64);
 
 /// RIP-relative memory operand (for x86-64).
 class X86RipMem extends BaseMem {

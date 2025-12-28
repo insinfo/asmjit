@@ -9,6 +9,7 @@ import 'x86.dart';
 import 'x86_operands.dart';
 import 'x86_simd.dart';
 import '../core/reg_type.dart';
+import '../core/operand.dart';
 
 /// X86 Compiler.
 class X86Compiler extends BaseCompiler {
@@ -41,6 +42,50 @@ class X86Compiler extends BaseCompiler {
       newGp(arch.is64Bit ? RegType.gp64 : RegType.gp32, name);
 
   X86Xmm newXmm([String? name]) => X86Xmm(newVirtId());
+  X86Ymm newYmm([String? name]) => X86Ymm(newVirtId());
+  X86Zmm newZmm([String? name]) => X86Zmm(newVirtId());
+  
+  /// Create new 128-bit vector register (XMM).
+  X86Xmm newXmmF32x1([String? name]) => newXmm(name);
+  X86Xmm newXmmF64x1([String? name]) => newXmm(name);
+  X86Xmm newXmmF32x4([String? name]) => newXmm(name);
+  X86Xmm newXmmF64x2([String? name]) => newXmm(name);
+  X86Xmm newXmmInt32x4([String? name]) => newXmm(name);
+  X86Xmm newXmmInt64x2([String? name]) => newXmm(name);
+  X86Xmm newXmmInt8x16([String? name]) => newXmm(name);
+  X86Xmm newXmmInt16x8([String? name]) => newXmm(name);
+  
+  /// Create new 256-bit vector register (YMM).
+  X86Ymm newYmmF32x8([String? name]) => newYmm(name);
+  X86Ymm newYmmF64x4([String? name]) => newYmm(name);
+  X86Ymm newYmmInt32x8([String? name]) => newYmm(name);
+  X86Ymm newYmmInt64x4([String? name]) => newYmm(name);
+  X86Ymm newYmmInt8x32([String? name]) => newYmm(name);
+  X86Ymm newYmmInt16x16([String? name]) => newYmm(name);
+  
+  /// Create new 512-bit vector register (ZMM).
+  X86Zmm newZmmF32x16([String? name]) => newZmm(name);
+  X86Zmm newZmmF64x8([String? name]) => newZmm(name);
+  X86Zmm newZmmInt32x16([String? name]) => newZmm(name);
+  X86Zmm newZmmInt64x8([String? name]) => newZmm(name);
+  X86Zmm newZmmInt8x64([String? name]) => newZmm(name);
+  X86Zmm newZmmInt16x32([String? name]) => newZmm(name);
+  
+  /// Create new stack allocation.
+  X86Mem newStack(int size, [int alignment = 1]) {
+    // TODO: Implement proper stack allocation with alignment
+    return X86Mem.base(X86Gp.rsp, disp: -size);
+  }
+  
+  /// Create new memory operand with index.
+  X86Mem newMemWithIndex(X86Mem base, X86Gp index, [int shift = 0]) {
+    return X86Mem.baseIndexScale(
+        base.base ?? X86Gp.rsp, 
+        index, 
+        shift > 0 ? shift : 1, 
+        disp: base.displacement, 
+        size: base.size);
+  }
 
   void finalize() {
     runPasses();

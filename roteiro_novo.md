@@ -680,7 +680,8 @@ Os principais benchmarks foram portados, mas precisam de validação de paridade
     *   Refatorar `compiler.dart` para suportar definições de Nós reais (`FuncNode`, `BlockNode`) ✅.
 
 2.  **Prioridade 1 RAGlobal completo**:
-   Implementar RAGlobal
+   Implementar RAGlobal ja esta sendo implementado aqui C:\MyDartProjects\asmjit\lib\src\asmjit\core\rablock.dart e C:\MyDartProjects\asmjit\lib\src\asmjit\core\raassignment.dart
+C:\MyDartProjects\asmjit\lib\src\asmjit\core\rapass.dart
 
 3.  **Prioridade 2 (Backend x86)**:
 *   Implementar `x86_compiler.dart` (Lowering real).
