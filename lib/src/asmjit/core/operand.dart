@@ -196,6 +196,14 @@ abstract class BaseReg extends Operand {
 
   /// Creates a physical register of the same type with the given ID.
   BaseReg toPhys(int physId);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BaseReg && other.type == type && other.id == id;
+
+  @override
+  int get hashCode => Object.hash(type, id);
 }
 
 /// Base class for memory operands.

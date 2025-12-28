@@ -132,6 +132,8 @@ class CodeHolder {
   /// The label manager.
   final LabelManager _labelManager = LabelManager();
 
+  LabelManager get labelManager => _labelManager;
+
   /// The text (code) section.
   late final Section text;
 

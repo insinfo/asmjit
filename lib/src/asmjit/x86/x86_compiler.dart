@@ -1,14 +1,17 @@
+import '../core/builder.dart';
 import '../core/compiler.dart';
+import 'x86_assembler.dart';
 import '../core/labels.dart';
 import '../core/rapass.dart';
 import '../core/environment.dart';
 import 'x86_inst_db.g.dart';
 import 'x86.dart';
 import 'x86_operands.dart';
+import 'x86_simd.dart';
+import '../core/reg_type.dart';
 
 /// X86 Compiler.
 class X86Compiler extends BaseCompiler {
-// ...
   @override
   BaseMem newStackSlot(int baseId, int offset, int size) {
     // Assuming baseId is SP/FP which are usually 64-bit in 64-bit mode.
@@ -17,17 +20,60 @@ class X86Compiler extends BaseCompiler {
     return X86Mem.base(base, disp: offset, size: size);
   }
 
-  X86Compiler({Environment? env}) : super(env: env) {
+  X86Compiler({Environment? env, LabelManager? labelManager})
+      : super(env: env, labelManager: labelManager) {
     // Passes must be ordered!
     addPass(CFGBuilder(this, X86InstructionAnalyzer()));
     addPass(RAPass(this));
+  }
+
+  X86Gp newGp(RegType type, [String? name]) {
+    final id = newVirtId();
+    if (type == RegType.gp32) return X86Gp.r32(id);
+    if (type == RegType.gp64) return X86Gp.r64(id);
+    if (type == RegType.gp16) return X86Gp.r16(id);
+    return X86Gp.r32(id);
+  }
+
+  X86Gp newGp32([String? name]) => newGp(RegType.gp32, name);
+  X86Gp newGp64([String? name]) => newGp(RegType.gp64, name);
+  X86Gp newGpPtr([String? name]) =>
+      newGp(arch.is64Bit ? RegType.gp64 : RegType.gp32, name);
+
+  X86Xmm newXmm([String? name]) => X86Xmm(newVirtId());
+
+  void finalize() {
+    runPasses();
+  }
+
+  void serializeToAssembler(X86Assembler assembler) {
+    for (final node in nodes.nodes) {
+      if (node is InstNode) {
+        if (node.nodeType == NodeType.inst) {
+          assembler.emit(node.instId, node.operands);
+        } else if (node.nodeType == NodeType.jump) {
+          assembler.emit(node.instId, node.operands);
+        } else if (node.nodeType == NodeType.funcRet) {
+          // Abstract Ret handling: translates to actual epilog + ret
+          // For now simple ret
+          assembler.ret();
+        }
+      } else if (node is LabelNode && node.nodeType == NodeType.label) {
+        assembler.bind(node.label);
+      }
+      // Handle other node types if needed
+    }
   }
 
   // ===========================================================================
   // Basic instructions
   // ===========================================================================
 
-  void ret() => inst(X86InstId.kRet, []);
+  @override
+  void ret([List<Operand> operands = const []]) {
+    addNode(FuncRetNode(operands));
+  }
+
   void retImm(int imm16) => inst(X86InstId.kRet, [Imm(imm16)]);
   void nop() => inst(X86InstId.kNop, []);
   void int3() => inst(X86InstId.kInt3, []);
@@ -85,23 +131,36 @@ class X86Compiler extends BaseCompiler {
   // Control Flow
   // ===========================================================================
 
-  void jmp(Label target) => inst(X86InstId.kJmp, [LabelOp(target)]);
+  void jmp(Label target) =>
+      inst(X86InstId.kJmp, [LabelOp(target)], type: NodeType.jump);
   void call(Label target) => inst(X86InstId.kCall, [LabelOp(target)]);
 
-  void je(Label target) => inst(X86InstId.kJz, [LabelOp(target)]);
-  void jz(Label target) => inst(X86InstId.kJz, [LabelOp(target)]);
-  void jne(Label target) => inst(X86InstId.kJnz, [LabelOp(target)]);
-  void jnz(Label target) => inst(X86InstId.kJnz, [LabelOp(target)]);
+  void je(Label target) =>
+      inst(X86InstId.kJz, [LabelOp(target)], type: NodeType.jump);
+  void jz(Label target) =>
+      inst(X86InstId.kJz, [LabelOp(target)], type: NodeType.jump);
+  void jne(Label target) =>
+      inst(X86InstId.kJnz, [LabelOp(target)], type: NodeType.jump);
+  void jnz(Label target) =>
+      inst(X86InstId.kJnz, [LabelOp(target)], type: NodeType.jump);
 
-  void jl(Label target) => inst(X86InstId.kJl, [LabelOp(target)]);
-  void jle(Label target) => inst(X86InstId.kJle, [LabelOp(target)]);
-  void jg(Label target) => inst(X86InstId.kJnle, [LabelOp(target)]);
-  void jge(Label target) => inst(X86InstId.kJnl, [LabelOp(target)]);
+  void jl(Label target) =>
+      inst(X86InstId.kJl, [LabelOp(target)], type: NodeType.jump);
+  void jle(Label target) =>
+      inst(X86InstId.kJle, [LabelOp(target)], type: NodeType.jump);
+  void jg(Label target) =>
+      inst(X86InstId.kJnle, [LabelOp(target)], type: NodeType.jump);
+  void jge(Label target) =>
+      inst(X86InstId.kJnl, [LabelOp(target)], type: NodeType.jump);
 
-  void jb(Label target) => inst(X86InstId.kJb, [LabelOp(target)]);
-  void jbe(Label target) => inst(X86InstId.kJbe, [LabelOp(target)]);
-  void ja(Label target) => inst(X86InstId.kJnbe, [LabelOp(target)]);
-  void jae(Label target) => inst(X86InstId.kJnb, [LabelOp(target)]);
+  void jb(Label target) =>
+      inst(X86InstId.kJb, [LabelOp(target)], type: NodeType.jump);
+  void jbe(Label target) =>
+      inst(X86InstId.kJbe, [LabelOp(target)], type: NodeType.jump);
+  void ja(Label target) =>
+      inst(X86InstId.kJnbe, [LabelOp(target)], type: NodeType.jump);
+  void jae(Label target) =>
+      inst(X86InstId.kJnb, [LabelOp(target)], type: NodeType.jump);
 
   // ===========================================================================
   // Shifts / Rotates

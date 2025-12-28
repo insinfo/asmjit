@@ -369,6 +369,31 @@ class RALiveSpans {
   }
 }
 
+/// Live bundle (RA).
+///
+/// A live bundle is a group of live spans that should be assigned to the same
+/// physical register.
+class RALiveBundle {
+  int physId = RAAssignment.kPhysNone;
+  double priority = 0.0;
+  int spillCost = 0;
+
+  final List<RAWorkId> workIds = [];
+
+  void reset() {
+    physId = RAAssignment.kPhysNone;
+    priority = 0.0;
+    spillCost = 0;
+    workIds.clear();
+  }
+
+  void addWorkId(RAWorkId id) {
+    if (!workIds.contains(id)) {
+      workIds.add(id);
+    }
+  }
+}
+
 /// Statistics about a register liveness.
 class RALiveStats {
   int _width = 0;
@@ -598,6 +623,15 @@ class RAWorkReg {
       hasFlag(RAWorkRegFlags.kWithinSingleBlock);
 
   int stackOffset = 0;
+
+  int _bundleId = Globals.kInvalidId;
+  int get bundleId => _bundleId;
+  set bundleId(int v) => _bundleId = v;
+  bool get hasBundle => _bundleId != Globals.kInvalidId;
+
+  int _preferredMask = 0xFFFFFFFF;
+  int get preferredMask => _preferredMask;
+  void restrictPreferredMask(int mask) => _preferredMask &= mask;
 }
 
 /// Flags for RAWorkReg.

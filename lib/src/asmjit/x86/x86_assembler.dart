@@ -150,7 +150,7 @@ class X86Assembler extends BaseEmitter {
   void movRI64(X86Gp dst, int imm) {
     // Optimize: if immediate fits in 32 bits, use shorter encoding
     if (imm >= 0 && imm <= 0xFFFFFFFF) {
-      _enc.movR32Imm32(dst.r32, imm);
+      _enc.movR32Imm32(dst.as32, imm);
     } else if (imm >= -2147483648 && imm <= 2147483647) {
       _enc.movR64Imm32(dst, imm);
     } else {
@@ -160,7 +160,7 @@ class X86Assembler extends BaseEmitter {
 
   /// MOV r32, imm32.
   void movRI32(X86Gp dst, int imm) {
-    _enc.movR32Imm32(dst.r32, imm);
+    _enc.movR32Imm32(dst.as32, imm);
   }
 
   /// MOV reg, imm (convenience method - auto-selects size).
@@ -177,7 +177,7 @@ class X86Assembler extends BaseEmitter {
     if (dst.bits == 64) {
       _enc.movR64Mem(dst, mem);
     } else {
-      _enc.movR32Mem(dst.r32, mem);
+      _enc.movR32Mem(dst.as32, mem);
     }
   }
 
@@ -186,7 +186,7 @@ class X86Assembler extends BaseEmitter {
     if (src.bits == 64) {
       _enc.movMemR64(mem, src);
     } else {
-      _enc.movMemR32(mem, src.r32);
+      _enc.movMemR32(mem, src.as32);
     }
   }
 
@@ -615,7 +615,7 @@ class X86Assembler extends BaseEmitter {
     if (reg.bits == 64) {
       _enc.incR64(reg);
     } else {
-      _enc.incR32(reg.r32);
+      _enc.incR32(reg.as32);
     }
   }
 
@@ -624,7 +624,7 @@ class X86Assembler extends BaseEmitter {
     if (reg.bits == 64) {
       _enc.decR64(reg);
     } else {
-      _enc.decR32(reg.r32);
+      _enc.decR32(reg.as32);
     }
   }
 
@@ -732,7 +732,7 @@ class X86Assembler extends BaseEmitter {
 
   /// SETcc reg (set byte based on condition).
   void setcc(X86Cond cond, X86Gp reg) {
-    _enc.setccR8(cond, reg.r8);
+    _enc.setccR8(cond, reg.as8);
   }
 
   /// SETE reg (set if equal).

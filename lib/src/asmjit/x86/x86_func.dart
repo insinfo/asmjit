@@ -235,8 +235,18 @@ class X86FuncInternal {
               : (arch.is32Bit ? RegType.x86St : RegType.vec128);
           ret.initReg(regType, i, typeId);
         } else if (typeId.isMmx) {
-          // TODO: MMX cleanup/logic check if needed
-          ret.initReg(RegType.x86Mm, i, typeId);
+          RegType regType = RegType.x86Mm;
+          int regId = i;
+          if (arch.is64Bit) {
+            regType = cc.strategy == CallConvStrategy.defaultStrategy
+                ? RegType.vec128
+                : RegType.gp64;
+            regId = cc.strategy == CallConvStrategy.defaultStrategy
+                ? i
+                : gpReturnIndexes[i];
+            if (regId == Reg.kIdBad) return AsmJitError.invalidState;
+          }
+          ret.initReg(regType, regId, typeId);
         } else {
           ret.initReg(vecTypeIdToRegType(typeId), i, typeId);
         }
@@ -280,6 +290,7 @@ class X86FuncInternal {
               regId = Reg.kIdBad;
             } else if (typeId.isVec &&
                 signature.hasVarArgs &&
+                arch.is32Bit &&
                 cc.hasFlag(CallConvFlags.kPassVecByStackIfVA)) {
               regId = Reg.kIdBad;
             }

@@ -865,4 +865,17 @@ class RALocalAllocator {
     _tiedTotal = 0;
     _tiedCount.reset();
   }
+
+  /// Make all registers clean.
+  void makeAllClean() {
+    _curAssignment.dirty.reset();
+  }
+
+  RAAssignmentState get curAssignment => _curAssignment;
+
+  RARegCount get physRegCount => _physRegCount;
+
+  void copyAssignmentFrom(RAAssignmentState other) {
+    _curAssignment.copyFrom(other);
+  }
 }

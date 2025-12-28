@@ -33,4 +33,26 @@ enum RegType {
     return values.firstWhere((e) => e.value == value,
         orElse: () => RegType.none);
   }
+
+  int get sizeInBytes {
+    switch (this) {
+      case RegType.gp8Lo:
+      case RegType.gp8Hi:
+        return 1;
+      case RegType.gp16:
+        return 2;
+      case RegType.gp32:
+        return 4;
+      case RegType.gp64:
+        return 8;
+      case RegType.vec128:
+        return 16;
+      case RegType.vec256:
+        return 32;
+      case RegType.vec512:
+        return 64;
+      default:
+        return 0;
+    }
+  }
 }

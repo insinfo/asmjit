@@ -485,12 +485,15 @@ Os principais benchmarks foram portados, mas precisam de validação de paridade
     *   Resolver inconsistências em `func.dart` (Stack Offset sinal ✅).
     *   Refatorar `compiler.dart` para suportar definições de Nós reais (`FuncNode`, `BlockNode`) ✅.
 
-2.  **Prioridade 1 (Backend x86)**:
-    *   Implementar `x86_compiler.dart` (Lowering real).
-    *   Expandir coverage de `x86_assembler.dart`.
+2.  **Prioridade 1 RAGlobal completo**:
+   Implementar RAGlobal
 
-3.  **Prioridade 2 (Backend ARM)**:
+3.  **Prioridade 2 (Backend x86)**:
+*   Implementar `x86_compiler.dart` (Lowering real).
+*   Expandir coverage de `x86_assembler.dart`.
+
+4.  **Prioridade 3 (Backend ARM)**:
     *   Expandir drasticamente `a64_assembler.dart` (Atualmente inutilizável para código real complexo).
 
-4.  **Prioridade 3 (Qualidade)**:
-    *   Portar `asmjit_test_assembler` (pelo menos um subset representativo gerado automaticamente).
+5.  **Prioridade 4 (Qualidade)**:
+    *   Portar `asmjit_test_assembler` completo para garantir que a implementação dart esta em paridade com a implementação c++

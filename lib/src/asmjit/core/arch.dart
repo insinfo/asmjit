@@ -364,6 +364,12 @@ class ArchTraits {
   /// Frame pointer register ID.
   final int linkRegId;
 
+  /// Default MOV instruction ID.
+  final int movId;
+
+  /// Default XCHG instruction ID.
+  final int xchgId;
+
   const ArchTraits({
     required this.arch,
     required this.registerSize,
@@ -376,6 +382,8 @@ class ArchTraits {
     this.linkRegId = -1,
     this.supportedRegTypes = const {},
     this.regSwapMask = 0,
+    this.movId = 0,
+    this.xchgId = 0,
   });
 
   /// Tests whether the architecture provides the given register type.
@@ -411,6 +419,8 @@ class ArchTraits {
       RegType.mask,
     },
     regSwapMask: 1,
+    movId: 57, // X86InstId.kMov
+    xchgId: 114, // X86InstId.kXchg
   );
 
   /// Traits for x64 architecture.
@@ -428,6 +438,8 @@ class ArchTraits {
       ..._archMaskRegTypes,
     },
     regSwapMask: 1,
+    movId: 57, // X86InstId.kMov
+    xchgId: 114, // X86InstId.kXchg
   );
 
   /// Traits for AArch64 architecture.

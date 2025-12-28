@@ -378,16 +378,17 @@ class NodeList {
   }
 }
 
-/// Base builder - manages a list of nodes.
-///
-/// This is the foundation for the builder pattern in AsmJit.
-/// It allows recording instructions as nodes before serialization.
 class BaseBuilder {
   /// The node list.
   final NodeList nodes = NodeList();
 
-  /// Label counter for creating new labels.
+  /// Label manager.
+  final LabelManager? labelManager;
+
+  /// Label counter for creating new labels if no labelManager is provided.
   int _labelCounter = 0;
+
+  BaseBuilder({this.labelManager});
 
   /// Clear all nodes.
   void clear() {
@@ -397,12 +398,16 @@ class BaseBuilder {
 
   /// Create a new label.
   Label newLabel() {
+    if (labelManager != null) {
+      return labelManager!.newLabel();
+    }
     return Label(_labelCounter++);
   }
 
   /// Add an instruction node.
-  InstNode inst(int instId, List<Operand> operands, {int options = 0}) {
-    final node = InstNode(instId, operands, options: options);
+  InstNode inst(int instId, List<Operand> operands,
+      {int options = 0, NodeType type = NodeType.inst}) {
+    final node = InstNode(instId, operands, options: options, type: type);
     nodes.append(node);
     return node;
   }
@@ -412,6 +417,11 @@ class BaseBuilder {
     final node = LabelNode(label);
     nodes.append(node);
     return node;
+  }
+
+  /// Bind a label at the current position.
+  void bind(Label label) {
+    this.label(label);
   }
 
   /// Add alignment.

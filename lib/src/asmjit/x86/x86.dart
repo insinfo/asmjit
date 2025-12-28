@@ -39,33 +39,19 @@ class X86Gp extends BaseReg {
   /// Whether this is the high byte register (AH, BH, CH, DH).
   final bool isHighByte;
 
-  /// Creates a 64-bit register.
-  const X86Gp.r64(this.id)
-      : bits = 64,
-        isHighByte = false;
+  /// Internal constructors with unique names to avoid collision with static fields.
+  const X86Gp._(this.id, this.bits, this.isHighByte);
 
-  /// Creates a 32-bit register.
-  const X86Gp.r32(this.id)
-      : bits = 32,
-        isHighByte = false;
-
-  /// Creates a 16-bit register.
-  const X86Gp.r16(this.id)
-      : bits = 16,
-        isHighByte = false;
-
-  /// Creates an 8-bit register (low byte).
-  const X86Gp.r8(this.id)
-      : bits = 8,
-        isHighByte = false;
-
-  /// Creates a high byte register (AH, BH, CH, DH).
-  const X86Gp.r8h(this.id)
-      : bits = 8,
-        isHighByte = true;
+  /// Helper methods to create registers.
+  static X86Gp r64(int id) => X86Gp._(id, 64, false);
+  static X86Gp r32(int id) => X86Gp._(id, 32, false);
+  static X86Gp r16(int id) => X86Gp._(id, 16, false);
+  static X86Gp r8(int id) => X86Gp._(id, 8, false);
+  static X86Gp r8h(int id) => X86Gp._(id, 8, true);
 
   @override
   RegType get type {
+    if (isHighByte) return RegType.gp8Hi;
     switch (bits) {
       case 64:
         return RegType.gp64;
@@ -74,7 +60,7 @@ class X86Gp extends BaseReg {
       case 16:
         return RegType.gp16;
       case 8:
-        return isHighByte ? RegType.gp8Hi : RegType.gp8Lo;
+        return RegType.gp8Lo;
       default:
         return RegType.none;
     }
@@ -95,20 +81,15 @@ class X86Gp extends BaseReg {
   /// Gets the 3-bit encoding for ModR/M.
   int get encoding => id & 0x7;
 
-  /// Returns the 64-bit version of this register.
-  X86Gp get r64 => X86Gp.r64(id);
-
-  /// Returns the 32-bit version of this register.
-  X86Gp get r32 => X86Gp.r32(id);
-
-  /// Returns the 16-bit version of this register.
-  X86Gp get r16 => X86Gp.r16(id);
-
-  /// Returns the 8-bit (low) version of this register.
-  X86Gp get r8 => X86Gp.r8(id);
+  X86Gp get as8 => X86Gp.r8(id);
+  X86Gp get as8h => X86Gp.r8h(id);
+  X86Gp get as16 => X86Gp.r16(id);
+  X86Gp get as32 => X86Gp.r32(id);
+  X86Gp get as64 => X86Gp.r64(id);
 
   @override
-  BaseReg toPhys(int physId) {
+  X86Gp toPhys(int physId) {
+    if (isHighByte) return X86Gp.r8h(physId);
     switch (bits) {
       case 64:
         return X86Gp.r64(physId);
@@ -117,14 +98,15 @@ class X86Gp extends BaseReg {
       case 16:
         return X86Gp.r16(physId);
       case 8:
-        return isHighByte ? X86Gp.r8h(physId) : X86Gp.r8(physId);
+        return X86Gp.r8(physId);
       default:
-        throw StateError('Invalid bits for X86Gp: $bits');
+        return X86Gp.r64(physId);
     }
   }
 
   @override
   String toString() {
+    if (id < 0) return 'v$id';
     final names64 = [
       'rax',
       'rcx',
@@ -199,165 +181,159 @@ class X86Gp extends BaseReg {
     ];
     final names8h = ['ah', 'ch', 'dh', 'bh'];
 
-    if (isHighByte && id < 4) {
-      return names8h[id];
+    if (id >= 16) return 'gp$id';
+
+    if (isHighByte) {
+      return id < 4 ? names8h[id] : 'gp${id}h';
     }
 
     switch (bits) {
       case 64:
-        return id < names64.length ? names64[id] : 'r64($id)';
+        return names64[id];
       case 32:
-        return id < names32.length ? names32[id] : 'r32($id)';
+        return names32[id];
       case 16:
-        return id < names16.length ? names16[id] : 'r16($id)';
+        return names16[id];
       case 8:
-        return id < names8.length ? names8[id] : 'r8($id)';
+        return names8[id];
       default:
-        return 'gp$id($bits)';
+        return 'gp$id';
     }
   }
 
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is X86Gp &&
-          other.id == id &&
-          other.bits == bits &&
-          other.isHighByte == isHighByte;
+  static const rax = X86Gp._(0, 64, false);
+  static const rcx = X86Gp._(1, 64, false);
+  static const rdx = X86Gp._(2, 64, false);
+  static const rbx = X86Gp._(3, 64, false);
+  static const rsp = X86Gp._(4, 64, false);
+  static const rbp = X86Gp._(5, 64, false);
+  static const rsi = X86Gp._(6, 64, false);
+  static const rdi = X86Gp._(7, 64, false);
+  static const r8_ = X86Gp._(8, 64, false);
+  static const r9 = X86Gp._(9, 64, false);
+  static const r10 = X86Gp._(10, 64, false);
+  static const r11 = X86Gp._(11, 64, false);
+  static const r12 = X86Gp._(12, 64, false);
+  static const r13 = X86Gp._(13, 64, false);
+  static const r14 = X86Gp._(14, 64, false);
+  static const r15 = X86Gp._(15, 64, false);
 
-  @override
-  int get hashCode => Object.hash(id, bits, isHighByte);
+  static const eax = X86Gp._(0, 32, false);
+  static const ecx = X86Gp._(1, 32, false);
+  static const edx = X86Gp._(2, 32, false);
+  static const ebx = X86Gp._(3, 32, false);
+  static const esp = X86Gp._(4, 32, false);
+  static const ebp = X86Gp._(5, 32, false);
+  static const esi = X86Gp._(6, 32, false);
+  static const edi = X86Gp._(7, 32, false);
+
+  static const ax = X86Gp._(0, 16, false);
+  static const cx = X86Gp._(1, 16, false);
+  static const dx = X86Gp._(2, 16, false);
+  static const bx = X86Gp._(3, 16, false);
+  static const sp = X86Gp._(4, 16, false);
+  static const bp = X86Gp._(5, 16, false);
+  static const si = X86Gp._(6, 16, false);
+  static const di = X86Gp._(7, 16, false);
+
+  static const al = X86Gp._(0, 8, false);
+  static const cl = X86Gp._(1, 8, false);
+  static const dl = X86Gp._(2, 8, false);
+  static const bl = X86Gp._(3, 8, false);
+
+  static const ah = X86Gp._(0, 8, true);
+  static const ch = X86Gp._(1, 8, true);
+  static const dh = X86Gp._(2, 8, true);
+  static const bh = X86Gp._(3, 8, true);
 }
 
-// =============================================================================
-// Predefined 64-bit registers
-// =============================================================================
+// Global aliases to match AsmJit/C++ usage more closely
+const rax = X86Gp.rax;
+const rcx = X86Gp.rcx;
+const rdx = X86Gp.rdx;
+const rbx = X86Gp.rbx;
+const rsp = X86Gp.rsp;
+const rbp = X86Gp.rbp;
+const rsi = X86Gp.rsi;
+const rdi = X86Gp.rdi;
+const r8 = X86Gp.r8_;
+const r9 = X86Gp.r9;
+const r10 = X86Gp.r10;
+const r11 = X86Gp.r11;
+const r12 = X86Gp.r12;
+const r13 = X86Gp.r13;
+const r14 = X86Gp.r14;
+const r15 = X86Gp.r15;
 
-const rax = X86Gp.r64(0);
-const rcx = X86Gp.r64(1);
-const rdx = X86Gp.r64(2);
-const rbx = X86Gp.r64(3);
-const rsp = X86Gp.r64(4);
-const rbp = X86Gp.r64(5);
-const rsi = X86Gp.r64(6);
-const rdi = X86Gp.r64(7);
-const r8 = X86Gp.r64(8);
-const r9 = X86Gp.r64(9);
-const r10 = X86Gp.r64(10);
-const r11 = X86Gp.r64(11);
-const r12 = X86Gp.r64(12);
-const r13 = X86Gp.r64(13);
-const r14 = X86Gp.r64(14);
-const r15 = X86Gp.r64(15);
+const eax = X86Gp.eax;
+const ecx = X86Gp.ecx;
+const edx = X86Gp.edx;
+const ebx = X86Gp.ebx;
+const esp = X86Gp.esp;
+const ebp = X86Gp.ebp;
+const esi = X86Gp.esi;
+const edi = X86Gp.edi;
 
-// =============================================================================
-// Predefined 32-bit registers
-// =============================================================================
+const ax = X86Gp.ax;
+const cx = X86Gp.cx;
+const dx = X86Gp.dx;
+const bx = X86Gp.bx;
+const sp = X86Gp.sp;
+const bp = X86Gp.bp;
+const si = X86Gp.si;
+const di = X86Gp.di;
 
-const eax = X86Gp.r32(0);
-const ecx = X86Gp.r32(1);
-const edx = X86Gp.r32(2);
-const ebx = X86Gp.r32(3);
-const esp = X86Gp.r32(4);
-const ebp = X86Gp.r32(5);
-const esi = X86Gp.r32(6);
-const edi = X86Gp.r32(7);
-const r8d = X86Gp.r32(8);
-const r9d = X86Gp.r32(9);
-const r10d = X86Gp.r32(10);
-const r11d = X86Gp.r32(11);
-const r12d = X86Gp.r32(12);
-const r13d = X86Gp.r32(13);
-const r14d = X86Gp.r32(14);
-const r15d = X86Gp.r32(15);
+const al = X86Gp.al;
+const cl = X86Gp.cl;
+const dl = X86Gp.dl;
+const bl = X86Gp.bl;
 
-// =============================================================================
-// Predefined 16-bit registers
-// =============================================================================
+const ah = X86Gp.ah;
+const ch = X86Gp.ch;
+const dh = X86Gp.dh;
+const bh = X86Gp.bh;
 
-const ax = X86Gp.r16(0);
-const cx = X86Gp.r16(1);
-const dx = X86Gp.r16(2);
-const bx = X86Gp.r16(3);
-const sp = X86Gp.r16(4);
-const bp = X86Gp.r16(5);
-const si = X86Gp.r16(6);
-const di = X86Gp.r16(7);
+const r8d = X86Gp._(8, 32, false);
+const r9d = X86Gp._(9, 32, false);
+const r10d = X86Gp._(10, 32, false);
+const r11d = X86Gp._(11, 32, false);
+const r12d = X86Gp._(12, 32, false);
+const r13d = X86Gp._(13, 32, false);
+const r14d = X86Gp._(14, 32, false);
+const r15d = X86Gp._(15, 32, false);
 
-// =============================================================================
-// Predefined 8-bit registers
-// =============================================================================
+const r8w = X86Gp._(8, 16, false);
+const r9w = X86Gp._(9, 16, false);
+const r10w = X86Gp._(10, 16, false);
+const r11w = X86Gp._(11, 16, false);
+const r12w = X86Gp._(12, 16, false);
+const r13w = X86Gp._(13, 16, false);
+const r14w = X86Gp._(14, 16, false);
+const r15w = X86Gp._(15, 16, false);
 
-const al = X86Gp.r8(0);
-const cl = X86Gp.r8(1);
-const dl = X86Gp.r8(2);
-const bl = X86Gp.r8(3);
-const spl = X86Gp.r8(4);
-const bpl = X86Gp.r8(5);
-const sil = X86Gp.r8(6);
-const dil = X86Gp.r8(7);
-const r8b = X86Gp.r8(8);
-const r9b = X86Gp.r8(9);
-const r10b = X86Gp.r8(10);
-const r11b = X86Gp.r8(11);
-const r12b = X86Gp.r8(12);
-const r13b = X86Gp.r8(13);
-const r14b = X86Gp.r8(14);
-const r15b = X86Gp.r8(15);
+const r8b = X86Gp._(8, 8, false);
+const r9b = X86Gp._(9, 8, false);
+const r10b = X86Gp._(10, 8, false);
+const r11b = X86Gp._(11, 8, false);
+const r12b = X86Gp._(12, 8, false);
+const r13b = X86Gp._(13, 8, false);
+const r14b = X86Gp._(14, 8, false);
+const r15b = X86Gp._(15, 8, false);
 
-// High byte registers
-const ah = X86Gp.r8h(0);
-const ch = X86Gp.r8h(1);
-const dh = X86Gp.r8h(2);
-const bh = X86Gp.r8h(3);
+const spl = X86Gp._(4, 8, false);
+const bpl = X86Gp._(5, 8, false);
+const sil = X86Gp._(6, 8, false);
+const dil = X86Gp._(7, 8, false);
 
-// =============================================================================
-// Argument registers by calling convention
-// =============================================================================
+// ABI definitions
+final x64SystemVArgsGp = [rdi, rsi, rdx, rcx, r8, r9];
+final x64WindowsArgsGp = [rcx, rdx, r8, r9];
 
-/// System V AMD64 ABI argument registers.
-class SysVArgs {
-  static const arg0 = rdi;
-  static const arg1 = rsi;
-  static const arg2 = rdx;
-  static const arg3 = rcx;
-  static const arg4 = r8;
-  static const arg5 = r9;
+final x64SystemVPreservedGp = [rbx, rsp, rbp, r12, r13, r14, r15];
+final x64WindowsPreservedGp = [rbx, rsp, rbp, rsi, rdi, r12, r13, r14, r15];
 
-  static const all = [arg0, arg1, arg2, arg3, arg4, arg5];
+final x64SystemVVolatileGp = [rax, rcx, rdx, rsi, rdi, r8, r9, r10, r11];
+final x64WindowsVolatileGp = [rax, rcx, rdx, r8, r9, r10, r11];
 
-  /// Return value register.
-  static const ret = rax;
-
-  /// Secondary return value register (for 128-bit returns).
-  static const ret2 = rdx;
-}
-
-/// Windows x64 ABI argument registers.
-class Win64Args {
-  static const arg0 = rcx;
-  static const arg1 = rdx;
-  static const arg2 = r8;
-  static const arg3 = r9;
-
-  static const all = [arg0, arg1, arg2, arg3];
-
-  /// Return value register.
-  static const ret = rax;
-}
-
-// =============================================================================
-// Callee-saved registers
-// =============================================================================
-
-/// Callee-saved (non-volatile) registers for System V AMD64.
-const sysVCalleeSaved = [rbx, rbp, r12, r13, r14, r15];
-
-/// Callee-saved (non-volatile) registers for Windows x64.
-const win64CalleeSaved = [rbx, rbp, rdi, rsi, r12, r13, r14, r15];
-
-/// Volatile (caller-saved) registers for System V AMD64.
-const sysVVolatile = [rax, rcx, rdx, rsi, rdi, r8, r9, r10, r11];
-
-/// Volatile (caller-saved) registers for Windows x64.
-const win64Volatile = [rax, rcx, rdx, r8, r9, r10, r11];
+final win64CalleeSaved = x64WindowsPreservedGp;
+final sysVCalleeSaved = x64SystemVPreservedGp;

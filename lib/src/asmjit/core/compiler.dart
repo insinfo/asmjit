@@ -172,6 +172,14 @@ class BlockNode extends LabelNode {
   @override
   String toString() =>
       'BlockNode(L${label.id}, preds:${predecessors.length}, succs:${successors.length})';
+
+  BaseNode? get lastNode {
+    BaseNode? node = this;
+    while (node?.next != null && node?.next is! BlockNode) {
+      node = node!.next;
+    }
+    return node;
+  }
 }
 
 /// Abstract Compiler Pass.
@@ -196,7 +204,9 @@ class BaseCompiler extends BaseBuilder {
   FuncNode? _func;
   Environment _env;
 
-  BaseCompiler({Environment? env}) : _env = env ?? Environment.host();
+  BaseCompiler({Environment? env, LabelManager? labelManager})
+      : _env = env ?? Environment.host(),
+        super(labelManager: labelManager);
 
   Environment get env => _env;
   Arch get arch => _env.arch;
@@ -216,7 +226,12 @@ class BaseCompiler extends BaseBuilder {
     return func;
   }
 
-  FuncNode addFunc(FuncNode func) {
+  FuncNode addFunc(FuncSignature signature) {
+    final func = newFunc(signature);
+    return addFuncNode(func);
+  }
+
+  FuncNode addFuncNode(FuncNode func) {
     addNode(func);
 
     // Create and add entry block
@@ -232,6 +247,15 @@ class BaseCompiler extends BaseBuilder {
 
     _func = func;
     return func;
+  }
+
+  void ret([List<Operand> operands = const []]) {
+    addNode(FuncRetNode(operands));
+  }
+
+  @override
+  void bind(Label label) {
+    addNode(BlockNode(label));
   }
 
   final List<CompilerPass> _passes = [];

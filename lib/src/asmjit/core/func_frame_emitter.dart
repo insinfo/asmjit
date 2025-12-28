@@ -14,14 +14,14 @@ class FuncFrameEmitter {
   void emitPrologue() {
     // 1. Push RBP and setup stack frame
     if (frame.hasAttribute(FuncAttributes.kHasPreservedFP)) {
-      asm.push(rbp);
-      asm.movRR(rbp, rsp);
+      asm.push(X86Gp.rbp);
+      asm.movRR(X86Gp.rbp, X86Gp.rsp);
     }
 
     // 2. Adjust stack pointer
     final stackAdjustment = frame.stackAdjustment;
     if (stackAdjustment > 0) {
-      asm.subRI(rsp, stackAdjustment);
+      asm.subRI(X86Gp.rsp, stackAdjustment);
     }
 
     // 3. Save preserved registers
@@ -36,12 +36,12 @@ class FuncFrameEmitter {
     // 2. Adjust stack pointer back
     final stackAdjustment = frame.stackAdjustment;
     if (stackAdjustment > 0) {
-      asm.addRI(rsp, stackAdjustment);
+      asm.addRI(X86Gp.rsp, stackAdjustment);
     }
 
     // 3. Restore RBP
     if (frame.hasAttribute(FuncAttributes.kHasPreservedFP)) {
-      asm.pop(rbp);
+      asm.pop(X86Gp.rbp);
     }
 
     // 4. Return
