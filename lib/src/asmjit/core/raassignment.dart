@@ -166,10 +166,15 @@ class RAAssignmentState {
 
   RAWorkId physToWorkId(RegGroup group, int physId) {
     assert(physId < Globals.kMaxPhysRegs);
-    if (physId >= _physToWorkIds[group.index].length) {
+    // Fonte-da-verdade: o mapa linearizado `_physToWorkMap.workIds`.
+    // O cache `_physToWorkIds` é apenas otimização e pode ficar desatualizado
+    // após copy/swap - isso quebraria invariantes (ex.: unassign asserts).
+    final baseIndex = _layout.physIndex.get(group);
+    final count = _layout.physCount.get(group);
+    if (physId >= count) {
       return kBadWorkId;
     }
-    return _physToWorkIds[group.index][physId];
+    return _physToWorkMap!.workIds[baseIndex + physId];
   }
 
   bool isPhysAssigned(RegGroup group, int physId) {
