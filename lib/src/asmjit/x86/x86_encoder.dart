@@ -1412,6 +1412,34 @@ class X86Encoder {
   // Bit manipulation
   // ===========================================================================
 
+  /// ARPL r/m16, r16
+  void arplRR(X86Gp dst, X86Gp src) {
+    if (dst.bits != 16 || src.bits != 16) {
+      throw ArgumentError('arplRR requires 16-bit operands');
+    }
+    buffer.emit8(0x63);
+    emitModRmReg(src.encoding, dst);
+  }
+
+  /// ARPL r/m16, r16 (memory form)
+  void arplMR(X86Mem dst, X86Gp src) {
+    if (src.bits != 16) {
+      throw ArgumentError('arplMR requires 16-bit source register');
+    }
+    buffer.emit8(0x63);
+    emitModRmMem(src.encoding, dst);
+  }
+
+  /// BOUND r16/r32, m16&16 / m32&32
+  void boundRM(X86Gp dst, X86Mem mem) {
+    if (dst.bits != 16 && dst.bits != 32) {
+      throw ArgumentError('boundRM requires 16-bit or 32-bit destination');
+    }
+    if (dst.bits == 16) buffer.emit8(0x66);
+    buffer.emit8(0x62);
+    emitModRmMem(dst.encoding, mem);
+  }
+
   /// BSF r64, r64 (bit scan forward)
   void bsfR64R64(X86Gp dst, X86Gp src) {
     emitRexForRegRm(dst, src, w: true);
@@ -1420,12 +1448,154 @@ class X86Encoder {
     emitModRmReg(dst.encoding, src);
   }
 
+  /// BSF r16/r32, r/m16/r/m32
+  void bsfRR(X86Gp dst, X86Gp src) {
+    if (dst.bits != src.bits || (dst.bits != 16 && dst.bits != 32)) {
+      throw ArgumentError('bsfRR requires 16-bit or 32-bit operands of same size');
+    }
+    if (dst.bits == 16) buffer.emit8(0x66);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xBC);
+    emitModRmReg(dst.encoding, src);
+  }
+
+  /// BSF r16/r32, m16/m32
+  void bsfRM(X86Gp dst, X86Mem mem) {
+    if (dst.bits != 16 && dst.bits != 32) {
+      throw ArgumentError('bsfRM requires 16-bit or 32-bit destination');
+    }
+    if (dst.bits == 16) buffer.emit8(0x66);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xBC);
+    emitModRmMem(dst.encoding, mem);
+  }
+
   /// BSR r64, r64 (bit scan reverse)
   void bsrR64R64(X86Gp dst, X86Gp src) {
     emitRexForRegRm(dst, src, w: true);
     buffer.emit8(0x0F);
     buffer.emit8(0xBD);
     emitModRmReg(dst.encoding, src);
+  }
+
+  /// BSR r16/r32, r/m16/r/m32
+  void bsrRR(X86Gp dst, X86Gp src) {
+    if (dst.bits != src.bits || (dst.bits != 16 && dst.bits != 32)) {
+      throw ArgumentError('bsrRR requires 16-bit or 32-bit operands of same size');
+    }
+    if (dst.bits == 16) buffer.emit8(0x66);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xBD);
+    emitModRmReg(dst.encoding, src);
+  }
+
+  /// BSR r16/r32, m16/m32
+  void bsrRM(X86Gp dst, X86Mem mem) {
+    if (dst.bits != 16 && dst.bits != 32) {
+      throw ArgumentError('bsrRM requires 16-bit or 32-bit destination');
+    }
+    if (dst.bits == 16) buffer.emit8(0x66);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xBD);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// BSWAP r16/r32
+  void bswapR(X86Gp reg) {
+    if (reg.bits != 16 && reg.bits != 32) {
+      throw ArgumentError('bswapR requires 16-bit or 32-bit register');
+    }
+    if (reg.bits == 16) buffer.emit8(0x66);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xC8 + reg.encoding);
+  }
+
+  /// BT r/m16,r16 or r/m32,r32
+  void btRR(X86Gp dst, X86Gp src) {
+    if (dst.bits != src.bits || (dst.bits != 16 && dst.bits != 32)) {
+      throw ArgumentError('btRR requires 16-bit or 32-bit operands of same size');
+    }
+    if (dst.bits == 16) buffer.emit8(0x66);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xA3);
+    emitModRmReg(src.encoding, dst);
+  }
+
+  void btMR(X86Mem dst, X86Gp src) {
+    if (src.bits != 16 && src.bits != 32) {
+      throw ArgumentError('btMR requires 16-bit or 32-bit source register');
+    }
+    if (src.bits == 16) buffer.emit8(0x66);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xA3);
+    emitModRmMem(src.encoding, dst);
+  }
+
+  void btRI(X86Gp dst, int imm) {
+    if (dst.bits != 16 && dst.bits != 32) {
+      throw ArgumentError('btRI requires 16-bit or 32-bit destination');
+    }
+    if (dst.bits == 16) buffer.emit8(0x66);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xBA);
+    emitModRmReg(4, dst);
+    buffer.emit8(imm & 0xFF);
+  }
+
+  void btMI(X86Mem dst, int imm) {
+    final size = dst.size;
+    if (size != 2 && size != 4) {
+      throw ArgumentError('btMI requires memory operand of size 2 or 4');
+    }
+    if (size == 2) buffer.emit8(0x66);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xBA);
+    emitModRmMem(4, dst);
+    buffer.emit8(imm & 0xFF);
+  }
+
+  /// BTC r/m16,r16 or r/m32,r32
+  void btcRR(X86Gp dst, X86Gp src) {
+    if (dst.bits != src.bits || (dst.bits != 16 && dst.bits != 32)) {
+      throw ArgumentError('btcRR requires 16-bit or 32-bit operands of same size');
+    }
+    if (dst.bits == 16) buffer.emit8(0x66);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xBB);
+    emitModRmReg(src.encoding, dst);
+  }
+
+  void btcMR(X86Mem dst, X86Gp src) {
+    if (src.bits != 16 && src.bits != 32) {
+      throw ArgumentError('btcMR requires 16-bit or 32-bit source register');
+    }
+    if (src.bits == 16) buffer.emit8(0x66);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xBB);
+    emitModRmMem(src.encoding, dst);
+  }
+
+  void btcRI(X86Gp dst, int imm) {
+    if (dst.bits != 16 && dst.bits != 32) {
+      throw ArgumentError('btcRI requires 16-bit or 32-bit destination');
+    }
+    if (dst.bits == 16) buffer.emit8(0x66);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xBA);
+    emitModRmReg(7, dst);
+    buffer.emit8(imm & 0xFF);
+  }
+
+  void btcMI(X86Mem dst, int imm) {
+    final size = dst.size;
+    if (size != 2 && size != 4) {
+      throw ArgumentError('btcMI requires memory operand of size 2 or 4');
+    }
+    if (size == 2) buffer.emit8(0x66);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xBA);
+    emitModRmMem(7, dst);
+    buffer.emit8(imm & 0xFF);
   }
 
   /// POPCNT r64, r64 (population count)

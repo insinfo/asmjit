@@ -770,15 +770,65 @@ class X86Assembler extends BaseEmitter {
   // Bit manipulation
   // ===========================================================================
 
+  /// ARPL r/m16, r16.
+  void arplRR(X86Gp dst, X86Gp src) => _enc.arplRR(dst, src);
+
+  /// ARPL [mem16], r16.
+  void arplMR(X86Mem dst, X86Gp src) => _enc.arplMR(dst, src);
+
+  /// BOUND r16/r32, [mem].
+  void bound(X86Gp dst, X86Mem mem) => _enc.boundRM(dst, mem);
+
   /// BSF dst, src (bit scan forward).
   void bsf(X86Gp dst, X86Gp src) {
-    _enc.bsfR64R64(dst, src);
+    if (dst.bits == 64 && src.bits == 64) {
+      _enc.bsfR64R64(dst, src);
+    } else {
+      _enc.bsfRR(dst, src);
+    }
   }
+
+  /// BSF dst, [mem].
+  void bsfRM(X86Gp dst, X86Mem mem) => _enc.bsfRM(dst, mem);
 
   /// BSR dst, src (bit scan reverse).
   void bsr(X86Gp dst, X86Gp src) {
-    _enc.bsrR64R64(dst, src);
+    if (dst.bits == 64 && src.bits == 64) {
+      _enc.bsrR64R64(dst, src);
+    } else {
+      _enc.bsrRR(dst, src);
+    }
   }
+
+  /// BSR dst, [mem].
+  void bsrRM(X86Gp dst, X86Mem mem) => _enc.bsrRM(dst, mem);
+
+  /// BSWAP reg.
+  void bswap(X86Gp reg) => _enc.bswapR(reg);
+
+  /// BT reg, imm.
+  void btRI(X86Gp dst, int imm) => _enc.btRI(dst, imm);
+
+  /// BT [mem], imm.
+  void btMI(X86Mem mem, int imm) => _enc.btMI(mem, imm);
+
+  /// BT reg, reg.
+  void btRR(X86Gp dst, X86Gp src) => _enc.btRR(dst, src);
+
+  /// BT [mem], reg.
+  void btMR(X86Mem mem, X86Gp src) => _enc.btMR(mem, src);
+
+  /// BTC reg, imm.
+  void btcRI(X86Gp dst, int imm) => _enc.btcRI(dst, imm);
+
+  /// BTC [mem], imm.
+  void btcMI(X86Mem mem, int imm) => _enc.btcMI(mem, imm);
+
+  /// BTC reg, reg.
+  void btcRR(X86Gp dst, X86Gp src) => _enc.btcRR(dst, src);
+
+  /// BTC [mem], reg.
+  void btcMR(X86Mem mem, X86Gp src) => _enc.btcMR(mem, src);
 
   /// POPCNT dst, src (population count).
   void popcnt(X86Gp dst, X86Gp src) {

@@ -617,5 +617,277 @@ void main() {
         why: 'and_(ecx, dword_ptr(edx, ebx, 0, 128))',
       );
     });
+
+    // -----------------------------------------------------------------------
+    // arpl / bound / bsf / bsr / bswap / bt / btc - sequência no arquivo C++.
+    // -----------------------------------------------------------------------
+
+    test('arpl cx, dx', () {
+      _testInstX86('63D1', (a) => a.arplRR(cx, dx), why: 'arpl(cx, dx)');
+    });
+
+    test('arpl ptr(ecx, edx, 0, 128), bx', () {
+      _testInstX86(
+        '639C1180000000',
+        (a) => a.arplMR(wordPtrSIB(ecx, edx, 1, 128), bx),
+        why: 'arpl(ptr(ecx, edx, 0, 128), bx)',
+      );
+    });
+
+    test('arpl word_ptr(ecx, edx, 0, 128), bx', () {
+      _testInstX86(
+        '639C1180000000',
+        (a) => a.arplMR(wordPtrSIB(ecx, edx, 1, 128), bx),
+        why: 'arpl(word_ptr(ecx, edx, 0, 128), bx)',
+      );
+    });
+
+    test('bound cx, ptr(edx, ebx, 0, 128)', () {
+      _testInstX86(
+        '66628C1A80000000',
+        (a) => a.bound(cx, dwordPtrSIB(edx, ebx, 1, 128)),
+        why: 'bound(cx, ptr(edx, ebx, 0, 128))',
+      );
+    });
+
+    test('bound cx, dword_ptr(edx, ebx, 0, 128)', () {
+      _testInstX86(
+        '66628C1A80000000',
+        (a) => a.bound(cx, dwordPtrSIB(edx, ebx, 1, 128)),
+        why: 'bound(cx, dword_ptr(edx, ebx, 0, 128))',
+      );
+    });
+
+    test('bound ecx, ptr(edx, ebx, 0, 128)', () {
+      _testInstX86(
+        '628C1A80000000',
+        (a) => a.bound(ecx, qwordPtrSIB(edx, ebx, 1, 128)),
+        why: 'bound(ecx, ptr(edx, ebx, 0, 128))',
+      );
+    });
+
+    test('bound ecx, qword_ptr(edx, ebx, 0, 128)', () {
+      _testInstX86(
+        '628C1A80000000',
+        (a) => a.bound(ecx, qwordPtrSIB(edx, ebx, 1, 128)),
+        why: 'bound(ecx, qword_ptr(edx, ebx, 0, 128))',
+      );
+    });
+
+    test('bsf cx, dx', () {
+      _testInstX86('660FBCCA', (a) => a.bsf(cx, dx), why: 'bsf(cx, dx)');
+    });
+
+    test('bsf cx, ptr(edx, ebx, 0, 128)', () {
+      _testInstX86(
+        '660FBC8C1A80000000',
+        (a) => a.bsfRM(cx, wordPtrSIB(edx, ebx, 1, 128)),
+        why: 'bsf(cx, ptr(edx, ebx, 0, 128))',
+      );
+    });
+
+    test('bsf cx, word_ptr(edx, ebx, 0, 128)', () {
+      _testInstX86(
+        '660FBC8C1A80000000',
+        (a) => a.bsfRM(cx, wordPtrSIB(edx, ebx, 1, 128)),
+        why: 'bsf(cx, word_ptr(edx, ebx, 0, 128))',
+      );
+    });
+
+    test('bsf ecx, edx', () {
+      _testInstX86('0FBCCA', (a) => a.bsf(ecx, edx), why: 'bsf(ecx, edx)');
+    });
+
+    test('bsf ecx, ptr(edx, ebx, 0, 128)', () {
+      _testInstX86(
+        '0FBC8C1A80000000',
+        (a) => a.bsfRM(ecx, dwordPtrSIB(edx, ebx, 1, 128)),
+        why: 'bsf(ecx, ptr(edx, ebx, 0, 128))',
+      );
+    });
+
+    test('bsf ecx, dword_ptr(edx, ebx, 0, 128)', () {
+      _testInstX86(
+        '0FBC8C1A80000000',
+        (a) => a.bsfRM(ecx, dwordPtrSIB(edx, ebx, 1, 128)),
+        why: 'bsf(ecx, dword_ptr(edx, ebx, 0, 128))',
+      );
+    });
+
+    test('bsr cx, dx', () {
+      _testInstX86('660FBDCA', (a) => a.bsr(cx, dx), why: 'bsr(cx, dx)');
+    });
+
+    test('bsr cx, ptr(edx, ebx, 0, 128)', () {
+      _testInstX86(
+        '660FBD8C1A80000000',
+        (a) => a.bsrRM(cx, wordPtrSIB(edx, ebx, 1, 128)),
+        why: 'bsr(cx, ptr(edx, ebx, 0, 128))',
+      );
+    });
+
+    test('bsr cx, word_ptr(edx, ebx, 0, 128)', () {
+      _testInstX86(
+        '660FBD8C1A80000000',
+        (a) => a.bsrRM(cx, wordPtrSIB(edx, ebx, 1, 128)),
+        why: 'bsr(cx, word_ptr(edx, ebx, 0, 128))',
+      );
+    });
+
+    test('bsr ecx, edx', () {
+      _testInstX86('0FBDCA', (a) => a.bsr(ecx, edx), why: 'bsr(ecx, edx)');
+    });
+
+    test('bsr ecx, ptr(edx, ebx, 0, 128)', () {
+      _testInstX86(
+        '0FBD8C1A80000000',
+        (a) => a.bsrRM(ecx, dwordPtrSIB(edx, ebx, 1, 128)),
+        why: 'bsr(ecx, ptr(edx, ebx, 0, 128))',
+      );
+    });
+
+    test('bsr ecx, dword_ptr(edx, ebx, 0, 128)', () {
+      _testInstX86(
+        '0FBD8C1A80000000',
+        (a) => a.bsrRM(ecx, dwordPtrSIB(edx, ebx, 1, 128)),
+        why: 'bsr(ecx, dword_ptr(edx, ebx, 0, 128))',
+      );
+    });
+
+    test('bswap cx', () {
+      _testInstX86('660FC9', (a) => a.bswap(cx), why: 'bswap(cx)');
+    });
+
+    test('bswap ecx', () {
+      _testInstX86('0FC9', (a) => a.bswap(ecx), why: 'bswap(ecx)');
+    });
+
+    test('bt cx, 1', () {
+      _testInstX86('660FBAE101', (a) => a.btRI(cx, 1), why: 'bt(cx, 1)');
+    });
+
+    test('bt ecx, 1', () {
+      _testInstX86('0FBAE101', (a) => a.btRI(ecx, 1), why: 'bt(ecx, 1)');
+    });
+
+    test('bt word_ptr(ecx, edx, 0, 128), 1', () {
+      _testInstX86(
+        '660FBAA4118000000001',
+        (a) => a.btMI(wordPtrSIB(ecx, edx, 1, 128), 1),
+        why: 'bt(word_ptr(ecx, edx, 0, 128), 1)',
+      );
+    });
+
+    test('bt dword_ptr(ecx, edx, 0, 128), 1', () {
+      _testInstX86(
+        '0FBAA4118000000001',
+        (a) => a.btMI(dwordPtrSIB(ecx, edx, 1, 128), 1),
+        why: 'bt(dword_ptr(ecx, edx, 0, 128), 1)',
+      );
+    });
+
+    test('bt cx, dx', () {
+      _testInstX86('660FA3D1', (a) => a.btRR(cx, dx), why: 'bt(cx, dx)');
+    });
+
+    test('bt ptr(ecx, edx, 0, 128), bx', () {
+      _testInstX86(
+        '660FA39C1180000000',
+        (a) => a.btMR(wordPtrSIB(ecx, edx, 1, 128), bx),
+        why: 'bt(ptr(ecx, edx, 0, 128), bx)',
+      );
+    });
+
+    test('bt word_ptr(ecx, edx, 0, 128), bx', () {
+      _testInstX86(
+        '660FA39C1180000000',
+        (a) => a.btMR(wordPtrSIB(ecx, edx, 1, 128), bx),
+        why: 'bt(word_ptr(ecx, edx, 0, 128), bx)',
+      );
+    });
+
+    test('bt ecx, edx', () {
+      _testInstX86('0FA3D1', (a) => a.btRR(ecx, edx), why: 'bt(ecx, edx)');
+    });
+
+    test('bt ptr(ecx, edx, 0, 128), ebx', () {
+      _testInstX86(
+        '0FA39C1180000000',
+        (a) => a.btMR(dwordPtrSIB(ecx, edx, 1, 128), ebx),
+        why: 'bt(ptr(ecx, edx, 0, 128), ebx)',
+      );
+    });
+
+    test('bt dword_ptr(ecx, edx, 0, 128), ebx', () {
+      _testInstX86(
+        '0FA39C1180000000',
+        (a) => a.btMR(dwordPtrSIB(ecx, edx, 1, 128), ebx),
+        why: 'bt(dword_ptr(ecx, edx, 0, 128), ebx)',
+      );
+    });
+
+    test('btc cx, 1', () {
+      _testInstX86('660FBAF901', (a) => a.btcRI(cx, 1), why: 'btc(cx, 1)');
+    });
+
+    test('btc ecx, 1', () {
+      _testInstX86('0FBAF901', (a) => a.btcRI(ecx, 1), why: 'btc(ecx, 1)');
+    });
+
+    test('btc word_ptr(ecx, edx, 0, 128), 1', () {
+      _testInstX86(
+        '660FBABC118000000001',
+        (a) => a.btcMI(wordPtrSIB(ecx, edx, 1, 128), 1),
+        why: 'btc(word_ptr(ecx, edx, 0, 128), 1)',
+      );
+    });
+
+    test('btc dword_ptr(ecx, edx, 0, 128), 1', () {
+      _testInstX86(
+        '0FBABC118000000001',
+        (a) => a.btcMI(dwordPtrSIB(ecx, edx, 1, 128), 1),
+        why: 'btc(dword_ptr(ecx, edx, 0, 128), 1)',
+      );
+    });
+
+    test('btc cx, dx', () {
+      _testInstX86('660FBBD1', (a) => a.btcRR(cx, dx), why: 'btc(cx, dx)');
+    });
+
+    test('btc ptr(ecx, edx, 0, 128), bx', () {
+      _testInstX86(
+        '660FBB9C1180000000',
+        (a) => a.btcMR(wordPtrSIB(ecx, edx, 1, 128), bx),
+        why: 'btc(ptr(ecx, edx, 0, 128), bx)',
+      );
+    });
+
+    test('btc word_ptr(ecx, edx, 0, 128), bx', () {
+      _testInstX86(
+        '660FBB9C1180000000',
+        (a) => a.btcMR(wordPtrSIB(ecx, edx, 1, 128), bx),
+        why: 'btc(word_ptr(ecx, edx, 0, 128), bx)',
+      );
+    });
+
+    test('btc ecx, edx', () {
+      _testInstX86('0FBBD1', (a) => a.btcRR(ecx, edx), why: 'btc(ecx, edx)');
+    });
+
+    test('btc ptr(ecx, edx, 0, 128), ebx', () {
+      _testInstX86(
+        '0FBB9C1180000000',
+        (a) => a.btcMR(dwordPtrSIB(ecx, edx, 1, 128), ebx),
+        why: 'btc(ptr(ecx, edx, 0, 128), ebx)',
+      );
+    });
+
+    test('btc dword_ptr(ecx, edx, 0, 128), ebx', () {
+      _testInstX86(
+        '0FBB9C1180000000',
+        (a) => a.btcMR(dwordPtrSIB(ecx, edx, 1, 128), ebx),
+        why: 'btc(dword_ptr(ecx, edx, 0, 128), ebx)',
+      );
+    });
   });
 }
