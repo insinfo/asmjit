@@ -8,6 +8,7 @@ import 'x86_operands.dart';
 import 'x86_encoder.dart' show X86Cond;
 import 'x86_simd.dart';
 import '../core/labels.dart';
+import '../core/operand.dart' show Imm, LabelOp;
 
 /// Dispatches instruction ID to Assembler method for implemented ops.
 /// Unsupported IDs are ignored (no-op), keeping behavior compatible with older stubs.
@@ -542,6 +543,8 @@ void _binary(X86Assembler asm, List<Object> ops,
     rr(dst, src);
   } else if (dst is X86Gp && src is int) {
     ri(dst, src);
+  } else if (dst is X86Gp && src is Imm) {
+    ri(dst, src.value);
   }
 }
 
@@ -569,6 +572,8 @@ void _imul(X86Assembler asm, List<Object> ops) {
       asm.imulRR(dst, src);
     } else if (dst is X86Gp && src is int) {
       asm.imulRI(dst, src);
+    } else if (dst is X86Gp && src is Imm) {
+      asm.imulRI(dst, src.value);
     }
   } else if (ops.length == 3) {
     final dst = ops[0];
@@ -576,6 +581,8 @@ void _imul(X86Assembler asm, List<Object> ops) {
     final imm = ops[2];
     if (dst is X86Gp && src is X86Gp && imm is int) {
       asm.imulRRI(dst, src, imm);
+    } else if (dst is X86Gp && src is X86Gp && imm is Imm) {
+      asm.imulRRI(dst, src, imm.value);
     }
   }
 }
@@ -587,6 +594,8 @@ void _push(X86Assembler asm, List<Object> ops) {
     asm.push(op);
   } else if (op is int) {
     asm.pushImm32(op);
+  } else if (op is Imm) {
+    asm.pushImm32(op.value);
   }
 }
 
@@ -601,10 +610,14 @@ void _jmp(X86Assembler asm, List<Object> ops) {
   final op = ops[0];
   if (op is Label) {
     asm.jmp(op);
+  } else if (op is LabelOp) {
+    asm.jmp(op.label);
   } else if (op is X86Gp) {
     asm.jmpR(op);
   } else if (op is int) {
     asm.jmpRel(op);
+  } else if (op is Imm) {
+    asm.jmpRel(op.value);
   }
 }
 
@@ -613,10 +626,14 @@ void _call(X86Assembler asm, List<Object> ops) {
   final op = ops[0];
   if (op is Label) {
     asm.call(op);
+  } else if (op is LabelOp) {
+    asm.call(op.label);
   } else if (op is X86Gp) {
     asm.callR(op);
   } else if (op is int) {
     asm.callRel(op);
+  } else if (op is Imm) {
+    asm.callRel(op.value);
   }
 }
 
@@ -635,8 +652,12 @@ void _jcc(X86Assembler asm, int instId, List<Object> ops) {
   final op = ops[0];
   if (op is Label) {
     asm.jcc(cond, op);
+  } else if (op is LabelOp) {
+    asm.jcc(cond, op.label);
   } else if (op is int) {
     asm.jccRel(cond, op);
+  } else if (op is Imm) {
+    asm.jccRel(cond, op.value);
   }
 }
 

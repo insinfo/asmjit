@@ -43,6 +43,14 @@ void main() {
       _testInst('4889c8', (a) => a.movRR(rax, rcx));
     });
 
+    test('mov r8, r9 (regs estendidos - REX.WRB)', () {
+      _testInst('4d89c8', (a) => a.movRR(r8, r9));
+    });
+
+    test('add r8, r9 (regs estendidos - REX.WRB)', () {
+      _testInst('4d01c8', (a) => a.addRR(r8, r9));
+    });
+
     test('add rax, rcx', () {
       _testInst('4801c8', (a) => a.addRR(rax, rcx));
     });
@@ -67,6 +75,13 @@ void main() {
       _testInst('5058', (a) {
         a.push(rax);
         a.pop(rax);
+      });
+    });
+
+    test('push r15; pop r15 (regs estendidos)', () {
+      _testInst('4157415f', (a) {
+        a.push(r15);
+        a.pop(r15);
       });
     });
 
@@ -310,6 +325,10 @@ void main() {
       _testInst('48f7e1', (a) => a.mul(rcx));
     });
 
+    test('mulx rdx, rax, rcx (BMI2)', () {
+      _testInst('c4a2fbf6d1', (a) => a.mulx(rdx, rax, rcx));
+    });
+
     test('div rcx', () {
       _testInst('48f7f1', (a) => a.div(rcx));
     });
@@ -424,6 +443,18 @@ void main() {
       _testInst('488b841180000000', (a) {
         final mem = X86Mem.baseIndexScale(rcx, rdx, 1, disp: 128, size: 8);
         a.movRM(rax, mem);
+      });
+    });
+
+    test('mov rax, [rbp] (base=rbp requer disp8=0)', () {
+      _testInst('488b4500', (a) {
+        a.movRM(rax, qwordPtr(rbp));
+      });
+    });
+
+    test('mov rax, [rsp] (base=rsp requer SIB)', () {
+      _testInst('488b0424', (a) {
+        a.movRM(rax, qwordPtr(rsp));
       });
     });
 
