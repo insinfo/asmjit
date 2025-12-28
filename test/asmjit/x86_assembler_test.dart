@@ -210,23 +210,25 @@ void main() {
       expect(sig.retType, TypeId.int64);
     });
 
-    test('i64i64 factory creates unary function', () {
+    test('i64i64 factory creates binary function', () {
       final sig = FuncSignature.i64i64();
-      expect(sig.argCount, 1);
-      expect(sig.arg(0), TypeId.int64);
-      expect(sig.retType, TypeId.int64);
-    });
-
-    test('i64i64i64 factory creates binary function', () {
-      final sig = FuncSignature.i64i64i64();
       expect(sig.argCount, 2);
       expect(sig.arg(0), TypeId.int64);
       expect(sig.arg(1), TypeId.int64);
+      expect(sig.retType, TypeId.int64);
     });
 
-    test('f64f64f64 factory creates double function', () {
+    test('i64i64i64 factory creates ternary function', () {
+      final sig = FuncSignature.i64i64i64();
+      expect(sig.argCount, 3);
+      expect(sig.arg(0), TypeId.int64);
+      expect(sig.arg(1), TypeId.int64);
+      expect(sig.arg(2), TypeId.int64);
+    });
+
+    test('f64f64f64 factory creates ternary double function', () {
       final sig = FuncSignature.f64f64f64();
-      expect(sig.argCount, 2);
+      expect(sig.argCount, 3);
       expect(sig.retType, TypeId.float64);
     });
 

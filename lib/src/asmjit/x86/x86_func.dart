@@ -3,7 +3,6 @@
 // See <asmjit/core.h> or LICENSE.md for license and copyright information
 // SPDX-License-Identifier: Zlib
 
-import '../core/arch.dart';
 import '../core/environment.dart';
 import '../core/error.dart';
 import '../core/func.dart';
@@ -15,6 +14,7 @@ import '../core/type.dart';
 import '../core/func_args_context.dart';
 import '../core/raconstraints.dart';
 import '../core/reg_utils.dart' show Reg;
+
 class X86FuncInternal {
   static bool shouldTreatAsCdeclIn64BitMode(CallConvId id) {
     return id == CallConvId.cdecl ||
@@ -166,6 +166,19 @@ class X86FuncInternal {
           cc.setPreservedRegs(RegGroup.vec,
               support.bitMaskMany([6, 7, 8, 9, 10, 11, 12, 13, 14, 15]));
           break;
+        case CallConvId.lightCall2:
+        case CallConvId.lightCall3:
+        case CallConvId.lightCall4:
+          int n = id.index - CallConvId.lightCall2.index + 2;
+          cc.setFlags(CallConvFlags.kPassFloatsByVec);
+          cc.setNaturalStackAlignment(16);
+          cc.setPassedOrder(RegGroup.gp, kZax, kZdx, kZcx, kZsi, kZdi);
+          cc.setPassedOrder(RegGroup.vec, 0, 1, 2, 3, 4, 5, 6, 7);
+          cc.setPassedOrder(RegGroup.mask, 0, 1, 2, 3, 4, 5, 6, 7);
+          cc.setPassedOrder(RegGroup.x86Mm, 0, 1, 2, 3, 4, 5, 6, 7);
+          cc.setPreservedRegs(RegGroup.gp, support.lsbMask(16));
+          cc.setPreservedRegs(RegGroup.vec, ~support.lsbMask(n));
+          break;
         default:
           return AsmJitError.invalidArgument;
       }
@@ -217,8 +230,13 @@ class X86FuncInternal {
             return AsmJitError.invalidState;
           }
         } else if (typeId.isFloat) {
-          final regType = arch.is32Bit ? RegType.x86St : RegType.vec128;
+          final regType = typeId == TypeId.float80
+              ? RegType.x86St
+              : (arch.is32Bit ? RegType.x86St : RegType.vec128);
           ret.initReg(regType, i, typeId);
+        } else if (typeId.isMmx) {
+          // TODO: MMX cleanup/logic check if needed
+          ret.initReg(RegType.x86Mm, i, typeId);
         } else {
           ret.initReg(vecTypeIdToRegType(typeId), i, typeId);
         }
@@ -358,9 +376,4 @@ class X86FuncInternal {
 
     return ctx.markStackArgsReg(frame);
   }
-}
-
-void registerX86FuncLogic() {
-  registerArchFuncLogic(ArchFamily.x86, X86FuncInternal.initCallConv,
-      X86FuncInternal.initFuncDetail, X86FuncInternal.updateFuncFrame);
 }

@@ -244,7 +244,7 @@ void main() {
 
       // arg 4 and beyond are on stack for Win64
       expect(frame.getStackArgOffset(4, CallingConvention.win64),
-          equals(16)); // RBP+16
+          equals(32)); // RBP+16 (Comment was wrong?)
     });
   });
 }

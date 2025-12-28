@@ -45,6 +45,9 @@ abstract final class Globals {
   static const int maxFuncArgs = kMaxFuncArgs;
   static const int maxValuePack = kMaxValuePack;
   static const int invalidId = kInvalidId;
+
+  /// Maximum physical registers per group.
+  static const int kMaxPhysRegs = 32;
 }
 
 /// Constant alias for max function arguments.

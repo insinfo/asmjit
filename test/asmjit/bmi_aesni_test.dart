@@ -347,27 +347,27 @@ void main() {
       final sig = FuncSignature.i64i64i64();
       final detail = FuncDetail(sig, CallingConvention.win64);
 
-      expect(detail.argValues.length, 2);
-      expect(detail.argValues[0].isReg, isTrue);
-      expect(detail.argValues[0].regId, 1); // RCX
-      expect(detail.argValues[1].regId, 2); // RDX
+      expect(detail.argCount, 3);
+      expect(detail.getArg(0).isReg, isTrue);
+      expect(detail.getArg(0).regId, 1); // RCX
+      expect(detail.getArg(1).regId, 2); // RDX
     });
 
     test('allocates SysV GP args correctly', () {
       final sig = FuncSignature.i64i64i64();
       final detail = FuncDetail(sig, CallingConvention.sysV64);
 
-      expect(detail.argValues.length, 2);
-      expect(detail.argValues[0].regId, 7); // RDI
-      expect(detail.argValues[1].regId, 6); // RSI
+      expect(detail.argCount, 3);
+      expect(detail.getArg(0).regId, 7); // RDI
+      expect(detail.getArg(1).regId, 6); // RSI
     });
 
     test('allocates float args in XMM', () {
       final sig = FuncSignature.f64f64f64();
       final detail = FuncDetail(sig, CallingConvention.sysV64);
 
-      expect(detail.argValues[0].regType, FuncRegType.xmm);
-      expect(detail.argValues[1].regType, FuncRegType.xmm);
+      expect(detail.getArg(0).regType, FuncRegType.xmm);
+      expect(detail.getArg(1).regType, FuncRegType.xmm);
     });
 
     test('allocates return in RAX for int64', () {
@@ -393,9 +393,11 @@ void main() {
       }
       final detail = FuncDetail(sig, CallingConvention.win64);
 
-      // Win64: 4 GP regs, so 4 on stack
+      // Win64: 4 GP regs, so 4 passed via registers.
+      // Win64 calling convention allocates shadow space (32 bytes) on the stack for the first 4 arguments.
+      // Plus 4 overflowing arguments are on the stack. Total 8 stack slots reserved.
       expect(detail.gpArgCount, 4);
-      expect(detail.stackArgCount, 4);
+      expect(detail.stackArgCount, 8);
     });
   });
 }

@@ -387,8 +387,14 @@ class ArchTraits {
   /// Returns whether the architecture has a link register.
   bool get hasLinkReg => linkRegId != -1;
 
-  /// Returns whether the architecture has push/pop instructions.
-  bool hasInstPushPop() => arch == Arch.x86 || arch == Arch.x64;
+  /// Returns whether the architecture has push/pop instructions for the given group.
+  /// Only GP registers support push/pop on x86/x64.
+  bool hasInstPushPop([RegGroup? group]) {
+    if (arch != Arch.x86 && arch != Arch.x64) return false;
+    // Only GP registers support push/pop
+    if (group != null && group != RegGroup.gp) return false;
+    return true;
+  }
 
   /// Traits for x86 architecture.
   static const x86 = ArchTraits(

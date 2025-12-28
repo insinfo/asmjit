@@ -134,6 +134,7 @@ class FuncArgsContext {
   ArchTraits? _archTraits;
   Arch _arch = Arch.unknown;
   bool _hasStackSrc = false;
+  bool _hasPreservedFP = false;
   int _stackDstMask = 0;
   int _regSwapsMask = 0;
   int _saVarId = _kVarIdNone;
@@ -153,6 +154,8 @@ class FuncArgsContext {
 
   Arch get arch => _arch;
 
+  bool get hasPreservedFP => _hasPreservedFP;
+
   int indexOf(FuncArgsContextVar value) => _vars.indexOf(value);
 
   FuncArgsContextVar varAt(int varId) => _vars[varId];
@@ -165,6 +168,7 @@ class FuncArgsContext {
     _archTraits = ArchTraits.forArch(frame.arch);
     _arch = frame.arch;
     _hasStackSrc = false;
+    _hasPreservedFP = frame.hasPreservedFP;
     _stackDstMask = 0;
     _regSwapsMask = 0;
     _saVarId = _kVarIdNone;

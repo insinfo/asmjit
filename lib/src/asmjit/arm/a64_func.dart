@@ -1,7 +1,6 @@
 // This file is part of AsmJit project <https://asmjit.com>
 //
 
-import '../core/arch.dart';
 import '../core/environment.dart';
 import '../core/error.dart';
 import '../core/func.dart';
@@ -260,9 +259,4 @@ class A64FuncInternal {
 
     return ctx.markStackArgsReg(frame);
   }
-}
-
-void registerA64FuncLogic() {
-  registerArchFuncLogic(ArchFamily.aarch64, A64FuncInternal.initCallConv,
-      A64FuncInternal.initFuncDetail, A64FuncInternal.updateFuncFrame);
 }

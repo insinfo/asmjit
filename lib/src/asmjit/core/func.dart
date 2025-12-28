@@ -12,6 +12,9 @@ import 'support.dart' as support;
 import 'type.dart';
 import 'reg_utils.dart'; // For RegMask etc
 
+import '../x86/x86_func.dart';
+import '../arm/a64_func.dart';
+
 /// Calling convention id.
 enum CallConvId {
   // Universal Calling Conventions
@@ -285,6 +288,21 @@ class FuncSignature {
     return h;
   }
 
+  @override
+  String toString() {
+    final sb = StringBuffer();
+    sb.write('FuncSignature(');
+    sb.write('conv=${_callConvId.name}, ');
+    sb.write('ret=${_ret.name}, ');
+    sb.write('args=[');
+    for (int i = 0; i < _argCount; i++) {
+      if (i > 0) sb.write(', ');
+      sb.write(_args[i].name);
+    }
+    sb.write('])');
+    return sb.toString();
+  }
+
   // --- Helper methods for tests / concise construction ---
 
   static FuncSignature noArgs(
@@ -457,12 +475,20 @@ class FuncValue {
         (regId << FuncValueBits.kRegIdShift);
   }
 
-  int get stackOffset =>
-      (_data & FuncValueBits.kStackOffsetMask) >>
-      FuncValueBits.kStackOffsetShift;
+  /// Gets the stack offset (sign-extended from 20-bit field).
+  int get stackOffset {
+    final raw = (_data & FuncValueBits.kStackOffsetMask) >>
+        FuncValueBits.kStackOffsetShift;
+    // Sign extend from 20 bits
+    if ((raw & 0x80000) != 0) {
+      return raw | 0xFFF00000; // Extend sign bit
+    }
+    return raw;
+  }
+
   void setStackOffset(int offset) {
     _data = (_data & ~FuncValueBits.kStackOffsetMask) |
-        (offset << FuncValueBits.kStackOffsetShift);
+        ((offset & 0xFFFFF) << FuncValueBits.kStackOffsetShift);
   }
 
   TypeId get typeId => TypeId.values[
@@ -612,7 +638,8 @@ class FuncDetail {
 
   FuncDetail([FuncSignature? signature, CallingConvention? cc]) {
     if (signature != null) {
-      final env = _environmentForCallingConvention(cc ?? CallingConvention.sysV64);
+      final env =
+          _environmentForCallingConvention(cc ?? CallingConvention.sysV64);
       final err = init(signature, env);
       if (err != AsmJitError.ok) {
         throw StateError('FuncDetail.init failed: $err');
@@ -633,14 +660,14 @@ class FuncDetail {
     // Shortcut for deabstract logic
 
     for (int i = 0; i < argCount; i++) {
-      _args[i][0].initTypeId(signature.arg(i));
+      _args[i][0].initTypeId(signature.arg(i).deabstract(registerSize));
     }
 
     _argCount = argCount;
     _vaIndex = signature.vaIndex;
 
     if (signature.hasRet) {
-      _rets[0].initTypeId(signature.ret);
+      _rets[0].initTypeId(signature.ret.deabstract(registerSize));
     }
 
     return _initFuncDetail(this, signature, registerSize);
@@ -695,7 +722,7 @@ class FuncDetail {
   int get stackArgsSize => _argStackSize;
   int get stackArgCount => (_argStackSize + 7) ~/ 8; // Approximation
 
-  int gpArgCount(CallConv cc) {
+  int get gpArgCount {
     int count = 0;
     for (int i = 0; i < _argCount; i++) {
       if (_args[i][0].isReg && _args[i][0].regType == FuncRegType.gp) {
@@ -776,6 +803,7 @@ class FuncFrame {
     });
 
     for (final group in RegGroup.values) {
+      if (group.index >= Globals.kNumVirtGroups) continue;
       frame._preservedRegs[group.index] = combinedPreserved[group] ?? 0;
     }
 
@@ -995,6 +1023,19 @@ class FuncFrame {
   int getLocalOffset(int slotIndex) => _localStackOffset + slotIndex * 8;
   int getStackArgOffset(int index,
       [CallingConvention? cc, bool includeShadowSpace = false]) {
+    if (cc != null) {
+      int regCount = 0;
+      if (cc == CallingConvention.win64) {
+        regCount = 4;
+      } else if (cc == CallingConvention.sysV64) {
+        regCount = 6;
+      }
+
+      if (index < regCount) {
+        throw ArgumentError('Argument $index is passed in register');
+      }
+    }
+
     final base = _spillZoneSize + index * 8;
     if (includeShadowSpace && cc == CallingConvention.win64) {
       return base + 32;
@@ -1060,7 +1101,8 @@ class FuncFrame {
 
     List<int> saveRestoreSizes = [0, 0];
     for (var group in RegGroup.values) {
-      int idx = archTraits.hasInstPushPop() ? 0 : 1;
+      // Use different index based on whether this group supports push/pop
+      int idx = archTraits.hasInstPushPop(group) ? 0 : 1;
       saveRestoreSizes[idx] += support.alignUp(
           support.popcnt(savedRegs(group)) * saveRestoreRegSize(group),
           saveRestoreAlignment(group));
@@ -1184,32 +1226,37 @@ typedef InitFuncDetailFn = AsmJitError Function(
 typedef UpdateFuncFrameFn = AsmJitError Function(
     FuncArgsAssignment assignment, FuncFrame frame);
 
-final Map<ArchFamily, InitCallConvFn> _initCallConvMap = {};
-final Map<ArchFamily, InitFuncDetailFn> _initFuncDetailMap = {};
-final Map<ArchFamily, UpdateFuncFrameFn> _updateFuncFrameMap = {};
-
-void registerArchFuncLogic(ArchFamily family, InitCallConvFn initCC,
-    InitFuncDetailFn initFD, UpdateFuncFrameFn updateFF) {
-  _initCallConvMap[family] = initCC;
-  _initFuncDetailMap[family] = initFD;
-  _updateFuncFrameMap[family] = updateFF;
-}
-
 AsmJitError _initCallConv(CallConv cc, CallConvId id, Environment env) {
-  final fn = _initCallConvMap[env.archFamily];
-  if (fn == null) return AsmJitError.invalidArgument;
-  return fn(cc, id, env);
+  if (env.archFamily == ArchFamily.x86) {
+    return X86FuncInternal.initCallConv(cc, id, env);
+  }
+  if (env.archFamily == ArchFamily.aarch64) {
+    return A64FuncInternal.initCallConv(cc, id, env);
+  }
+  return AsmJitError.invalidArgument;
 }
 
 AsmJitError _initFuncDetail(
     FuncDetail func, FuncSignature signature, int registerSize) {
-  final fn = _initFuncDetailMap[func.callConv.arch.family];
-  if (fn == null) return AsmJitError.invalidArgument;
-  return fn(func, signature, registerSize);
+  final family = func.callConv.arch.family;
+  if (family == ArchFamily.x86) {
+    return X86FuncInternal.initFuncDetail(func, signature, registerSize);
+  }
+  if (family == ArchFamily.aarch64) {
+    return A64FuncInternal.initFuncDetail(func, signature, registerSize);
+  }
+  return AsmJitError.invalidArgument;
 }
 
 AsmJitError _updateFuncFrame(FuncArgsAssignment assignment, FuncFrame frame) {
-  final fn = _updateFuncFrameMap[frame.arch.family];
-  if (fn == null) return AsmJitError.invalidState;
-  return fn(assignment, frame);
+  final family = frame.arch.family;
+  if (family == ArchFamily.x86) {
+    return X86FuncInternal.updateFuncFrame(assignment, frame);
+  }
+  if (family == ArchFamily.aarch64) {
+    return A64FuncInternal.updateFuncFrame(assignment, frame);
+  }
+  return AsmJitError.invalidState;
 }
+
+// Deprecated dynamic registration code removed.

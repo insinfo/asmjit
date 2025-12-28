@@ -20,8 +20,8 @@ export 'src/asmjit/core/emitter.dart';
 export 'src/asmjit/core/inst_api.dart';
 export 'src/asmjit/core/type.dart';
 export 'src/asmjit/core/func.dart';
-export 'src/asmjit/core/regalloc.dart';
-export 'src/asmjit/core/code_builder.dart';
+// export 'src/asmjit/core/regalloc.dart';
+// export 'src/asmjit/core/code_builder.dart';
 export 'src/asmjit/core/builder.dart'
     hide Operand, NodeType, FuncNode, BlockNode, InstNode, LabelNode;
 //export 'src/asmjit/core/ir.dart'; // Compiler IR (nodes, CFG, liveness)
@@ -37,7 +37,7 @@ export 'src/asmjit/x86/x86.dart';
 export 'src/asmjit/x86/x86_operands.dart';
 export 'src/asmjit/x86/x86_encoder.dart';
 export 'src/asmjit/x86/x86_assembler.dart';
-export 'src/asmjit/x86/x86_compiler.dart';
+//export 'src/asmjit/x86/x86_compiler.dart';
 export 'src/asmjit/x86/x86_func.dart';
 export 'src/asmjit/x86/x86_simd.dart';
 export 'src/asmjit/x86/x86_inst_db.g.dart';
