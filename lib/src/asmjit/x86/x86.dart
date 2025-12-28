@@ -108,6 +108,22 @@ class X86Gp extends BaseReg {
   X86Gp get r8 => X86Gp.r8(id);
 
   @override
+  BaseReg toPhys(int physId) {
+    switch (bits) {
+      case 64:
+        return X86Gp.r64(physId);
+      case 32:
+        return X86Gp.r32(physId);
+      case 16:
+        return X86Gp.r16(physId);
+      case 8:
+        return isHighByte ? X86Gp.r8h(physId) : X86Gp.r8(physId);
+      default:
+        throw StateError('Invalid bits for X86Gp: $bits');
+    }
+  }
+
+  @override
   String toString() {
     final names64 = [
       'rax',

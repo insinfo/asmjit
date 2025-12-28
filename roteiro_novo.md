@@ -3,6 +3,15 @@
 
 roteiro bem prático (e incremental) para portar o AsmJit (C++) C:\MyDartProjects\asmjit\referencias\asmtk-master C:\MyDartProjects\asmjit\referencias\asmjit-master para Dart
 
+porte os testes para dart
+C:\MyDartProjects\asmjit\referencias\asmjit-master\asmjit-testing
+
+bporte os enchmark para dart
+
+porte os geradores e tools para dart
+C:\MyDartProjects\asmjit\referencias\asmjit-master\db
+C:\MyDartProjects\asmjit\referencias\asmjit-master\tools
+
 # Relatório de Inconsistências: Dart vs C++ AsmJit
 
 tem que ir vendo arquivo por arquivo e ir corrigindo para que a lógica seja idêntica ao c++
@@ -11,6 +20,7 @@ tem que ir vendo arquivo por arquivo e ir corrigindo para que a lógica seja id�
 pode usar o SED para editar o arquivo e usar rg para ler o codigo 
 ---
 não crie classes TODOs ou stubs somente cria a implementação correta e real igual o c++
+nada de minimal implementations sempre siga fazendo o porte correto da implementação completa
 ## Análise Realizada em: 28/12/2024
 
 ### Arquivos Comparados:
@@ -52,9 +62,9 @@ Os seguintes arquivos foram removidos porque não seguiam a API C++ e tinham imp
 - ❌ `lib/src/asmjit/x86/x86_compiler.dart` - X86Compiler wrapper (precisa ser portado corretamente)
 
 **Próximos passos para substituição:**
-1. Portar `BaseCompiler` do C++ (`compiler.h`, `compiler.cpp`)
-2. Portar `x86::Compiler` do C++ (`x86compiler.h`, `x86compiler.cpp`)
-3. Integrar RALocalAllocator com o novo Compiler
+1. Portar `BaseCompiler` do C++ (`compiler.h`, `compiler.cpp`) ✅
+2. Portar `x86::Compiler` do C++ (`x86compiler.h`, `x86compiler.cpp`) (Iniciado)
+3. Integrar RALocalAllocator com o novo Compiler (Pendente)
 
 ---
 
@@ -256,7 +266,7 @@ Arquivo legado removido. Substituído por `ralocal.dart`.
 O arquivo `regalloc.dart` contém uma implementação de linear-scan register allocator que é **COMPLETAMENTE DIFERENTE** do C++ original:
 
 - C++ usa `RALocal` com múltiplas passes (CFG analysis, live range splitting, etc.)
-- Dart usa uma implementação simplificada de linear-scan
+- Dart usa uma implementação simplificada de linear-scan incorretamente
 
 O comentário na linha 286 diz:
 ```dart
@@ -391,21 +401,21 @@ sempre responda em portugues
 | **x86** | ⚠️ Parcial | Encoder robusto. Assembler com ~40% dos métodos C++. Faltam helpers de `Compiler`. |
 | **ARM (A64)** | 🔴 Crítico | Encoder funcional. Assembler com apenas ~10% dos métodos C++. Compiler inexistente. |
 | **Testes** | ⚠️ Parcial | Testes unitários básicos ok. Faltam suites pesadas (`asmjit_test_compiler`, `asmjit_test_assembler`). |
-| **Benchmarks** | ✅ Bom | Principais benchmarks (`codegen`, `overhead`, `regalloc`) portados. |
+| **Benchmarks** | ainda não portados | Principais benchmarks (`codegen`, `overhead`, `regalloc`)  |
 
 ---
 
 ## 🔍 Core (`lib/src/asmjit/core`)
 
-O "cérebro" do AsmJit. A maior discrepância está na infraestrutura de Compilador e Alocação de Registradores.
+O "cérebro" do AsmJit. A maior discrepância está na infraestrutura de Compilador e Alocação de Registradores que tem que ser resolvida com prioridade autissima
 
 | Arquivo C++ (Ref) | Tamanho C++ | Arquivo Dart | Status | Gaps Identificados |
 |-------------------|-------------|--------------|--------|-------------------|
-| `compiler.h/.cpp` | ~50 KB | `compiler.dart` (5 KB) | 🔴 Crítico | Faltam definições completas de Nós (FuncNode, BlockNode, InstNode), lógica de CFG avançada e Liveness Analysis. |
-| `rapass.h/.cpp` | ~100 KB | `ralocal.dart` (29 KB) | 🔴 Crítico | Implementado apenas **RALocal** (Linear Scan). Falta **RAGlobal** (Coloring, Split, Coalescing) e todo o pipeline avançado de otimização de registradores. |
-| `builder.h/.cpp` | ~80 KB | `builder.dart` (17 KB) | 🟡 Médio | Funcionalidade básica de emissão existe, mas falta lógica complexa de manipulação de nós e injeção de instruções. |
+| `compiler.h/.cpp` | ~50 KB | `compiler.dart` (10 KB) | ✅ Parcial | Implementado `BaseCompiler`, `FuncNode`, `BlockNode`, `JumpNode`. Falta integração completa com RAGlobal. |
+| `rapass.h/.cpp` | ~100 KB | `ralocal.dart` (29 KB) | 🔴 Crítico | Implementado apenas **RALocal** (Linear Scan). Falta **RAGlobal** (Coloring, Split, Coalescing) e todo o pipeline avançado de otimização de registradores isso é vital |
+| `builder.h/.cpp` | ~80 KB | `builder.dart` (17 KB) | 🟡 Crítico | Funcionalidade básica de emissão existe, mas falta lógica complexa de manipulação de nós e injeção de instruções. |
 | `func.h/.cpp` | ~90 KB | `func.dart` (39 KB) | ✅ Bom | Core logic portada (`FuncDetail`, `FuncFrame`), mas requer revisão constante de flags e atributos (v. relatório anterior). |
-| `codeholder.cpp` | ~45 KB | `code_holder.dart` (9 KB) | 🟡 Médio | Faltam métodos de manipulação de seções, relocação e gerenciamento avançado de erro. |
+| `codeholder.cpp` | ~45 KB | `code_holder.dart` (9 KB) | 🟡 Crítico | Faltam métodos de manipulação de seções, relocação e gerenciamento avançado de erro. |
 | `emitter.h/.cpp` | ~50 KB | `emitter.dart` (1.5 KB) | 🔴 Crítico | A classe base `Emitter` no C++ tem muita lógica compartilhada de validação e encoding que não está no Dart (está dispersa ou ausente). |
 | `codewriter.cpp` | ~8 KB | `code_writer.dart` (1 KB) | 🔴 Crítico | Utilitário de escrita de código (hex dump, logging avançado) praticamente inexistente. |
 
@@ -421,7 +431,7 @@ O backend x86 está mais maduro que o ARM, mas ainda longe da completude da API 
 |-------------------|-------------|--------------|--------|-------------------|
 | `x86assembler.cpp` | 159 KB | `x86_assembler.dart` (57 KB) | 🟡 Médio | Falta ~60% dos métodos de conveniência (wrappers para instruções específicas, variantes de operandos). |
 | `x86instdb.cpp` | 512 KB | `x86_inst_db.g.dart` (228 KB) | ⚠️ Atenção | O DB gerado é menor. Verificar se faltam metadados de instruções (RW info, CPU features) essenciais para o Compiler. |
-| `x86compiler.cpp` | 36 KB | `x86_compiler.dart` (legacy) | 🔴 Crítico | A lógica de lowering do Compiler específico para x86 (prologo/epílogo, call/ret convention) está incompleta ou ausente. |
+| `x86compiler.cpp` | 36 KB | `x86_compiler.dart` (Skeleton) | 🟡 Estágio Inicial | Criado esqueleto de `X86Compiler` e `X86InstructionAnalyzer`. Falta implementação de métodos de instrução. |
 | `x86emithelper.cpp`| 21 KB | `emit_helper.dart` (13 KB)* | 🟡 Médio | Helpers genéricos existem, mas faltam os específicos de x86 para shuffle de argumentos vetoriais complexos. |
 
 **Ação Necessária**: Completar `x86_assembler.dart` com todos os grupos de instruções (AVX-512 completo, FPU legacy se necessário, AMX, etc).
@@ -472,8 +482,8 @@ Os principais benchmarks foram portados, mas precisam de validação de paridade
 ## 📝 Lista de Tarefas Imediatas (Roadmap Atualizado)
 
 1.  **Prioridade 0 (Estabilidade Core)**:
-    *   Resolver inconsistências em `func.dart` e `x86_func.dart` apontadas no relatório anterior (LightCall 64-bit, Stack Offset sinal).
-    *   Refatorar `compiler.dart` para suportar definições de Nós reais (`FuncNode`, `BlockNode`).
+    *   Resolver inconsistências em `func.dart` (Stack Offset sinal ✅).
+    *   Refatorar `compiler.dart` para suportar definições de Nós reais (`FuncNode`, `BlockNode`) ✅.
 
 2.  **Prioridade 1 (Backend x86)**:
     *   Implementar `x86_compiler.dart` (Lowering real).

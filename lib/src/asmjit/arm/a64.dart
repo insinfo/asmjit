@@ -47,6 +47,9 @@ class A64Gp extends BaseReg {
   A64Gp get w => A64Gp(id, 32);
 
   @override
+  BaseReg toPhys(int physId) => A64Gp(physId, sizeBits);
+
+  @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is A64Gp && other.id == id && other.sizeBits == sizeBits;
@@ -107,6 +110,17 @@ class A64Vec extends BaseReg {
 
   /// Get as Q (quad, 128-bit).
   A64Vec get q => A64Vec(id, 128);
+
+  @override
+  BaseReg toPhys(int physId) => A64Vec(physId, sizeBits);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is A64Vec && other.id == id && other.sizeBits == sizeBits;
+
+  @override
+  int get hashCode => Object.hash(id, sizeBits);
 
   @override
   String toString() {

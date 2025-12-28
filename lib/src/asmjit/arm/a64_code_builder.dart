@@ -241,9 +241,9 @@ class A64CodeBuilder extends ir.BaseBuilder {
   }
 
   ir.Operand _toOperand(Object o) {
-    if (o is A64Gp || o is A64Vec) return ir.RegOperand(o as BaseReg);
-    if (o is int) return ir.ImmOperand(o);
-    if (o is Label) return ir.LabelOperand(o);
+    if (o is A64Gp || o is A64Vec) return o as BaseReg;
+    if (o is int) return ir.Imm(o);
+    if (o is Label) return ir.LabelOp(o);
     throw ArgumentError('Unsupported operand type: ${o.runtimeType}');
   }
 
@@ -316,8 +316,8 @@ class _A64FuncSerializer extends A64Serializer {
     final rewritten = <ir.Operand>[];
 
     for (final op in operands) {
-      if (op is ir.RegOperand) {
-        final reg = op.reg;
+      if (op is ir.BaseReg) {
+        final reg = op;
         final newReg = _rewriteReg(
           reg,
           scratch,
@@ -325,13 +325,13 @@ class _A64FuncSerializer extends A64Serializer {
           postSpills,
           writeBack: true,
         );
-        rewritten.add(ir.RegOperand(newReg));
-      } else if (op is ir.MemOperand && op.mem is A64Mem) {
-        final mem = op.mem as A64Mem;
+        rewritten.add(newReg);
+      } else if (op is ir.BaseMem && op is A64Mem) {
+        final mem = op as A64Mem;
         final base = _rewriteMemBase(mem.base, scratch, preSpills);
         final index = _rewriteMemIndex(mem.index, scratch, preSpills);
         final rebuilt = _rebuildMem(mem, base, index);
-        rewritten.add(ir.MemOperand(rebuilt));
+        rewritten.add(rebuilt as ir.Operand);
       } else {
         rewritten.add(op);
       }
@@ -351,8 +351,8 @@ class _A64FuncSerializer extends A64Serializer {
   void _reservePhysicalOperands(
       List<ir.Operand> operands, _ScratchAllocator scratch) {
     for (final op in operands) {
-      if (op is ir.RegOperand) {
-        final reg = op.reg;
+      if (op is ir.BaseReg) {
+        final reg = op;
         if (reg is _A64VirtReg) {
           if (!reg.isSpilled) {
             scratch.reserve(_physFor(reg)!);
@@ -360,8 +360,8 @@ class _A64FuncSerializer extends A64Serializer {
         } else {
           scratch.reserve(reg);
         }
-      } else if (op is ir.MemOperand && op.mem is A64Mem) {
-        final mem = op.mem as A64Mem;
+      } else if (op is ir.BaseMem && op is A64Mem) {
+        final mem = op as A64Mem;
         if (mem.base is _A64VirtReg) {
           final reg = mem.base as _A64VirtReg;
           if (!reg.isSpilled) {
@@ -728,12 +728,12 @@ class _A64RegAlloc {
   }
 
   void _scanOperand(ir.Operand op, int pos, Set<_A64VirtReg> seen) {
-    if (op is ir.RegOperand && op.reg is _A64VirtReg) {
-      final vreg = op.reg as _A64VirtReg;
+    if (op is ir.BaseReg && op is _A64VirtReg) {
+      final vreg = op;
       seen.add(vreg);
       _recordUse(vreg, pos);
-    } else if (op is ir.MemOperand && op.mem is A64Mem) {
-      final mem = op.mem as A64Mem;
+    } else if (op is ir.BaseMem && op is A64Mem) {
+      final mem = op as A64Mem;
       if (mem.base is _A64VirtReg) {
         final vreg = mem.base as _A64VirtReg;
         seen.add(vreg);

@@ -34,6 +34,9 @@ class X86Xmm extends BaseReg {
   X86Zmm get zmm => X86Zmm(id);
 
   @override
+  BaseReg toPhys(int physId) => X86Xmm(physId);
+
+  @override
   String toString() => 'xmm$id';
 
   @override
@@ -71,6 +74,9 @@ class X86Ymm extends BaseReg {
 
   /// Returns the ZMM version of this register.
   X86Zmm get zmm => X86Zmm(id);
+
+  @override
+  BaseReg toPhys(int physId) => X86Ymm(physId);
 
   @override
   String toString() => 'ymm$id';
@@ -115,6 +121,9 @@ class X86Zmm extends BaseReg {
   X86Ymm get ymm => X86Ymm(id);
 
   @override
+  BaseReg toPhys(int physId) => X86Zmm(physId);
+
+  @override
   String toString() => 'zmm$id';
 
   @override
@@ -146,6 +155,9 @@ class X86KReg extends BaseReg {
 
   /// Gets the 3-bit encoding for ModR/M.
   int get encoding => id & 0x7;
+
+  @override
+  BaseReg toPhys(int physId) => X86KReg(physId);
 
   @override
   String toString() => 'k$id';

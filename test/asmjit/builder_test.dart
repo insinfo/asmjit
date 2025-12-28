@@ -115,7 +115,7 @@ void main() {
 
   group('InstNode', () {
     test('creates instruction node', () {
-      final operands = [RegOperand(asmjit.rax), ImmOperand(42)];
+      final operands = [asmjit.rax, Imm(42)];
       final inst = InstNode(0x01, operands);
 
       expect(inst.nodeType, NodeType.inst);
@@ -178,23 +178,23 @@ void main() {
   });
 
   group('Operand classes', () {
-    test('RegOperand', () {
-      final op = RegOperand(asmjit.rcx);
+    test('Reg (BaseReg)', () {
+      final op = asmjit.rcx;
       expect(op.isReg, isTrue);
       expect(op.isMem, isFalse);
       expect(op.isImm, isFalse);
     });
 
-    test('ImmOperand', () {
-      final op = ImmOperand(0x1234);
+    test('Imm', () {
+      final op = Imm(0x1234);
       expect(op.isReg, isFalse);
       expect(op.isImm, isTrue);
       expect(op.value, 0x1234);
     });
 
-    test('LabelOperand', () {
+    test('LabelOp', () {
       final label = asmjit.Label(10);
-      final op = LabelOperand(label);
+      final op = LabelOp(label);
       expect(op.isLabel, isTrue);
       expect(op.label.id, 10);
     });
@@ -248,7 +248,7 @@ void main() {
 
     test('inst adds instruction node', () {
       final builder = BaseBuilder();
-      builder.inst(0x10, [RegOperand(asmjit.rax), ImmOperand(42)]);
+      builder.inst(0x10, [asmjit.rax, Imm(42)]);
       builder.inst(0x20, []);
 
       expect(builder.nodeCount, 2);
@@ -302,7 +302,7 @@ void main() {
 
       builder.comment('Start');
       builder.label(l);
-      builder.inst(0x01, [RegOperand(asmjit.rax)]);
+      builder.inst(0x01, [asmjit.rax]);
       builder.align(AlignMode.code, 16);
       builder.embedData([0x90]);
       builder.sentinel(SentinelType.funcEnd);
@@ -318,15 +318,6 @@ void main() {
         'embedData:1',
         'sentinel:funcEnd',
       ]);
-    });
-  });
-
-  group('MemOperand', () {
-    test('creates memory operand', () {
-      final op = MemOperand('fake_mem');
-      expect(op.isMem, isTrue);
-      expect(op.isReg, isFalse);
-      expect(op.toString(), '[fake_mem]');
     });
   });
 }

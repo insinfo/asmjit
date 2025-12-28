@@ -191,6 +191,9 @@ abstract class BaseReg extends Operand {
 
   /// Whether this is a physical register (not virtual).
   bool get isPhysical => id >= 0;
+
+  /// Creates a physical register of the same type with the given ID.
+  BaseReg toPhys(int physId);
 }
 
 /// Base class for memory operands.

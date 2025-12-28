@@ -5,6 +5,7 @@
 
 import 'labels.dart';
 import 'operand.dart';
+export 'operand.dart';
 
 /// Type of node in the builder.
 enum NodeType {
@@ -140,8 +141,9 @@ class InstNode extends BaseNode {
   /// Instruction options.
   int options;
 
-  InstNode(this.instId, this.operands, {this.options = 0})
-      : super(NodeType.inst, NodeFlags.isCode | NodeFlags.actsAsInst);
+  InstNode(this.instId, this.operands,
+      {this.options = 0, NodeType type = NodeType.inst})
+      : super(type, NodeFlags.isCode | NodeFlags.actsAsInst);
 
   /// Number of operands.
   int get opCount => operands.length;
@@ -158,8 +160,8 @@ class LabelNode extends BaseNode {
   /// The label this node represents.
   final Label label;
 
-  LabelNode(this.label)
-      : super(NodeType.label, NodeFlags.hasNoEffect | NodeFlags.actsAsLabel);
+  LabelNode(this.label, {NodeType type = NodeType.label})
+      : super(type, NodeFlags.hasNoEffect | NodeFlags.actsAsLabel);
 
   /// Label ID.
   int get labelId => label.id;
@@ -239,138 +241,6 @@ class SentinelNode extends BaseNode {
 enum SentinelType {
   unknown,
   funcEnd,
-}
-
-/// Function node.
-class FuncNode extends BaseNode {
-  /// Function name.
-  final String name;
-
-  /// Optional function signature metadata.
-  final Object? signature;
-
-  /// Function frame (generic).
-  /// Casting to specific frame type (e.g. FuncFrame) is required.
-  final dynamic frame;
-
-  /// Assigned argument registers (if any).
-  final List<BaseReg?> _args = [];
-
-  final void Function(int index, BaseReg reg)? _argSetter;
-
-  FuncNode(this.name,
-      {this.frame, this.signature, void Function(int, BaseReg)? argSetter})
-      : _argSetter = argSetter,
-        super(NodeType.func, NodeFlags.isInformative);
-
-  /// Number of assigned arguments.
-  int get argCount => _args.length;
-
-  /// Returns the assigned argument register at [index].
-  BaseReg? argAt(int index) => index < _args.length ? _args[index] : null;
-
-  /// Assigns an argument register.
-  void setArg(int index, BaseReg reg) {
-    if (index < 0) {
-      throw RangeError.index(index, _args, 'index');
-    }
-    while (_args.length <= index) {
-      _args.add(null);
-    }
-    _args[index] = reg;
-    _argSetter?.call(index, reg);
-  }
-
-  @override
-  String toString() => 'FuncNode("$name")';
-}
-
-/// Function return node.
-class FuncRetNode extends BaseNode {
-  FuncRetNode() : super(NodeType.funcRet, NodeFlags.isCode);
-
-  @override
-  String toString() => 'FuncRetNode()';
-}
-
-/// Function call node (Invoke).
-class InvokeNode extends BaseNode {
-  /// Target of the invocation (Label, pointer, or register).
-  final Object target;
-
-  /// Arguments passed to the call (as IR operands).
-  final List<Operand> args;
-
-  /// Optional return register (virtual or physical).
-  BaseReg? ret;
-
-  /// Optional signature metadata.
-  final Object? signature;
-
-  InvokeNode({
-    required this.target,
-    List<Operand> args = const [],
-    this.ret,
-    this.signature,
-  })  : args = List<Operand>.from(args),
-        super(NodeType.invoke, NodeFlags.isCode);
-
-  /// Assigns an argument operand at [index].
-  void setArg(int index, Object op) {
-    if (index < 0) {
-      throw RangeError.index(index, args, 'index');
-    }
-    while (args.length <= index) {
-      args.add(Operand.from(0));
-    }
-    args[index] = Operand.from(op);
-  }
-
-  /// Assigns return register.
-  void setRet(BaseReg reg) {
-    ret = reg;
-  }
-
-  @override
-  String toString() => 'InvokeNode(target: $target, args: ${args.length})';
-}
-
-/// Basic Block node.
-/// Often associated with a Label.
-class BlockNode extends BaseNode {
-  final Label label;
-  final List<BlockNode> predecessors = [];
-  final List<BlockNode> successors = [];
-
-  /// Liveness sets (used by liveness analysis).
-  final Set<BaseReg> use = {};
-  final Set<BaseReg> def = {};
-  final Set<BaseReg> liveIn = {};
-  final Set<BaseReg> liveOut = {};
-
-  BlockNode(this.label) : super(NodeType.label, NodeFlags.actsAsLabel);
-
-  /// Adds a successor block (edge from this -> block).
-  void addSuccessor(BlockNode block) {
-    if (!successors.contains(block)) {
-      successors.add(block);
-      if (!block.predecessors.contains(this)) {
-        block.predecessors.add(this);
-      }
-    }
-  }
-
-  /// Clears liveness information.
-  void resetLiveness() {
-    use.clear();
-    def.clear();
-    liveIn.clear();
-    liveOut.clear();
-  }
-
-  @override
-  String toString() =>
-      'BlockNode(L${label.id}, preds:${predecessors.length}, succs:${successors.length})';
 }
 
 /// Node list - a double-linked list of nodes.
@@ -506,84 +376,6 @@ class NodeList {
       current = current.next;
     }
   }
-}
-
-/// Abstract operand class for builder.
-class Operand {
-  /// Creates an operand from a raw object (register, memory, immediate, label).
-  static Operand from(Object op) {
-    if (op is Operand) return op;
-    if (op is BaseReg) return RegOperand(op);
-    if (op.runtimeType.toString().contains('Mem')) return MemOperand(op);
-    if (op is int) return ImmOperand(op);
-    if (op is Label) return LabelOperand(op);
-
-    throw ArgumentError('Unsupported operand type: ${op.runtimeType}');
-  }
-
-  /// Check if operand is a register.
-  bool get isReg => false;
-
-  /// Check if operand is memory.
-  bool get isMem => false;
-
-  /// Check if operand is immediate.
-  bool get isImm => false;
-
-  /// Check if operand is a label.
-  bool get isLabel => false;
-}
-
-/// Register operand.
-class RegOperand extends Operand {
-  final BaseReg reg;
-
-  RegOperand(this.reg);
-
-  @override
-  bool get isReg => true;
-
-  @override
-  String toString() => reg.toString();
-}
-
-/// Immediate operand.
-class ImmOperand extends Operand {
-  final int value;
-
-  ImmOperand(this.value);
-
-  @override
-  bool get isImm => true;
-
-  @override
-  String toString() => value.toString();
-}
-
-/// Label operand.
-class LabelOperand extends Operand {
-  final Label label;
-
-  LabelOperand(this.label);
-
-  @override
-  bool get isLabel => true;
-
-  @override
-  String toString() => 'L${label.id}';
-}
-
-/// Memory operand.
-class MemOperand extends Operand {
-  final Object mem; // X86Mem or similar
-
-  MemOperand(this.mem);
-
-  @override
-  bool get isMem => true;
-
-  @override
-  String toString() => '[$mem]';
 }
 
 /// Base builder - manages a list of nodes.

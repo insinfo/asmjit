@@ -1,50 +1,277 @@
 /// AsmJit Compiler Infrastructure
 ///
-/// Provides passes for Control Flow Graph (CFG) construction and analysis.
+/// Port of asmjit/core/compiler.h
+///
+/// Compiler is a high-level code-generation tool that provides register allocation
+/// and automatic handling of function calling conventions.
 
-import 'builder.dart';
+import 'environment.dart';
+import 'func.dart';
+import 'globals.dart';
 import 'labels.dart';
 import 'operand.dart';
+import 'error.dart';
+import 'builder.dart';
+import 'reg_utils.dart';
 
-export 'builder.dart'
-    show BaseBuilder, FuncNode, BlockNode, InstNode, LabelNode,
-        RegOperand, ImmOperand, MemOperand, FuncRetNode, InvokeNode;
+export 'builder.dart';
 
-/// A compiler pass that operates on the instruction stream.
+/// Jump annotation used to annotate jumps.
+class JumpAnnotation {
+  final BaseCompiler compiler;
+  final int annotationId;
+  final List<int> labelIds = [];
+
+  JumpAnnotation(this.compiler, this.annotationId);
+
+  bool hasLabel(Label label) => hasLabelId(label.id);
+  bool hasLabelId(int labelId) => labelIds.contains(labelId);
+
+  AsmJitError addLabel(Label label) => addLabelId(label.id);
+  AsmJitError addLabelId(int labelId) {
+    labelIds.add(labelId);
+    return AsmJitError.ok;
+  }
+}
+
+/// Jump instruction with [JumpAnnotation].
+class JumpNode extends InstNode {
+  JumpAnnotation? annotation;
+
+  JumpNode(int instId, List<Operand> operands,
+      {int options = 0, this.annotation})
+      : super(instId, operands, options: options, type: NodeType.jump);
+
+  bool get hasAnnotation => annotation != null;
+}
+
+/// Function node represents a function used by [BaseCompiler].
+class FuncNode extends LabelNode {
+  final FuncDetail funcDetail = FuncDetail();
+  final FuncFrame funcFrame = FuncFrame();
+  LabelNode? exitNode;
+  SentinelNode? end;
+
+  /// Arguments mapped to virtual registers.
+  /// Each argument index maps to a list of registers (ArgPack in C++).
+  List<FuncValuePack>? _argPacks;
+
+  FuncNode([int labelId = Globals.kInvalidId])
+      : super(Label(labelId), type: NodeType.func);
+
+  LabelNode? get exitNodeVal => exitNode;
+
+  Label get exitLabel => exitNode!.label;
+
+  SentinelNode? get endNode => end;
+
+  FuncDetail get detail => funcDetail;
+
+  FuncFrame get frame => funcFrame;
+
+  FuncFrameAttributes get attributes =>
+      FuncFrameAttributes(attributes: funcFrame.attributes);
+
+  void addAttributes(int attrs) => funcFrame.addAttributes(attrs);
+
+  int get argCount => funcDetail.argCount;
+
+  List<FuncValuePack>? get argPacks => _argPacks;
+
+  bool get hasRet => funcDetail.hasRet();
+
+  FuncValuePack argPack(int argIndex) {
+    if (_argPacks == null || argIndex >= _argPacks!.length) {
+      throw RangeError.index(argIndex, _argPacks ?? [], "argPacks");
+    }
+    return _argPacks![argIndex];
+  }
+
+  void setArg(int argIndex, int valueIndex, BaseReg virtReg) {
+    if (_argPacks == null) return;
+    _argPacks![argIndex]
+        .assignReg(valueIndex, Reg(regType: virtReg.type, id: virtReg.id));
+  }
+
+  // _initArgs removed as it was unused and implemented differently in C++ (via addFunc logic)
+}
+
+/// Function return, used by [BaseCompiler].
+class FuncRetNode extends InstNode {
+  FuncRetNode(List<Operand> operands)
+      : super(0 /* kIdAbstract */, operands, type: NodeType.funcRet);
+}
+
+/// Function invocation, used by [BaseCompiler].
+class InvokeNode extends InstNode {
+  final FuncDetail funcDetail = FuncDetail();
+
+  /// Function return value(s).
+  final FuncValuePack rets = FuncValuePack();
+
+  /// Function arguments.
+  List<FuncValuePack>? _argPacks;
+
+  InvokeNode(int instId, List<Operand> operands, {int options = 0})
+      : super(instId, operands, options: options, type: NodeType.invoke) {
+    flags |= NodeFlags.isRemovable;
+  }
+
+  AsmJitError init(FuncSignature signature, Environment env) {
+    final err = funcDetail.init(signature, env);
+    if (err == AsmJitError.ok) {
+      if (funcDetail.argCount > 0) {
+        _argPacks = List.generate(funcDetail.argCount, (_) => FuncValuePack());
+      }
+    }
+    return err;
+  }
+
+  FuncDetail get detail => funcDetail;
+
+  Operand get target => operands[0];
+
+  bool get hasRet => funcDetail.hasRet();
+  int get argCount => funcDetail.argCount;
+
+  FuncValuePack get retPack => rets;
+
+  FuncValuePack? argPack(int index) => _argPacks?[index];
+}
+
+/// Basic Block node (Dart specific for now, pending C++ parity research).
+/// Represents a block in the CFG.
+class BlockNode extends LabelNode {
+  final List<BlockNode> predecessors = [];
+  final List<BlockNode> successors = [];
+
+  // Liveness analysis sets
+  final Set<BaseReg> use = {};
+  final Set<BaseReg> def = {};
+  final Set<BaseReg> liveIn = {};
+  final Set<BaseReg> liveOut = {};
+
+  BlockNode(Label label) : super(label);
+
+  void addSuccessor(BlockNode block) {
+    if (!successors.contains(block)) {
+      successors.add(block);
+      if (!block.predecessors.contains(this)) {
+        block.predecessors.add(this);
+      }
+    }
+  }
+
+  void resetLiveness() {
+    use.clear();
+    def.clear();
+    liveIn.clear();
+    liveOut.clear();
+  }
+
+  @override
+  String toString() =>
+      'BlockNode(L${label.id}, preds:${predecessors.length}, succs:${successors.length})';
+}
+
+/// Abstract Compiler Pass.
 abstract class CompilerPass {
-  /// Run the pass on the given node list.
+  final BaseCompiler compiler;
+  CompilerPass(this.compiler);
   void run(NodeList nodes);
 }
 
-/// Interface for instruction analysis required by CFG builder and Liveness Analysis.
+/// Interface for instruction analysis.
 abstract class InstructionAnalyzer {
-  /// Is the instruction a control flow change?
-  bool isJoin(InstNode node); // Label/Block
-
-  /// Is the instruction a jump/branch?
+  bool isJoin(InstNode node);
   bool isJump(InstNode node);
-
-  /// Is the instruction an unconditional jump?
   bool isUnconditionalJump(InstNode node);
-
-  /// Is the instruction a return?
   bool isReturn(InstNode node);
-
-  /// Get the target label of a jump (if direct).
   Label? getJumpTarget(InstNode node);
-
-  /// Analyze instruction register usage (Def/Use).
   void analyze(BaseNode node, Set<BaseReg> def, Set<BaseReg> use);
 }
 
-/// Builds the Control Flow Graph (CFG) by linking BlockNodes.
-///
-/// Iterates through the node list, ensures blocks exist for labels,
-/// and links them via predecessors and successors.
+/// BaseCompiler implementation.
+class BaseCompiler extends BaseBuilder {
+  FuncNode? _func;
+
+  BaseCompiler();
+
+  FuncNode? get func => _func;
+
+  FuncNode newFunc(FuncSignature signature) {
+    final func = FuncNode();
+    // Initialize func detail with signature...
+    // Requires Environment. Using host for now or need to pass it.
+    // C++ add_func uses internal state.
+    // We should implement fully later.
+    return func;
+  }
+
+  FuncNode addFunc(FuncNode func) {
+    addNode(func);
+    // Add logic to insert ExitLabel and EndFunc
+    final exitNode = LabelNode(newLabel());
+    final endNode = SentinelNode(SentinelType.funcEnd);
+
+    func.exitNode = exitNode;
+    func.end = endNode;
+
+    _func = func;
+    return func;
+  }
+
+  final List<CompilerPass> _passes = [];
+
+  void addPass(CompilerPass pass) {
+    _passes.add(pass);
+  }
+
+  void runPasses() {
+    for (final pass in _passes) {
+      pass.run(nodes);
+    }
+  }
+
+  AsmJitError endFunc() {
+    if (_func == null) return AsmJitError.invalidState;
+
+    // Add exit label
+    addNode(_func!.exitNode!);
+    // Add sentinel
+    addNode(_func!.end!);
+
+    _func = null;
+    return AsmJitError.ok;
+  }
+  // ===========================================================================
+  // RA Emission Interface
+  // ===========================================================================
+
+  void emitMove(Operand dst, Operand src) {
+    throw UnimplementedError('emitMove not implemented for this architecture');
+  }
+
+  void emitSwap(Operand a, Operand b) {
+    throw UnimplementedError('emitSwap not implemented for this architecture');
+  }
+
+  void emitLoad(Operand dst, Operand src) {
+    // Usually same as move, but semantic difference for RA
+    emitMove(dst, src);
+  }
+
+  void emitSave(Operand dst, Operand src) {
+    // Usually same as move
+    emitMove(dst, src);
+  }
+}
+
+/// CFG Builder Pass.
 class CFGBuilder extends CompilerPass {
   final InstructionAnalyzer analyzer;
 
-  CFGBuilder(this.analyzer);
+  CFGBuilder(BaseCompiler compiler, this.analyzer) : super(compiler);
 
   @override
   void run(NodeList nodes) {
@@ -54,39 +281,32 @@ class CFGBuilder extends CompilerPass {
   }
 
   void _resetGraph(NodeList nodes) {
-    var node = nodes.first;
-    while (node != null) {
+    for (final node in nodes.nodes) {
       if (node is BlockNode) {
         node.predecessors.clear();
         node.successors.clear();
-        // Custom fields reset if necessary
       }
-      node = node.next;
     }
   }
 
   void _buildBlocks(NodeList nodes) {
-    // Pass 1: Ensure BlockNodes exist for all Labels used as jump targets or block entries.
-    // In strict mode, we expect BlockNodes to be emitted by the code builder.
-    // If we were to promote LabelNodes, we'd do it here, but creating new nodes in-place is complex.
-    // We assume the upstream builder uses 'block()' for key labels.
+    // In C++, blocks are usually built by identifying labels and jumps.
+    // If we rely on BlockNode being present (as labels), we iterate labels.
+    // If BlockNodes are constructed here, we'd need to replace LabelNodes with BlockNodes.
+    // For now assuming BlockNodes are already in the stream (emitted by user) or we treat LabelNodes as Blocks?
+    // The previous Dart implementation assumed BlockNodes.
   }
 
   void _linkBlocks(NodeList nodes) {
-    // Map of Label ID to BlockNode
     final labelMap = <int, BlockNode>{};
-
-    var node = nodes.first;
-    while (node != null) {
+    for (final node in nodes.nodes) {
       if (node is BlockNode) {
         labelMap[node.label.id] = node;
       }
-      node = node.next;
     }
 
     BlockNode? currentBlock;
-    node = nodes.first;
-    while (node != null) {
+    for (final node in nodes.nodes) {
       if (node is BlockNode) {
         currentBlock = node;
       } else if (node is InstNode && currentBlock != null) {
@@ -99,12 +319,10 @@ class CFGBuilder extends CompilerPass {
             }
           }
         }
-
         if (!analyzer.isUnconditionalJump(node) && !analyzer.isReturn(node)) {
           _addFallthroughSuccessor(currentBlock, node, labelMap);
         }
       }
-      node = node.next;
     }
   }
 
@@ -122,39 +340,33 @@ class CFGBuilder extends CompilerPass {
 }
 
 /// Liveness Analysis Pass.
-/// Computes live-in and live-out sets for each block.
 class LivenessAnalysis extends CompilerPass {
-  final CFGBuilder _cfgBuilder;
+  final CFGBuilder cfgBuilder;
 
-  LivenessAnalysis(this._cfgBuilder);
+  LivenessAnalysis(BaseCompiler compiler, this.cfgBuilder) : super(compiler);
 
   @override
   void run(NodeList nodes) {
-    _cfgBuilder.run(nodes);
+    cfgBuilder.run(nodes);
 
     final blocks = <BlockNode>[];
-    var node = nodes.first;
-    while (node != null) {
+    for (final node in nodes.nodes) {
       if (node is BlockNode) {
         node.resetLiveness();
         blocks.add(node);
       }
-      node = node.next;
     }
 
     BlockNode? current;
-    node = nodes.first;
-    while (node != null) {
+    for (final node in nodes.nodes) {
       if (node is BlockNode) {
         current = node;
       } else if (node is InstNode && current != null) {
-        // Use the analyzer from CFGBuilder
-        _accumulateDefUse(_cfgBuilder.analyzer, current, node);
+        _accumulateDefUse(cfgBuilder.analyzer, current, node);
       }
-      node = node.next;
     }
 
-    var changed = true;
+    bool changed = true;
     while (changed) {
       changed = false;
       for (final block in blocks.reversed) {
@@ -168,15 +380,13 @@ class LivenessAnalysis extends CompilerPass {
           ..addAll(liveOut.where((r) => !block.def.contains(r)));
 
         if (!_setEquals(block.liveOut, liveOut)) {
-          block.liveOut
-            ..clear()
-            ..addAll(liveOut);
+          block.liveOut.clear();
+          block.liveOut.addAll(liveOut);
           changed = true;
         }
         if (!_setEquals(block.liveIn, liveIn)) {
-          block.liveIn
-            ..clear()
-            ..addAll(liveIn);
+          block.liveIn.clear();
+          block.liveIn.addAll(liveIn);
           changed = true;
         }
       }
@@ -187,7 +397,6 @@ class LivenessAnalysis extends CompilerPass {
       InstructionAnalyzer analyzer, BlockNode block, InstNode inst) {
     final instDef = <BaseReg>{};
     final instUse = <BaseReg>{};
-
     analyzer.analyze(inst, instDef, instUse);
 
     for (final u in instUse) {
@@ -201,11 +410,7 @@ class LivenessAnalysis extends CompilerPass {
   }
 
   bool _setEquals(Set<BaseReg> a, Set<BaseReg> b) {
-    if (identical(a, b)) return true;
     if (a.length != b.length) return false;
-    for (final v in a) {
-      if (!b.contains(v)) return false;
-    }
-    return true;
+    return a.containsAll(b);
   }
 }

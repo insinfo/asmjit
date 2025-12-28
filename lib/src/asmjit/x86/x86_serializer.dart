@@ -43,13 +43,13 @@ class X86Serializer implements ir.SerializerContext {
     // Helper to extract X86 operands
     final ops = <Object>[];
     for (final op in operands) {
-      if (op is ir.RegOperand) {
-        ops.add(op.reg);
-      } else if (op is ir.ImmOperand) {
+      if (op is ir.BaseReg) {
+        ops.add(op);
+      } else if (op is ir.Imm) {
         ops.add(op.value);
-      } else if (op is ir.MemOperand) {
-        ops.add(op.mem);
-      } else if (op is ir.LabelOperand) {
+      } else if (op is ir.BaseMem) {
+        ops.add(op);
+      } else if (op is ir.LabelOp) {
         ops.add(op.label);
       }
     }

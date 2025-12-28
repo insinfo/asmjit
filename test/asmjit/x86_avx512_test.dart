@@ -18,12 +18,10 @@ void main() {
 
       // Manually trigger onInst for AVX-512 ops
       // vaddps zmm0, zmm1, zmm2
-      serializer.onInst(X86InstId.kAddps,
-          [RegOperand(zmm0), RegOperand(zmm1), RegOperand(zmm2)], 0);
+      serializer.onInst(X86InstId.kAddps, [zmm0, zmm1, zmm2], 0);
 
       // vaddpd zmm0, zmm1, zmm2
-      serializer.onInst(X86InstId.kAddpd,
-          [RegOperand(zmm0), RegOperand(zmm1), RegOperand(zmm2)], 0);
+      serializer.onInst(X86InstId.kAddpd, [zmm0, zmm1, zmm2], 0);
 
       // Validate encoding logic
       // EVEX prefix is 4 bytes + opcode + ModRM = 6+ bytes.
