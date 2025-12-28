@@ -345,7 +345,7 @@ void main() {
   group('FuncDetail', () {
     test('allocates Win64 GP args correctly', () {
       final sig = FuncSignature.i64i64i64();
-      final detail = FuncDetail(sig, cc: CallingConvention.win64);
+      final detail = FuncDetail(sig, CallingConvention.win64);
 
       expect(detail.argValues.length, 2);
       expect(detail.argValues[0].isReg, isTrue);
@@ -355,7 +355,7 @@ void main() {
 
     test('allocates SysV GP args correctly', () {
       final sig = FuncSignature.i64i64i64();
-      final detail = FuncDetail(sig, cc: CallingConvention.sysV64);
+      final detail = FuncDetail(sig, CallingConvention.sysV64);
 
       expect(detail.argValues.length, 2);
       expect(detail.argValues[0].regId, 7); // RDI
@@ -364,7 +364,7 @@ void main() {
 
     test('allocates float args in XMM', () {
       final sig = FuncSignature.f64f64f64();
-      final detail = FuncDetail(sig, cc: CallingConvention.sysV64);
+      final detail = FuncDetail(sig, CallingConvention.sysV64);
 
       expect(detail.argValues[0].regType, FuncRegType.xmm);
       expect(detail.argValues[1].regType, FuncRegType.xmm);
@@ -372,7 +372,7 @@ void main() {
 
     test('allocates return in RAX for int64', () {
       final sig = FuncSignature.i64i64();
-      final detail = FuncDetail(sig, cc: CallingConvention.sysV64);
+      final detail = FuncDetail(sig, CallingConvention.sysV64);
 
       expect(detail.retValue.isReg, isTrue);
       expect(detail.retValue.regId, 0); // RAX
@@ -380,7 +380,7 @@ void main() {
 
     test('allocates return in XMM0 for float64', () {
       final sig = FuncSignature.f64f64f64();
-      final detail = FuncDetail(sig, cc: CallingConvention.sysV64);
+      final detail = FuncDetail(sig, CallingConvention.sysV64);
 
       expect(detail.retValue.regType, FuncRegType.xmm);
       expect(detail.retValue.regId, 0); // XMM0
@@ -391,7 +391,7 @@ void main() {
       for (int i = 0; i < 8; i++) {
         sig.addArg(TypeId.int64);
       }
-      final detail = FuncDetail(sig, cc: CallingConvention.win64);
+      final detail = FuncDetail(sig, CallingConvention.win64);
 
       // Win64: 4 GP regs, so 4 on stack
       expect(detail.gpArgCount, 4);

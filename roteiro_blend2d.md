@@ -419,7 +419,7 @@ final ag = ((d >> 8) & 0x00FF00FF) * inv;
 - [ ] JIT A64:
   - [x] Copy PRGB32
   - [x] Fill PRGB32
-  - [ ] SrcOver PRGB32 + alpha/mask
+  - [x] SrcOver PRGB32 + alpha/mask
   - [ ] CompOps adicionais
   - [ ] Gradientes e patterns
 

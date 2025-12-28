@@ -6,22 +6,24 @@
 import '../core/code_holder.dart';
 import '../core/code_buffer.dart';
 import '../core/emitter.dart';
+import '../core/error.dart';
+import '../core/func.dart';
 import '../core/labels.dart';
 import '../core/environment.dart';
 import '../core/arch.dart';
+import '../core/reg_utils.dart';
 import 'x86.dart';
 import 'x86_operands.dart';
 import 'x86_encoder.dart';
 import 'x86_simd.dart';
 import 'x86_dispatcher.g.dart';
+import 'x86_emit_helper.dart';
 
 /// x86/x64 Assembler.
 ///
 /// Provides a high-level API for emitting x86/x64 instructions.
 /// Handles label binding, relocations, and instruction encoding.
-class X86Assembler {
-  /// The code holder.
-  final CodeHolder code;
+class X86Assembler extends BaseEmitter {
 
   /// The internal code buffer.
   late final CodeBuffer _buf;
@@ -36,7 +38,7 @@ class X86Assembler {
   int diagnosticOptions = DiagnosticOptions.kNone;
 
   /// Creates an x86 assembler for the given code holder.
-  X86Assembler(this.code) {
+  X86Assembler(CodeHolder code) : super(code) {
     _buf = code.text.buffer;
     _enc = X86Encoder(_buf);
   }
@@ -44,6 +46,12 @@ class X86Assembler {
   /// Emits a raw instruction by ID with generic operands.
   void emit(int instId, List<Object> ops) {
     x86Dispatch(this, instId, ops);
+  }
+
+  /// Emits moves required to assign arguments if any remapping is needed.
+  AsmJitError emitArgsAssignment(FuncFrame frame, FuncArgsAssignment args) {
+    final helper = X86EmitHelper(this);
+    return helper.emitArgsAssignment(frame, args);
   }
 
   /// Creates an x86 assembler with a new code holder.
@@ -1648,4 +1656,15 @@ class X86Assembler {
   void vpmulldYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
       _enc.vpmulldYmmYmmMem(dst, src1, mem);
 
+}
+
+extension FuncFrameX86Extensions on FuncFrame {
+  /// Returns the GP register used for function arguments.
+  X86Gp getArgReg(int index, [CallingConvention? cc]) {
+    final regId = getArgRegId(index, cc);
+    if (regId == Reg.kIdBad) {
+      throw RangeError.index(index, null, 'index');
+    }
+    return X86Gp.r64(regId);
+  }
 }

@@ -5,38 +5,53 @@
 /// Global constants used throughout AsmJit.
 abstract final class Globals {
   /// Host memory allocator overhead.
-  static const int allocOverhead = 4 * 8; // sizeof(intptr_t) * 4
+  static const int kAllocOverhead = 4 * 8; // sizeof(intptr_t) * 4
 
   /// Host memory allocator alignment.
-  static const int allocAlignment = 8;
+  static const int kAllocAlignment = 8;
 
   /// Aggressive growing strategy threshold.
-  static const int growThreshold = 1024 * 1024 * 16; // 16MB
+  static const int kGrowThreshold = 1024 * 1024 * 16; // 16MB
 
   /// Maximum depth of RB-Tree.
-  static const int maxTreeHeight = 128;
+  static const int kMaxTreeHeight = 128;
 
   /// Maximum function arguments.
-  static const int maxFuncArgs = 32;
+  static const int kMaxFuncArgs = 32;
+
+  /// Maximum value pack size.
+  static const int kMaxValuePack = 4;
 
   /// Invalid identifier.
-  static const int invalidId = 0xFFFFFFFF;
+  static const int kInvalidId = 0xFFFFFFFF;
 
   /// Invalid base address.
-  static const int noBaseAddress = -1; // ~0 in uint64
+  static const int kNoBaseAddress = -1; // ~0 in uint64
 
   /// Number of virtual register groups.
-  static const int numVirtGroups = 4;
+  static const int kNumVirtGroups = 4;
 
   /// Maximum label name size.
-  static const int maxLabelNameSize = 2048;
+  static const int kMaxLabelNameSize = 2048;
 
   /// Maximum section name size.
-  static const int maxSectionNameSize = 35;
+  static const int kMaxSectionNameSize = 35;
 
   /// Maximum size of a comment.
-  static const int maxCommentSize = 1024;
+  static const int kMaxCommentSize = 1024;
+
+  // Compatibility aliases
+  static const int numVirtGroups = kNumVirtGroups;
+  static const int maxFuncArgs = kMaxFuncArgs;
+  static const int maxValuePack = kMaxValuePack;
+  static const int invalidId = kInvalidId;
 }
+
+/// Constant alias for max function arguments.
+const int kMaxFuncArgs = Globals.kMaxFuncArgs;
+
+/// Constant alias for max value pack size.
+const int kMaxValuePack = Globals.kMaxValuePack;
 
 /// Reset behavior.
 enum ResetPolicy {
@@ -48,4 +63,4 @@ enum ResetPolicy {
 }
 
 /// Checks if an index is invalid (npos-like).
-bool isNpos(int index) => index == -1 || index == Globals.invalidId;
+bool isNpos(int index) => index == -1;

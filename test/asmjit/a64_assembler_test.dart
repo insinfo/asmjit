@@ -87,5 +87,16 @@ void main() {
       expect(bytes.sublist(16, 20), equals([0x20, 0x1C, 0xA2, 0x4E])); // orr
       expect(bytes.sublist(20, 24), equals([0x20, 0x1C, 0x22, 0x6E])); // eor
     });
+    test('Vector FP', () {
+      asm.faddVec(v0.s, v1.s, v2.s); // 4S
+      asm.fsubVec(v0.s, v1.s, v2.s); // 4S
+      asm.fmulVec(v0.s, v1.s, v2.s); // 4S
+      asm.fdivVec(v0.s, v1.s, v2.s); // 4S
+      asm.fmaxVec(v0.s, v1.s, v2.s); // 4S
+      asm.fminVec(v0.s, v1.s, v2.s); // 4S
+
+      final bytes = asm.code.text.buffer.bytes;
+      expect(bytes.length, equals(24));
+    });
   });
 }

@@ -103,6 +103,12 @@ class Environment {
   /// Whether this is a 64-bit environment.
   bool get is64Bit => arch.is64Bit;
 
+  /// Architecture family.
+  ArchFamily get archFamily => arch.family;
+
+  /// Returns whether [arch] is valid.
+  static bool isValidArch(Arch arch) => arch != Arch.unknown;
+
   /// Whether this is an x86 family environment.
   bool get isX86Family => arch.isX86Family;
 
@@ -191,6 +197,12 @@ class Environment {
         floatABI,
         endian,
       );
+
+  /// Returns the register size for [arch].
+  static int regSizeOfArch(Arch arch) => arch.registerSize;
+
+  /// Returns whether [arch] is a 32-bit architecture.
+  static bool is32BitArch(Arch arch) => arch.is32Bit;
 
   @override
   String toString() {

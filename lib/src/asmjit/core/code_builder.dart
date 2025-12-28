@@ -3,8 +3,35 @@
 /// High-level code builder that integrates virtual registers with
 /// the X86Assembler and Register Allocator.
 
-import 'package:asmjit/asmjit.dart';
-import 'package:asmjit/src/asmjit/core/builder.dart' as ir;
+import 'code_holder.dart';
+import 'regalloc.dart';
+import 'environment.dart';
+import 'operand.dart';
+import 'labels.dart';
+import 'error.dart';
+import 'emitter.dart';
+import 'func_frame_emitter.dart';
+import '../x86/x86.dart';
+import '../x86/x86_operands.dart';
+import '../x86/x86_assembler.dart';
+import '../x86/x86_serializer.dart';
+import '../x86/x86_inst_db.g.dart';
+import '../x86/x86_simd.dart';
+import 'builder.dart' as ir;
+import 'func.dart';
+import 'type.dart';
+import 'arch.dart';
+import 'support.dart' as support;
+import '../runtime/jit_runtime.dart';
+
+extension FuncValueX86Extensions on FuncValue {
+  X86Gp? get gpReg =>
+      isReg && regType == FuncRegType.gp ? X86Gp.r64(regId) : null;
+}
+
+extension FuncDetailX86Extensions on FuncDetail {
+  List<FuncValue> get argValues => List.generate(argCount, (i) => getArg(i));
+}
 
 /// A high-level code builder that uses virtual registers.
 ///
@@ -15,7 +42,9 @@ class X86CodeBuilder extends ir.BaseBuilder {
   final CodeHolder code;
 
   /// The register allocator.
-  final SimpleRegAlloc _ra;
+  final RALocal _ra;
+
+  RALocal get ra => _ra;
 
   /// Current label binding position is handled by BaseBuilder nodes.
 
@@ -51,12 +80,14 @@ class X86CodeBuilder extends ir.BaseBuilder {
   bool _frameProvided = false;
   bool _argsMaterialized = false;
 
+  /// Legacy constructor for compatibility with legacy tests.
+  factory X86CodeBuilder({Environment? env}) => X86CodeBuilder.create(env: env);
+
   X86CodeBuilder._({
     required this.code,
     required this.is64Bit,
     required this.callingConvention,
-  }) : _ra = SimpleRegAlloc(
-            isWin64: callingConvention == CallingConvention.win64);
+  }) : _ra = RALocal(code.env.arch);
 
   /// Creates a new code builder for the host environment.
   factory X86CodeBuilder.create({Environment? env}) {
@@ -133,6 +164,22 @@ class X86CodeBuilder extends ir.BaseBuilder {
   /// MOVZX (zero-extend move).
   void movzx(Object dst, Object src) {
     inst(X86InstId.kMovzx, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// MOVSXD (sign-extend move).
+  void movsxd(Object dst, Object src) {
+    inst(X86InstId.kMovsxd, [_toOperand(dst), _toOperand(src)]);
+  }
+
+  /// MOV immediate to register.
+  void movRI(X86Gp dst, int imm) => mov(dst, imm);
+
+  /// MOV register to register.
+  void movRR(X86Gp dst, X86Gp src) => mov(dst, src);
+
+  /// TEST reg/reg or reg/mem.
+  void test(Object op1, Object op2) {
+    inst(X86InstId.kTest, [_toOperand(op1), _toOperand(op2)]);
   }
 
   /// MOVAPS (aligned move packed single)
@@ -609,8 +656,7 @@ class X86CodeBuilder extends ir.BaseBuilder {
               final temp = _sizedGpTempFor(ret.size);
               node.ret = temp;
               nodes.insertAfter(
-                  ir.InstNode(
-                      X86InstId.kMov,
+                  ir.InstNode(X86InstId.kMov,
                       [ir.MemOperand(mem), ir.RegOperand(temp)]),
                   node);
             } else {
@@ -619,22 +665,19 @@ class X86CodeBuilder extends ir.BaseBuilder {
               if (sizedMem != null && ret.regClass == RegClass.xmm) {
                 node.ret = xmm0;
                 nodes.insertAfter(
-                    ir.InstNode(
-                        X86InstId.kMovups,
+                    ir.InstNode(X86InstId.kMovups,
                         [ir.MemOperand(sizedMem), ir.RegOperand(xmm0)]),
                     node);
               } else if (sizedMem != null && ret.regClass == RegClass.ymm) {
                 node.ret = ymm0;
                 nodes.insertAfter(
-                    ir.InstNode(
-                        X86InstId.kVmovups,
+                    ir.InstNode(X86InstId.kVmovups,
                         [ir.MemOperand(sizedMem), ir.RegOperand(ymm0)]),
                     node);
               } else if (sizedMem != null && ret.regClass == RegClass.zmm) {
                 node.ret = zmm0;
                 nodes.insertAfter(
-                    ir.InstNode(
-                        X86InstId.kVmovups,
+                    ir.InstNode(X86InstId.kVmovups,
                         [ir.MemOperand(sizedMem), ir.RegOperand(zmm0)]),
                     node);
               }
@@ -665,13 +708,17 @@ class X86CodeBuilder extends ir.BaseBuilder {
   }
 
   void _rewriteOperandList(ir.BaseNode anchor, List<ir.Operand> operands) {
+    print('[DEBUG] _rewriteOperandList: node=$anchor');
     for (int i = 0; i < operands.length; i++) {
       final op = operands[i];
+      print('[DEBUG]   operand $i: $op (${op.runtimeType})');
       if (op is ir.RegOperand && op.reg is VirtReg) {
         final vreg = op.reg as VirtReg;
         final phys = _physRegForVirt(vreg);
+        print('[DEBUG]     vreg.id=${vreg.id}, phys=$phys');
         if (phys != null) {
           operands[i] = ir.RegOperand(phys);
+          print('[DEBUG]     -> replaced with $phys');
         } else if (vreg.isSpilled) {
           final slotIndex = vreg.spillOffset ~/ 8;
           int offset = 0;
@@ -680,13 +727,16 @@ class X86CodeBuilder extends ir.BaseBuilder {
           } else {
             offset = -8 - vreg.spillOffset;
           }
-          operands[i] = ir.MemOperand(X86Mem.baseDisp(rbp, offset));
+          operands[i] =
+              ir.MemOperand(X86Mem.baseDisp(rbp, offset, size: vreg.size));
+          print('[DEBUG]     -> spilled to [rbp+$offset]');
         }
       } else if (op is ir.MemOperand && op.mem is X86Mem) {
         final mem = op.mem as X86Mem;
         final rewritten = _rewriteMemOperand(anchor, mem);
         if (rewritten != mem) {
           operands[i] = ir.MemOperand(rewritten);
+          print('[DEBUG]     -> mem rewritten to $rewritten');
         }
       }
     }
@@ -710,6 +760,9 @@ class X86CodeBuilder extends ir.BaseBuilder {
   BaseReg? _rewriteMemReg(ir.BaseNode anchor, BaseReg? reg, X86Gp temp) {
     if (reg is VirtReg) {
       final phys = _physRegForVirt(reg);
+      // DEBUG
+      print('[DEBUG] _rewriteMemReg: vreg.id=${reg.id}, vreg.size=${reg.size}, '
+          'vreg.physReg=${reg.physReg}, phys=$phys, phys.runtimeType=${phys.runtimeType}');
       if (phys is X86Gp) return phys;
       if (reg.isSpilled) {
         final slotIndex = reg.spillOffset ~/ 8;
@@ -720,8 +773,10 @@ class X86CodeBuilder extends ir.BaseBuilder {
           offset = -8 - reg.spillOffset;
         }
         nodes.insertBefore(
-            ir.InstNode(
-                X86InstId.kMov, [ir.RegOperand(temp), ir.MemOperand(X86Mem.baseDisp(rbp, offset))]),
+            ir.InstNode(X86InstId.kMov, [
+              ir.RegOperand(temp),
+              ir.MemOperand(X86Mem.baseDisp(rbp, offset, size: reg.size))
+            ]),
             anchor);
         return temp;
       }
@@ -731,11 +786,12 @@ class X86CodeBuilder extends ir.BaseBuilder {
         final instId = is64Bit ? X86InstId.kMovq : X86InstId.kMovd;
         // Use the low bits of the vector register as an address base/index.
         nodes.insertBefore(
-            ir.InstNode(
-                instId, [ir.RegOperand(dst), ir.RegOperand(physVec)]),
+            ir.InstNode(instId, [ir.RegOperand(dst), ir.RegOperand(physVec)]),
             anchor);
         return dst;
       }
+      print(
+          '[DEBUG] _rewriteMemReg: FAILED to find physical reg for vreg.id=${reg.id}!');
       return reg;
     }
     return reg;
@@ -758,6 +814,19 @@ class X86CodeBuilder extends ir.BaseBuilder {
       }
       return phys;
     }
+
+    // Fallback for function arguments: if the vreg is an argument and has no
+    // allocated physical register, use the calling convention's argument register.
+    // This handles cases where the RA didn't allocate the arg to a different register.
+    final argIndex = _argRegs.indexOf(vreg);
+    if (argIndex >= 0 && argIndex < _getPhysicalArgRegs().length) {
+      final physArgReg = _getPhysicalArgRegs()[argIndex];
+      if (vreg.size == 4) return physArgReg.r32;
+      if (vreg.size == 2) return physArgReg.r16;
+      if (vreg.size == 1) return physArgReg.r8;
+      return physArgReg;
+    }
+
     return null;
   }
 
@@ -796,7 +865,8 @@ class X86CodeBuilder extends ir.BaseBuilder {
       return;
     }
 
-    final detail = FuncDetail(signature, cc: callingConvention);
+    final detail = FuncDetail();
+    detail.init(signature, code.env);
     final stackSize = _alignStack(detail.stackArgsSize);
 
     if (stackSize > 0) {
@@ -875,8 +945,7 @@ class X86CodeBuilder extends ir.BaseBuilder {
     if (ret == null) return;
     if (ret is X86Gp && ret != rax) {
       nodes.insertBefore(
-          ir.InstNode(
-              X86InstId.kMov, [ir.RegOperand(ret), ir.RegOperand(rax)]),
+          ir.InstNode(X86InstId.kMov, [ir.RegOperand(ret), ir.RegOperand(rax)]),
           node);
       return;
     }
@@ -919,8 +988,7 @@ class X86CodeBuilder extends ir.BaseBuilder {
       if (idx != -1) {
         final move = moves.removeAt(idx);
         nodes.insertBefore(
-            ir.InstNode(
-                X86InstId.kMov, [ir.RegOperand(move.dst), move.src]),
+            ir.InstNode(X86InstId.kMov, [ir.RegOperand(move.dst), move.src]),
             anchor);
         continue;
       }
@@ -938,14 +1006,12 @@ class X86CodeBuilder extends ir.BaseBuilder {
             (move.src as ir.RegOperand).reg is X86Gp) {
           final srcReg = (move.src as ir.RegOperand).reg as X86Gp;
           nodes.insertBefore(
-              ir.InstNode(X86InstId.kPush, [ir.RegOperand(srcReg)]),
-              anchor);
+              ir.InstNode(X86InstId.kPush, [ir.RegOperand(srcReg)]), anchor);
           nodes.insertBefore(
               ir.InstNode(X86InstId.kPop, [ir.RegOperand(move.dst)]), anchor);
         } else {
           nodes.insertBefore(
-              ir.InstNode(
-                  X86InstId.kMov, [ir.RegOperand(move.dst), move.src]),
+              ir.InstNode(X86InstId.kMov, [ir.RegOperand(move.dst), move.src]),
               anchor);
         }
       }
@@ -969,8 +1035,7 @@ class X86CodeBuilder extends ir.BaseBuilder {
     return -1;
   }
 
-  void _emitCallVecMove(
-      ir.BaseNode anchor, FuncValue argInfo, ir.Operand arg) {
+  void _emitCallVecMove(ir.BaseNode anchor, FuncValue argInfo, ir.Operand arg) {
     final regType = argInfo.regType;
     if (regType == FuncRegType.zmm) {
       final dst = X86Zmm(argInfo.regId);
@@ -1027,27 +1092,27 @@ class X86CodeBuilder extends ir.BaseBuilder {
             ? 32
             : 16;
     nodes.insertBefore(
-        ir.InstNode(
-            X86InstId.kSub, [ir.RegOperand(rsp), ir.ImmOperand(bytes)]),
+        ir.InstNode(X86InstId.kSub, [ir.RegOperand(rsp), ir.ImmOperand(bytes)]),
         anchor);
     nodes.insertBefore(
-        ir.InstNode(X86InstId.kMov, [ir.RegOperand(r11), ir.ImmOperand(immValue)]),
+        ir.InstNode(
+            X86InstId.kMov, [ir.RegOperand(r11), ir.ImmOperand(immValue)]),
         anchor);
     for (int offset = 0; offset < bytes; offset += 8) {
       nodes.insertBefore(
-          ir.InstNode(
-              X86InstId.kMov,
-              [ir.MemOperand(X86Mem.baseDisp(rsp, offset)), ir.RegOperand(r11)]),
+          ir.InstNode(X86InstId.kMov, [
+            ir.MemOperand(X86Mem.baseDisp(rsp, offset)),
+            ir.RegOperand(r11)
+          ]),
           anchor);
     }
-    final instId =
-        dst is X86Xmm ? X86InstId.kMovups : X86InstId.kVmovups;
+    final instId = dst is X86Xmm ? X86InstId.kMovups : X86InstId.kVmovups;
     nodes.insertBefore(
-        ir.InstNode(instId, [ir.RegOperand(dst), ir.MemOperand(X86Mem.baseDisp(rsp, 0))]),
+        ir.InstNode(instId,
+            [ir.RegOperand(dst), ir.MemOperand(X86Mem.baseDisp(rsp, 0))]),
         anchor);
     nodes.insertBefore(
-        ir.InstNode(
-            X86InstId.kAdd, [ir.RegOperand(rsp), ir.ImmOperand(bytes)]),
+        ir.InstNode(X86InstId.kAdd, [ir.RegOperand(rsp), ir.ImmOperand(bytes)]),
         anchor);
   }
 
@@ -1087,26 +1152,21 @@ class X86CodeBuilder extends ir.BaseBuilder {
       }
     } else if (arg is ir.RegOperand &&
         (arg.reg is X86Xmm || arg.reg is X86Ymm || arg.reg is X86Zmm)) {
-      final instId =
-          (arg.reg is X86Ymm || arg.reg is X86Zmm)
-              ? X86InstId.kVmovups
-              : X86InstId.kMovups;
+      final instId = (arg.reg is X86Ymm || arg.reg is X86Zmm)
+          ? X86InstId.kVmovups
+          : X86InstId.kMovups;
       nodes.insertBefore(
           ir.InstNode(instId, [ir.MemOperand(mem), arg]), anchor);
     } else if (arg is ir.MemOperand && arg.mem is X86Mem) {
       nodes.insertBefore(
-          ir.InstNode(
-              X86InstId.kMov, [ir.RegOperand(r11), arg]),
-          anchor);
+          ir.InstNode(X86InstId.kMov, [ir.RegOperand(r11), arg]), anchor);
       nodes.insertBefore(
-          ir.InstNode(
-              X86InstId.kMov, [ir.MemOperand(mem), ir.RegOperand(r11)]),
+          ir.InstNode(X86InstId.kMov, [ir.MemOperand(mem), ir.RegOperand(r11)]),
           anchor);
     } else if (arg is ir.LabelOperand) {
       final labelOffset = code.getLabelOffset(arg.label);
       if (labelOffset == null) {
-        throw AsmJitException(
-            AsmJitError.invalidLabel,
+        throw AsmJitException(AsmJitError.invalidLabel,
             'Unbound label used as stack argument: L${arg.label.id}');
       }
       nodes.insertBefore(
@@ -1114,8 +1174,7 @@ class X86CodeBuilder extends ir.BaseBuilder {
               X86InstId.kMov, [ir.RegOperand(r11), ir.ImmOperand(labelOffset)]),
           anchor);
       nodes.insertBefore(
-          ir.InstNode(
-              X86InstId.kMov, [ir.MemOperand(mem), ir.RegOperand(r11)]),
+          ir.InstNode(X86InstId.kMov, [ir.MemOperand(mem), ir.RegOperand(r11)]),
           anchor);
     } else {
       throw AsmJitException.invalidArgument(
@@ -1134,12 +1193,12 @@ class X86CodeBuilder extends ir.BaseBuilder {
     var remaining = sizeBytes;
     while (remaining >= 8) {
       nodes.insertBefore(
-          ir.InstNode(
-              X86InstId.kMov,
-              [
-                ir.MemOperand(baseMem.withDisplacement(baseMem.displacement + offset).withSize(8)),
-                ir.RegOperand(r11)
-              ]),
+          ir.InstNode(X86InstId.kMov, [
+            ir.MemOperand(baseMem
+                .withDisplacement(baseMem.displacement + offset)
+                .withSize(8)),
+            ir.RegOperand(r11)
+          ]),
           anchor);
       remaining -= 8;
       offset += 8;
@@ -1148,18 +1207,17 @@ class X86CodeBuilder extends ir.BaseBuilder {
     if (remaining > 0) {
       final reg = _sizedGpTempFor(remaining);
       nodes.insertBefore(
-          ir.InstNode(
-              X86InstId.kMov,
-              [
-                ir.MemOperand(baseMem.withDisplacement(baseMem.displacement + offset).withSize(remaining)),
-                ir.RegOperand(reg)
-              ]),
+          ir.InstNode(X86InstId.kMov, [
+            ir.MemOperand(baseMem
+                .withDisplacement(baseMem.displacement + offset)
+                .withSize(remaining)),
+            ir.RegOperand(reg)
+          ]),
           anchor);
     }
   }
 
-  void _emitCallReturnMove(
-      ir.BaseNode anchor, BaseReg ret, FuncValue retInfo) {
+  void _emitCallReturnMove(ir.BaseNode anchor, BaseReg ret, FuncValue retInfo) {
     if (!retInfo.isReg) return;
     if (retInfo.regType == FuncRegType.gp) {
       final src = retInfo.gpReg;
@@ -1178,8 +1236,7 @@ class X86CodeBuilder extends ir.BaseBuilder {
         if (ret.id != src.id) {
           nodes.insertBefore(
               ir.InstNode(
-                  X86InstId.kVmovups,
-                  [ir.RegOperand(ret), ir.RegOperand(src)]),
+                  X86InstId.kVmovups, [ir.RegOperand(ret), ir.RegOperand(src)]),
               anchor);
         }
       }
@@ -1189,13 +1246,13 @@ class X86CodeBuilder extends ir.BaseBuilder {
     final BaseReg src = retInfo.regType == FuncRegType.ymm
         ? X86Ymm(retInfo.regId)
         : X86Xmm(retInfo.regId);
-    final instId =
-        retInfo.regType == FuncRegType.ymm ? X86InstId.kVmovups : X86InstId.kMovups;
+    final instId = retInfo.regType == FuncRegType.ymm
+        ? X86InstId.kVmovups
+        : X86InstId.kMovups;
 
     if (ret.runtimeType == src.runtimeType && ret.id != src.id) {
       nodes.insertBefore(
-          ir.InstNode(
-              instId, [ir.RegOperand(ret), ir.RegOperand(src)]),
+          ir.InstNode(instId, [ir.RegOperand(ret), ir.RegOperand(src)]),
           anchor);
     }
   }
@@ -1369,7 +1426,7 @@ class X86CodeBuilder extends ir.BaseBuilder {
   }
 
   /// TEST vreg, vreg
-  void test(Object a, Object b) {
+  void testInst(Object a, Object b) {
     inst(X86InstId.kTest, [_toOperand(a), _toOperand(b)]);
   }
 
@@ -1463,14 +1520,15 @@ class X86CodeBuilder extends ir.BaseBuilder {
       _funcFrame = frame;
       _frameProvided = true;
     } else {
-      final finalAttr = attr ?? FuncFrameAttr.nonLeaf();
+      final finalAttr = attr ?? FuncFrameAttributes.nonLeaf();
       _funcFrame = FuncFrame.host(attr: finalAttr);
       _frameProvided = attr != null;
     }
 
     // Emit code to load arguments into virtual registers
     if (_funcFrame != null) {
-      final detail = FuncDetail(signature, cc: callingConvention);
+      final detail = FuncDetail();
+      detail.init(signature, code.env);
 
       for (int i = 0; i < signature.argCount; i++) {
         final arg = detail.getArg(i);
@@ -1494,49 +1552,13 @@ class X86CodeBuilder extends ir.BaseBuilder {
         final vreg = _argRegs[i]!;
 
         if (arg.isReg) {
-          if (arg.regType == FuncRegType.gp) {
-            final srcReg = size <= 1
-                ? X86Gp.r8(arg.regId)
-                : size == 2
-                    ? X86Gp.r16(arg.regId)
-                    : size == 4
-                        ? X86Gp.r32(arg.regId)
-                        : X86Gp.r64(arg.regId);
-            mov(vreg, srcReg);
-          } else if (arg.regType == FuncRegType.xmm ||
-              arg.regType == FuncRegType.ymm ||
-              arg.regType == FuncRegType.zmm) {
-            // Use register of appropriate size
-            Object srcReg;
-            if (arg.regType == FuncRegType.xmm)
-              srcReg = X86Xmm(arg.regId);
-            else if (arg.regType == FuncRegType.ymm)
-              srcReg = X86Ymm(arg.regId);
-            else
-              srcReg = X86Zmm(arg.regId);
-
-            if (type == TypeId.float32) {
-              movss(vreg, srcReg);
-            } else if (type == TypeId.float64) {
-              movsd(vreg, srcReg);
-            } else if (type.isVec) {
-              if (type.sizeInBytes == 32)
-                vmovups(vreg, srcReg);
-              else if (type.sizeInBytes == 64)
-                vmovups(vreg, srcReg); // Logic for zmm? vmovups works?
-              else
-                movups(vreg, srcReg);
-            } else {
-              // Default fallback
-              if (size == 4)
-                movd(vreg, srcReg);
-              else
-                movq(vreg, srcReg);
-            }
-          }
+          // Arguments passed in registers are handled by _emitArgMoves during build.
+          // We do NOT emit explicit moves in the IR because implicit register
+          // args (RCX, etc.) might be reused/clobbered by the time execution reaches here.
+          // The register allocator/prologue ensures 'vreg' holds the correct value.
+          // NOTE: Do NOT set _argsMaterialized = true here, as _emitArgMoves must still run.
         } else if (arg.isStack) {
-          final offset =
-              _funcFrame!.getStackArgOffset(i, includeShadowSpace: true);
+          final offset = _funcFrame!.getStackArgOffset(i, null, true);
           final mem = X86Mem.baseDisp(rbp, offset);
 
           if (type.isFloat) {
@@ -1556,8 +1578,16 @@ class X86CodeBuilder extends ir.BaseBuilder {
           }
         }
       }
+
+      // Only mark args as materialized if ALL args are stack-based.
+      // If any arg is in a register, _emitArgMoves must run during build.
+      final hasRegisterArg = Iterable.generate(signature.argCount)
+          .any((i) => detail.getArg(i).isReg);
+      _argsMaterialized = !hasRegisterArg;
+    } else {
+      // No funcFrame means no proper calling convention handling.
+      _argsMaterialized = true;
     }
-    _argsMaterialized = true;
     return node;
   }
 
@@ -1653,8 +1683,7 @@ class X86CodeBuilder extends ir.BaseBuilder {
                   ? eax
                   : rax;
       nodes.insertBefore(
-          ir.InstNode(
-              X86InstId.kMov, [ir.RegOperand(reg), ir.ImmOperand(0)]),
+          ir.InstNode(X86InstId.kMov, [ir.RegOperand(reg), ir.ImmOperand(0)]),
           anchor);
     } else if (retType.isFloat) {
       if (retType == TypeId.float64 || retType == TypeId.float80) {
@@ -1696,40 +1725,37 @@ class X86CodeBuilder extends ir.BaseBuilder {
       final bytes = retType.sizeInBytes;
       if (bytes <= 2) {
         nodes.insertBefore(
-            ir.InstNode(
-                X86InstId.kMov, [ir.RegOperand(eax), ir.ImmOperand(0)]),
+            ir.InstNode(X86InstId.kMov, [ir.RegOperand(eax), ir.ImmOperand(0)]),
             anchor);
         nodes.insertBefore(
-            ir.InstNode(X86InstId.kKmovw,
-                [ir.RegOperand(k0), ir.RegOperand(eax)]),
+            ir.InstNode(
+                X86InstId.kKmovw, [ir.RegOperand(k0), ir.RegOperand(eax)]),
             anchor);
       } else if (bytes <= 4) {
         nodes.insertBefore(
-            ir.InstNode(
-                X86InstId.kMov, [ir.RegOperand(eax), ir.ImmOperand(0)]),
+            ir.InstNode(X86InstId.kMov, [ir.RegOperand(eax), ir.ImmOperand(0)]),
             anchor);
         nodes.insertBefore(
-            ir.InstNode(X86InstId.kKmovd,
-                [ir.RegOperand(k0), ir.RegOperand(eax)]),
+            ir.InstNode(
+                X86InstId.kKmovd, [ir.RegOperand(k0), ir.RegOperand(eax)]),
             anchor);
       } else {
         nodes.insertBefore(
-            ir.InstNode(
-                X86InstId.kMov, [ir.RegOperand(rax), ir.ImmOperand(0)]),
+            ir.InstNode(X86InstId.kMov, [ir.RegOperand(rax), ir.ImmOperand(0)]),
             anchor);
         nodes.insertBefore(
-            ir.InstNode(X86InstId.kKmovq,
-                [ir.RegOperand(k0), ir.RegOperand(rax)]),
+            ir.InstNode(
+                X86InstId.kKmovq, [ir.RegOperand(k0), ir.RegOperand(rax)]),
             anchor);
       }
     } else if (retType.isMmx) {
       nodes.insertBefore(
-          ir.InstNode(X86InstId.kPxor,
-              [ir.RegOperand(xmm0), ir.RegOperand(xmm0)]),
+          ir.InstNode(
+              X86InstId.kPxor, [ir.RegOperand(xmm0), ir.RegOperand(xmm0)]),
           anchor);
     } else {
       nodes.insertBefore(
-      ir.InstNode(X86InstId.kMov, [ir.RegOperand(rax), ir.ImmOperand(0)]),
+          ir.InstNode(X86InstId.kMov, [ir.RegOperand(rax), ir.ImmOperand(0)]),
           anchor);
     }
   }
@@ -1817,10 +1843,13 @@ class X86CodeBuilder extends ir.BaseBuilder {
     _ra.allocate(nodes);
 
     final signature = _currentFunc?.signature;
-    final hasStackArgs = signature is FuncSignature
-        ? FuncDetail(signature, cc: callingConvention).stackArgCount > 0
+    final hasStackArgs = signature != null
+        ? (() {
+            final detail = FuncDetail();
+            detail.init(signature as FuncSignature, code.env);
+            return detail.stackArgCount > 0;
+          })()
         : false;
-    final allowRedZone = callingConvention == CallingConvention.sysV64;
 
     // 2. Calculate Frame (Prologue)
     if (_funcFrame == null || !_frameProvided) {
@@ -1831,46 +1860,36 @@ class X86CodeBuilder extends ir.BaseBuilder {
       }
 
       final preserved = <X86Gp>[];
-      final calleeSaved = FuncFrame.host().calleeSavedRegs;
+      final calleeSavedMask = FuncFrame.host().preservedRegs(RegGroup.gp);
       for (final reg in usedRegs) {
-        if (calleeSaved.contains(reg)) {
+        if ((calleeSavedMask & support.bitMask(reg.id)) != 0) {
           preserved.add(reg);
         }
       }
 
       final spillSize = _ra.spillAreaSize;
-      final needsNonLeaf = hasStackArgs || spillSize > 0 || preserved.isNotEmpty;
+      final needsNonLeaf =
+          hasStackArgs || spillSize > 0 || preserved.isNotEmpty;
       if (_funcFrame == null) {
         final attr = frameAttrHint ??
             (needsNonLeaf
-                ? FuncFrameAttr.nonLeaf(
-                    localStackSize: spillSize, preservedRegs: preserved)
-                : FuncFrameAttr(
-                    preserveFramePointer: false,
-                    localStackSize: 0,
-                    alignStack: false,
-                    useRedZone: allowRedZone,
-                  ));
-        _funcFrame = FuncFrame.host(attr: attr);
-      } else {
-        final baseAttr = _funcFrame!.attr;
-        final mergedPreserved = <X86Gp>{
-          ...baseAttr.preservedRegs,
-          ...preserved,
-        }.toList();
-        final preserveFramePointer =
-            baseAttr.preserveFramePointer || needsNonLeaf;
+                ? FuncFrameAttributes.nonLeaf()
+                : FuncFrameAttributes());
         _funcFrame = FuncFrame.host(
-          attr: FuncFrameAttr(
-            preserveFramePointer: preserveFramePointer,
-            localStackSize: baseAttr.localStackSize + spillSize,
-            alignStack: baseAttr.alignStack,
-            preservedRegs: mergedPreserved,
-            useRedZone: preserveFramePointer
-                ? false
-                : (baseAttr.useRedZone && allowRedZone),
-          ),
+          attr: attr,
+          localStackSize: spillSize,
+          preservedRegs: preserved.toList(),
         );
+      } else {
+        if (needsNonLeaf) {
+          _funcFrame!.addAttributes(FuncFrameAttributes.nonLeaf().attributes);
+        }
+        _funcFrame!.setLocalStackSize(_funcFrame!.localStackSize + spillSize);
+        for (final reg in preserved) {
+          _funcFrame!.addDirtyRegs(reg.group, 1 << reg.id);
+          _funcFrame!.setPreservedRegs(
+              reg.group, _funcFrame!.preservedRegs(reg.group) | (1 << reg.id));
+        }
       }
     }
 
@@ -1881,9 +1900,11 @@ class X86CodeBuilder extends ir.BaseBuilder {
     _lowerInvokeNodes();
 
     if (_funcFrame != null) {
-    _frameEmitter = FuncFrameEmitter(_funcFrame!, asm);
-    _frameEmitter!.emitPrologue();
-  }
+      _frameEmitter = FuncFrameEmitter(_funcFrame!, asm);
+      _frameEmitter!.emitPrologue();
+    }
+
+    _ra.emitRegMoves(asm);
 
     // 4. Move Arguments (Prologue)
     if (!_argsMaterialized &&
@@ -1898,25 +1919,42 @@ class X86CodeBuilder extends ir.BaseBuilder {
   }
 
   void _emitArgMoves(X86Assembler asm) {
+    print('[DEBUG] _emitArgMoves called');
     final physArgRegs = _getPhysicalArgRegs();
     final physVecArgRegs = _getPhysicalVecArgRegs();
     final moves = <_ArgMove>[];
+
+    print(
+        '[DEBUG] _argRegs.length=${_argRegs.length}, physArgRegs=$physArgRegs');
 
     // Spills must be stored before any register moves that could clobber sources.
     for (int i = 0; i < _argRegs.length && i < physArgRegs.length; i++) {
       final argVreg = _argRegs[i];
       final fixed = i < _fixedArgRegs.length ? _fixedArgRegs[i] : null;
-      if (argVreg == null) continue;
-      if (fixed != null) continue;
+      if (argVreg == null) {
+        print('[DEBUG]   arg $i: vreg=null, skipping');
+        continue;
+      }
+      if (fixed != null) {
+        print('[DEBUG]   arg $i: fixed=$fixed, skipping');
+        continue;
+      }
       final physArg = physArgRegs[i];
+      print(
+          '[DEBUG]   arg $i: vreg.id=${argVreg.id}, vreg.physReg=${argVreg.physReg}, '
+          'physArg=$physArg, isSpilled=${argVreg.isSpilled}');
       if (argVreg.isSpilled) {
         final slotIndex = argVreg.spillOffset ~/ 8;
         final offset = _funcFrame != null
             ? _funcFrame!.getLocalOffset(slotIndex)
             : (-8 - argVreg.spillOffset);
+        print('[DEBUG]     -> spilling to [rbp+$offset]');
         asm.movMR(X86Mem.baseDisp(rbp, offset), physArg);
       } else if (argVreg.physReg != null && argVreg.physReg != physArg) {
+        print('[DEBUG]     -> adding move: ${argVreg.physReg} <- $physArg');
         moves.add(_ArgMove(argVreg.physReg!, physArg));
+      } else {
+        print('[DEBUG]     -> no move needed (physReg == physArg or null)');
       }
     }
 
@@ -1933,7 +1971,9 @@ class X86CodeBuilder extends ir.BaseBuilder {
       }
     }
 
-    for (int i = 0; i < _fixedArgRegs.length && i < physVecArgRegs.length; i++) {
+    for (int i = 0;
+        i < _fixedArgRegs.length && i < physVecArgRegs.length;
+        i++) {
       final fixed = _fixedArgRegs[i];
       if (fixed == null) continue;
       if (fixed is X86Xmm || fixed is X86Ymm || fixed is X86Zmm) {
@@ -1968,17 +2008,58 @@ class X86CodeBuilder extends ir.BaseBuilder {
       final idx = _findIndependentMove(moves);
       if (idx != -1) {
         final m = moves.removeAt(idx);
+        print('[DEBUG] _emitArgMoves: emitting MOV ${m.dst}, ${m.src}');
         asm.movRR(m.dst, m.src);
         continue;
       }
 
+      // Cycle detected. Eliminate a dependency.
+      // Pick the first move: dst <- src.
+      // It is blocked because 'dst' is used as a source in another move.
+      // To resolve:
+      // 1. Move 'dst' to 'temp'.
+      // 2. Update the other move to use 'temp' as source.
+      // 3. Now 'dst' can be overwritten.
       final temp = _findTempReg(used);
-      final m = moves.removeAt(0);
       if (temp != null) {
-        asm.movRR(temp, m.src);
-        moves.insert(0, _ArgMove(m.dst, temp));
-        used.add(temp);
+        final m = moves[0]; // Don't remove yet
+        // Find who uses m.dst as source
+        var foundDependency = false;
+        for (final other in moves) {
+          if (other != m && other.src == m.dst) {
+            // Found dependency: other.dst <- other.src (which is m.dst)
+            // Save m.dst to temp
+            if (!foundDependency) {
+              asm.movRR(temp, m.dst);
+              used.add(temp);
+              foundDependency = true;
+            }
+            // Rewrite 'other' to use temp as source
+            // We need to modify the list in-place or replace the object
+            // Since _ArgMove is immutable, we replace it in the list
+            final newOther = _ArgMove(other.dst, temp);
+            final otherIdx = moves.indexOf(other);
+            moves[otherIdx] = newOther;
+          }
+        }
+
+        // Now m.dst is no longer needed as source (we moved it to temp).
+        // So m is independent?
+        // Let loop continue, _findIndependentMove will pick it up (or another one).
+        if (!foundDependency) {
+          // Should not happen if _findIndependentMove failed, unless self-cycle?
+          // Or if all moves invoke src==dst? (nop) - handled by builder?
+          // If we are here, there is a cycle.
+          // Fallback: This logic should inevitably break a dependency.
+          // If we didn't find dependency, maybe our graph logic is wrong?
+          // Force execute 'm' via stack swap if no temp-based fix found?
+          final m = moves.removeAt(0);
+          asm.push(m.src);
+          asm.pop(m.dst);
+        }
       } else {
+        // No temp available. Use stack swap.
+        final m = moves.removeAt(0);
         asm.push(m.src);
         asm.pop(m.dst);
       }
@@ -2002,6 +2083,9 @@ class X86CodeBuilder extends ir.BaseBuilder {
   }
 
   X86Gp? _findTempReg(Set<X86Gp> used) {
+    // Only use volatile registers as temps to avoid clobbering callee-saved registers
+    // which are not tracked by the frame calculator at this stage.
+    // Common volatile set for Win64/SysV:
     const temps = [
       r11,
       r10,
@@ -2010,13 +2094,6 @@ class X86CodeBuilder extends ir.BaseBuilder {
       rcx,
       rdx,
       rax,
-      rbx,
-      rsi,
-      rdi,
-      r12,
-      r13,
-      r14,
-      r15
     ];
     for (final reg in temps) {
       if (!used.contains(reg)) return reg;

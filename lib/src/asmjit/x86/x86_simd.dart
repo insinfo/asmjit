@@ -3,6 +3,7 @@
 /// Defines XMM, YMM, and ZMM registers for SSE/AVX operations.
 
 import '../core/operand.dart';
+import '../core/reg_type.dart';
 
 /// XMM register (128-bit SSE/AVX).
 class X86Xmm extends BaseReg {
@@ -12,7 +13,7 @@ class X86Xmm extends BaseReg {
   const X86Xmm(this.id);
 
   @override
-  RegType get type => RegType.vec;
+  RegType get type => RegType.vec128;
 
   @override
   int get size => 16; // 128 bits = 16 bytes
@@ -51,7 +52,7 @@ class X86Ymm extends BaseReg {
   const X86Ymm(this.id);
 
   @override
-  RegType get type => RegType.vec;
+  RegType get type => RegType.vec256;
 
   @override
   int get size => 32; // 256 bits = 32 bytes
@@ -90,7 +91,7 @@ class X86Zmm extends BaseReg {
   const X86Zmm(this.id);
 
   @override
-  RegType get type => RegType.vec;
+  RegType get type => RegType.vec512;
 
   @override
   int get size => 64; // 512 bits = 64 bytes

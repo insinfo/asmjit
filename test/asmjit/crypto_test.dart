@@ -210,44 +210,41 @@ void main() {
     });
 
     test('getArgReg returns correct registers for Win64', () {
-      final frame = FuncFrame(
-        callingConvention: CallingConvention.win64,
-      );
+      final frame = FuncFrame.host();
 
-      expect(frame.getArgReg(0), equals(rcx));
-      expect(frame.getArgReg(1), equals(rdx));
-      expect(frame.getArgReg(2), equals(r8));
-      expect(frame.getArgReg(3), equals(r9));
+      expect(frame.getArgReg(0, CallingConvention.win64), equals(rcx));
+      expect(frame.getArgReg(1, CallingConvention.win64), equals(rdx));
+      expect(frame.getArgReg(2, CallingConvention.win64), equals(r8));
+      expect(frame.getArgReg(3, CallingConvention.win64), equals(r9));
     });
 
     test('getArgReg returns correct registers for SysV', () {
-      final frame = FuncFrame(
-        callingConvention: CallingConvention.sysV64,
-      );
+      final frame = FuncFrame.host();
 
-      expect(frame.getArgReg(0), equals(rdi));
-      expect(frame.getArgReg(1), equals(rsi));
-      expect(frame.getArgReg(2), equals(rdx));
-      expect(frame.getArgReg(3), equals(rcx));
+      expect(frame.getArgReg(0, CallingConvention.sysV64), equals(rdi));
+      expect(frame.getArgReg(1, CallingConvention.sysV64), equals(rsi));
+      expect(frame.getArgReg(2, CallingConvention.sysV64), equals(rdx));
+      expect(frame.getArgReg(3, CallingConvention.sysV64), equals(rcx));
     });
 
     test('frame with local variables calculates size', () {
       final frame = FuncFrame.host(
-        attr: FuncFrameAttr.nonLeaf(localStackSize: 64),
+        attr: FuncFrameAttributes.nonLeaf(localStackSize: 64),
       );
       expect(frame.frameSize, greaterThanOrEqualTo(64));
     });
 
     test('getStackArgOffset throws for register args', () {
-      final frame = FuncFrame(
-        callingConvention: CallingConvention.win64,
-      );
+      final frame = FuncFrame.host();
 
-      expect(() => frame.getStackArgOffset(0), throwsArgumentError);
-      expect(() => frame.getStackArgOffset(3), throwsArgumentError);
+      expect(() => frame.getStackArgOffset(0, CallingConvention.win64),
+          throwsArgumentError);
+      expect(() => frame.getStackArgOffset(3, CallingConvention.win64),
+          throwsArgumentError);
 
       // arg 4 and beyond are on stack for Win64
-      expect(frame.getStackArgOffset(4), equals(16)); // RBP+16
+      expect(frame.getStackArgOffset(4, CallingConvention.win64),
+          equals(16)); // RBP+16
     });
   });
 }

@@ -5,15 +5,14 @@ import '../core/code_holder.dart';
 import '../core/emitter.dart';
 import '../core/environment.dart';
 import '../core/formatter.dart';
+import '../core/func.dart';
 import '../core/labels.dart';
-import '../core/operand.dart';
+import '../core/operand.dart' hide Operand;
 import '../core/regalloc.dart';
 import '../runtime/jit_runtime.dart';
 
 import 'x86_inst_db.g.dart'; // generated IDs
 import 'x86_assembler.dart';
-import 'x86_func.dart';
-
 /// Analyzes x86 instructions for CFG construction.
 class X86InstructionAnalyzer implements InstructionAnalyzer {
   static const _jccIds = <int>{
@@ -59,6 +58,94 @@ class X86InstructionAnalyzer implements InstructionAnalyzer {
   @override
   bool isUnconditionalJump(InstNode node) {
     return node.instId == X86InstId.kJmp;
+  }
+
+  @override
+  void analyze(BaseNode node, Set<BaseReg> def, Set<BaseReg> use) {
+    if (node is InstNode) {
+      _analyzeInst(node, def, use);
+    } else if (node is InvokeNode) {
+      _analyzeInvoke(node, def, use);
+    }
+  }
+
+  void _analyzeInst(InstNode node, Set<BaseReg> def, Set<BaseReg> use) {
+    final ops = node.operands;
+    if (ops.isEmpty) return;
+
+    final id = node.instId;
+    bool op0IsDef = true;
+    bool op0IsUse = false;
+
+    if (_isReadOnly(id)) {
+      op0IsDef = false;
+      op0IsUse = true;
+    } else if (_isReadWrite(id)) {
+      op0IsDef = true;
+      op0IsUse = true;
+    } else {
+      // Default: Op0 is Def (Write), Op1..N are Use (Read)
+      // This covers MOV, LEA (Op0 write, Op1 read effectively via Mem), and most AVX (Dest, Src, Src)
+      op0IsDef = true;
+      op0IsUse = false;
+    }
+
+    if (ops.isNotEmpty) {
+      _processOp(ops[0], op0IsDef, op0IsUse, def, use);
+    }
+
+    for (int i = 1; i < ops.length; i++) {
+      // Assume sources are read-only
+      _processOp(ops[i], false, true, def, use);
+    }
+  }
+
+  void _analyzeInvoke(InvokeNode node, Set<BaseReg> def, Set<BaseReg> use) {
+    for (final op in node.args) {
+      _processOp(op, false, true, def, use);
+    }
+    if (node.ret != null && !node.ret!.isPhysical) {
+      def.add(node.ret!);
+    }
+  }
+
+  void _processOp(
+      Operand op, bool isDef, bool isUse, Set<BaseReg> def, Set<BaseReg> use) {
+    if (op is RegOperand) {
+      if (!op.reg.isPhysical) {
+        if (isUse) use.add(op.reg);
+        if (isDef) def.add(op.reg);
+      }
+    } else if (op is MemOperand) {
+      final mem = op.mem;
+      if (mem is BaseMem) {
+        if (mem.base != null && !mem.base!.isPhysical) use.add(mem.base!);
+        if (mem.index != null && !mem.index!.isPhysical) use.add(mem.index!);
+      }
+    }
+  }
+
+  bool _isReadOnly(int id) {
+    return id == X86InstId.kCmp ||
+        id == X86InstId.kTest ||
+        id == X86InstId.kPush;
+  }
+
+  bool _isReadWrite(int id) {
+    return id == X86InstId.kAdd ||
+        id == X86InstId.kSub ||
+        id == X86InstId.kAnd ||
+        id == X86InstId.kOr ||
+        id == X86InstId.kXor ||
+        id == X86InstId.kShl ||
+        id == X86InstId.kSar ||
+        id == X86InstId.kInc ||
+        id == X86InstId.kDec ||
+        id == X86InstId.kNeg ||
+        id == X86InstId.kNot ||
+        id == X86InstId.kAdc ||
+        id == X86InstId.kSbb ||
+        id == X86InstId.kImul;
   }
 }
 
@@ -262,8 +349,7 @@ class X86IrCompiler {
   }
 
   /// Emits [nodes] to the given [asm] using the full pipeline.
-  void emit(NodeList nodes, X86Assembler asm,
-      {FuncFrameAttr? frameAttrHint}) {
+  void emit(NodeList nodes, X86Assembler asm, {FuncFrameAttr? frameAttrHint}) {
     _ensureLabels(nodes, asm.code);
 
     final analyzer = X86InstructionAnalyzer();

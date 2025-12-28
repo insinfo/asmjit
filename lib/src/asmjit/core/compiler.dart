@@ -6,13 +6,17 @@ import 'builder.dart';
 import 'labels.dart';
 import 'operand.dart';
 
+export 'builder.dart'
+    show BaseBuilder, FuncNode, BlockNode, InstNode, LabelNode,
+        RegOperand, ImmOperand, MemOperand, FuncRetNode, InvokeNode;
+
 /// A compiler pass that operates on the instruction stream.
 abstract class CompilerPass {
   /// Run the pass on the given node list.
   void run(NodeList nodes);
 }
 
-/// Interface for instruction analysis required by CFG builder.
+/// Interface for instruction analysis required by CFG builder and Liveness Analysis.
 abstract class InstructionAnalyzer {
   /// Is the instruction a control flow change?
   bool isJoin(InstNode node); // Label/Block
@@ -28,12 +32,15 @@ abstract class InstructionAnalyzer {
 
   /// Get the target label of a jump (if direct).
   Label? getJumpTarget(InstNode node);
+
+  /// Analyze instruction register usage (Def/Use).
+  void analyze(BaseNode node, Set<BaseReg> def, Set<BaseReg> use);
 }
 
 /// Builds the Control Flow Graph (CFG) by linking BlockNodes.
 ///
-/// Iterates through the node list, identifies Basic Blocks, and
-/// links them via predecessors and successors.
+/// Iterates through the node list, ensures blocks exist for labels,
+/// and links them via predecessors and successors.
 class CFGBuilder extends CompilerPass {
   final InstructionAnalyzer analyzer;
 
@@ -47,30 +54,28 @@ class CFGBuilder extends CompilerPass {
   }
 
   void _resetGraph(NodeList nodes) {
-    // Clear existing connections
     var node = nodes.first;
     while (node != null) {
       if (node is BlockNode) {
         node.predecessors.clear();
         node.successors.clear();
+        // Custom fields reset if necessary
       }
       node = node.next;
     }
   }
 
   void _buildBlocks(NodeList nodes) {
-    // In AsmJit Dart, we iterate and ensure BlockNodes exist where needed.
-    // For now, we assume the user (or a previous pass) inserted BlockNodes.
-    // We just map Labels to Blocks.
+    // Pass 1: Ensure BlockNodes exist for all Labels used as jump targets or block entries.
+    // In strict mode, we expect BlockNodes to be emitted by the code builder.
+    // If we were to promote LabelNodes, we'd do it here, but creating new nodes in-place is complex.
+    // We assume the upstream builder uses 'block()' for key labels.
   }
 
   void _linkBlocks(NodeList nodes) {
-    BlockNode? currentBlock;
-
     // Map of Label ID to BlockNode
     final labelMap = <int, BlockNode>{};
 
-    // First pass: Index blocks
     var node = nodes.first;
     while (node != null) {
       if (node is BlockNode) {
@@ -79,7 +84,7 @@ class CFGBuilder extends CompilerPass {
       node = node.next;
     }
 
-    // Second pass: Link
+    BlockNode? currentBlock;
     node = nodes.first;
     while (node != null) {
       if (node is BlockNode) {
@@ -95,22 +100,16 @@ class CFGBuilder extends CompilerPass {
           }
         }
 
-        // Handle Fallthrough (for conditional jumps or normal instructions)
         if (!analyzer.isUnconditionalJump(node) && !analyzer.isReturn(node)) {
           _addFallthroughSuccessor(currentBlock, node, labelMap);
         }
       }
       node = node.next;
     }
-
-    // Handle fallthrough for non-jump instructions at end of block
-    // This is tricky if blocks are not contiguous.
-    // Usually valid code has jumps or fallthrough.
   }
 
   void _addFallthroughSuccessor(
       BlockNode current, BaseNode node, Map<int, BlockNode> labelMap) {
-    // Look ahead for the next block
     var next = node.next;
     while (next != null) {
       if (next is BlockNode) {
@@ -131,10 +130,8 @@ class LivenessAnalysis extends CompilerPass {
 
   @override
   void run(NodeList nodes) {
-    // Ensure CFG is up to date
     _cfgBuilder.run(nodes);
 
-    // 1) Collect BlockNodes and reset liveness info.
     final blocks = <BlockNode>[];
     var node = nodes.first;
     while (node != null) {
@@ -145,19 +142,18 @@ class LivenessAnalysis extends CompilerPass {
       node = node.next;
     }
 
-    // 2) Compute Def/Use sets per block by scanning instructions inside it.
     BlockNode? current;
     node = nodes.first;
     while (node != null) {
       if (node is BlockNode) {
         current = node;
       } else if (node is InstNode && current != null) {
-        _accumulateDefUse(current, node);
+        // Use the analyzer from CFGBuilder
+        _accumulateDefUse(_cfgBuilder.analyzer, current, node);
       }
       node = node.next;
     }
 
-    // 3) Iterate to fixed point for LiveIn/LiveOut.
     var changed = true;
     while (changed) {
       changed = false;
@@ -167,7 +163,8 @@ class LivenessAnalysis extends CompilerPass {
           liveOut.addAll(succ.liveIn);
         }
 
-        final liveIn = <BaseReg>{}..addAll(block.use)
+        final liveIn = <BaseReg>{}
+          ..addAll(block.use)
           ..addAll(liveOut.where((r) => !block.def.contains(r)));
 
         if (!_setEquals(block.liveOut, liveOut)) {
@@ -186,33 +183,20 @@ class LivenessAnalysis extends CompilerPass {
     }
   }
 
-  void _accumulateDefUse(BlockNode block, InstNode inst) {
-    if (inst.operands.isEmpty) return;
+  void _accumulateDefUse(
+      InstructionAnalyzer analyzer, BlockNode block, InstNode inst) {
+    final instDef = <BaseReg>{};
+    final instUse = <BaseReg>{};
 
-    // Heuristic: first reg operand is treated as def (dest); others as use.
-    bool destHandled = false;
-    for (final op in inst.operands) {
-      if (op is RegOperand) {
-        final reg = op.reg;
-        if (!reg.isPhysical && !destHandled) {
-          block.def.add(reg);
-          destHandled = true;
-          continue;
-        }
-        if (!reg.isPhysical) block.use.add(reg);
-      } else if (op is MemOperand) {
-        _scanMemForUse(block, op);
+    analyzer.analyze(inst, instDef, instUse);
+
+    for (final u in instUse) {
+      if (!block.def.contains(u)) {
+        block.use.add(u);
       }
     }
-  }
-
-  void _scanMemForUse(BlockNode block, MemOperand memOp) {
-    final mem = memOp.mem;
-    if (mem is BaseMem) {
-      final base = mem.base;
-      final index = mem.index;
-      if (base is BaseReg && !base.isPhysical) block.use.add(base);
-      if (index is BaseReg && !index.isPhysical) block.use.add(index);
+    for (final d in instDef) {
+      block.def.add(d);
     }
   }
 

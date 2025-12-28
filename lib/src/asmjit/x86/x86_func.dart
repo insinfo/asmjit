@@ -1,698 +1,366 @@
-/// AsmJit Function Frame
-///
-/// Provides high-level function frame management with automatic
-/// prologue/epilogue generation based on calling convention.
+// This file is part of AsmJit project <https://asmjit.com>
+//
+// See <asmjit/core.h> or LICENSE.md for license and copyright information
+// SPDX-License-Identifier: Zlib
 
 import '../core/arch.dart';
 import '../core/environment.dart';
+import '../core/error.dart';
+import '../core/func.dart';
+import '../core/globals.dart';
+import '../core/operand.dart';
+import '../core/reg_type.dart';
+import '../core/support.dart' as support;
 import '../core/type.dart';
-import 'x86.dart';
-
-/// Maximum number of function arguments.
-const int kMaxFuncArgs = 32;
-
-/// Marker for no variable arguments.
-const int kNoVarArgs = 0xFF;
-
-/// Function signature.
-///
-/// Describes the return type and argument types of a function.
-/// Used to calculate FuncDetail which maps types to registers/stack.
-class FuncSignature {
-  /// Calling convention ID.
-  final CallConvId callConvId;
-
-  /// Return type.
-  TypeId retType;
-
-  /// Argument types.
-  final List<TypeId> argTypes;
-
-  /// Index of first variadic argument (kNoVarArgs if none).
-  int vaIndex;
-
-  /// Creates a function signature.
-  FuncSignature({
-    this.callConvId = CallConvId.cdecl,
-    this.retType = TypeId.void_,
-    List<TypeId>? args,
-    this.vaIndex = kNoVarArgs,
-  }) : argTypes = args ?? [];
-
-  /// Creates a signature for: int64 func().
-  factory FuncSignature.noArgs({
-    CallConvId callConv = CallConvId.cdecl,
-    TypeId ret = TypeId.int64,
-  }) {
-    return FuncSignature(callConvId: callConv, retType: ret);
+import '../core/func_args_context.dart';
+import '../core/raconstraints.dart';
+import '../core/reg_utils.dart' show Reg;
+class X86FuncInternal {
+  static bool shouldTreatAsCdeclIn64BitMode(CallConvId id) {
+    return id == CallConvId.cdecl ||
+        id == CallConvId.stdCall ||
+        id == CallConvId.thisCall ||
+        id == CallConvId.fastCall ||
+        id == CallConvId.regParm1 ||
+        id == CallConvId.regParm2 ||
+        id == CallConvId.regParm3;
   }
 
-  /// Creates a signature for: int64 func(int64).
-  factory FuncSignature.i64i64({CallConvId callConv = CallConvId.cdecl}) {
-    return FuncSignature(
-      callConvId: callConv,
-      retType: TypeId.int64,
-      args: [TypeId.int64],
-    );
-  }
-
-  /// Creates a signature for: int64 func(int64, int64).
-  factory FuncSignature.i64i64i64({CallConvId callConv = CallConvId.cdecl}) {
-    return FuncSignature(
-      callConvId: callConv,
-      retType: TypeId.int64,
-      args: [TypeId.int64, TypeId.int64],
-    );
-  }
-
-  /// Creates a signature for: int64 func(int64, int64, int64).
-  factory FuncSignature.i64i64i64i64({CallConvId callConv = CallConvId.cdecl}) {
-    return FuncSignature(
-      callConvId: callConv,
-      retType: TypeId.int64,
-      args: [TypeId.int64, TypeId.int64, TypeId.int64],
-    );
-  }
-
-  /// Creates a signature for: double func(double, double).
-  factory FuncSignature.f64f64f64({CallConvId callConv = CallConvId.cdecl}) {
-    return FuncSignature(
-      callConvId: callConv,
-      retType: TypeId.float64,
-      args: [TypeId.float64, TypeId.float64],
-    );
-  }
-
-  /// Number of arguments.
-  int get argCount => argTypes.length;
-
-  /// Whether function has a return value.
-  bool get hasRet => retType != TypeId.void_;
-
-  /// Whether function has variable arguments.
-  bool get hasVarArgs => vaIndex != kNoVarArgs;
-
-  /// Add an argument type.
-  void addArg(TypeId type) {
-    if (argTypes.length >= kMaxFuncArgs) {
-      throw StateError('Too many function arguments');
-    }
-    argTypes.add(type);
-  }
-
-  /// Set return type.
-  void setRet(TypeId type) {
-    retType = type;
-  }
-
-  /// Get argument type at index.
-  TypeId arg(int index) {
-    if (index < 0 || index >= argTypes.length) {
-      throw RangeError.index(index, argTypes, 'index');
-    }
-    return argTypes[index];
-  }
-
-  @override
-  String toString() {
-    final argsStr = argTypes.map((t) => t.name).join(', ');
-    return 'FuncSignature(${retType.name} func($argsStr))';
-  }
-}
-
-/// Calling convention IDs (matches AsmJit).
-enum CallConvId {
-  /// Standard C calling convention.
-  cdecl,
-
-  /// __stdcall (Windows 32-bit).
-  stdCall,
-
-  /// __fastcall (Windows 32-bit).
-  fastCall,
-
-  /// __vectorcall (Windows).
-  vectorCall,
-
-  /// __thiscall (Windows 32-bit).
-  thisCall,
-
-  /// X64 System V ABI.
-  x64SystemV,
-
-  /// X64 Windows ABI.
-  x64Windows,
-}
-
-/// Function frame attributes.
-class FuncFrameAttr {
-  /// Whether to preserve the frame pointer (RBP).
-  final bool preserveFramePointer;
-
-  /// Additional stack space to allocate for local variables.
-  final int localStackSize;
-
-  /// Whether to align the stack to 16 bytes (required by x64 ABI).
-  final bool alignStack;
-
-  /// List of additional registers to preserve (callee-saved).
-  final List<X86Gp> preservedRegs;
-
-  /// Whether this function uses the red zone (SysV only).
-  final bool useRedZone;
-
-  const FuncFrameAttr({
-    this.preserveFramePointer = true,
-    this.localStackSize = 0,
-    this.alignStack = true,
-    this.preservedRegs = const [],
-    this.useRedZone = false,
-  });
-
-  /// Creates attributes for a leaf function (no calls).
-  factory FuncFrameAttr.leaf({int localStackSize = 0}) {
-    return FuncFrameAttr(
-      preserveFramePointer: false,
-      localStackSize: localStackSize,
-      alignStack: false,
-      useRedZone: true,
-    );
-  }
-
-  /// Creates attributes for a function that calls other functions.
-  factory FuncFrameAttr.nonLeaf({
-    int localStackSize = 0,
-    List<X86Gp>? preservedRegs,
-  }) {
-    return FuncFrameAttr(
-      preserveFramePointer: true,
-      localStackSize: localStackSize,
-      alignStack: true,
-      preservedRegs: preservedRegs ?? const [],
-    );
-  }
-}
-
-/// Manages function prologue and epilogue generation.
-///
-/// Based on the calling convention, automatically handles:
-/// - Stack alignment
-/// - Frame pointer setup
-/// - Callee-saved register preservation
-/// - Local variable allocation
-class FuncFrame {
-  /// The calling convention.
-  final CallingConvention callingConvention;
-
-  /// The frame attributes.
-  final FuncFrameAttr attr;
-
-  /// Callee-saved registers that need to be preserved.
-  final List<X86Gp> _savedRegs = [];
-
-  /// Calculated stack frame size.
-  int _frameSize = 0;
-
-  /// Creates a function frame for the given calling convention.
-  FuncFrame({
-    CallingConvention? callingConvention,
-    FuncFrameAttr? attr,
-  })  : callingConvention = callingConvention ?? _defaultCallingConvention(),
-        attr = attr ?? const FuncFrameAttr() {
-    _calculateFrame();
-  }
-
-  /// Creates a function frame for the host environment.
-  factory FuncFrame.host({FuncFrameAttr? attr}) {
-    return FuncFrame(
-      callingConvention: _defaultCallingConvention(),
-      attr: attr,
-    );
-  }
-
-  /// Gets the default calling convention for the host.
-  static CallingConvention _defaultCallingConvention() {
-    final env = Environment.host();
-    return env.callingConvention;
-  }
-
-  /// Calculate the frame layout.
-  void _calculateFrame() {
-    _savedRegs.clear();
-
-    // Collect registers that need to be saved
-    if (attr.preserveFramePointer) {
-      // RBP is handled separately in prologue/epilogue
-    }
-
-    // Add explicitly preserved registers
-    _savedRegs.addAll(attr.preservedRegs);
-
-    // Calculate total frame size
-    int size = 0;
-
-    // Space for saved registers (8 bytes each in x64)
-    size += _savedRegs.length * 8;
-
-    // Space for local variables
-    size += attr.localStackSize;
-
-    // Align to 16 bytes if required
-    if (attr.alignStack && size > 0) {
-      // In x64, after PUSH RBP, the stack is at 16n+8
-      // We need to make it 16n after allocating space
-      // The total with saved regs should be 16-byte aligned
-      final totalPushes =
-          (attr.preserveFramePointer ? 1 : 0) + _savedRegs.length;
-      final pushBytes = totalPushes * 8;
-      final returnAddressBytes = 8;
-
-      // Stack after pushes: (16n) - returnAddress - pushes
-      // We need to add padding to make it 16-byte aligned
-      final currentMisalignment = (returnAddressBytes + pushBytes) % 16;
-      if (currentMisalignment != 0) {
-        size += 16 - currentMisalignment;
-      }
-    }
-
-    _frameSize = size;
-  }
-
-  /// The total frame size (excluding pushed registers).
-  int get frameSize => _frameSize;
-
-  /// List of registers that will be saved.
-  List<X86Gp> get savedRegisters => List.unmodifiable(_savedRegs);
-
-  /// Whether this is a Win64 calling convention.
-  bool get isWin64 => callingConvention == CallingConvention.win64;
-
-  /// Whether this is a SysV calling convention.
-  bool get isSysV => callingConvention == CallingConvention.sysV64;
-
-  /// Gets the argument register for the given index.
-  X86Gp getArgReg(int index) {
-    if (isWin64) {
-      const regs = [rcx, rdx, r8, r9];
-      if (index >= regs.length) {
-        throw ArgumentError('Win64 only has ${regs.length} register arguments');
-      }
-      return regs[index];
-    } else {
-      // System V AMD64
-      const regs = [rdi, rsi, rdx, rcx, r8, r9];
-      if (index >= regs.length) {
-        throw ArgumentError('SysV only has ${regs.length} register arguments');
-      }
-      return regs[index];
-    }
-  }
-
-  /// Gets the standard callee-saved registers.
-  List<X86Gp> get calleeSavedRegs {
-    if (isWin64) {
-      return win64CalleeSaved;
-    } else {
-      return sysVCalleeSaved;
-    }
-  }
-
-  /// Win64 shadow space size (32 bytes).
-  int get shadowSpaceSize => isWin64 ? 32 : 0;
-
-  /// Stack slot size for an argument.
-  int get stackSlotSize => 8;
-
-  /// Get the offset of a stack-based argument (beyond register args).
-  ///
-  /// For Win64, args 0-3 are in registers, arg 4+ on stack.
-  /// For SysV, args 0-5 are in registers, arg 6+ on stack.
-  /// This returns the offset from RBP (after standard prologue).
-  int getStackArgOffset(int argIndex, {bool includeShadowSpace = false}) {
-    final registerArgs = isWin64 ? 4 : 6;
-    if (argIndex < registerArgs) {
-      throw ArgumentError(
-          'Argument $argIndex is passed in a register, not on stack');
-    }
-
-    // Standard layout after prologue:
-    // [RBP+16]: first stack argument (arg 4 for Win64, arg 6 for SysV)
-    // [RBP+8]:  return address
-    // [RBP+0]:  saved RBP (frame pointer)
-    final stackIndex = argIndex - registerArgs;
-    final shadow = includeShadowSpace && isWin64 ? shadowSpaceSize : 0;
-    return 16 + shadow + (stackIndex * stackSlotSize);
-  }
-
-  /// Get the offset for accessing a local variable from RBP.
-  ///
-  /// Local variable 0 is at [RBP - offset], where offset depends on
-  /// the number of saved registers and alignment.
-  int getLocalOffset(int localIndex, {int size = 8}) {
-    // Start after saved registers
-    var offset = _savedRegs.length * 8;
-    offset += localIndex * size;
-    return -(offset + size);
-  }
-}
-
-/// Helper class to emit function prologues and epilogues.
-///
-/// Usage:
-/// ```dart
-/// final frame = FuncFrame.host(attr: FuncFrameAttr.nonLeaf(localStackSize: 32));
-/// final emitter = FuncFrameEmitter(frame, asm);
-///
-/// emitter.emitPrologue();
-/// // ... function body ...
-/// emitter.emitEpilogue();
-/// ```
-class FuncFrameEmitter {
-  final FuncFrame frame;
-  final dynamic _asm; // X86Assembler, but keep weak dependency
-
-  FuncFrameEmitter(this.frame, this._asm);
-
-  /// Emits the function prologue.
-  void emitPrologue() {
-    // Push frame pointer
-    if (frame.attr.preserveFramePointer) {
-      _asm.push(rbp);
-      _asm.movRR(rbp, rsp);
-    }
-
-    // Push callee-saved registers
-    for (final reg in frame.savedRegisters) {
-      _asm.push(reg);
-    }
-
-    // Allocate stack space
-    // frameSize includes saved registers + locals + alignment padding.
-    // We already pushed saved registers. So we only need to alloc the rest.
-    final savedSize = frame.savedRegisters.length * 8;
-    final remaining = frame.frameSize - savedSize;
-    if (remaining > 0) {
-      _asm.subRI(rsp, remaining);
-    }
-
-    // Win64: Allocate shadow space for calls
-    // (Usually done by adding extra to frameSize)
-  }
-
-  /// Emits the function epilogue.
-  void emitEpilogue() {
-    // Deallocate stack space
-    final savedSize = frame.savedRegisters.length * 8;
-    final remaining = frame.frameSize - savedSize;
-    if (remaining > 0) {
-      _asm.addRI(rsp, remaining);
-    }
-
-    // Pop callee-saved registers (reverse order)
-    for (int i = frame.savedRegisters.length - 1; i >= 0; i--) {
-      _asm.pop(frame.savedRegisters[i]);
-    }
-
-    // Restore frame pointer and return
-    if (frame.attr.preserveFramePointer) {
-      _asm.pop(rbp);
-    }
-
-    _asm.ret();
-  }
-
-  /// Emits a LEAVE instruction followed by RET.
-  ///
-  /// Equivalent to: mov rsp, rbp; pop rbp; ret
-  /// Only valid if preserveFramePointer is true.
-  void emitLeaveRet() {
-    if (!frame.attr.preserveFramePointer) {
-      throw StateError('Cannot use LEAVE without frame pointer');
-    }
-    _asm.leave();
-    _asm.ret();
-  }
-}
-
-/// Describes how a function value (argument or return) is passed.
-class FuncValue {
-  /// Type of the value.
-  final TypeId typeId;
-
-  /// Whether passed in a register.
-  final bool isReg;
-
-  /// Whether passed on stack.
-  final bool isStack;
-
-  /// Whether passed indirectly (by pointer).
-  final bool isIndirect;
-
-  /// Register ID (if isReg).
-  final int regId;
-
-  /// Register type (GP, XMM, etc).
-  final FuncRegType regType;
-
-  /// Stack offset (if isStack).
-  final int stackOffset;
-
-  // ignore: unused_element - reserved for Win64 vectorcall indirect args
-  const FuncValue._({
-    this.typeId = TypeId.void_,
-    this.isReg = false,
-    this.isStack = false,
-    // ignore: unused_element
-    this.isIndirect = false,
-    this.regId = 0,
-    this.regType = FuncRegType.gp,
-    this.stackOffset = 0,
-  });
-
-  /// Creates a value passed in a GP register.
-  factory FuncValue.gpReg(TypeId type, int regId) {
-    return FuncValue._(
-      typeId: type,
-      isReg: true,
-      regId: regId,
-      regType: FuncRegType.gp,
-    );
-  }
-
-  /// Creates a value passed in an XMM register.
-  factory FuncValue.xmmReg(TypeId type, int regId) {
-    return FuncValue._(
-      typeId: type,
-      isReg: true,
-      regId: regId,
-      regType: FuncRegType.xmm,
-    );
-  }
-
-  /// Creates a value passed in a YMM register.
-  factory FuncValue.ymmReg(TypeId type, int regId) {
-    return FuncValue._(
-      typeId: type,
-      isReg: true,
-      regId: regId,
-      regType: FuncRegType.ymm,
-    );
-  }
-
-  /// Creates a value passed in a ZMM register.
-  factory FuncValue.zmmReg(TypeId type, int regId) {
-    return FuncValue._(
-      typeId: type,
-      isReg: true,
-      regId: regId,
-      regType: FuncRegType.zmm,
-    );
-  }
-
-  /// Creates a value passed on stack.
-  factory FuncValue.stack(TypeId type, int offset) {
-    return FuncValue._(
-      typeId: type,
-      isStack: true,
-      stackOffset: offset,
-    );
-  }
-
-  /// Returns the X86 GP register if this is a GP reg value.
-  X86Gp? get gpReg {
-    if (!isReg || regType != FuncRegType.gp) return null;
-    return X86Gp.r64(regId);
-  }
-
-  @override
-  String toString() {
-    if (isReg) {
-      return 'FuncValue(${typeId.name} in ${regType.name}[$regId])';
-    } else if (isStack) {
-      return 'FuncValue(${typeId.name} at stack+$stackOffset)';
-    }
-    return 'FuncValue(${typeId.name})';
-  }
-}
-
-/// Register type for FuncValue.
-enum FuncRegType {
-  gp,
-  xmm,
-  ymm,
-  zmm,
-}
-
-/// Detailed function info with argument/return value allocation.
-///
-/// Takes a FuncSignature and resolves how each argument and
-/// return value is passed according to the calling convention.
-class FuncDetail {
-  /// The original signature.
-  final FuncSignature signature;
-
-  /// Calling convention.
-  final CallingConvention callingConvention;
-
-  /// Allocated return value.
-  late final FuncValue retValue;
-
-  /// Allocated argument values.
-  late final List<FuncValue> argValues;
-
-  /// Total stack space needed for arguments.
-  int stackArgsSize = 0;
-
-  /// Creates function detail from signature.
-  FuncDetail(this.signature, {CallingConvention? cc})
-      : callingConvention = cc ?? _detectCallingConvention() {
-    _allocate();
-  }
-
-  /// Detect host calling convention.
-  static CallingConvention _detectCallingConvention() {
-    final env = Environment.host();
-    return env.callingConvention;
-  }
-
-  /// Allocate arguments and return value.
-  void _allocate() {
-    // Allocate return value
-    if (signature.hasRet) {
-      retValue = _allocateReturnValue(signature.retType);
-    } else {
-      retValue = const FuncValue._();
-    }
-
-    // Allocate arguments
-    argValues = [];
-    int gpIndex = 0;
-    int xmmIndex = 0;
-    int stackOffset = callingConvention == CallingConvention.win64 ? 32 : 0;
-
-    final gpOrder = _getGpOrder();
-    final xmmOrder = _getXmmOrder();
-
-    for (int i = 0; i < signature.argCount; i++) {
-      final type = signature.arg(i);
-      final size = type.sizeInBytes > 0 ? type.sizeInBytes : 8;
-
-      if (type.isVec || type.isFloat) {
-        // Float and vector types go in SIMD registers.
-        if (xmmIndex < xmmOrder.length) {
-          if (type.isVec256) {
-            argValues.add(FuncValue.ymmReg(type, xmmOrder[xmmIndex++]));
-          } else if (type.isVec512) {
-            argValues.add(FuncValue.zmmReg(type, xmmOrder[xmmIndex++]));
+  static AsmJitError initCallConv(CallConv cc, CallConvId id, Environment env) {
+    const int kZax = 0; // Gp::kIdAx
+    const int kZbx = 3; // Gp::kIdBx
+    const int kZcx = 1; // Gp::kIdCx
+    const int kZdx = 2; // Gp::kIdDx
+    const int kZsp = 4; // Gp::kIdSp
+    const int kZbp = 5; // Gp::kIdBp
+    const int kZsi = 6; // Gp::kIdSi
+    const int kZdi = 7; // Gp::kIdDi
+
+    bool winAbi = env.platform == TargetPlatform.windows;
+
+    cc.setArch(env.arch);
+    cc.setSaveRestoreRegSize(RegGroup.vec, 16);
+    cc.setSaveRestoreRegSize(RegGroup.mask, 8);
+    cc.setSaveRestoreRegSize(RegGroup.x86Mm, 8);
+    cc.setSaveRestoreAlignment(RegGroup.vec, 16);
+    cc.setSaveRestoreAlignment(RegGroup.mask, 8);
+    cc.setSaveRestoreAlignment(RegGroup.x86Mm, 8);
+
+    if (env.is32Bit) {
+      bool isStandard = true;
+      cc.setSaveRestoreRegSize(RegGroup.gp, 4);
+      cc.setSaveRestoreAlignment(RegGroup.gp, 4);
+
+      cc.setPreservedRegs(
+          RegGroup.gp, support.bitMaskMany([kZbx, kZsp, kZbp, kZsi, kZdi]));
+      cc.setNaturalStackAlignment(4);
+
+      switch (id) {
+        case CallConvId.cdecl:
+          break;
+        case CallConvId.stdCall:
+          cc.addFlags(CallConvFlags.kCalleePopsStack);
+          break;
+        case CallConvId.fastCall:
+          cc.addFlags(CallConvFlags.kCalleePopsStack);
+          cc.setPassedOrder(RegGroup.gp, kZcx, kZdx);
+          break;
+        case CallConvId.vectorCall:
+          cc.addFlags(CallConvFlags.kCalleePopsStack);
+          cc.setPassedOrder(RegGroup.gp, kZcx, kZdx);
+          cc.setPassedOrder(RegGroup.vec, 0, 1, 2, 3, 4, 5);
+          break;
+        case CallConvId.thisCall:
+          if (winAbi) {
+            cc.addFlags(CallConvFlags.kCalleePopsStack);
+            cc.setPassedOrder(RegGroup.gp, kZcx);
           } else {
-            argValues.add(FuncValue.xmmReg(type, xmmOrder[xmmIndex++]));
+            id = CallConvId.cdecl;
           }
-          if (callingConvention == CallingConvention.win64) {
-            gpIndex++; // Win64: XMM and GP share slots
+          break;
+        case CallConvId.regParm1:
+          cc.setPassedOrder(RegGroup.gp, kZax);
+          break;
+        case CallConvId.regParm2:
+          cc.setPassedOrder(RegGroup.gp, kZax, kZdx);
+          break;
+        case CallConvId.regParm3:
+          cc.setPassedOrder(RegGroup.gp, kZax, kZdx, kZcx);
+          break;
+        case CallConvId.lightCall2:
+        case CallConvId.lightCall3:
+        case CallConvId.lightCall4:
+          int n = id.index - CallConvId.lightCall2.index + 2;
+          cc.addFlags(CallConvFlags.kPassFloatsByVec);
+          cc.setPassedOrder(RegGroup.gp, kZax, kZdx, kZcx, kZsi, kZdi);
+          cc.setPassedOrder(RegGroup.vec, 0, 1, 2, 3, 4, 5, 6, 7);
+          cc.setPassedOrder(RegGroup.mask, 0, 1, 2, 3, 4, 5, 6, 7);
+          cc.setPassedOrder(RegGroup.x86Mm, 0, 1, 2, 3, 4, 5, 6, 7);
+          cc.setPreservedRegs(RegGroup.gp, support.lsbMask(8));
+          cc.setPreservedRegs(
+              RegGroup.vec, support.lsbMask(8) & ~support.lsbMask(n));
+          cc.setNaturalStackAlignment(16);
+          isStandard = false;
+          break;
+        default:
+          return AsmJitError.invalidArgument;
+      }
+
+      if (isStandard) {
+        cc.setPassedOrder(RegGroup.x86Mm, 0, 1, 2);
+        cc.setPassedOrder(RegGroup.vec, 0, 1, 2);
+        cc.addFlags(CallConvFlags.kPassVecByStackIfVA);
+      }
+      if (id == CallConvId.cdecl) {
+        cc.addFlags(CallConvFlags.kVarArgCompatible);
+      }
+    } else {
+      cc.setSaveRestoreRegSize(RegGroup.gp, 8);
+      cc.setSaveRestoreAlignment(RegGroup.gp, 8);
+
+      if (shouldTreatAsCdeclIn64BitMode(id)) {
+        id = winAbi ? CallConvId.x64Windows : CallConvId.x64SystemV;
+      }
+
+      switch (id) {
+        case CallConvId.x64SystemV:
+          cc.setFlags(CallConvFlags.kPassFloatsByVec |
+              CallConvFlags.kPassMmxByXmm |
+              CallConvFlags.kVarArgCompatible);
+          cc.setNaturalStackAlignment(16);
+          cc.setRedZoneSize(128);
+          cc.setPassedOrder(RegGroup.gp, kZdi, kZsi, kZdx, kZcx, 8, 9);
+          cc.setPassedOrder(RegGroup.vec, 0, 1, 2, 3, 4, 5, 6, 7);
+          cc.setPreservedRegs(RegGroup.gp,
+              support.bitMaskMany([kZbx, kZsp, kZbp, 12, 13, 14, 15]));
+          break;
+        case CallConvId.x64Windows:
+          cc.setStrategy(CallConvStrategy.x64Windows);
+          cc.setFlags(CallConvFlags.kPassFloatsByVec |
+              CallConvFlags.kIndirectVecArgs |
+              CallConvFlags.kPassMmxByGp |
+              CallConvFlags.kVarArgCompatible);
+          cc.setNaturalStackAlignment(16);
+          cc.setSpillZoneSize(4 * 8);
+          cc.setPassedOrder(RegGroup.gp, kZcx, kZdx, 8, 9);
+          cc.setPassedOrder(RegGroup.vec, 0, 1, 2, 3);
+          cc.setPreservedRegs(
+              RegGroup.gp,
+              support
+                  .bitMaskMany([kZbx, kZsp, kZbp, kZsi, kZdi, 12, 13, 14, 15]));
+          cc.setPreservedRegs(RegGroup.vec,
+              support.bitMaskMany([6, 7, 8, 9, 10, 11, 12, 13, 14, 15]));
+          break;
+        case CallConvId.vectorCall:
+          cc.setStrategy(CallConvStrategy.x64VectorCall);
+          cc.setFlags(
+              CallConvFlags.kPassFloatsByVec | CallConvFlags.kPassMmxByGp);
+          cc.setNaturalStackAlignment(16);
+          cc.setSpillZoneSize(6 * 8);
+          cc.setPassedOrder(RegGroup.gp, kZcx, kZdx, 8, 9);
+          cc.setPassedOrder(RegGroup.vec, 0, 1, 2, 3, 4, 5);
+          cc.setPreservedRegs(
+              RegGroup.gp,
+              support
+                  .bitMaskMany([kZbx, kZsp, kZbp, kZsi, kZdi, 12, 13, 14, 15]));
+          cc.setPreservedRegs(RegGroup.vec,
+              support.bitMaskMany([6, 7, 8, 9, 10, 11, 12, 13, 14, 15]));
+          break;
+        default:
+          return AsmJitError.invalidArgument;
+      }
+    }
+
+    cc.setId(id);
+    return AsmJitError.ok;
+  }
+
+  static RegType vecTypeIdToRegType(TypeId typeId) {
+    int size = typeId.sizeInBytes;
+    if (size <= 16) return RegType.vec128;
+    if (size <= 32) return RegType.vec256;
+    return RegType.vec512;
+  }
+
+  static void unpackValues(FuncDetail func, FuncValuePack pack) {
+    TypeId typeId = pack[0].typeId;
+    if (typeId == TypeId.int64 || typeId == TypeId.uint64) {
+      if (func.callConv.arch.is32Bit) {
+        pack[0].initTypeId(TypeId.uint32);
+        pack[1].initTypeId(TypeId.values[typeId.index - 2]);
+      }
+    }
+  }
+
+  static AsmJitError initFuncDetail(
+      FuncDetail func, FuncSignature signature, int registerSize) {
+    final cc = func.callConv;
+    final arch = cc.arch;
+    var stackOffset = cc.spillZoneSize;
+    final argCount = func.argCount;
+
+    final gpReturnIndexes = [0, 2, Reg.kIdBad, Reg.kIdBad]; // AX, DX
+
+    if (func.hasRet()) {
+      unpackValues(func, func.rets);
+      for (int i = 0; i < Globals.kMaxValuePack; i++) {
+        final ret = func.rets[i];
+        if (!ret.isInitialized) break;
+        final typeId = ret.typeId;
+
+        if (typeId.isInt) {
+          final regId = gpReturnIndexes[i];
+          if (regId != Reg.kIdBad) {
+            ret.initReg(typeId.sizeInBytes <= 4 ? RegType.gp32 : RegType.gp64,
+                regId, typeId);
+          } else {
+            return AsmJitError.invalidState;
           }
+        } else if (typeId.isFloat) {
+          final regType = arch.is32Bit ? RegType.x86St : RegType.vec128;
+          ret.initReg(regType, i, typeId);
         } else {
-          if (type.isVec && (stackOffset & 15) != 0) {
-            stackOffset = (stackOffset + 15) & ~15;
-          }
-          argValues.add(FuncValue.stack(type, stackOffset));
-          final slotSize = size < 8 ? 8 : size;
-          stackOffset += slotSize;
-        }
-      } else {
-        // Integer types go in GP registers
-        if (gpIndex < gpOrder.length) {
-          argValues.add(FuncValue.gpReg(type, gpOrder[gpIndex++]));
-          if (callingConvention == CallingConvention.win64) {
-            xmmIndex++; // Win64: GP and XMM share slots
-          }
-        } else {
-          argValues.add(FuncValue.stack(type, stackOffset));
-          stackOffset += 8;
+          ret.initReg(vecTypeIdToRegType(typeId), i, typeId);
         }
       }
     }
 
-    stackArgsSize = stackOffset;
-  }
+    if (cc.strategy == CallConvStrategy.defaultStrategy) {
+      var gpPos = 0;
+      var vecPos = 0;
 
-  /// Allocate return value register.
-  FuncValue _allocateReturnValue(TypeId type) {
-    if (type.isVec) {
-      if (type.isVec256) {
-        return FuncValue.ymmReg(type, 0);
+      for (int i = 0; i < argCount; i++) {
+        unpackValues(func, func.args[i]);
+        for (int j = 0; j < Globals.kMaxValuePack; j++) {
+          final arg = func.args[i][j];
+          if (!arg.isInitialized) break;
+          final typeId = arg.typeId;
+
+          if (typeId.isInt) {
+            var regId = Reg.kIdBad;
+            if (gpPos < CallConv.kMaxRegArgsPerGroup) {
+              regId = cc.passedOrder(RegGroup.gp)[gpPos];
+            }
+
+            if (regId != Reg.kIdBad) {
+              arg.assignRegData(
+                  typeId.sizeInBytes <= 4 ? RegType.gp32 : RegType.gp64, regId);
+              func.addUsedRegs(RegGroup.gp, support.bitMask(regId));
+              gpPos++;
+            } else {
+              final size = support.max<int>(typeId.sizeInBytes, registerSize);
+              arg.assignStackOffset(stackOffset);
+              stackOffset += size;
+            }
+          } else if (typeId.isFloat || typeId.isVec) {
+            var regId = Reg.kIdBad;
+            if (vecPos < CallConv.kMaxRegArgsPerGroup) {
+              regId = cc.passedOrder(RegGroup.vec)[vecPos];
+            }
+
+            if (typeId.isFloat && !cc.hasFlag(CallConvFlags.kPassFloatsByVec)) {
+              regId = Reg.kIdBad;
+            } else if (typeId.isVec &&
+                signature.hasVarArgs &&
+                cc.hasFlag(CallConvFlags.kPassVecByStackIfVA)) {
+              regId = Reg.kIdBad;
+            }
+
+            if (regId != Reg.kIdBad) {
+              arg.assignRegData(vecTypeIdToRegType(typeId), regId);
+              func.addUsedRegs(RegGroup.vec, support.bitMask(regId));
+              vecPos++;
+            } else {
+              arg.assignStackOffset(stackOffset);
+              stackOffset += typeId.sizeInBytes;
+            }
+          }
+        }
       }
-      if (type.isVec512) {
-        return FuncValue.zmmReg(type, 0);
+    } else {
+      // Win64 strategy
+      for (int i = 0; i < argCount; i++) {
+        unpackValues(func, func.args[i]);
+        for (int j = 0; j < Globals.kMaxValuePack; j++) {
+          final arg = func.args[i][j];
+          if (!arg.isInitialized) break;
+          final typeId = arg.typeId;
+
+          if (typeId.isInt) {
+            var regId = Reg.kIdBad;
+            if (i < CallConv.kMaxRegArgsPerGroup) {
+              regId = cc.passedOrder(RegGroup.gp)[i];
+            }
+
+            if (regId != Reg.kIdBad) {
+              arg.assignRegData(
+                  typeId.sizeInBytes <= 4 ? RegType.gp32 : RegType.gp64, regId);
+              func.addUsedRegs(RegGroup.gp, support.bitMask(regId));
+            } else {
+              arg.assignStackOffset(stackOffset);
+              stackOffset += 8;
+            }
+          } else if (typeId.isFloat || typeId.isVec) {
+            var regId = Reg.kIdBad;
+            if (i < CallConv.kMaxRegArgsPerGroup) {
+              regId = cc.passedOrder(RegGroup.vec)[i];
+            }
+
+            if (regId != Reg.kIdBad &&
+                (typeId.isFloat ||
+                    cc.strategy == CallConvStrategy.x64VectorCall)) {
+              arg.assignRegData(vecTypeIdToRegType(typeId), regId);
+              func.addUsedRegs(RegGroup.vec, support.bitMask(regId));
+            } else {
+              if (typeId.isFloat) {
+                arg.assignStackOffset(stackOffset);
+              } else {
+                final gpId = i < CallConv.kMaxRegArgsPerGroup
+                    ? cc.passedOrder(RegGroup.gp)[i]
+                    : Reg.kIdBad;
+                if (gpId != Reg.kIdBad) {
+                  arg.assignRegData(RegType.gp64, gpId);
+                  func.addUsedRegs(RegGroup.gp, support.bitMask(gpId));
+                } else {
+                  arg.assignStackOffset(stackOffset);
+                }
+                arg.addFlags(FuncValueBits.kFlagIsIndirect);
+              }
+              stackOffset += 8;
+            }
+          }
+        }
       }
-      return FuncValue.xmmReg(type, 0);
     }
-    if (type.isFloat) {
-      return FuncValue.xmmReg(type, 0); // XMM0
-    } else {
-      return FuncValue.gpReg(type, 0); // RAX
-    }
+
+    func.setArgStackSize(stackOffset);
+    return AsmJitError.ok;
   }
 
-  /// Get GP register order for arguments.
-  List<int> _getGpOrder() {
-    if (callingConvention == CallingConvention.win64) {
-      return [1, 2, 8, 9]; // RCX, RDX, R8, R9
-    } else {
-      return [7, 6, 2, 1, 8, 9]; // RDI, RSI, RDX, RCX, R8, R9
-    }
+  static AsmJitError updateFuncFrame(
+      FuncArgsAssignment assignment, FuncFrame frame) {
+    final func = assignment.funcDetail;
+    if (func == null) return AsmJitError.invalidState;
+
+    final constraints = RAConstraints();
+    var err = constraints.init(frame.arch);
+    if (err != AsmJitError.ok) return err;
+
+    final ctx = FuncArgsContext();
+    err = ctx.initWorkData(frame, assignment, constraints);
+    if (err != AsmJitError.ok) return err;
+
+    err = ctx.markDstRegsDirty(frame);
+    if (err != AsmJitError.ok) return err;
+
+    err = ctx.markScratchRegs(frame);
+    if (err != AsmJitError.ok) return err;
+
+    return ctx.markStackArgsReg(frame);
   }
+}
 
-  /// Get XMM register order for arguments.
-  List<int> _getXmmOrder() {
-    if (callingConvention == CallingConvention.win64) {
-      return [0, 1, 2, 3]; // XMM0-3
-    } else {
-      return [0, 1, 2, 3, 4, 5, 6, 7]; // XMM0-7
-    }
-  }
-
-  /// Get the FuncValue for argument at index.
-  FuncValue getArg(int index) {
-    if (index < 0 || index >= argValues.length) {
-      throw RangeError.index(index, argValues, 'index');
-    }
-    return argValues[index];
-  }
-
-  /// Number of arguments passed in GP registers.
-  int get gpArgCount =>
-      argValues.where((v) => v.isReg && v.regType == FuncRegType.gp).length;
-
-  /// Number of arguments passed in XMM registers.
-  int get xmmArgCount =>
-      argValues.where((v) => v.isReg && v.regType == FuncRegType.xmm).length;
-
-  /// Number of arguments passed on stack.
-  int get stackArgCount => argValues.where((v) => v.isStack).length;
-
-  @override
-  String toString() {
-    final args = argValues.map((v) => v.toString()).join(', ');
-    return 'FuncDetail(ret: $retValue, args: [$args])';
-  }
+void registerX86FuncLogic() {
+  registerArchFuncLogic(ArchFamily.x86, X86FuncInternal.initCallConv,
+      X86FuncInternal.initFuncDetail, X86FuncInternal.updateFuncFrame);
 }

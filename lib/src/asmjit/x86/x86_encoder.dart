@@ -6,9 +6,17 @@
 import '../core/code_buffer.dart';
 import '../core/error.dart';
 import '../core/operand.dart';
+import '../core/reg_type.dart';
 import 'x86.dart';
 import 'x86_operands.dart';
 import 'x86_simd.dart';
+
+bool _isVecReg(BaseReg? reg) {
+  if (reg == null) return false;
+  return reg.type == RegType.vec128 ||
+      reg.type == RegType.vec256 ||
+      reg.type == RegType.vec512;
+}
 
 /// x86/x64 instruction encoder.
 ///
@@ -94,7 +102,7 @@ class X86Encoder {
       // We assume standard usage for now. If VSIB, we must ensure vvvv is not used or handled differently.
       // But standard _emitEvex signature implies vvvv is separate.
       // For VSIB, the index comes from rmMem.index (which is a vector).
-      if (index != null && (index.type == RegType.vec)) {
+      if (index != null && _isVecReg(index)) {
         // VSIB: V' matches index high bit
         if ((index.id >> 4) != 0) {
           // We need to set V' based on index, but V' is in P3.

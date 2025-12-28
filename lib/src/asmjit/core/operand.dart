@@ -4,6 +4,21 @@
 /// Ported from asmjit/core/operand.h
 
 import 'labels.dart';
+import 'reg_type.dart';
+
+const _gpRegTypes = {
+  RegType.gp8Lo,
+  RegType.gp8Hi,
+  RegType.gp16,
+  RegType.gp32,
+  RegType.gp64,
+};
+
+const _vecRegTypes = {
+  RegType.vec128,
+  RegType.vec256,
+  RegType.vec512,
+};
 
 /// Base class for all operands.
 abstract class Operand {
@@ -111,42 +126,6 @@ class LabelOp extends Operand {
   int get hashCode => label.hashCode;
 }
 
-/// Register type categories.
-enum RegType {
-  /// No register / unknown.
-  none,
-
-  /// General purpose register.
-  gp,
-
-  /// Vector register (SSE/AVX/NEON).
-  vec,
-
-  /// Mask register (AVX-512 k registers).
-  mask,
-
-  /// Segment register (x86).
-  seg,
-
-  /// Control register.
-  cr,
-
-  /// Debug register.
-  dr,
-
-  /// FPU register (x87).
-  st,
-
-  /// BND register (MPX).
-  bnd,
-
-  /// TMM register (AMX).
-  tmm,
-
-  /// RIP register (x86-64).
-  rip,
-}
-
 /// Register group (for allocation purposes).
 enum RegGroup {
   /// General purpose registers.
@@ -158,8 +137,28 @@ enum RegGroup {
   /// Mask registers.
   mask,
 
+  /// x86 MMX registers.
+  x86Mm,
+
   /// Other/extra registers.
-  extra,
+  extra;
+
+  static const int kMaxVirt = 3; // gp, vec, mask, x86Mm
+}
+
+/// Operand-level register types (for register allocator features).
+enum OperandRegType {
+  /// No register.
+  none,
+
+  /// General purpose register.
+  gp,
+
+  /// SIMD/vector register.
+  vec,
+
+  /// AVX-512 mask register.
+  mask,
 }
 
 /// Base class for register operands.
@@ -182,10 +181,13 @@ abstract class BaseReg extends Operand {
   bool get isReg => true;
 
   /// Whether this is a general purpose register.
-  bool get isGp => type == RegType.gp;
+  bool get isGp => _gpRegTypes.contains(type);
 
   /// Whether this is a vector register.
-  bool get isVec => type == RegType.vec;
+  bool get isVec => _vecRegTypes.contains(type);
+
+  /// Whether this is a mask register.
+  bool get isMask => type == RegType.mask;
 
   /// Whether this is a physical register (not virtual).
   bool get isPhysical => id >= 0;

@@ -1,5 +1,4 @@
 import 'dart:ffi';
-import 'dart:typed_data';
 
 import 'package:asmjit/asmjit.dart';
 import '../pipeline_ops.dart';
@@ -33,7 +32,6 @@ enum PipelineBackend {
   reference,
   js,
 }
-
 
 class PipelineProgram {
   final PipelineBackend backend;
@@ -167,11 +165,11 @@ class PipelineCompiler {
         if (_requiresReference(ops)) {
           throw UnsupportedError('X86 JIT does not support mask/alpha/formats');
         }
-      final fn = compile(
-        runtime,
-        ops,
-        cacheKey: cacheKey,
-      );
+        final fn = compile(
+          runtime,
+          ops,
+          cacheKey: cacheKey,
+        );
         return PipelineProgram._jit(PipelineBackend.jitX86, fn, ops);
       case PipelineBackend.jitA64:
         if (_requiresReference(ops)) {
@@ -523,6 +521,7 @@ void _emitFill(
     final yCount = b.newGpReg();
     final rowBytes = b.newGpReg();
     final tmp = b.newGpReg(size: 4);
+    final strideTmp = b.newGpReg(); // Use 64-bit for stride
     final base = b.newGpReg(size: 4);
     final s = b.newGpReg(size: 4);
     final d = b.newGpReg(size: 4);
@@ -610,9 +609,9 @@ void _emitFill(
     b.jmp(loopX);
 
     b.label(endRow);
-    _loadInt(b, tmp, dstStrideConst, dstStride);
-    b.sub(tmp, rowBytes);
-    b.add(rowDst, tmp);
+    _loadInt(b, strideTmp, dstStrideConst, dstStride);
+    b.sub(strideTmp, rowBytes);
+    b.add(rowDst, strideTmp);
     if (hasMask) {
       b.add(rowMask, maskStep);
     }
@@ -1499,7 +1498,13 @@ void _loadInt(X86CodeBuilder b, VirtReg dst, int constant, Object fallback) {
   if (constant != 0) {
     b.mov(dst, constant);
   } else {
-    b.mov(dst, fallback);
+    // If fallback is a smaller register, we MUST sign-extend it to 64-bit
+    // if dst is 64-bit, to ensure proper pointer arithmetic.
+    if (fallback is VirtReg && fallback.size < dst.size && dst.size == 8) {
+      b.movsxd(dst, fallback);
+    } else {
+      b.mov(dst, fallback);
+    }
   }
 }
 
@@ -1736,9 +1741,8 @@ void _emitFillA64(
   final maskAG = b.newGpReg(sizeBits: 32);
   final round = b.newGpReg(sizeBits: 32);
   final const255 = b.newGpReg(sizeBits: 32);
-  final alphaMask = dstFormat == PixelFormat.xrgb32
-      ? b.newGpReg(sizeBits: 32)
-      : null;
+  final alphaMask =
+      dstFormat == PixelFormat.xrgb32 ? b.newGpReg(sizeBits: 32) : null;
   final m = b.newGpReg(sizeBits: 32);
   final rowMask = b.newGpReg();
   final maskStep = b.newGpReg(sizeBits: 32);

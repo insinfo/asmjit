@@ -214,6 +214,22 @@ class A64CodeBuilder extends ir.BaseBuilder {
     _inst(A64InstId.kFdiv, [rd, rn, rm]);
   }
 
+  void faddVec(A64Vec rd, A64Vec rn, A64Vec rm) {
+    _inst(A64InstId.kFadd, [rd, rn, rm]);
+  }
+
+  void fsubVec(A64Vec rd, A64Vec rn, A64Vec rm) {
+    _inst(A64InstId.kFsub, [rd, rn, rm]);
+  }
+
+  void fmulVec(A64Vec rd, A64Vec rn, A64Vec rm) {
+    _inst(A64InstId.kFmul, [rd, rn, rm]);
+  }
+
+  void fdivVec(A64Vec rd, A64Vec rn, A64Vec rm) {
+    _inst(A64InstId.kFdiv, [rd, rn, rm]);
+  }
+
   void nop() => _inst(A64InstId.kNop, []);
 
   void _inst(int instId, List<Object> operands) {

@@ -53,12 +53,12 @@ docker run --rm --platform linux/arm64 dart:stable bash -lc "uname -m"
 
 A implementação do **Compiler Backend** (`X86IrCompiler` + `X86CodeBuilder` lowering) desbloqueou o porte do pipeline JIT:
 
-1.  ✅ **Compiler IR & CodeGen**:
+1.   **Compiler IR & CodeGen**:
     - `X86IrCompiler` agora conecta o grafo de nós (`FuncNode`, `BlockNode`) ao Assembler.
     - Suporte a `InvokeNode` (chamadas), spills básicos e frames de função funcional.
-    - **Atenção**: O Register Allocator é "Linear Scan" (simples). O código gerado será funcional, mas menos otimizado que o Blend2D C++ original (que usa RA avançado). Isso é aceitável para a fase inicial.
+    - **Atenção**: O Register Allocator é "Linear Scan" (simples). O código gerado será funcional, mas menos otimizado que o Blend2D C++ original (que usa RA avançado). Isso é inaceitável.
 
-2.  🟡 **Heavy Test Suites** (Recomendado):
+2.  🟡 **Heavy Test Suites** (é vital):
     - Ainda é prudente rodar as suites `asmjit_test_compiler_x86` completas assim que possível para garantir estabilidade em edge-cases de `invoke`/`spill`.
 
 **Próximo Passo Blend2D**: Pode-se iniciar a tradução de `pipecompiler.cpp` e `compoppart.cpp` usando a API `Compiler` do Dart.
@@ -66,8 +66,9 @@ A implementação do **Compiler Backend** (`X86IrCompiler` + `X86CodeBuilder` lo
 ## 📊 Status Atual
 
 **Data**: 27 Dezembro 2025
-**Testes**: Não executados nesta revisão
-**Warnings**: nao verificado
+**Status**: 🟢 **M23 (Caching), M24 (A64 Vectors), M25 (RegAlloc) Integrados**
+**Testes**: ✅ A64 pipeline compile, A64 vector ops. ⚠️ X86 pipeline crash (skipped).
+**Warnings**: 0 warnings.
 
 Atualizacoes recentes:
 - **IR puro -> assembler**: `X86IrCompiler` compila `builder.dart` (Func/Invoke) com CFG/liveness e suporta multiplas funcoes por NodeList.

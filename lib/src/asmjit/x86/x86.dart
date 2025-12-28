@@ -4,6 +4,7 @@
 /// Ported from asmjit/x86/x86.h and related files.
 
 import '../core/operand.dart';
+import '../core/reg_type.dart';
 
 /// x86/x64 register IDs.
 ///
@@ -64,7 +65,20 @@ class X86Gp extends BaseReg {
         isHighByte = true;
 
   @override
-  RegType get type => RegType.gp;
+  RegType get type {
+    switch (bits) {
+      case 64:
+        return RegType.gp64;
+      case 32:
+        return RegType.gp32;
+      case 16:
+        return RegType.gp16;
+      case 8:
+        return isHighByte ? RegType.gp8Hi : RegType.gp8Lo;
+      default:
+        return RegType.none;
+    }
+  }
 
   @override
   int get size => bits ~/ 8;

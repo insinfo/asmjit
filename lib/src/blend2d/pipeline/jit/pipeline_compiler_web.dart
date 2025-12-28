@@ -1,3 +1,4 @@
+import 'dart:ffi';
 import 'dart:typed_data';
 
 import '../pipeline_ops.dart';
@@ -18,6 +19,22 @@ class PipelineProgram {
   final PipelineReferenceBytes _reference = PipelineReferenceBytes();
 
   PipelineProgram._reference(this._ops) : backend = PipelineBackend.js;
+
+  void execute({
+    required Pointer<Uint8> dst,
+    required Pointer<Uint8> src,
+    int width = 0,
+    int height = 0,
+    int dstStride = 0,
+    int srcStride = 0,
+    int color = 0,
+    int globalAlpha = 0,
+    PipelineMask? mask,
+    int maskStride = 0,
+  }) {
+    throw UnsupportedError(
+        'JIT pipeline execution is not supported on web/no-ffi');
+  }
 
   void executeBytes({
     required Uint8List dst,

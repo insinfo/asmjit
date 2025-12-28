@@ -25,7 +25,7 @@ void main() {
   group('LiveInterval', () {
     test('contains works', () {
       final vreg = VirtReg(0);
-      final interval = LiveInterval(vreg, 5, 10);
+      final interval = LiveInterval(RAWorkReg(vreg, 0), 5, 10);
 
       expect(interval.contains(4), isFalse);
       expect(interval.contains(5), isTrue);
@@ -38,18 +38,18 @@ void main() {
       final v1 = VirtReg(0);
       final v2 = VirtReg(1);
 
-      final i1 = LiveInterval(v1, 0, 10);
-      final i2 = LiveInterval(v2, 5, 15);
-      final i3 = LiveInterval(v2, 11, 20);
+      final i1 = LiveInterval(RAWorkReg(v1, 0), 0, 10);
+      final i2 = LiveInterval(RAWorkReg(v2, 1), 5, 15);
+      final i3 = LiveInterval(RAWorkReg(v2, 2), 11, 20);
 
       expect(i1.intersects(i2), isTrue);
       expect(i1.intersects(i3), isFalse);
     });
   });
 
-  group('SimpleRegAlloc', () {
+  group('RALocal', () {
     test('can create virtual registers', () {
-      final ra = SimpleRegAlloc();
+      final ra = RALocal(Arch.x64);
 
       final v0 = ra.newVirtReg();
       final v1 = ra.newVirtReg(size: 4);
@@ -64,7 +64,7 @@ void main() {
     });
 
     test('records uses correctly', () {
-      final ra = SimpleRegAlloc();
+      final ra = RALocal(Arch.x64);
 
       final v0 = ra.newVirtReg();
       ra.recordUse(v0, 0);
@@ -76,7 +76,7 @@ void main() {
     });
 
     test('computes live intervals', () {
-      final ra = SimpleRegAlloc();
+      final ra = RALocal(Arch.x64);
 
       final v0 = ra.newVirtReg();
       final v1 = ra.newVirtReg();
@@ -89,12 +89,12 @@ void main() {
       ra.computeLiveIntervals();
 
       expect(ra.liveIntervals.length, equals(2));
-      expect(ra.liveIntervals[0].vreg, equals(v0)); // Sorted by start
-      expect(ra.liveIntervals[1].vreg, equals(v1));
+      expect(ra.liveIntervals[0].workReg.vreg, equals(v0)); // Sorted by start
+      expect(ra.liveIntervals[1].workReg.vreg, equals(v1));
     });
 
     test('allocates simple case without spilling', () {
-      final ra = SimpleRegAlloc();
+      final ra = RALocal(Arch.x64);
 
       final v0 = ra.newVirtReg();
       final v1 = ra.newVirtReg();
@@ -126,7 +126,7 @@ void main() {
     });
 
     test('register reuse when intervals do not overlap', () {
-      final ra = SimpleRegAlloc();
+      final ra = RALocal(Arch.x64);
 
       final v0 = ra.newVirtReg();
       final v1 = ra.newVirtReg();
@@ -147,7 +147,7 @@ void main() {
     });
 
     test('XMM registers allocated correctly', () {
-      final ra = SimpleRegAlloc();
+      final ra = RALocal(Arch.x64);
 
       final v0 = ra.newVirtReg(regClass: RegClass.xmm);
       final v1 = ra.newVirtReg(regClass: RegClass.xmm);
@@ -165,7 +165,7 @@ void main() {
     });
 
     test('spill area size is calculated correctly', () {
-      final ra = SimpleRegAlloc();
+      final ra = RALocal(Arch.x64);
 
       expect(ra.spillAreaSize, equals(0));
 
@@ -186,7 +186,7 @@ void main() {
     });
 
     test('reset clears state', () {
-      final ra = SimpleRegAlloc();
+      final ra = RALocal(Arch.x64);
 
       ra.newVirtReg();
       ra.recordUse(ra.virtualRegs[0], 0);
@@ -200,7 +200,7 @@ void main() {
     });
 
     test('toString provides useful output', () {
-      final ra = SimpleRegAlloc();
+      final ra = RALocal(Arch.x64);
 
       final v0 = ra.newVirtReg();
       ra.recordUse(v0, 0);
@@ -208,7 +208,7 @@ void main() {
       ra.allocate();
 
       final str = ra.toString();
-      expect(str, contains('SimpleRegAlloc'));
+      expect(str, contains('RALocal'));
       expect(str, contains('Virtual registers: 1'));
     });
   });

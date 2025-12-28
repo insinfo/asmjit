@@ -211,6 +211,12 @@ class JitRuntime {
     }
   }
 
+  /// Retrieves a cached function by key, if present.
+  JitFunction? getCached(String key) {
+    if (!enablePipelineCache) return null;
+    return _pipelineCache[key];
+  }
+
   /// Adds raw bytes with caching enabled.
   JitFunction addBytesCached(Uint8List bytes, {String? key}) {
     if (!enablePipelineCache) {

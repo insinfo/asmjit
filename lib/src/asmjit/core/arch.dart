@@ -5,42 +5,79 @@
 import 'dart:ffi' show Abi;
 import 'dart:io' show Platform;
 
+import 'operand.dart';
+import 'reg_type.dart';
+import 'support.dart';
+
+const Set<RegType> _archGpRegTypes = {
+  RegType.gp8Lo,
+  RegType.gp8Hi,
+  RegType.gp16,
+  RegType.gp32,
+  RegType.gp64,
+};
+
+const Set<RegType> _archVecRegTypes = {
+  RegType.vec128,
+  RegType.vec256,
+  RegType.vec512,
+};
+
+const Set<RegType> _archMaskRegTypes = {RegType.mask};
+
+/// Architecture family.
+enum ArchFamily {
+  unknown(0),
+  x86(1),
+  arm(2),
+  aarch64(3),
+  riscv(4),
+  mips(5),
+  loongarch(6);
+
+  final int value;
+  const ArchFamily(this.value);
+}
+
 /// Machine architecture.
 ///
 /// Corresponds to the Arch enum in environment.h
 enum Arch {
   /// Unknown or uninitialized architecture.
-  unknown,
+  unknown(ArchFamily.unknown),
 
   /// 32-bit x86 architecture.
-  x86,
+  x86(ArchFamily.x86),
 
   /// 64-bit x86 architecture (AMD64 / Intel64 / x86_64).
-  x64,
+  x64(ArchFamily.x86),
 
   /// AArch64 architecture (64-bit ARM).
-  aarch64,
+  aarch64(ArchFamily.aarch64),
 
   /// 32-bit ARM architecture (ARM32/ARMv7).
-  arm,
+  arm(ArchFamily.arm),
 
   /// 32-bit RISC-V architecture.
-  riscv32,
+  riscv32(ArchFamily.riscv),
 
   /// 64-bit RISC-V architecture.
-  riscv64,
+  riscv64(ArchFamily.riscv),
 
   /// 32-bit MIPS architecture.
-  mips32,
+  mips32(ArchFamily.mips),
 
   /// 64-bit MIPS architecture.
-  mips64,
+  mips64(ArchFamily.mips),
 
   /// 32-bit LoongArch architecture.
-  loongarch32,
+  loongarch32(ArchFamily.loongarch),
 
   /// 64-bit LoongArch architecture.
-  loongarch64;
+  loongarch64(ArchFamily.loongarch);
+
+  final ArchFamily family;
+  const Arch(this.family);
 
   /// Whether this architecture is 32-bit.
   bool get is32Bit {
@@ -60,16 +97,17 @@ enum Arch {
   bool get is64Bit => !is32Bit && this != Arch.unknown;
 
   /// Whether this is an x86 family architecture.
-  bool get isX86Family => this == Arch.x86 || this == Arch.x64;
+  bool get isX86Family => family == ArchFamily.x86;
 
   /// Whether this is an ARM family architecture.
-  bool get isArmFamily => this == Arch.arm || this == Arch.aarch64;
+  bool get isArmFamily =>
+      family == ArchFamily.arm || family == ArchFamily.aarch64;
 
   /// Whether this is a RISC-V family architecture.
-  bool get isRiscvFamily => this == Arch.riscv32 || this == Arch.riscv64;
+  bool get isRiscvFamily => family == ArchFamily.riscv;
 
   /// Whether this is a MIPS family architecture.
-  bool get isMipsFamily => this == Arch.mips32 || this == Arch.mips64;
+  bool get isMipsFamily => family == ArchFamily.mips;
 
   /// Returns the register size in bytes.
   int get registerSize => is64Bit ? 8 : 4;
@@ -311,6 +349,21 @@ class ArchTraits {
   /// Whether the architecture supports unaligned access.
   final bool supportsUnalignedAccess;
 
+  /// Frame pointer register ID.
+  final int fpRegId;
+
+  /// Stack pointer register ID.
+  final int spRegId;
+
+  /// Register types supported by this architecture.
+  final Set<RegType> supportedRegTypes;
+
+  /// Register groups that support register swap instructions.
+  final int regSwapMask;
+
+  /// Frame pointer register ID.
+  final int linkRegId;
+
   const ArchTraits({
     required this.arch,
     required this.registerSize,
@@ -318,7 +371,24 @@ class ArchTraits {
     this.minAddressableUnit = 1,
     required this.maxInstSize,
     this.supportsUnalignedAccess = true,
+    this.fpRegId = -1,
+    this.spRegId = -1,
+    this.linkRegId = -1,
+    this.supportedRegTypes = const {},
+    this.regSwapMask = 0,
   });
+
+  /// Tests whether the architecture provides the given register type.
+  bool hasRegType(RegType type) => supportedRegTypes.contains(type);
+
+  /// Tests whether the architecture exposes a register-swap instruction for [group].
+  bool hasRegSwap(RegGroup group) => bitTest(regSwapMask, group.index);
+
+  /// Returns whether the architecture has a link register.
+  bool get hasLinkReg => linkRegId != -1;
+
+  /// Returns whether the architecture has push/pop instructions.
+  bool hasInstPushPop() => arch == Arch.x86 || arch == Arch.x64;
 
   /// Traits for x86 architecture.
   static const x86 = ArchTraits(
@@ -327,6 +397,14 @@ class ArchTraits {
     spAlignment: 4,
     maxInstSize: 15, // x86 max instruction length
     supportsUnalignedAccess: true,
+    fpRegId: 5,
+    spRegId: 4,
+    supportedRegTypes: {
+      ..._archGpRegTypes,
+      RegType.vec128,
+      RegType.mask,
+    },
+    regSwapMask: 1,
   );
 
   /// Traits for x64 architecture.
@@ -336,6 +414,14 @@ class ArchTraits {
     spAlignment: 16,
     maxInstSize: 15, // x64 max instruction length
     supportsUnalignedAccess: true,
+    fpRegId: 5,
+    spRegId: 4,
+    supportedRegTypes: {
+      ..._archGpRegTypes,
+      ..._archVecRegTypes,
+      ..._archMaskRegTypes,
+    },
+    regSwapMask: 1,
   );
 
   /// Traits for AArch64 architecture.
@@ -343,8 +429,15 @@ class ArchTraits {
     arch: Arch.aarch64,
     registerSize: 8,
     spAlignment: 16,
-    maxInstSize: 4, // ARM64 fixed instruction size
-    supportsUnalignedAccess: true, // A64 supports unaligned
+    maxInstSize: 4,
+    supportsUnalignedAccess: true,
+    fpRegId: 29,
+    spRegId: 31,
+    linkRegId: 30,
+    supportedRegTypes: {
+      ..._archGpRegTypes,
+      RegType.vec128,
+    },
   );
 
   /// Traits for ARM32 architecture.
@@ -354,6 +447,10 @@ class ArchTraits {
     spAlignment: 8,
     maxInstSize: 4, // ARM32 fixed instruction size
     supportsUnalignedAccess: false, // Depends on version
+    supportedRegTypes: {
+      ..._archGpRegTypes,
+      RegType.vec128,
+    },
   );
 
   /// Returns traits for the given architecture.
@@ -373,6 +470,7 @@ class ArchTraits {
           registerSize: arch.registerSize,
           spAlignment: arch.stackAlignment,
           maxInstSize: 4,
+          supportedRegTypes: {..._archGpRegTypes},
         );
     }
   }

@@ -19,6 +19,7 @@ export 'src/asmjit/core/formatter.dart';
 export 'src/asmjit/core/emitter.dart';
 export 'src/asmjit/core/inst_api.dart';
 export 'src/asmjit/core/type.dart';
+export 'src/asmjit/core/func.dart';
 export 'src/asmjit/core/regalloc.dart';
 export 'src/asmjit/core/code_builder.dart';
 export 'src/asmjit/core/builder.dart'
@@ -46,6 +47,7 @@ export 'src/asmjit/x86/x86_serializer.dart';
 export 'src/asmjit/arm/a64.dart' hide sp;
 export 'src/asmjit/arm/a64_assembler.dart';
 export 'src/asmjit/arm/a64_code_builder.dart';
+export 'src/asmjit/arm/a64_func.dart';
 export 'src/asmjit/arm/a64_inst_db.g.dart';
 export 'src/asmjit/arm/a64_serializer.dart';
 

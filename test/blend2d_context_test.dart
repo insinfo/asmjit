@@ -19,7 +19,7 @@ void main() {
       ctx.fillRect(BLRectI(0, 0, 10, 10));
 
       final p1 = img.getPixel(0, 0)!;
-      expect(p1.r, 255, reason: 'Pixel at 0,0 should be Red');
+      expect(p1.r, 255, reason: 'Pixealhas de tesl at 0,0 should be Red');
       expect(p1.a, 255);
 
       final p2 = img.getPixel(15, 15)!;

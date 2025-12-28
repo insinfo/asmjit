@@ -464,6 +464,15 @@ class A64Assembler {
   // NEON (FP) - Vector
   // ===========================================================================
 
+  void faddVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _enc.faddVec(rd, rn, rm, wide: wide);
+  void fsubVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _enc.fsubVec(rd, rn, rm, wide: wide);
+  void fmulVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _enc.fmulVec(rd, rn, rm, wide: wide);
+  void fdivVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _enc.fdivVec(rd, rn, rm, wide: wide);
+
   void fmaxVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
       _enc.fmaxVec(rd, rn, rm, wide: wide);
   void fminVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>

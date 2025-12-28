@@ -1006,6 +1006,22 @@ class A64Encoder {
     emit32(inst);
   }
 
+  /// FADD (vector).
+  void faddVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _vec3SameFp(0, 0x1A, rd, rn, rm, wide: wide);
+
+  /// FSUB (vector).
+  void fsubVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _vec3SameFp(1, 0x1A, rd, rn, rm, wide: wide);
+
+  /// FMUL (vector).
+  void fmulVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _vec3SameFp(1, 0x1B, rd, rn, rm, wide: wide);
+
+  /// FDIV (vector).
+  void fdivVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _vec3SameFp(1, 0x1F, rd, rn, rm, wide: wide);
+
   /// FMAX (vector).
   void fmaxVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
       _vec3SameFp(0, 0x0F, rd, rn, rm, wide: wide);

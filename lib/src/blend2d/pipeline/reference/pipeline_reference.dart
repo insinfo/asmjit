@@ -162,42 +162,6 @@ void _copyA8({
   }
 }
 
-void _fill32({
-  required Pointer<Uint8> dst,
-  required int width,
-  required int height,
-  required int dstStride,
-  required int color,
-}) {
-  var dstRow = dst.address;
-  for (var y = 0; y < height; y++) {
-    var dstPixel = dstRow;
-    for (var x = 0; x < width; x++) {
-      Pointer<Uint32>.fromAddress(dstPixel).value = color;
-      dstPixel += 4;
-    }
-    dstRow += dstStride;
-  }
-}
-
-void _fillA8({
-  required Pointer<Uint8> dst,
-  required int width,
-  required int height,
-  required int dstStride,
-  required int alpha,
-}) {
-  var dstRow = dst.address;
-  for (var y = 0; y < height; y++) {
-    var dstPixel = dstRow;
-    for (var x = 0; x < width; x++) {
-      Pointer<Uint8>.fromAddress(dstPixel).value = alpha;
-      dstPixel += 1;
-    }
-    dstRow += dstStride;
-  }
-}
-
 void _fillA8WithAlpha({
   required Pointer<Uint8> dst,
   required int width,

@@ -4,6 +4,7 @@
 /// Ported from asmjit/arm/a64globals.h and a64operand.h
 
 import '../core/operand.dart';
+import '../core/reg_type.dart';
 
 // ===========================================================================
 // ARM64 Register Classes
@@ -21,7 +22,7 @@ class A64Gp extends BaseReg {
   const A64Gp(this.id, this.sizeBits);
 
   @override
-  RegType get type => RegType.gp;
+  RegType get type => sizeBits == 64 ? RegType.gp64 : RegType.gp32;
 
   @override
   RegGroup get group => RegGroup.gp;
@@ -80,7 +81,7 @@ class A64Vec extends BaseReg {
   const A64Vec(this.id, this.sizeBits);
 
   @override
-  RegType get type => RegType.vec;
+  RegType get type => RegType.vec128;
 
   @override
   RegGroup get group => RegGroup.vec;

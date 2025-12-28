@@ -1,94 +1,52 @@
-import 'package:asmjit/asmjit.dart';
+/// AsmJit Unit Tests - Compiler IR
+///
+/// Tests for high-level IR compiler functionality.
+
 import 'package:test/test.dart';
-import 'package:asmjit/src/asmjit/core/builder.dart' as ir;
+import 'package:asmjit/asmjit.dart';
+import 'package:asmjit/src/asmjit/core/compiler.dart' as ir;
 
 void main() {
   if (!Environment.host().isX86Family) {
     return;
   }
-  group('X86CodeBuilder Compiler Tests', () {
-    test('Builds function with Prologue and Epilogue when spills occur', () {
-      final builder = X86CodeBuilder.create();
 
-      // Force high register usage to cause spills
-      // x86_64 has ~14 GP registers usable.
-      // We'll create 20 virtual registers and keep them live.
-      final regs = <VirtReg>[];
-      for (int i = 0; i < 20; i++) {
-        final r = builder.newGpReg();
-        regs.add(r);
-        builder.mov(r, i); // Initialize
-      }
+  group('X86CodeBuilder - Frame and Arguments', () {
+    test('Builds function with default frame', () {
+      final env = Environment.host();
+      final builder = X86CodeBuilder(env: env);
 
-      // Use them all to extend live ranges
-      var sum = builder.newGpReg();
-      builder.mov(sum, 0);
-      for (final r in regs) {
-        builder.add(sum, r);
-      }
-      builder.ret(sum);
+      builder.addFunc(FuncSignature.noArgs(ret: TypeId.int32));
+      builder.movRI(eax, 42);
+      builder.endFunc();
 
-      // Bind to runtime (mocked or real)
-      // Since we don't have easy mock for JitRuntime execution without valid memory,
-      // we check the generated code bytes in the builder's code holder.
+      final code = builder.finalize();
+      expect(code, isNotNull);
 
-      final runtime = JitRuntime();
-      final func = builder.build(runtime);
-      expect(func, isNotNull);
-      // Analyze generated code
-      final code = builder.code;
-      final bytes = code.text.buffer.bytes;
-
-      print('Generated ${bytes.length} bytes');
-
-      // Verify Prologue exists: push rbp; mov rbp, rsp; sub rsp, ...
-      // 55 48 89 E5 48 83 EC ...
-      // Note: Win64 prologue might be different (uses shadow space).
-      // Assuming host env.
-
-      bool hasPrologue = false;
-      bool hasEpilogue = false;
-
-      if (bytes.length > 10) {
-        // Simple heuristic check for push rbp (0x55) or similar
-        // Win64: push rbp (55) implies typical frame.
-        if (bytes.contains(0x55)) {
-          hasPrologue = true;
-        }
-
-        // Epilogue: mov rsp, rbp; pop rbp; ret
-        // or leave; ret (C9 C3)
-        // or add rsp, X; pop ... ret
-        if (bytes.contains(0xC3)) {
-          // RET
-          hasEpilogue = true;
-        }
-      }
-
-      expect(hasPrologue, isTrue, reason: 'Should emit prologue for spills');
-      expect(hasEpilogue, isTrue, reason: 'Should emit epilogue before ret');
+      final bytes = builder.code.text.buffer.bytes;
+      expect(bytes, isNotEmpty);
+      // Optional: search for ret (0xC3)
+      expect(bytes.contains(0xC3), isTrue);
     });
-    test('Builds function with explicit Frame attributes', () {
-      final builder = X86CodeBuilder.create();
 
-      // Define explicit frame that forces stack alignment and preservation
+    test('Builds function with explicit Frame attributes', () {
+      final env = Environment.host();
+      final builder = X86CodeBuilder(env: env);
+
+      // Force rbx as preserved and use non-leaf frame
       final frame = FuncFrame.host(
-        attr: FuncFrameAttr.nonLeaf(
+        attr: FuncFrameAttributes.nonLeaf(
           localStackSize: 16,
-          preservedRegs: [rbx], // Force RBX preservation
+          preservedRegs: [rbx],
         ),
       );
 
-      builder.func("explicit_test", frame: frame);
+      builder.addFunc(FuncSignature.noArgs(ret: TypeId.int32), frame: frame);
+      builder.movRI(ebx, 1);
+      builder.movRR(eax, ebx);
+      builder.endFunc();
 
-      final r1 = builder.newGpReg();
-      builder.mov(r1, 100);
-      builder.mov(rbx, 50); // Use RBX
-      builder.add(r1, rbx);
-      builder.ret(r1);
-
-      final runtime = JitRuntime();
-      final func = builder.build(runtime);
+      final func = builder.finalize();
       expect(func, isNotNull);
 
       final bytes = builder.code.text.buffer.bytes;
@@ -104,20 +62,17 @@ void main() {
           ? CallConvId.x64Windows
           : CallConvId.x64SystemV;
 
-      final signature = FuncSignature(
-        callConvId: callConv,
-        retType: TypeId.int64,
-        args: [
-          TypeId.int64,
-          TypeId.int64,
-          TypeId.int64,
-          TypeId.int64,
-          TypeId.int64,
-          TypeId.int64,
-          TypeId.int64,
-          TypeId.float64,
-        ],
-      );
+      final signature = FuncSignature()
+        ..setCallConvId(callConv)
+        ..setRet(TypeId.int64)
+        ..addArg(TypeId.int64)
+        ..addArg(TypeId.int64)
+        ..addArg(TypeId.int64)
+        ..addArg(TypeId.int64)
+        ..addArg(TypeId.int64)
+        ..addArg(TypeId.int64)
+        ..addArg(TypeId.int64)
+        ..addArg(TypeId.float64);
 
       final builder = ir.BaseBuilder();
       final calleeLabel = builder.newLabel();

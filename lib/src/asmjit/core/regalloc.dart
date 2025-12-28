@@ -5,6 +5,164 @@
 
 import 'package:asmjit/asmjit.dart';
 import '../core/builder.dart' as ir;
+import '../core/support.dart' as support;
+import 'reg_type.dart';
+import 'raconstraints.dart';
+
+const int _kUnassignedPhysId = -1;
+const int _kUnassignedWorkId = -1;
+
+/// Flags used for RA work register metadata.
+class RAWorkRegFlags {
+  static const int kNone = 0;
+  static const int kAllocated = 1 << 0;
+  static const int kStackUsed = 1 << 1;
+  static const int kStackPreferred = 1 << 2;
+  static const int kTied = 1 << 3;
+}
+
+/// Stack slot reserved for spilled values.
+class RAStackSlot {
+  final RAWorkReg workReg;
+  final int index;
+  final int size;
+
+  RAStackSlot(this.workReg, this.index, {this.size = 8});
+
+  int get offset => index * size;
+}
+
+/// Work register data used by RA.
+class RAWorkReg {
+  final VirtReg vreg;
+  final int workId;
+  final RegGroup group;
+
+  int _assignedPhysId = _kUnassignedPhysId;
+  int _flags = RAWorkRegFlags.kNone;
+
+  bool isSpilled = false;
+  RAStackSlot? stackSlot;
+  final List<RAWorkReg> tiedRegs = [];
+
+  RAWorkReg(this.vreg, this.workId) : group = vreg.group;
+
+  int? get assignedPhysId =>
+      _assignedPhysId == _kUnassignedPhysId ? null : _assignedPhysId;
+
+  bool get isAllocated => _flags & RAWorkRegFlags.kAllocated != 0;
+
+  void markAllocated(int physId) {
+    _assignedPhysId = physId;
+    _flags |= RAWorkRegFlags.kAllocated;
+    isSpilled = false;
+    stackSlot = null;
+    vreg.isSpilled = false;
+    if (group == RegGroup.gp) {
+      vreg.physId = physId;
+    } else {
+      vreg.physXmmId = physId;
+    }
+  }
+
+  void markUnassigned() {
+    _assignedPhysId = _kUnassignedPhysId;
+    _flags &= ~RAWorkRegFlags.kAllocated;
+    if (group == RegGroup.gp) {
+      vreg.physId = null;
+    } else {
+      vreg.physXmmId = null;
+    }
+  }
+
+  void markSpilled(RAStackSlot slot) {
+    _assignedPhysId = _kUnassignedPhysId;
+    _flags &= ~RAWorkRegFlags.kAllocated;
+    isSpilled = true;
+    stackSlot = slot;
+    vreg.isSpilled = true;
+    vreg.spillOffset = slot.offset;
+  }
+
+  void addTiedReg(RAWorkReg other) {
+    if (!tiedRegs.contains(other)) {
+      tiedRegs.add(other);
+    }
+  }
+}
+
+/// Tracks usage of physical registers by work IDs.
+class RAAssignment {
+  final List<int> physIds;
+  final Map<int, int> _physIndex = {};
+  final List<int> _physToWork;
+  final List<int> _workToPhys = [];
+
+  RAAssignment(List<int> physIds)
+      : physIds = List.unmodifiable(physIds),
+        _physToWork = List.filled(physIds.length, _kUnassignedWorkId) {
+    for (int i = 0; i < physIds.length; i++) {
+      _physIndex[physIds[i]] = i;
+    }
+  }
+
+  void reset() {
+    for (int i = 0; i < _physToWork.length; i++) {
+      _physToWork[i] = _kUnassignedWorkId;
+    }
+    for (int i = 0; i < _workToPhys.length; i++) {
+      _workToPhys[i] = _kUnassignedPhysId;
+    }
+  }
+
+  int? firstAvailable() {
+    for (int i = 0; i < _physToWork.length; i++) {
+      if (_physToWork[i] == _kUnassignedWorkId) {
+        return physIds[i];
+      }
+    }
+    return null;
+  }
+
+  void assign(int workId, int physId) {
+    final physIndex = _physIndex[physId];
+    if (physIndex == null) return;
+    _ensureWorkCapacity(workId);
+    _physToWork[physIndex] = workId;
+    _workToPhys[workId] = physId;
+  }
+
+  void unassignPhys(int physId) {
+    final physIndex = _physIndex[physId];
+    if (physIndex == null) return;
+    final workId = _physToWork[physIndex];
+    if (workId != _kUnassignedWorkId &&
+        workId < _workToPhys.length &&
+        _workToPhys[workId] == physId) {
+      _workToPhys[workId] = _kUnassignedPhysId;
+    }
+    _physToWork[physIndex] = _kUnassignedWorkId;
+  }
+
+  int? workToPhys(int workId) {
+    if (workId >= _workToPhys.length) return null;
+    final physId = _workToPhys[workId];
+    return physId == _kUnassignedPhysId ? null : physId;
+  }
+
+  int? physToWork(int physId) {
+    final physIndex = _physIndex[physId];
+    if (physIndex == null) return null;
+    final workId = _physToWork[physIndex];
+    return workId == _kUnassignedWorkId ? null : workId;
+  }
+
+  void _ensureWorkCapacity(int workId) {
+    while (workId >= _workToPhys.length) {
+      _workToPhys.add(_kUnassignedPhysId);
+    }
+  }
+}
 
 /// Virtual register - represents a value that needs a physical register.
 class VirtReg extends BaseReg {
@@ -16,40 +174,67 @@ class VirtReg extends BaseReg {
   @override
   final int size;
 
-  /// Register class (GP, XMM, YMM).
+  /// Register class (GP, XMM, YMM, ZMM).
   final RegClass regClass;
 
-  /// Assigned physical register (null if not yet assigned).
-  X86Gp? physReg;
+  /// Assigned physical register ID (null if not yet assigned).
+  int? physId;
 
-  /// Assigned XMM register (null if GP).
-  X86Xmm? physXmm;
+  /// Assigned XMM/ZMM register ID.
+  int? physXmmId;
 
-  /// First use position (instruction index).
+  /// First/last use position.
   int firstUse = -1;
-
-  /// Last use position (instruction index).
   int lastUse = -1;
 
-  /// Whether this register is currently live.
-  bool isLive = false;
-
-  /// Whether this register has been spilled to memory.
+  /// Live/spilled flags.
   bool isSpilled = false;
-
-  /// Stack offset if spilled.
   int spillOffset = 0;
 
   VirtReg(this.id, {this.size = 8, this.regClass = RegClass.gp});
 
+  /// The allocated general-purpose register (64-bit view).
+  X86Gp? get physReg => physId == null ? null : X86Gp.r64(physId!);
+
+  set physReg(X86Gp? reg) {
+    physId = reg?.id;
+  }
+
+  /// The allocated vector register (XMM view).
+  X86Xmm? get physXmm => physXmmId == null ? null : X86Xmm(physXmmId!);
+
+  set physXmm(X86Xmm? reg) {
+    physXmmId = reg?.id;
+  }
+
   @override
-  RegType get type => regClass == RegClass.gp ? RegType.gp : RegType.vec;
+  RegType get type {
+    if (regClass == RegClass.gp) {
+      switch (size) {
+        case 1:
+          return RegType.gp8Lo;
+        case 2:
+          return RegType.gp16;
+        case 4:
+          return RegType.gp32;
+        default:
+          return RegType.gp64;
+      }
+    }
+
+    return switch (regClass) {
+      RegClass.xmm => RegType.vec128,
+      RegClass.ymm => RegType.vec256,
+      RegClass.zmm => RegType.vec512,
+      _ => RegType.none,
+    };
+  }
 
   @override
   RegGroup get group => regClass == RegClass.gp ? RegGroup.gp : RegGroup.vec;
 
   @override
-  bool get isPhysical => false; // Virtual registers are not physical by default
+  bool get isPhysical => false;
 
   @override
   String toString() => 'v$id';
@@ -57,26 +242,19 @@ class VirtReg extends BaseReg {
 
 /// Register class types.
 enum RegClass {
-  /// General purpose registers (RAX, RBX, etc.)
   gp,
-
-  /// SSE/AVX XMM registers
   xmm,
-
-  /// AVX YMM registers
   ymm,
-
-  /// AVX-512 ZMM registers
   zmm,
 }
 
-/// Live interval for a virtual register.
+/// Live interval for a work register.
 class LiveInterval {
-  final VirtReg vreg;
+  final RAWorkReg workReg;
   final int start;
   int end;
 
-  LiveInterval(this.vreg, this.start, this.end);
+  LiveInterval(this.workReg, this.start, this.end);
 
   bool contains(int pos) => pos >= start && pos <= end;
 
@@ -84,115 +262,74 @@ class LiveInterval {
       !(end < other.start || start > other.end);
 
   @override
-  String toString() => '${vreg}@[$start..$end]';
+  String toString() => 'v${workReg.vreg.id}@[$start..$end]';
 }
 
-/// Simple linear-scan register allocator.
-///
-/// This allocator uses a simplified linear-scan algorithm:
-/// 1. Compute live intervals for all virtual registers
-/// 2. Sort intervals by start position
-/// 3. Allocate registers in order, spilling when necessary
-class SimpleRegAlloc {
-  /// Available GP registers for allocation.
-  /// Does NOT include RSP, RBP (stack management), or platform-specific reserved regs.
-  final List<X86Gp> _availableGpRegs;
+class _RegMove {
+  final RAWorkReg workReg;
+  final int srcPhys;
+  final int dstPhys;
 
-  /// Available XMM registers.
-  final List<X86Xmm> _availableXmmRegs;
+  _RegMove(this.workReg, this.srcPhys, this.dstPhys);
+}
 
-  /// Current GP register assignments.
-  final Map<X86Gp, VirtReg?> _gpAssignments = {};
+class _RegSwap {
+  final RAWorkReg workA;
+  final RAWorkReg workB;
+  final int physA;
+  final int physB;
 
-  /// Current XMM register assignments.
-  final Map<X86Xmm, VirtReg?> _xmmAssignments = {};
+  _RegSwap(this.workA, this.workB, this.physA, this.physB);
+}
 
-  /// All virtual registers.
+/// Register allocator port from asmjit’s RALocal allocator.
+/// TODO tem que ter a mesma logica exata do c++ se não tiver a logica identica ao c++ não vai funcionar
+class RALocal {
+  final Arch arch;
+  final RAConstraints _constraints = RAConstraints();
+
   final List<VirtReg> _vregs = [];
-
-  /// Live intervals.
   final List<LiveInterval> _intervals = [];
+  final Map<VirtReg, RAWorkReg> _workMap = {};
+  final List<RAWorkReg> _workRegs = [];
 
-  /// Spill slots used.
-  int _spillSlots = 0;
+  final List<int> _gpPhysIds = [];
+  final List<int> _vecPhysIds = [];
+  late RAAssignment _gpAssignment;
+  late RAAssignment _vecAssignment;
 
-  /// Stack alignment (16 bytes for x86-64).
+  int _nextWorkId = 0;
+  final List<RAStackSlot> _stackSlots = [];
+  final List<_RegMove> _plannedMoves = [];
+  final List<_RegSwap> _plannedSwaps = [];
+
   static const int _stackAlignment = 16;
 
-  /// Create a register allocator for the given calling convention.
-  SimpleRegAlloc({bool isWin64 = false})
-      : _availableGpRegs = _getAvailableGpRegs(isWin64),
-        _availableXmmRegs = _getAvailableXmmRegs() {
-    // Initialize assignments
-    for (final reg in _availableGpRegs) {
-      _gpAssignments[reg] = null;
-    }
-    for (final reg in _availableXmmRegs) {
-      _xmmAssignments[reg] = null;
-    }
+  RALocal(this.arch) {
+    _constraints.init(arch);
+    _initAssignments();
   }
 
-  /// Get available GP registers (caller-saved are preferred first).
-  static List<X86Gp> _getAvailableGpRegs(bool isWin64) {
-    if (isWin64) {
-      // Win64: volatile = RAX, RCX, RDX, R8-R11
-      // Non-volatile = RBX, RDI, RSI, R12-R15, RBP, RSP
-      return [
-        rax,
-        rcx,
-        rdx,
-        r8,
-        r9,
-        // r11,
-        rbx,
-        rdi,
-        rsi,
-        r12,
-        r13,
-        r14,
-        r15
-      ];
-    } else {
-      // SysV: volatile = RAX, RCX, RDX, RSI, RDI, R8-R11
-      // Non-volatile = RBX, R12-R15, RBP, RSP
-      return [
-        rax,
-        rcx,
-        rdx,
-        rsi,
-        rdi,
-        r8,
-        r9,
-        // r11, // Reserved for scratch (spill resolution)
-        rbx,
-        r12,
-        r13,
-        r14,
-        r15
-      ];
-    }
-  }
+  void _initAssignments() {
+    _gpPhysIds.clear();
+    _vecPhysIds.clear();
 
-  /// Get available XMM registers.
-  static List<X86Xmm> _getAvailableXmmRegs() {
-    return [
-      xmm0,
-      xmm1,
-      xmm2,
-      xmm3,
-      xmm4,
-      xmm5,
-      xmm6,
-      xmm7,
-      xmm8,
-      xmm9,
-      xmm10,
-      xmm11,
-      xmm12,
-      xmm13,
-      xmm14,
-      xmm15
-    ];
+    int gpMask = _constraints.availableRegs(RegGroup.gp);
+    while (gpMask != 0) {
+      final id = support.ctz(gpMask);
+      gpMask &= gpMask - 1;
+      _gpPhysIds.add(id);
+    }
+
+    int vecMask = _constraints.availableRegs(RegGroup.vec);
+    while (vecMask != 0) {
+      final id = support.ctz(vecMask);
+      vecMask &= vecMask - 1;
+      _vecPhysIds.add(id);
+    }
+
+    _gpAssignment = RAAssignment(List.from(_gpPhysIds));
+    _vecAssignment = RAAssignment(List.from(_vecPhysIds));
   }
 
   /// Create a new virtual register.
@@ -210,22 +347,31 @@ class SimpleRegAlloc {
     vreg.lastUse = pos;
   }
 
+  RAWorkReg _workFor(VirtReg vreg) {
+    return _workMap.putIfAbsent(vreg, () {
+      final work = RAWorkReg(vreg, _nextWorkId++);
+      _workRegs.add(work);
+      return work;
+    });
+  }
+
   /// Compute live intervals from recorded uses.
   void computeLiveIntervals() {
     _intervals.clear();
+    _workMap.clear();
+    _workRegs.clear();
+    _nextWorkId = 0;
+
     for (final vreg in _vregs) {
       if (vreg.firstUse >= 0 && vreg.lastUse >= 0) {
-        _intervals.add(LiveInterval(vreg, vreg.firstUse, vreg.lastUse));
+        final workReg = _workFor(vreg);
+        _intervals.add(LiveInterval(workReg, vreg.firstUse, vreg.lastUse));
       }
     }
-    // Sort by start position
     _intervals.sort((a, b) => a.start.compareTo(b.start));
   }
 
-  /// Allocate registers using linear scan.
-  ///
-  /// If [nodes] is provided, it scans the instruction list to build live intervals.
-  /// Otherwise, it assumes uses have been recorded via [recordUse].
+  /// Allocate registers following a kill/spill + move/swap model.
   void allocate([ir.NodeList? nodes]) {
     if (nodes != null) {
       _buildIntervals(nodes);
@@ -233,48 +379,82 @@ class SimpleRegAlloc {
 
     computeLiveIntervals();
 
+    _plannedMoves.clear();
+    _plannedSwaps.clear();
+
+    _gpAssignment.reset();
+    _vecAssignment.reset();
+    _stackSlots.clear();
+
     final active = <LiveInterval>[];
 
     for (final interval in _intervals) {
-      // Expire old intervals
       _expireOldIntervals(active, interval.start);
 
-      // Try to allocate a register
-      if (interval.vreg.regClass == RegClass.gp) {
-        final reg = _allocateGpReg(interval.vreg);
-        if (reg != null) {
-          interval.vreg.physReg = reg;
-          _gpAssignments[reg] = interval.vreg;
-          active.add(interval);
-        } else {
-          // Spill - find the longest-living active interval
-          _spillRegister(interval, active);
-        }
-      } else if (interval.vreg.regClass == RegClass.xmm ||
-          interval.vreg.regClass == RegClass.ymm ||
-          interval.vreg.regClass == RegClass.zmm) {
-        final reg = _allocateXmmReg(interval.vreg);
-        if (reg != null) {
-          interval.vreg.physXmm = reg;
-          _xmmAssignments[reg] = interval.vreg;
-          active.add(interval);
-        } else {
-          _spillXmmRegister(interval, active);
-        }
+      final workReg = interval.workReg;
+      final assignment =
+          workReg.group == RegGroup.gp ? _gpAssignment : _vecAssignment;
+
+      final physId = assignment.firstAvailable();
+      if (physId != null) {
+        _assignPhysical(workReg, physId, assignment);
+        active.add(interval);
+      } else {
+        _spillInterval(interval, active, assignment);
       }
+    }
+
+    _optimizeMovePlan();
+  }
+
+  void _assignPhysical(RAWorkReg workReg, int physId, RAAssignment assignment) {
+    final prevPhys = workReg.assignedPhysId;
+    assignment.assign(workReg.workId, physId);
+    workReg.markAllocated(physId);
+    if (prevPhys != null && prevPhys != physId) {
+      _recordMove(prevPhys, physId, workReg);
     }
   }
 
-  /// Expire intervals that end before [pos].
+  void _spillInterval(LiveInterval interval, List<LiveInterval> active,
+      RAAssignment assignment) {
+    final workReg = interval.workReg;
+    LiveInterval? spillCandidate;
+    int maxEnd = interval.end;
+
+    for (final activeInterval in active) {
+      if (activeInterval.workReg.group == workReg.group) {
+        if (activeInterval.end > maxEnd) {
+          maxEnd = activeInterval.end;
+          spillCandidate = activeInterval;
+        }
+      }
+    }
+
+    if (spillCandidate != null &&
+        spillCandidate.workReg.assignedPhysId != null) {
+      final physId = spillCandidate.workReg.assignedPhysId!;
+      assignment.unassignPhys(physId);
+      spillCandidate.workReg
+          .markSpilled(_allocStackSlot(spillCandidate.workReg));
+      active.remove(spillCandidate);
+
+      _assignPhysical(workReg, physId, assignment);
+      active.add(interval);
+    } else {
+      workReg.markSpilled(_allocStackSlot(workReg));
+    }
+  }
+
   void _expireOldIntervals(List<LiveInterval> active, int pos) {
     active.removeWhere((interval) {
       if (interval.end < pos) {
-        // Free the register
-        if (interval.vreg.regClass == RegClass.gp &&
-            interval.vreg.physReg != null) {
-          _gpAssignments[interval.vreg.physReg!] = null;
-        } else if (interval.vreg.physXmm != null) {
-          _xmmAssignments[interval.vreg.physXmm!] = null;
+        final workReg = interval.workReg;
+        final physId = workReg.assignedPhysId;
+        if (physId != null) {
+          final assignment =
+              workReg.group == RegGroup.gp ? _gpAssignment : _vecAssignment;
+          assignment.unassignPhys(physId);
         }
         return true;
       }
@@ -282,97 +462,97 @@ class SimpleRegAlloc {
     });
   }
 
-  /// Try to allocate a GP register.
-  X86Gp? _allocateGpReg(VirtReg vreg) {
-    for (final reg in _availableGpRegs) {
-      if (_gpAssignments[reg] == null) {
-        return reg;
-      }
-    }
-    return null;
+  RAStackSlot _allocStackSlot(RAWorkReg workReg) {
+    final slot = RAStackSlot(workReg, _stackSlots.length);
+    _stackSlots.add(slot);
+    return slot;
   }
 
-  /// Try to allocate an XMM register.
-  X86Xmm? _allocateXmmReg(VirtReg vreg) {
-    for (final reg in _availableXmmRegs) {
-      if (_xmmAssignments[reg] == null) {
-        return reg;
-      }
-    }
-    return null;
-  }
-
-  /// Spill a GP register when all are in use.
-  void _spillRegister(LiveInterval newInterval, List<LiveInterval> active) {
-    // Find the interval with the longest remaining lifetime
-    LiveInterval? longest;
-    for (final interval in active) {
-      if (interval.vreg.regClass == RegClass.gp) {
-        if (longest == null || interval.end > longest.end) {
-          longest = interval;
+  void _optimizeMovePlan() {
+    final moves = List<_RegMove>.from(_plannedMoves);
+    _plannedMoves.clear();
+    final used = <int>{};
+    for (var i = 0; i < moves.length; i++) {
+      if (used.contains(i)) continue;
+      var foundSwap = false;
+      for (var j = i + 1; j < moves.length; j++) {
+        if (used.contains(j)) continue;
+        final a = moves[i];
+        final b = moves[j];
+        if (a.srcPhys == b.dstPhys &&
+            a.dstPhys == b.srcPhys &&
+            a.workReg.group == RegGroup.gp &&
+            b.workReg.group == RegGroup.gp) {
+          _plannedSwaps
+              .add(_RegSwap(a.workReg, b.workReg, a.srcPhys, a.dstPhys));
+          used.add(i);
+          used.add(j);
+          foundSwap = true;
+          break;
         }
       }
-    }
-
-    if (longest != null && longest.end > newInterval.end) {
-      // Spill the longest interval
-      final spilledReg = longest.vreg.physReg!;
-      longest.vreg.isSpilled = true;
-      longest.vreg.spillOffset = _allocSpillSlot();
-      longest.vreg.physReg = null;
-
-      // Assign to new interval
-      newInterval.vreg.physReg = spilledReg;
-      _gpAssignments[spilledReg] = newInterval.vreg;
-      active.remove(longest);
-      active.add(newInterval);
-    } else {
-      // Spill the new interval
-      newInterval.vreg.isSpilled = true;
-      newInterval.vreg.spillOffset = _allocSpillSlot();
-    }
-  }
-
-  /// Spill an XMM register.
-  void _spillXmmRegister(LiveInterval newInterval, List<LiveInterval> active) {
-    LiveInterval? longest;
-    for (final interval in active) {
-      if (interval.vreg.regClass == RegClass.xmm ||
-          interval.vreg.regClass == RegClass.ymm ||
-          interval.vreg.regClass == RegClass.zmm) {
-        if (longest == null || interval.end > longest.end) {
-          longest = interval;
-        }
+      if (!foundSwap && !used.contains(i)) {
+        _plannedMoves.add(moves[i]);
       }
     }
+  }
 
-    if (longest != null && longest.end > newInterval.end) {
-      final spilledReg = longest.vreg.physXmm!;
-      longest.vreg.isSpilled = true;
-      longest.vreg.spillOffset = _allocSpillSlot();
-      longest.vreg.physXmm = null;
+  void emitRegMoves(X86Assembler asm) {
+    for (final swap in _plannedSwaps) {
+      _emitSwapInstruction(asm, swap);
+    }
+    for (final move in _plannedMoves) {
+      _emitMoveInstruction(asm, move);
+    }
+    _plannedSwaps.clear();
+    _plannedMoves.clear();
+  }
 
-      newInterval.vreg.physXmm = spilledReg;
-      _xmmAssignments[spilledReg] = newInterval.vreg;
-      active.remove(longest);
-      active.add(newInterval);
-    } else {
-      newInterval.vreg.isSpilled = true;
-      newInterval.vreg.spillOffset = _allocSpillSlot();
+  void _recordMove(int srcPhys, int dstPhys, RAWorkReg workReg) {
+    _plannedMoves.add(_RegMove(workReg, srcPhys, dstPhys));
+  }
+
+  void _emitMoveInstruction(X86Assembler asm, _RegMove move) {
+    if (move.workReg.group == RegGroup.gp) {
+      asm.movRR(_toGp(move.dstPhys), _toGp(move.srcPhys));
+    } else if (move.workReg.group == RegGroup.vec) {
+      _emitVecMove(asm, move.workReg, move.srcPhys, move.dstPhys);
     }
   }
 
-  /// Allocate a spill slot on the stack.
-  int _allocSpillSlot() {
-    final offset = _spillSlots * 8; // 8 bytes per slot
-    _spillSlots++;
-    return offset;
+  void _emitSwapInstruction(X86Assembler asm, _RegSwap swap) {
+    if (swap.workA.group == RegGroup.gp && swap.workB.group == RegGroup.gp) {
+      asm.xchg(_toGp(swap.physA), _toGp(swap.physB));
+    } else {
+      _emitMoveInstruction(asm, _RegMove(swap.workA, swap.physA, swap.physB));
+      _emitMoveInstruction(asm, _RegMove(swap.workB, swap.physB, swap.physA));
+    }
   }
+
+  void _emitVecMove(
+      X86Assembler asm, RAWorkReg workReg, int srcPhys, int dstPhys) {
+    switch (workReg.vreg.regClass) {
+      case RegClass.xmm:
+        asm.vmovupsXX(X86Xmm(dstPhys), X86Xmm(srcPhys));
+        break;
+      case RegClass.ymm:
+        asm.vmovupsYY(X86Ymm(dstPhys), X86Ymm(srcPhys));
+        break;
+      case RegClass.zmm:
+        asm.vmovupsZmm(X86Zmm(dstPhys), X86Zmm(srcPhys));
+        break;
+      default:
+        asm.vmovupsXX(X86Xmm(dstPhys), X86Xmm(srcPhys));
+        break;
+    }
+  }
+
+  X86Gp _toGp(int id) => X86Gp.r64(id);
 
   /// Get the total spill area size (aligned).
   int get spillAreaSize {
-    if (_spillSlots == 0) return 0;
-    final size = _spillSlots * 8;
+    if (_stackSlots.isEmpty) return 0;
+    final size = _stackSlots.length * 8;
     return (size + _stackAlignment - 1) & ~(_stackAlignment - 1);
   }
 
@@ -386,29 +566,31 @@ class SimpleRegAlloc {
   void reset() {
     _vregs.clear();
     _intervals.clear();
-    _spillSlots = 0;
-    for (final reg in _availableGpRegs) {
-      _gpAssignments[reg] = null;
-    }
-    for (final reg in _availableXmmRegs) {
-      _xmmAssignments[reg] = null;
-    }
+    _workMap.clear();
+    _workRegs.clear();
+    _nextWorkId = 0;
+    _stackSlots.clear();
+    _plannedMoves.clear();
+    _plannedSwaps.clear();
+    _gpAssignment.reset();
+    _vecAssignment.reset();
+    _initAssignments();
   }
 
   @override
   String toString() {
     final sb = StringBuffer();
-    sb.writeln('SimpleRegAlloc:');
+    sb.writeln('RALocal-like LinearScanRegAlloc:');
     sb.writeln('  Virtual registers: ${_vregs.length}');
     sb.writeln('  Live intervals: ${_intervals.length}');
-    sb.writeln('  Spill slots: $_spillSlots');
+    sb.writeln('  Spill slots: ${_stackSlots.length}');
     sb.writeln('  Spillarea size: $spillAreaSize bytes');
-    for (final vreg in _vregs) {
-      final reg = vreg.physReg ?? vreg.physXmm;
-      final status = vreg.isSpilled
-          ? 'spilled@${vreg.spillOffset}'
+    for (final workReg in _workRegs) {
+      final reg = workReg.vreg.physReg ?? workReg.vreg.physXmm;
+      final status = workReg.isSpilled
+          ? 'spilled@${workReg.vreg.spillOffset}'
           : reg?.toString() ?? 'unassigned';
-      sb.writeln('    $vreg -> $status');
+      sb.writeln('    v${workReg.vreg.id} -> $status');
     }
     return sb.toString();
   }
@@ -416,10 +598,34 @@ class SimpleRegAlloc {
   /// Build intervals by iterating over the node list.
   void _buildIntervals(ir.NodeList nodes) {
     int pos = 0;
+    final labelPos = <int, int>{};
+    final loops = <_LoopRange>[];
 
+    // Pass 1: map labels
+    for (final node in nodes.nodes) {
+      if (node is ir.LabelNode) {
+        labelPos[node.label.id] = pos;
+      } else if (node is ir.InstNode || node is ir.InvokeNode) {
+        pos += 2;
+      }
+    }
+
+    // Pass 2: record uses and find loops
+    pos = 0;
     for (final node in nodes.nodes) {
       if (node is ir.InstNode) {
         _recordOperands(node.operands, pos);
+
+        // Check for backward jump (loop)
+        // Heuristic: if instruction has label operand pointing backward
+        for (final op in node.operands) {
+          if (op is ir.LabelOperand) {
+            final target = labelPos[op.label.id];
+            if (target != null && target < pos) {
+              loops.add(_LoopRange(target, pos));
+            }
+          }
+        }
         pos += 2;
       } else if (node is ir.InvokeNode) {
         _recordOperands(node.args, pos);
@@ -427,6 +633,55 @@ class SimpleRegAlloc {
           recordUse(node.ret as VirtReg, pos);
         }
         pos += 2;
+      }
+    }
+
+    // Pass 3: extend intervals for loops
+    // If a register is used within a loop, it must be live throughout the loop
+    for (final vreg in _vregs) {
+      if (vreg.firstUse == -1) continue;
+
+      for (final loop in loops) {
+        // If reg is used inside the loop (or defined before/inside and used inside)
+        // Check if [firstUse, lastUse] overlaps loop [start, end]
+        // Actually, if it is USED inside the loop, we extend lastUse to loop end.
+        // Determining "used inside" strictly:
+        // We need to know if any use point is in [loop.start, loop.end].
+        // SimpleRegAlloc doesn't store use list, only first/last.
+        // Approximation: If intervals overlap, assume usage might be inside?
+        // No, if defined at 10, used at 20. Loop 50..100.
+        // Interval [10, 20]. No overlap.
+        // If defined at 10, used at 60. Loop 50..100.
+        // Overlap. Usage at 60 is inside. So extend lastUse to 100.
+        // If defined at 60, used at 70. Loop 50..100.
+        // Usage inside. Extend to 100.
+        // So: If (lastUse >= loop.start && firstUse <= loop.end)
+        // AND (lastUse < loop.end) -> Extend to loop.end.
+        // But what if usage at 60 is the ONLY usage?
+        // Then it needs to be live at 50 (start of loop)?
+        // Yes, if it is live-in.
+        // But if defined at 60. It is NOT live-in.
+        // If defined at 10. Used at 60. It IS live-in.
+        // So:
+        // 1. If defined (firstUse) < loop.start AND used (lastUse) >= loop.start.
+        //    Then it is live-in. It must be live until loop.end.
+        //    newLastUse = max(lastUse, loop.end).
+        // 2. If defined inside loop (firstUse >= loop.start).
+        //    It is local.
+        //    It only needs to be live until loop.end if it is live-out?
+        //    "Simple" alloc handles local properly (linear scan).
+        //    Wait, if defined at 60, used at 70. Loop back to 50.
+        //    Is it live at 50? No.
+        //    Is it live at 100 (jump)? No, unless used in next iter.
+        //    If used in next iter, it would be live-in (via phi) or defined before?
+        //    If defined INSIDE, it is new instance each iter.
+        //    So only Case 1 matters: Live-In variables.
+
+        if (vreg.firstUse < loop.start && vreg.lastUse >= loop.start) {
+          if (vreg.lastUse < loop.end) {
+            vreg.lastUse = loop.end;
+          }
+        }
       }
     }
   }
@@ -455,4 +710,10 @@ class SimpleRegAlloc {
       }
     }
   }
+}
+
+class _LoopRange {
+  final int start;
+  final int end;
+  _LoopRange(this.start, this.end);
 }
