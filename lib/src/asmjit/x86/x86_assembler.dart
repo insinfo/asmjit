@@ -1638,24 +1638,478 @@ class X86Assembler extends BaseEmitter {
   void vcvtpd2psYmm(X86Ymm dst, X86Zmm src) => _enc.vcvtpd2psYmmZmm(dst, src);
 
   // ===========================================================================
-  // Part Added by Antigravity for ChaCha20 Benchmark (SSE2 extensions)
+  // SSE2 - Packed Integer Arithmetic
   // ===========================================================================
 
   /// PADDD xmm, xmm
   void padddXX(X86Xmm dst, X86Xmm src) => _enc.padddXmmXmm(dst, src);
 
-  /// POR xmm, xmm
-  void porXX(X86Xmm dst, X86Xmm src) => _enc.porXmmXmm(dst, src);
+  /// PADDD xmm, [mem]
+  void padddXM(X86Xmm dst, X86Mem src) => _enc.padddXmmMem(dst, src);
+
+  /// PADDB xmm, xmm
+  void paddbXX(X86Xmm dst, X86Xmm src) => _enc.paddbXmmXmm(dst, src);
+
+  /// PADDB xmm, [mem]
+  void paddbXM(X86Xmm dst, X86Mem src) => _enc.paddbXmmMem(dst, src);
+
+  /// PADDW xmm, xmm
+  void paddwXX(X86Xmm dst, X86Xmm src) => _enc.paddwXmmXmm(dst, src);
+
+  /// PADDW xmm, [mem]
+  void paddwXM(X86Xmm dst, X86Mem src) => _enc.paddwXmmMem(dst, src);
+
+  /// PADDQ xmm, xmm
+  void paddqXX(X86Xmm dst, X86Xmm src) => _enc.paddqXmmXmm(dst, src);
+
+  /// PADDQ xmm, [mem]
+  void paddqXM(X86Xmm dst, X86Mem src) => _enc.paddqXmmMem(dst, src);
+
+  /// PSUBB xmm, xmm
+  void psubbXX(X86Xmm dst, X86Xmm src) => _enc.psubbXmmXmm(dst, src);
+
+  /// PSUBB xmm, [mem]
+  void psubbXM(X86Xmm dst, X86Mem src) => _enc.psubbXmmMem(dst, src);
+
+  /// PSUBW xmm, xmm
+  void psubwXX(X86Xmm dst, X86Xmm src) => _enc.psubwXmmXmm(dst, src);
+
+  /// PSUBW xmm, [mem]
+  void psubwXM(X86Xmm dst, X86Mem src) => _enc.psubwXmmMem(dst, src);
+
+  /// PSUBD xmm, xmm
+  void psubdXX(X86Xmm dst, X86Xmm src) => _enc.psubdXmmXmm(dst, src);
+
+  /// PSUBD xmm, [mem]
+  void psubdXM(X86Xmm dst, X86Mem src) => _enc.psubdXmmMem(dst, src);
+
+  /// PSUBQ xmm, xmm
+  void psubqXX(X86Xmm dst, X86Xmm src) => _enc.psubqXmmXmm(dst, src);
+
+  /// PSUBQ xmm, [mem]
+  void psubqXM(X86Xmm dst, X86Mem src) => _enc.psubqXmmMem(dst, src);
+
+  /// PMULLW xmm, xmm
+  void pmullwXX(X86Xmm dst, X86Xmm src) => _enc.pmullwXmmXmm(dst, src);
+
+  /// PMULLW xmm, [mem]
+  void pmullwXM(X86Xmm dst, X86Mem src) => _enc.pmullwXmmMem(dst, src);
+
+  /// PMULLD xmm, xmm (SSE4.1)
+  void pmulldXX(X86Xmm dst, X86Xmm src) => _enc.pmulldXmmXmm(dst, src);
+
+  /// PMULLD xmm, [mem] (SSE4.1)
+  void pmulldXM(X86Xmm dst, X86Mem src) => _enc.pmulldXmmMem(dst, src);
+
+  /// PMULHW xmm, xmm
+  void pmulhwXX(X86Xmm dst, X86Xmm src) => _enc.pmulhwXmmXmm(dst, src);
+
+  /// PMULHW xmm, [mem]
+  void pmulhwXM(X86Xmm dst, X86Mem src) => _enc.pmulhwXmmMem(dst, src);
+
+  /// PMULHUW xmm, xmm
+  void pmulhuwXX(X86Xmm dst, X86Xmm src) => _enc.pmulhuwXmmXmm(dst, src);
+
+  /// PMULHUW xmm, [mem]
+  void pmulhuwXM(X86Xmm dst, X86Mem src) => _enc.pmulhuwXmmMem(dst, src);
+
+  /// PMADDWD xmm, xmm
+  void pmaddwdXX(X86Xmm dst, X86Xmm src) => _enc.pmaddwdXmmXmm(dst, src);
+
+  /// PMADDWD xmm, [mem]
+  void pmaddwdXM(X86Xmm dst, X86Mem src) => _enc.pmaddwdXmmMem(dst, src);
+
+  // ===========================================================================
+  // SSE2/SSE4.1 - Packed Integer Compare
+  // ===========================================================================
+
+  /// PCMPEQB xmm, xmm
+  void pcmpeqbXX(X86Xmm dst, X86Xmm src) => _enc.pcmpeqbXmmXmm(dst, src);
+
+  /// PCMPEQB xmm, [mem]
+  void pcmpeqbXM(X86Xmm dst, X86Mem src) => _enc.pcmpeqbXmmMem(dst, src);
+
+  /// PCMPEQW xmm, xmm
+  void pcmpeqwXX(X86Xmm dst, X86Xmm src) => _enc.pcmpeqwXmmXmm(dst, src);
+
+  /// PCMPEQW xmm, [mem]
+  void pcmpeqwXM(X86Xmm dst, X86Mem src) => _enc.pcmpeqwXmmMem(dst, src);
+
+  /// PCMPEQD xmm, xmm
+  void pcmpeqdXX(X86Xmm dst, X86Xmm src) => _enc.pcmpeqdXmmXmm(dst, src);
+
+  /// PCMPEQD xmm, [mem]
+  void pcmpeqdXM(X86Xmm dst, X86Mem src) => _enc.pcmpeqdXmmMem(dst, src);
+
+  /// PCMPEQQ xmm, xmm (SSE4.1)
+  void pcmpeqqXX(X86Xmm dst, X86Xmm src) => _enc.pcmpeqqXmmXmm(dst, src);
+
+  /// PCMPEQQ xmm, [mem] (SSE4.1)
+  void pcmpeqqXM(X86Xmm dst, X86Mem src) => _enc.pcmpeqqXmmMem(dst, src);
+
+  /// PCMPGTB xmm, xmm
+  void pcmpgtbXX(X86Xmm dst, X86Xmm src) => _enc.pcmpgtbXmmXmm(dst, src);
+
+  /// PCMPGTB xmm, [mem]
+  void pcmpgtbXM(X86Xmm dst, X86Mem src) => _enc.pcmpgtbXmmMem(dst, src);
+
+  /// PCMPGTW xmm, xmm
+  void pcmpgtwXX(X86Xmm dst, X86Xmm src) => _enc.pcmpgtwXmmXmm(dst, src);
+
+  /// PCMPGTW xmm, [mem]
+  void pcmpgtwXM(X86Xmm dst, X86Mem src) => _enc.pcmpgtwXmmMem(dst, src);
+
+  /// PCMPGTD xmm, xmm
+  void pcmpgtdXX(X86Xmm dst, X86Xmm src) => _enc.pcmpgtdXmmXmm(dst, src);
+
+  /// PCMPGTD xmm, [mem]
+  void pcmpgtdXM(X86Xmm dst, X86Mem src) => _enc.pcmpgtdXmmMem(dst, src);
+
+  /// PCMPGTQ xmm, xmm (SSE4.2)
+  void pcmpgtqXX(X86Xmm dst, X86Xmm src) => _enc.pcmpgtqXmmXmm(dst, src);
+
+  /// PCMPGTQ xmm, [mem] (SSE4.2)
+  void pcmpgtqXM(X86Xmm dst, X86Mem src) => _enc.pcmpgtqXmmMem(dst, src);
+
+  // ===========================================================================
+  // SSE2/SSE4.1 - Packed Integer Min/Max
+  // ===========================================================================
+
+  /// PMINUB xmm, xmm
+  void pminubXX(X86Xmm dst, X86Xmm src) => _enc.pminubXmmXmm(dst, src);
+
+  /// PMINUB xmm, [mem]
+  void pminubXM(X86Xmm dst, X86Mem src) => _enc.pminubXmmMem(dst, src);
+
+  /// PMAXUB xmm, xmm
+  void pmaxubXX(X86Xmm dst, X86Xmm src) => _enc.pmaxubXmmXmm(dst, src);
+
+  /// PMAXUB xmm, [mem]
+  void pmaxubXM(X86Xmm dst, X86Mem src) => _enc.pmaxubXmmMem(dst, src);
+
+  /// PMINSW xmm, xmm
+  void pminswXX(X86Xmm dst, X86Xmm src) => _enc.pminswXmmXmm(dst, src);
+
+  /// PMINSW xmm, [mem]
+  void pminswXM(X86Xmm dst, X86Mem src) => _enc.pminswXmmMem(dst, src);
+
+  /// PMAXSW xmm, xmm
+  void pmaxswXX(X86Xmm dst, X86Xmm src) => _enc.pmaxswXmmXmm(dst, src);
+
+  /// PMAXSW xmm, [mem]
+  void pmaxswXM(X86Xmm dst, X86Mem src) => _enc.pmaxswXmmMem(dst, src);
+
+  /// PMINUD xmm, xmm (SSE4.1)
+  void pminudXX(X86Xmm dst, X86Xmm src) => _enc.pminudXmmXmm(dst, src);
+
+  /// PMINUD xmm, [mem] (SSE4.1)
+  void pminudXM(X86Xmm dst, X86Mem src) => _enc.pminudXmmMem(dst, src);
+
+  /// PMAXUD xmm, xmm (SSE4.1)
+  void pmaxudXX(X86Xmm dst, X86Xmm src) => _enc.pmaxudXmmXmm(dst, src);
+
+  /// PMAXUD xmm, [mem] (SSE4.1)
+  void pmaxudXM(X86Xmm dst, X86Mem src) => _enc.pmaxudXmmMem(dst, src);
+
+  /// PMINSD xmm, xmm (SSE4.1)
+  void pminsdXX(X86Xmm dst, X86Xmm src) => _enc.pminsdXmmXmm(dst, src);
+
+  /// PMINSD xmm, [mem] (SSE4.1)
+  void pminsdXM(X86Xmm dst, X86Mem src) => _enc.pminsdXmmMem(dst, src);
+
+  /// PMAXSD xmm, xmm (SSE4.1)
+  void pmaxsdXX(X86Xmm dst, X86Xmm src) => _enc.pmaxsdXmmXmm(dst, src);
+
+  /// PMAXSD xmm, [mem] (SSE4.1)
+  void pmaxsdXM(X86Xmm dst, X86Mem src) => _enc.pmaxsdXmmMem(dst, src);
+
+  // ===========================================================================
+  // SSE2 - Packed Integer Shift
+  // ===========================================================================
+
+  /// PSLLW xmm, xmm
+  void psllwXX(X86Xmm dst, X86Xmm src) => _enc.psllwXmmXmm(dst, src);
+
+  /// PSLLW xmm, imm8
+  void psllwXI(X86Xmm dst, int imm8) => _enc.psllwXmmImm8(dst, imm8);
+
+  /// PSLLD xmm, xmm
+  void pslldXX(X86Xmm dst, X86Xmm src) => _enc.pslldXmmXmm(dst, src);
 
   /// PSLLD xmm, imm8
   void pslldXI(X86Xmm dst, int imm8) => _enc.pslldXmmImm8(dst, imm8);
 
+  /// PSLLQ xmm, xmm
+  void psllqXX(X86Xmm dst, X86Xmm src) => _enc.psllqXmmXmm(dst, src);
+
+  /// PSLLQ xmm, imm8
+  void psllqXI(X86Xmm dst, int imm8) => _enc.psllqXmmImm8(dst, imm8);
+
+  /// PSRLW xmm, xmm
+  void psrlwXX(X86Xmm dst, X86Xmm src) => _enc.psrlwXmmXmm(dst, src);
+
+  /// PSRLW xmm, imm8
+  void psrlwXI(X86Xmm dst, int imm8) => _enc.psrlwXmmImm8(dst, imm8);
+
+  /// PSRLD xmm, xmm
+  void psrldXX(X86Xmm dst, X86Xmm src) => _enc.psrldXmmXmm(dst, src);
+
   /// PSRLD xmm, imm8
   void psrldXI(X86Xmm dst, int imm8) => _enc.psrldXmmImm8(dst, imm8);
+
+  /// PSRLQ xmm, xmm
+  void psrlqXX(X86Xmm dst, X86Xmm src) => _enc.psrlqXmmXmm(dst, src);
+
+  /// PSRLQ xmm, imm8
+  void psrlqXI(X86Xmm dst, int imm8) => _enc.psrlqXmmImm8(dst, imm8);
+
+  /// PSRAW xmm, xmm
+  void psrawXX(X86Xmm dst, X86Xmm src) => _enc.psrawXmmXmm(dst, src);
+
+  /// PSRAW xmm, imm8
+  void psrawXI(X86Xmm dst, int imm8) => _enc.psrawXmmImm8(dst, imm8);
+
+  /// PSRAD xmm, xmm
+  void psradXX(X86Xmm dst, X86Xmm src) => _enc.psradXmmXmm(dst, src);
+
+  /// PSRAD xmm, imm8
+  void psradXI(X86Xmm dst, int imm8) => _enc.psradXmmImm8(dst, imm8);
+
+  /// PSLLDQ xmm, imm8 (byte shift left)
+  void pslldqXI(X86Xmm dst, int imm8) => _enc.pslldqXmmImm8(dst, imm8);
+
+  /// PSRLDQ xmm, imm8 (byte shift right)
+  void psrldqXI(X86Xmm dst, int imm8) => _enc.psrldqXmmImm8(dst, imm8);
+
+  // ===========================================================================
+  // SSE2/SSE4.1 - Packed Integer Logic
+  // ===========================================================================
+
+  /// PAND xmm, xmm
+  void pandXX(X86Xmm dst, X86Xmm src) => _enc.pandXmmXmm(dst, src);
+
+  /// PAND xmm, [mem]
+  void pandXM(X86Xmm dst, X86Mem src) => _enc.pandXmmMem(dst, src);
+
+  /// PANDN xmm, xmm
+  void pandnXX(X86Xmm dst, X86Xmm src) => _enc.pandnXmmXmm(dst, src);
+
+  /// PANDN xmm, [mem]
+  void pandnXM(X86Xmm dst, X86Mem src) => _enc.pandnXmmMem(dst, src);
+
+  // POR and PXOR are already implemented as porXX/porXM and pxorXX/pxorXM
+
+  // ===========================================================================
+  // SSE2/SSE4.1 - Pack/Unpack
+  // ===========================================================================
+
+  /// PACKSSWB xmm, xmm
+  void packsswbXX(X86Xmm dst, X86Xmm src) => _enc.packsswbXmmXmm(dst, src);
+
+  /// PACKSSWB xmm, [mem]
+  void packsswbXM(X86Xmm dst, X86Mem src) => _enc.packsswbXmmMem(dst, src);
+
+  /// PACKSSDW xmm, xmm
+  void packssdwXX(X86Xmm dst, X86Xmm src) => _enc.packssdwXmmXmm(dst, src);
+
+  /// PACKSSDW xmm, [mem]
+  void packssdwXM(X86Xmm dst, X86Mem src) => _enc.packssdwXmmMem(dst, src);
+
+  /// PACKUSWB xmm, xmm
+  void packuswbXX(X86Xmm dst, X86Xmm src) => _enc.packuswbXmmXmm(dst, src);
+
+  /// PACKUSWB xmm, [mem]
+  void packuswbXM(X86Xmm dst, X86Mem src) => _enc.packuswbXmmMem(dst, src);
+
+  /// PACKUSDW xmm, xmm (SSE4.1)
+  void packusdwXX(X86Xmm dst, X86Xmm src) => _enc.packusdwXmmXmm(dst, src);
+
+  /// PACKUSDW xmm, [mem] (SSE4.1)
+  void packusdwXM(X86Xmm dst, X86Mem src) => _enc.packusdwXmmMem(dst, src);
+
+  /// PUNPCKLBW xmm, xmm
+  void punpcklbwXX(X86Xmm dst, X86Xmm src) => _enc.punpcklbwXmmXmm(dst, src);
+
+  /// PUNPCKLBW xmm, [mem]
+  void punpcklbwXM(X86Xmm dst, X86Mem src) => _enc.punpcklbwXmmMem(dst, src);
+
+  /// PUNPCKLWD xmm, xmm
+  void punpcklwdXX(X86Xmm dst, X86Xmm src) => _enc.punpcklwdXmmXmm(dst, src);
+
+  /// PUNPCKLWD xmm, [mem]
+  void punpcklwdXM(X86Xmm dst, X86Mem src) => _enc.punpcklwdXmmMem(dst, src);
+
+  /// PUNPCKLDQ xmm, xmm
+  void punpckldqXX(X86Xmm dst, X86Xmm src) => _enc.punpckldqXmmXmm(dst, src);
+
+  /// PUNPCKLDQ xmm, [mem]
+  void punpckldqXM(X86Xmm dst, X86Mem src) => _enc.punpckldqXmmMem(dst, src);
+
+  /// PUNPCKLQDQ xmm, xmm
+  void punpcklqdqXX(X86Xmm dst, X86Xmm src) => _enc.punpcklqdqXmmXmm(dst, src);
+
+  /// PUNPCKLQDQ xmm, [mem]
+  void punpcklqdqXM(X86Xmm dst, X86Mem src) => _enc.punpcklqdqXmmMem(dst, src);
+
+  /// PUNPCKHBW xmm, xmm
+  void punpckhbwXX(X86Xmm dst, X86Xmm src) => _enc.punpckhbwXmmXmm(dst, src);
+
+  /// PUNPCKHBW xmm, [mem]
+  void punpckhbwXM(X86Xmm dst, X86Mem src) => _enc.punpckhbwXmmMem(dst, src);
+
+  /// PUNPCKHWD xmm, xmm
+  void punpckhwdXX(X86Xmm dst, X86Xmm src) => _enc.punpckhwdXmmXmm(dst, src);
+
+  /// PUNPCKHWD xmm, [mem]
+  void punpckhwdXM(X86Xmm dst, X86Mem src) => _enc.punpckhwdXmmMem(dst, src);
+
+  /// PUNPCKHDQ xmm, xmm
+  void punpckhdqXX(X86Xmm dst, X86Xmm src) => _enc.punpckhdqXmmXmm(dst, src);
+
+  /// PUNPCKHDQ xmm, [mem]
+  void punpckhdqXM(X86Xmm dst, X86Mem src) => _enc.punpckhdqXmmMem(dst, src);
+
+  /// PUNPCKHQDQ xmm, xmm
+  void punpckhqdqXX(X86Xmm dst, X86Xmm src) => _enc.punpckhqdqXmmXmm(dst, src);
+
+  /// PUNPCKHQDQ xmm, [mem]
+  void punpckhqdqXM(X86Xmm dst, X86Mem src) => _enc.punpckhqdqXmmMem(dst, src);
+
+  // ===========================================================================
+  // SSE2/SSSE3 - Shuffle and Align
+  // ===========================================================================
 
   /// PSHUFD xmm, xmm, imm8
   void pshufdXXI(X86Xmm dst, X86Xmm src, int imm8) =>
       _enc.pshufdXmmXmmImm8(dst, src, imm8);
+
+  /// PSHUFD xmm, [mem], imm8
+  void pshufdXMI(X86Xmm dst, X86Mem src, int imm8) =>
+      _enc.pshufdXmmMemImm8(dst, src, imm8);
+
+  /// PSHUFB xmm, xmm (SSSE3)
+  void pshufbXX(X86Xmm dst, X86Xmm src) => _enc.pshufbXmmXmm(dst, src);
+
+  /// PSHUFB xmm, [mem] (SSSE3)
+  void pshufbXM(X86Xmm dst, X86Mem src) => _enc.pshufbXmmMem(dst, src);
+
+  /// PSHUFLW xmm, xmm, imm8
+  void pshuflwXXI(X86Xmm dst, X86Xmm src, int imm8) =>
+      _enc.pshuflwXmmXmmImm8(dst, src, imm8);
+
+  /// PSHUFLW xmm, [mem], imm8
+  void pshuflwXMI(X86Xmm dst, X86Mem src, int imm8) =>
+      _enc.pshuflwXmmMemImm8(dst, src, imm8);
+
+  /// PSHUFHW xmm, xmm, imm8
+  void pshufhwXXI(X86Xmm dst, X86Xmm src, int imm8) =>
+      _enc.pshufhwXmmXmmImm8(dst, src, imm8);
+
+  /// PSHUFHW xmm, [mem], imm8
+  void pshufhwXMI(X86Xmm dst, X86Mem src, int imm8) =>
+      _enc.pshufhwXmmMemImm8(dst, src, imm8);
+
+  /// PALIGNR xmm, xmm, imm8 (SSSE3)
+  void palignrXXI(X86Xmm dst, X86Xmm src, int imm8) =>
+      _enc.palignrXmmXmmImm8(dst, src, imm8);
+
+  /// PALIGNR xmm, [mem], imm8 (SSSE3)
+  void palignrXMI(X86Xmm dst, X86Mem src, int imm8) =>
+      _enc.palignrXmmMemImm8(dst, src, imm8);
+
+  // ===========================================================================
+  // SSE4.1 - Packed Integer Extend
+  // ===========================================================================
+
+  void pmovzxbwXX(X86Xmm dst, X86Xmm src) => _enc.pmovzxbwXmmXmm(dst, src);
+  void pmovzxbwXM(X86Xmm dst, X86Mem src) => _enc.pmovzxbwXmmMem(dst, src);
+
+  void pmovzxbdXX(X86Xmm dst, X86Xmm src) => _enc.pmovzxbdXmmXmm(dst, src);
+  void pmovzxbdXM(X86Xmm dst, X86Mem src) => _enc.pmovzxbdXmmMem(dst, src);
+
+  void pmovzxbqXX(X86Xmm dst, X86Xmm src) => _enc.pmovzxbqXmmXmm(dst, src);
+  void pmovzxbqXM(X86Xmm dst, X86Mem src) => _enc.pmovzxbqXmmMem(dst, src);
+
+  void pmovzxwdXX(X86Xmm dst, X86Xmm src) => _enc.pmovzxwdXmmXmm(dst, src);
+  void pmovzxwdXM(X86Xmm dst, X86Mem src) => _enc.pmovzxwdXmmMem(dst, src);
+
+  void pmovzxwqXX(X86Xmm dst, X86Xmm src) => _enc.pmovzxwqXmmXmm(dst, src);
+  void pmovzxwqXM(X86Xmm dst, X86Mem src) => _enc.pmovzxwqXmmMem(dst, src);
+
+  void pmovzxdqXX(X86Xmm dst, X86Xmm src) => _enc.pmovzxdqXmmXmm(dst, src);
+  void pmovzxdqXM(X86Xmm dst, X86Mem src) => _enc.pmovzxdqXmmMem(dst, src);
+
+  void pmovsxbwXX(X86Xmm dst, X86Xmm src) => _enc.pmovsxbwXmmXmm(dst, src);
+  void pmovsxbwXM(X86Xmm dst, X86Mem src) => _enc.pmovsxbwXmmMem(dst, src);
+
+  void pmovsxbdXX(X86Xmm dst, X86Xmm src) => _enc.pmovsxbdXmmXmm(dst, src);
+  void pmovsxbdXM(X86Xmm dst, X86Mem src) => _enc.pmovsxbdXmmMem(dst, src);
+
+  void pmovsxbqXX(X86Xmm dst, X86Xmm src) => _enc.pmovsxbqXmmXmm(dst, src);
+  void pmovsxbqXM(X86Xmm dst, X86Mem src) => _enc.pmovsxbqXmmMem(dst, src);
+
+  void pmovsxwdXX(X86Xmm dst, X86Xmm src) => _enc.pmovsxwdXmmXmm(dst, src);
+  void pmovsxwdXM(X86Xmm dst, X86Mem src) => _enc.pmovsxwdXmmMem(dst, src);
+
+  void pmovsxwqXX(X86Xmm dst, X86Xmm src) => _enc.pmovsxwqXmmXmm(dst, src);
+  void pmovsxwqXM(X86Xmm dst, X86Mem src) => _enc.pmovsxwqXmmMem(dst, src);
+
+  void pmovsxdqXX(X86Xmm dst, X86Xmm src) => _enc.pmovsxdqXmmXmm(dst, src);
+  void pmovsxdqXM(X86Xmm dst, X86Mem src) => _enc.pmovsxdqXmmMem(dst, src);
+
+  // ===========================================================================
+  // SSE4.1 - Insert/Extract
+  // ===========================================================================
+
+  void pinsrbR(X86Xmm dst, X86Gp src, int imm8) =>
+      _enc.pinsrbXmmRegImm8(dst, src, imm8);
+  void pinsrbM(X86Xmm dst, X86Mem src, int imm8) =>
+      _enc.pinsrbXmmMemImm8(dst, src, imm8);
+
+  void pinsrdR(X86Xmm dst, X86Gp src, int imm8) =>
+      _enc.pinsrdXmmRegImm8(dst, src, imm8);
+  void pinsrdM(X86Xmm dst, X86Mem src, int imm8) =>
+      _enc.pinsrdXmmMemImm8(dst, src, imm8);
+
+  void pinsrqR(X86Xmm dst, X86Gp src, int imm8) =>
+      _enc.pinsrqXmmRegImm8(dst, src, imm8);
+  void pinsrqM(X86Xmm dst, X86Mem src, int imm8) =>
+      _enc.pinsrqXmmMemImm8(dst, src, imm8);
+
+  void pextrbR(X86Gp dst, X86Xmm src, int imm8) =>
+      _enc.pextrbRegXmmImm8(dst, src, imm8);
+  void pextrbM(X86Mem dst, X86Xmm src, int imm8) =>
+      _enc.pextrbMemXmmImm8(dst, src, imm8);
+
+  void pextrdR(X86Gp dst, X86Xmm src, int imm8) =>
+      _enc.pextrdRegXmmImm8(dst, src, imm8);
+  void pextrdM(X86Mem dst, X86Xmm src, int imm8) =>
+      _enc.pextrdMemXmmImm8(dst, src, imm8);
+
+  void pextrqR(X86Gp dst, X86Xmm src, int imm8) =>
+      _enc.pextrqRegXmmImm8(dst, src, imm8);
+  void pextrqM(X86Mem dst, X86Xmm src, int imm8) =>
+      _enc.pextrqMemXmmImm8(dst, src, imm8);
+
+  // ===========================================================================
+  // SSE4.1 - Blend
+  // ===========================================================================
+
+  void pblendwXXI(X86Xmm dst, X86Xmm src, int imm8) =>
+      _enc.pblendwXmmXmmImm8(dst, src, imm8);
+  void pblendwXMI(X86Xmm dst, X86Mem src, int imm8) =>
+      _enc.pblendwXmmMemImm8(dst, src, imm8);
+
+  void pblendvbXX(X86Xmm dst, X86Xmm src) => _enc.pblendvbXmmXmm(dst, src);
+  void pblendvbXM(X86Xmm dst, X86Mem src) => _enc.pblendvbXmmMem(dst, src);
+
+  void blendpsXXI(X86Xmm dst, X86Xmm src, int imm8) =>
+      _enc.blendpsXmmXmmImm8(dst, src, imm8);
+  void blendpsXMI(X86Xmm dst, X86Mem src, int imm8) =>
+      _enc.blendpsXmmMemImm8(dst, src, imm8);
+
+  /// POR xmm, xmm
+  void porXX(X86Xmm dst, X86Xmm src) => _enc.porXmmXmm(dst, src);
 
   void vmovups(X86Xmm dst, X86Xmm src) => _enc.vmovupsXmmXmm(dst, src);
   void vmovupsXM(X86Xmm dst, X86Mem mem) => _enc.vmovupsXmmMem(dst, mem);

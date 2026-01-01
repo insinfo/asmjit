@@ -4728,6 +4728,1347 @@ class X86Encoder {
     buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
   }
 
+  /// PADDD xmm, [mem]
+  void padddXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xFE);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PADDB xmm, xmm
+  void paddbXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xFC);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PADDB xmm, [mem]
+  void paddbXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xFC);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PADDW xmm, xmm
+  void paddwXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xFD);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PADDW xmm, [mem]
+  void paddwXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xFD);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PADDQ xmm, xmm
+  void paddqXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xD4);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PADDQ xmm, [mem]
+  void paddqXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xD4);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PSUBB xmm, xmm
+  void psubbXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xF8);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PSUBB xmm, [mem]
+  void psubbXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xF8);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PSUBW xmm, xmm
+  void psubwXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xF9);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PSUBW xmm, [mem]
+  void psubwXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xF9);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PSUBD xmm, xmm
+  void psubdXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xFA);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PSUBD xmm, [mem]
+  void psubdXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xFA);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PSUBQ xmm, xmm
+  void psubqXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xFB);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PSUBQ xmm, [mem]
+  void psubqXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xFB);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PMULLW xmm, xmm
+  void pmullwXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xD5);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PMULLW xmm, [mem]
+  void pmullwXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xD5);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PMULLD xmm, xmm (SSE4.1)
+  void pmulldXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x40);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PMULLD xmm, [mem] (SSE4.1)
+  void pmulldXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x40);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PMULHW xmm, xmm
+  void pmulhwXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xE5);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PMULHW xmm, [mem]
+  void pmulhwXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xE5);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PMULHUW xmm, xmm
+  void pmulhuwXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xE4);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PMULHUW xmm, [mem]
+  void pmulhuwXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xE4);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PMADDWD xmm, xmm
+  void pmaddwdXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xF5);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PMADDWD xmm, [mem]
+  void pmaddwdXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xF5);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  // --- Compare Instructions ---
+
+  /// PCMPEQB xmm, xmm
+  void pcmpeqbXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x74);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PCMPEQB xmm, [mem]
+  void pcmpeqbXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x74);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PCMPEQW xmm, xmm
+  void pcmpeqwXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x75);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PCMPEQW xmm, [mem]
+  void pcmpeqwXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x75);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PCMPEQD xmm, xmm
+  void pcmpeqdXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x76);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PCMPEQD xmm, [mem]
+  void pcmpeqdXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x76);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PCMPEQQ xmm, xmm (SSE4.1)
+  void pcmpeqqXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x29);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PCMPEQQ xmm, [mem] (SSE4.1)
+  void pcmpeqqXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x29);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PCMPGTB xmm, xmm
+  void pcmpgtbXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x64);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PCMPGTB xmm, [mem]
+  void pcmpgtbXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x64);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PCMPGTW xmm, xmm
+  void pcmpgtwXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x65);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PCMPGTW xmm, [mem]
+  void pcmpgtwXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x65);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PCMPGTD xmm, xmm
+  void pcmpgtdXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x66);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PCMPGTD xmm, [mem]
+  void pcmpgtdXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x66);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PCMPGTQ xmm, xmm (SSE4.2)
+  void pcmpgtqXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x37);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PCMPGTQ xmm, [mem] (SSE4.2)
+  void pcmpgtqXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x37);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  // --- Min/Max Instructions ---
+
+  /// PMINUB xmm, xmm
+  void pminubXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xDA);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PMINUB xmm, [mem]
+  void pminubXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xDA);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PMAXUB xmm, xmm
+  void pmaxubXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xDE);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PMAXUB xmm, [mem]
+  void pmaxubXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xDE);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PMINSW xmm, xmm
+  void pminswXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xEA);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PMINSW xmm, [mem]
+  void pminswXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xEA);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PMAXSW xmm, xmm
+  void pmaxswXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xEE);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PMAXSW xmm, [mem]
+  void pmaxswXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xEE);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PMINUD xmm, xmm (SSE4.1)
+  void pminudXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x3B);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PMINUD xmm, [mem] (SSE4.1)
+  void pminudXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x3B);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PMAXUD xmm, xmm (SSE4.1)
+  void pmaxudXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x3F);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PMAXUD xmm, [mem] (SSE4.1)
+  void pmaxudXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x3F);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PMINSD xmm, xmm (SSE4.1)
+  void pminsdXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x39);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PMINSD xmm, [mem] (SSE4.1)
+  void pminsdXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x39);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PMAXSD xmm, xmm (SSE4.1)
+  void pmaxsdXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x3D);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PMAXSD xmm, [mem] (SSE4.1)
+  void pmaxsdXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x3D);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  // --- Shift Instructions ---
+
+  /// PSLLW xmm, xmm
+  void psllwXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xF1);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PSLLW xmm, imm8
+  void psllwXmmImm8(X86Xmm dst, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmm(dst);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x71);
+    emitModRmReg(6, dst);
+    buffer.emit8(imm8);
+  }
+
+  /// PSLLD xmm, xmm
+  void pslldXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xF2);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  // PSLLD xmm, imm8 is already implemented (pslldXmmImm8)
+
+  /// PSLLQ xmm, xmm
+  void psllqXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xF3);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PSLLQ xmm, imm8
+  void psllqXmmImm8(X86Xmm dst, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmm(dst);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x73);
+    emitModRmReg(6, dst);
+    buffer.emit8(imm8);
+  }
+
+  /// PSRLW xmm, xmm
+  void psrlwXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xD1);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PSRLW xmm, imm8
+  void psrlwXmmImm8(X86Xmm dst, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmm(dst);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x71);
+    emitModRmReg(2, dst);
+    buffer.emit8(imm8);
+  }
+
+  /// PSRLD xmm, xmm
+  void psrldXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xD2);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  // PSRLD xmm, imm8 is already implemented (psrldXmmImm8)
+
+  /// PSRLQ xmm, xmm
+  void psrlqXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xD3);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PSRLQ xmm, imm8
+  void psrlqXmmImm8(X86Xmm dst, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmm(dst);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x73);
+    emitModRmReg(2, dst);
+    buffer.emit8(imm8);
+  }
+
+  /// PSRAW xmm, xmm
+  void psrawXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xE1);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PSRAW xmm, imm8
+  void psrawXmmImm8(X86Xmm dst, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmm(dst);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x71);
+    emitModRmReg(4, dst);
+    buffer.emit8(imm8);
+  }
+
+  /// PSRAD xmm, xmm
+  void psradXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xE2);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PSRAD xmm, imm8
+  void psradXmmImm8(X86Xmm dst, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmm(dst);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x72);
+    emitModRmReg(4, dst);
+    buffer.emit8(imm8);
+  }
+
+  /// PSLLDQ xmm, imm8 (byte shift left)
+  void pslldqXmmImm8(X86Xmm dst, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmm(dst);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x73);
+    emitModRmReg(7, dst);
+    buffer.emit8(imm8);
+  }
+
+  /// PSRLDQ xmm, imm8 (byte shift right)
+  void psrldqXmmImm8(X86Xmm dst, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmm(dst);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x73);
+    emitModRmReg(3, dst);
+    buffer.emit8(imm8);
+  }
+
+  // --- Logical Instructions ---
+
+  /// PAND xmm, xmm
+  void pandXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xDB);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PAND xmm, [mem]
+  void pandXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xDB);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PANDN xmm, xmm
+  void pandnXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xDF);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PANDN xmm, [mem]
+  void pandnXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xDF);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  // POR and PXOR are already implemented
+
+  // --- Pack/Unpack Instructions ---
+
+  /// PACKSSWB xmm, xmm
+  void packsswbXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x63);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PACKSSWB xmm, [mem]
+  void packsswbXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x63);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PACKSSDW xmm, xmm
+  void packssdwXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x6B);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PACKSSDW xmm, [mem]
+  void packssdwXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x6B);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PACKUSWB xmm, xmm
+  void packuswbXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x67);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PACKUSWB xmm, [mem]
+  void packuswbXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x67);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PACKUSDW xmm, xmm (SSE4.1)
+  void packusdwXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x2B);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PACKUSDW xmm, [mem] (SSE4.1)
+  void packusdwXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x2B);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PUNPCKLBW xmm, xmm
+  void punpcklbwXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x60);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PUNPCKLBW xmm, [mem]
+  void punpcklbwXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x60);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PUNPCKLWD xmm, xmm
+  void punpcklwdXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x61);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PUNPCKLWD xmm, [mem]
+  void punpcklwdXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x61);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PUNPCKLDQ xmm, xmm
+  void punpckldqXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x62);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PUNPCKLDQ xmm, [mem]
+  void punpckldqXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x62);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PUNPCKLQDQ xmm, xmm
+  void punpcklqdqXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x6C);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PUNPCKLQDQ xmm, [mem]
+  void punpcklqdqXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x6C);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PUNPCKHBW xmm, xmm
+  void punpckhbwXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x68);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PUNPCKHBW xmm, [mem]
+  void punpckhbwXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x68);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PUNPCKHWD xmm, xmm
+  void punpckhwdXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x69);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PUNPCKHWD xmm, [mem]
+  void punpckhwdXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x69);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PUNPCKHDQ xmm, xmm
+  void punpckhdqXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x6A);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PUNPCKHDQ xmm, [mem]
+  void punpckhdqXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x6A);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PUNPCKHQDQ xmm, xmm
+  void punpckhqdqXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x6D);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PUNPCKHQDQ xmm, [mem]
+  void punpckhqdqXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x6D);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  // --- Shuffle Instructions ---
+
+  /// PSHUFD xmm, [mem], imm8
+  void pshufdXmmMemImm8(X86Xmm dst, X86Mem mem, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x70);
+    emitModRmMem(dst.encoding, mem);
+    buffer.emit8(imm8);
+  }
+
+  /// PSHUFB xmm, xmm (SSSE3)
+  void pshufbXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x00);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// PSHUFB xmm, [mem] (SSSE3)
+  void pshufbXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x00);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// PSHUFLW xmm, xmm, imm8
+  void pshuflwXmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
+    buffer.emit8(0xF2);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x70);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+    buffer.emit8(imm8);
+  }
+
+  /// PSHUFLW xmm, [mem], imm8
+  void pshuflwXmmMemImm8(X86Xmm dst, X86Mem mem, int imm8) {
+    buffer.emit8(0xF2);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x70);
+    emitModRmMem(dst.encoding, mem);
+    buffer.emit8(imm8);
+  }
+
+  /// PSHUFHW xmm, xmm, imm8
+  void pshufhwXmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
+    buffer.emit8(0xF3);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x70);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+    buffer.emit8(imm8);
+  }
+
+  /// PSHUFHW xmm, [mem], imm8
+  void pshufhwXmmMemImm8(X86Xmm dst, X86Mem mem, int imm8) {
+    buffer.emit8(0xF3);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x70);
+    emitModRmMem(dst.encoding, mem);
+    buffer.emit8(imm8);
+  }
+
+  /// PALIGNR xmm, xmm, imm8 (SSSE3)
+  void palignrXmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+    buffer.emit8(imm8);
+  }
+
+  /// PALIGNR xmm, [mem], imm8 (SSSE3)
+  void palignrXmmMemImm8(X86Xmm dst, X86Mem mem, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x0F);
+    emitModRmMem(dst.encoding, mem);
+    buffer.emit8(imm8);
+  }
+
+  // --- Extend Instructions (SSE4.1) ---
+
+  void _emitPmov(int opcode, X86Xmm dst, Operand src) {
+    buffer.emit8(0x66);
+    if (src is X86Xmm) {
+      _emitRexForXmmXmm(dst, src);
+      buffer.emit8(0x0F);
+      buffer.emit8(0x38);
+      buffer.emit8(opcode);
+      buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+    } else if (src is X86Mem) {
+      _emitRexForXmmMem(dst, src);
+      buffer.emit8(0x0F);
+      buffer.emit8(0x38);
+      buffer.emit8(opcode);
+      emitModRmMem(dst.encoding, src);
+    }
+  }
+
+  /// PMOVZXBW xmm, xmm/mem
+  void pmovzxbwXmmXmm(X86Xmm dst, X86Xmm src) => _emitPmov(0x30, dst, src);
+  void pmovzxbwXmmMem(X86Xmm dst, X86Mem src) => _emitPmov(0x30, dst, src);
+
+  /// PMOVZXBD xmm, xmm/mem
+  void pmovzxbdXmmXmm(X86Xmm dst, X86Xmm src) => _emitPmov(0x31, dst, src);
+  void pmovzxbdXmmMem(X86Xmm dst, X86Mem src) => _emitPmov(0x31, dst, src);
+
+  /// PMOVZXBQ xmm, xmm/mem
+  void pmovzxbqXmmXmm(X86Xmm dst, X86Xmm src) => _emitPmov(0x32, dst, src);
+  void pmovzxbqXmmMem(X86Xmm dst, X86Mem src) => _emitPmov(0x32, dst, src);
+
+  /// PMOVZXWD xmm, xmm/mem
+  void pmovzxwdXmmXmm(X86Xmm dst, X86Xmm src) => _emitPmov(0x33, dst, src);
+  void pmovzxwdXmmMem(X86Xmm dst, X86Mem src) => _emitPmov(0x33, dst, src);
+
+  /// PMOVZXWQ xmm, xmm/mem
+  void pmovzxwqXmmXmm(X86Xmm dst, X86Xmm src) => _emitPmov(0x34, dst, src);
+  void pmovzxwqXmmMem(X86Xmm dst, X86Mem src) => _emitPmov(0x34, dst, src);
+
+  /// PMOVZXDQ xmm, xmm/mem
+  void pmovzxdqXmmXmm(X86Xmm dst, X86Xmm src) => _emitPmov(0x35, dst, src);
+  void pmovzxdqXmmMem(X86Xmm dst, X86Mem src) => _emitPmov(0x35, dst, src);
+
+  /// PMOVSXBW xmm, xmm/mem
+  void pmovsxbwXmmXmm(X86Xmm dst, X86Xmm src) => _emitPmov(0x20, dst, src);
+  void pmovsxbwXmmMem(X86Xmm dst, X86Mem src) => _emitPmov(0x20, dst, src);
+
+  /// PMOVSXBD xmm, xmm/mem
+  void pmovsxbdXmmXmm(X86Xmm dst, X86Xmm src) => _emitPmov(0x21, dst, src);
+  void pmovsxbdXmmMem(X86Xmm dst, X86Mem src) => _emitPmov(0x21, dst, src);
+
+  /// PMOVSXBQ xmm, xmm/mem
+  void pmovsxbqXmmXmm(X86Xmm dst, X86Xmm src) => _emitPmov(0x22, dst, src);
+  void pmovsxbqXmmMem(X86Xmm dst, X86Mem src) => _emitPmov(0x22, dst, src);
+
+  /// PMOVSXWD xmm, xmm/mem
+  void pmovsxwdXmmXmm(X86Xmm dst, X86Xmm src) => _emitPmov(0x23, dst, src);
+  void pmovsxwdXmmMem(X86Xmm dst, X86Mem src) => _emitPmov(0x23, dst, src);
+
+  /// PMOVSXWQ xmm, xmm/mem
+  void pmovsxwqXmmXmm(X86Xmm dst, X86Xmm src) => _emitPmov(0x24, dst, src);
+  void pmovsxwqXmmMem(X86Xmm dst, X86Mem src) => _emitPmov(0x24, dst, src);
+
+  /// PMOVSXDQ xmm, xmm/mem
+  void pmovsxdqXmmXmm(X86Xmm dst, X86Xmm src) => _emitPmov(0x25, dst, src);
+  void pmovsxdqXmmMem(X86Xmm dst, X86Mem src) => _emitPmov(0x25, dst, src);
+
+  // --- Insert/Extract Instructions (SSE4.1) ---
+
+  /// PINSRB xmm, r32/mem, imm8
+  void pinsrbXmmRegImm8(X86Xmm dst, X86Gp src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmReg(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x20);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | (src.encoding & 7));
+    buffer.emit8(imm8);
+  }
+
+  void pinsrbXmmMemImm8(X86Xmm dst, X86Mem src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x20);
+    emitModRmMem(dst.encoding, src);
+    buffer.emit8(imm8);
+  }
+
+  /// PINSRD xmm, r32/mem, imm8
+  void pinsrdXmmRegImm8(X86Xmm dst, X86Gp src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmReg(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x22);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | (src.encoding & 7));
+    buffer.emit8(imm8);
+  }
+
+  void pinsrdXmmMemImm8(X86Xmm dst, X86Mem src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x22);
+    emitModRmMem(dst.encoding, src);
+    buffer.emit8(imm8);
+  }
+
+  /// PINSRQ xmm, r64/mem, imm8 (x64)
+  void pinsrqXmmRegImm8(X86Xmm dst, X86Gp src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmReg(dst, src, w: true);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x22);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | (src.encoding & 7));
+    buffer.emit8(imm8);
+  }
+
+  void pinsrqXmmMemImm8(X86Xmm dst, X86Mem src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(
+        dst, src); // REX.W implicitly handled for mem probably? No, need W.
+    // Wait, _emitRexForXmmMem doesn't take W. But pinsrq is promoted pinsrd.
+    // For vector extract/insert REX.W determines 32 vs 64 bit GPR.
+    // For memory, the size is inherent? No, pinsrq reads 64 bits from mem.
+    // The instruction is defined as 66 REX.W 0F 3A 22 /r ib.
+    // So we must manually force W=1.
+    // Let's implement _emitRexForXmmMem with W support or just use emitRex directly properly.
+    // Since _emitRexForXmmMem is private, we can't easily change it without affecting others.
+    // Actually, checking _emitRexForXmmMem source (via previous view_file):
+    // It calls emitRex(false, regExt, indexExt, baseExt). W is false.
+    // Implement manual REX emission for this case.
+
+    // Logic from _emitRexForXmmMem + W=1
+    bool regExt = dst.isExtended;
+    final baseExt = _memBase(src)?.isExtended ?? false;
+    final indexExt = _memIndex(src)?.isExtended ?? false;
+    // pinsrq MEM requires REX.W=1
+    emitRex(true, regExt, indexExt, baseExt);
+
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x22);
+    emitModRmMem(dst.encoding, src);
+    buffer.emit8(imm8);
+  }
+
+  /// PEXTRB r32/mem, xmm, imm8
+  void pextrbRegXmmImm8(X86Gp dst, X86Xmm src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForRegXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x14);
+    buffer.emit8(0xC0 | (src.encoding << 3) | (dst.encoding & 7));
+    buffer.emit8(imm8);
+  }
+
+  void pextrbMemXmmImm8(X86Mem dst, X86Xmm src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(
+        src, dst); // src is reg (ModRM.reg), dst is mem (ModRM.rm)
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x14);
+    emitModRmMem(src.encoding, dst);
+    buffer.emit8(imm8);
+  }
+
+  /// PEXTRD r32/mem, xmm, imm8
+  void pextrdRegXmmImm8(X86Gp dst, X86Xmm src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForRegXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x16);
+    buffer.emit8(0xC0 | (src.encoding << 3) | (dst.encoding & 7));
+    buffer.emit8(imm8);
+  }
+
+  void pextrdMemXmmImm8(X86Mem dst, X86Xmm src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(src, dst);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x16);
+    emitModRmMem(src.encoding, dst);
+    buffer.emit8(imm8);
+  }
+
+  /// PEXTRQ r64/mem, xmm, imm8 (x64)
+  void pextrqRegXmmImm8(X86Gp dst, X86Xmm src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForRegXmm(dst, src, w: true);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x16);
+    buffer.emit8(0xC0 | (src.encoding << 3) | (dst.encoding & 7));
+    buffer.emit8(imm8);
+  }
+
+  void pextrqMemXmmImm8(X86Mem dst, X86Xmm src, int imm8) {
+    buffer.emit8(0x66);
+
+    // Manual REX.W=1 for mem extension
+    bool regExt = src.isExtended;
+    final baseExt = _memBase(dst)?.isExtended ?? false;
+    final indexExt = _memIndex(dst)?.isExtended ?? false;
+    emitRex(true, regExt, indexExt, baseExt);
+
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x16);
+    emitModRmMem(src.encoding, dst);
+    buffer.emit8(imm8);
+  }
+
+  // --- Blend Instructions (SSE4.1) ---
+
+  /// PBLENDW xmm, xmm/mem, imm8
+  void pblendwXmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x0E);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+    buffer.emit8(imm8);
+  }
+
+  void pblendwXmmMemImm8(X86Xmm dst, X86Mem src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x0E);
+    emitModRmMem(dst.encoding, src);
+    buffer.emit8(imm8);
+  }
+
+  /// PBLENDVB xmm, xmm/mem, <implied xmm0>
+  void pblendvbXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x10);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  void pblendvbXmmMem(X86Xmm dst, X86Mem src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x10);
+    emitModRmMem(dst.encoding, src);
+  }
+
+  /// BLENDPS xmm, xmm/mem, imm8
+  void blendpsXmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x0C);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+    buffer.emit8(imm8);
+  }
+
+  void blendpsXmmMemImm8(X86Xmm dst, X86Mem src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x0C);
+    emitModRmMem(dst.encoding, src);
+    buffer.emit8(imm8);
+  }
+
+  // --- Helper methods for Insert/Extract ---
+
+  void _emitRexForXmmReg(X86Xmm xmm, X86Gp gp, {bool w = false}) {
+    if (xmm.isExtended || gp.isExtended || w) {
+      emitRex(w, xmm.isExtended, false, gp.isExtended);
+    }
+  }
+
+  void _emitRexForRegXmm(X86Gp gp, X86Xmm xmm, {bool w = false}) {
+    if (xmm.isExtended || gp.isExtended || w) {
+      emitRex(w, gp.isExtended, false, xmm.isExtended);
+    }
+  }
+
   /// PXOR xmm, xmm (Already defined elsewhere, removing duplicate)
 
   /// POR xmm, xmm (packed logical OR)
@@ -4737,6 +6078,15 @@ class X86Encoder {
     buffer.emit8(0x0F);
     buffer.emit8(0xEB);
     buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// POR xmm, [mem]
+  void porXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xEB);
+    emitModRmMem(dst.encoding, mem);
   }
 
   /// PSLLD xmm, imm8 (packed shift left dword)

@@ -7,13 +7,18 @@
 | Componente | Status | Testes |
 |------------|--------|--------|
 | Core (CodeHolder, Buffer, Runtime) | ✅ Funcional | 635 passando |
-| x86 Assembler | ✅ ~70% | 156 testes encoding |
-| x86 Encoder | ✅ ~80% | Byte-to-byte pass |
+| x86 Assembler | ✅ ~75% | +30 instrucoes |
+| x86 Encoder | ✅ ~85% | Byte-to-byte pass |
 | A64 Assembler | ⚠️ ~20% | Básico |
 | Compiler Base | ⚠️ ~50% | Básico |
 | RALocal | ✅ Implementado | Funcional |
-| RAGlobal | 🔴 Em progresso | Inicial |
+| RAGlobal | 🔴 Em progresso | Inicial | em C:\MyDartProjects\asmjit\lib\src\asmjit\core\ralocal.dart
+C:\MyDartProjects\asmjit\lib\src\asmjit\core\rapass.dart
+C:\MyDartProjects\asmjit\lib\src\asmjit\core\rablock.dart
+C:\MyDartProjects\asmjit\lib\src\asmjit\core\radefs.dart
 
+AsmJit Builder - Intermediate Representation
+C:\MyDartProjects\asmjit\lib\src\asmjit\core\builder.dart
 ---
 
 ## ✅ Progresso Recente (01/01/2026)
@@ -37,6 +42,17 @@
    - `bswapR` agora suporta 16, 32 e 64 bits
 
 4. **Novos Testes**: 23 testes adicionados para bt/bts/bswap/cbw/cdqe/cdq/cqo/clc/cld/cmc/stc/std
+
+5. **SSE2 Packed Integer Core**:
+   - `paddb/w/d/q`, `psubb/w/d/q` (Add/Sub packed integers)
+   - `pmullw/d`, `pmulhw/huw`, `pmaddwd` (Multiply packed integers)
+   - `pcmpeqb/w/d/q`, `pcmpgtb/w/d/q` (Compare packed integers)
+   - `pminub/uw/ud`, `pmaxub/uw/ud`, `pminsb/sw/sd`, `pmaxsb/sw/sd` (Min/Max packed integers)
+   - `psllw/d/q`, `psrlw/d/q`, `psraw/d` (Shift packed integers)
+   - `pslldq`, `psrldq` (Byte shifts)
+   - `pand/n`, `por`, `pxor` (Logic)
+   - `pack*`, `punpck*` (Pack/Unpack)
+   - `pshuf*`, `palignr` (Shuffle)
 
 ---
 
@@ -168,73 +184,73 @@ k* (mask operations)                 - Mask register operations
 
 ### Fase 1: SSE2/SSE4.1 Core (CRÍTICO para Pipeline Mínimo)
 
-- [ ] **Packed Integer Add/Sub**:
-  - [ ] `paddb(xmm, xmm/mem)` - Add packed bytes
-  - [ ] `paddw(xmm, xmm/mem)` - Add packed words
-  - [ ] `paddd(xmm, xmm/mem)` - Add packed dwords
-  - [ ] `paddq(xmm, xmm/mem)` - Add packed qwords
-  - [ ] `psubb(xmm, xmm/mem)` - Sub packed bytes
-  - [ ] `psubw(xmm, xmm/mem)` - Sub packed words
-  - [ ] `psubd(xmm, xmm/mem)` - Sub packed dwords
-  - [ ] `psubq(xmm, xmm/mem)` - Sub packed qwords
+- [x] **Packed Integer Add/Sub**:
+  - [x] `paddb(xmm, xmm/mem)` - Add packed bytes
+  - [x] `paddw(xmm, xmm/mem)` - Add packed words
+  - [x] `paddd(xmm, xmm/mem)` - Add packed dwords
+  - [x] `paddq(xmm, xmm/mem)` - Add packed qwords
+  - [x] `psubb(xmm, xmm/mem)` - Sub packed bytes
+  - [x] `psubw(xmm, xmm/mem)` - Sub packed words
+  - [x] `psubd(xmm, xmm/mem)` - Sub packed dwords
+  - [x] `psubq(xmm, xmm/mem)` - Sub packed qwords
 
-- [ ] **Packed Integer Multiply**:
-  - [ ] `pmullw(xmm, xmm/mem)` - Multiply low words
-  - [ ] `pmulld(xmm, xmm/mem)` - Multiply low dwords (SSE4.1)
-  - [ ] `pmulhw(xmm, xmm/mem)` - Multiply high signed words
-  - [ ] `pmulhuw(xmm, xmm/mem)` - Multiply high unsigned words
-  - [ ] `pmaddwd(xmm, xmm/mem)` - Multiply and add
+- [x] **Packed Integer Multiply**:
+  - [x] `pmullw(xmm, xmm/mem)` - Multiply low words
+  - [x] `pmulld(xmm, xmm/mem)` - Multiply low dwords (SSE4.1)
+  - [x] `pmulhw(xmm, xmm/mem)` - Multiply high signed words
+  - [x] `pmulhuw(xmm, xmm/mem)` - Multiply high unsigned words
+  - [x] `pmaddwd(xmm, xmm/mem)` - Multiply and add
   - [ ] `pmaddubsw(xmm, xmm/mem)` - Multiply and add unsigned/signed (SSSE3)
 
-- [ ] **Packed Integer Compare**:
-  - [ ] `pcmpeqb/w/d/q(xmm, xmm/mem)` - Compare equal
-  - [ ] `pcmpgtb/w/d/q(xmm, xmm/mem)` - Compare greater than
+- [x] **Packed Integer Compare**:
+  - [x] `pcmpeqb/w/d/q(xmm, xmm/mem)` - Compare equal
+  - [x] `pcmpgtb/w/d/q(xmm, xmm/mem)` - Compare greater than
 
-- [ ] **Packed Integer Min/Max**:
-  - [ ] `pminub/uw/ud(xmm, xmm/mem)` - Minimum unsigned
-  - [ ] `pmaxub/uw/ud(xmm, xmm/mem)` - Maximum unsigned  
-  - [ ] `pminsb/sw/sd(xmm, xmm/mem)` - Minimum signed
-  - [ ] `pmaxsb/sw/sd(xmm, xmm/mem)` - Maximum signed
+- [x] **Packed Integer Min/Max**:
+  - [x] `pminub/uw/ud(xmm, xmm/mem)` - Minimum unsigned
+  - [x] `pmaxub/uw/ud(xmm, xmm/mem)` - Maximum unsigned  
+  - [x] `pminsb/sw/sd(xmm, xmm/mem)` - Minimum signed
+  - [x] `pmaxsb/sw/sd(xmm, xmm/mem)` - Maximum signed
 
-- [ ] **Packed Integer Shift**:
-  - [ ] `psllw/d/q(xmm, xmm/imm)` - Shift left logical
-  - [ ] `psrlw/d/q(xmm, xmm/imm)` - Shift right logical
-  - [ ] `psraw/d(xmm, xmm/imm)` - Shift right arithmetic
-  - [ ] `pslldq(xmm, imm)` - Shift bytes left
-  - [ ] `psrldq(xmm, imm)` - Shift bytes right
+- [x] **Packed Integer Shift**:
+  - [x] `psllw/d/q(xmm, xmm/imm)` - Shift left logical
+  - [x] `psrlw/d/q(xmm, xmm/imm)` - Shift right logical
+  - [x] `psraw/d(xmm, xmm/imm)` - Shift right arithmetic
+  - [x] `pslldq(xmm, imm)` - Shift bytes left
+  - [x] `psrldq(xmm, imm)` - Shift bytes right
 
-- [ ] **Packed Integer Logic**:
-  - [ ] `pand(xmm, xmm/mem)` - Bitwise AND
-  - [ ] `pandn(xmm, xmm/mem)` - Bitwise AND NOT
-  - [ ] `por(xmm, xmm/mem)` - Bitwise OR
-  - [ ] `pxor(xmm, xmm/mem)` - Bitwise XOR
+- [x] **Packed Integer Logic**:
+  - [x] `pand(xmm, xmm/mem)` - Bitwise AND
+  - [x] `pandn(xmm, xmm/mem)` - Bitwise AND NOT
+  - [x] `por(xmm, xmm/mem)` - Bitwise OR
+  - [x] `pxor(xmm, xmm/mem)` - Bitwise XOR
 
-- [ ] **Pack/Unpack**:
-  - [ ] `packsswb/dw(xmm, xmm/mem)` - Pack with signed saturation
-  - [ ] `packuswb/dw(xmm, xmm/mem)` - Pack with unsigned saturation
-  - [ ] `punpcklbw/wd/dq/qdq(xmm, xmm/mem)` - Unpack low
-  - [ ] `punpckhbw/wd/dq/qdq(xmm, xmm/mem)` - Unpack high
+- [x] **Pack/Unpack**:
+  - [x] `packsswb/dw(xmm, xmm/mem)` - Pack with signed saturation
+  - [x] `packuswb/dw(xmm, xmm/mem)` - Pack with unsigned saturation
+  - [x] `punpcklbw/wd/dq/qdq(xmm, xmm/mem)` - Unpack low
+  - [x] `punpckhbw/wd/dq/qdq(xmm, xmm/mem)` - Unpack high
 
-- [ ] **Shuffle**:
-  - [ ] `pshufd(xmm, xmm/mem, imm)` - Shuffle dwords
-  - [ ] `pshufb(xmm, xmm/mem)` - Shuffle bytes (SSSE3)
-  - [ ] `pshuflw/hw(xmm, xmm/mem, imm)` - Shuffle low/high words
-  - [ ] `palignr(xmm, xmm/mem, imm)` - Align bytes (SSSE3)
+- [x] **Shuffle**:
+  - [x] `pshufd(xmm, xmm/mem, imm)` - Shuffle dwords
+  - [x] `pshufb(xmm, xmm/mem)` - Shuffle bytes (SSSE3)
+  - [x] `pshuflw/hw(xmm, xmm/mem, imm)` - Shuffle low/high words
+  - [x] `palignr(xmm, xmm/mem, imm)` - Align bytes (SSSE3)
 
-- [ ] **Extend (SSE4.1)**:
-  - [ ] `pmovzxbw/bd/bq(xmm, xmm/mem)` - Zero extend
-  - [ ] `pmovzxwd/wq/dq(xmm, xmm/mem)` - Zero extend
-  - [ ] `pmovsxbw/bd/bq(xmm, xmm/mem)` - Sign extend
-  - [ ] `pmovsxwd/wq/dq(xmm, xmm/mem)` - Sign extend
+- [x] **Extend (SSE4.1)**:
+  - [x] `pmovzxbw/bd/bq(xmm, xmm/mem)` - Zero extend
+  - [x] `pmovzxwd/wq/dq(xmm, xmm/mem)` - Zero extend
+  - [x] `pmovsxbw/bd/bq(xmm, xmm/mem)` - Sign extend
+  - [x] `pmovsxwd/wq/dq(xmm, xmm/mem)` - Sign extend
 
-- [ ] **Insert/Extract (SSE4.1)**:
-  - [ ] `pinsrb/w/d/q(xmm, r/m, imm)` - Insert
-  - [ ] `pextrb/w/d/q(r/m, xmm, imm)` - Extract
+- [x] **Insert/Extract (SSE4.1)**:
+  - [x] `pinsrb/w/d/q(xmm, r/m, imm)` - Insert
+  - [x] `pextrb/w/d/q(r/m, xmm, imm)` - Extract
 
-- [ ] **Blend (SSE4.1)**:
-  - [ ] `pblendw(xmm, xmm/mem, imm)` - Blend words
-  - [ ] `pblendvb(xmm, xmm/mem, xmm0)` - Blend bytes variable
-  - [ ] `blendps/pd(xmm, xmm/mem, imm)` - Blend floats
+- [x] **Blend (SSE4.1)**:
+  - [x] `pblendw(xmm, xmm/mem, imm)` - Blend words
+  - [x] `pblendvb(xmm, xmm/mem, xmm0)` - Blend bytes variable
+  - [x] `blendps/pd(xmm, xmm/mem, imm)` - Blend floats
 
 ### Fase 2: SSE Floating-Point
 
