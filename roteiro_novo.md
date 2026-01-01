@@ -277,10 +277,10 @@ k* (mask operations)                 - Mask register operations
 
 ### Fase 4: AVX-512 (Opcional)
 
-- [ ] Masking support (k0-k7)
-- [ ] `vpternlogd/q` - Ternary logic
+- [x] Masking support (k0-k7)
+- [x] `vpternlogd/q` - Ternary logic
 - [ ] Broadcast em qualquer operando
-- [ ] EVEX encoding
+- [x] EVEX encoding
 
 ---
 

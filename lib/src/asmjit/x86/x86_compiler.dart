@@ -44,7 +44,7 @@ class X86Compiler extends BaseCompiler {
   X86Xmm newXmm([String? name]) => X86Xmm(newVirtId());
   X86Ymm newYmm([String? name]) => X86Ymm(newVirtId());
   X86Zmm newZmm([String? name]) => X86Zmm(newVirtId());
-  
+
   /// Create new 128-bit vector register (XMM).
   X86Xmm newXmmF32x1([String? name]) => newXmm(name);
   X86Xmm newXmmF64x1([String? name]) => newXmm(name);
@@ -54,7 +54,7 @@ class X86Compiler extends BaseCompiler {
   X86Xmm newXmmInt64x2([String? name]) => newXmm(name);
   X86Xmm newXmmInt8x16([String? name]) => newXmm(name);
   X86Xmm newXmmInt16x8([String? name]) => newXmm(name);
-  
+
   /// Create new 256-bit vector register (YMM).
   X86Ymm newYmmF32x8([String? name]) => newYmm(name);
   X86Ymm newYmmF64x4([String? name]) => newYmm(name);
@@ -62,7 +62,7 @@ class X86Compiler extends BaseCompiler {
   X86Ymm newYmmInt64x4([String? name]) => newYmm(name);
   X86Ymm newYmmInt8x32([String? name]) => newYmm(name);
   X86Ymm newYmmInt16x16([String? name]) => newYmm(name);
-  
+
   /// Create new 512-bit vector register (ZMM).
   X86Zmm newZmmF32x16([String? name]) => newZmm(name);
   X86Zmm newZmmF64x8([String? name]) => newZmm(name);
@@ -70,21 +70,18 @@ class X86Compiler extends BaseCompiler {
   X86Zmm newZmmInt64x8([String? name]) => newZmm(name);
   X86Zmm newZmmInt8x64([String? name]) => newZmm(name);
   X86Zmm newZmmInt16x32([String? name]) => newZmm(name);
-  
+
   /// Create new stack allocation.
   X86Mem newStack(int size, [int alignment = 1]) {
     // TODO: Implement proper stack allocation with alignment
     return X86Mem.base(X86Gp.rsp, disp: -size);
   }
-  
+
   /// Create new memory operand with index.
   X86Mem newMemWithIndex(X86Mem base, X86Gp index, [int shift = 0]) {
     return X86Mem.baseIndexScale(
-        base.base ?? X86Gp.rsp, 
-        index, 
-        shift > 0 ? shift : 1, 
-        disp: base.displacement, 
-        size: base.size);
+        base.base ?? X86Gp.rsp, index, shift > 0 ? shift : 1,
+        disp: base.displacement, size: base.size);
   }
 
   void finalize() {
@@ -276,22 +273,72 @@ class X86InstructionAnalyzer extends InstructionAnalyzer {
   void analyze(BaseNode node, Set<BaseReg> def, Set<BaseReg> use) {
     if (node is! InstNode) return;
 
-    // Simplistic analysis (read/write definitions):
-    // Needs full opcode database access to know which ops read/write.
-    // For now, assume dst is write, srcs are read.
-    // X86: op0 is dst (usually RW), op1 is src (R).
-    // This is VERY rough. Real impl needs Inst RWInfo.
-    if (node.opCount > 0) {
-      if (node.operands[0] is BaseReg) {
-        final r = node.operands[0] as BaseReg;
-        def.add(r);
-        use.add(r); // Usually R/W
+    final id = node.instId;
+    final ops = node.operands;
+    final opCount = node.opCount;
+
+    // Helper to add if reg
+    void addUse(Operand op) {
+      if (op is BaseReg) use.add(op);
+      if (op is BaseMem) {
+        if (op.base != null) use.add(op.base!);
+        if (op.index != null) use.add(op.index!);
       }
     }
-    for (var i = 1; i < node.opCount; i++) {
-      if (node.operands[i] is BaseReg) {
-        use.add(node.operands[i] as BaseReg);
-      }
+
+    void addDef(Operand op) {
+      if (op is BaseReg) def.add(op);
+    }
+
+    // Handle specific instruction groups
+    if (id == X86InstId.kMov ||
+        id == X86InstId.kMovsx ||
+        id == X86InstId.kMovzx ||
+        id == X86InstId.kLea) {
+      // MOV/LEA: Write op0, Read op1
+      if (opCount > 0) addDef(ops[0]);
+      if (opCount > 1) addUse(ops[1]);
+      return;
+    }
+
+    if (id == X86InstId.kCmp || id == X86InstId.kTest) {
+      // CMP/TEST: Read op0, Read op1
+      if (opCount > 0) addUse(ops[0]);
+      if (opCount > 1) addUse(ops[1]);
+      return;
+    }
+
+    if (id == X86InstId.kPush) {
+      // PUSH: Read op0
+      if (opCount > 0) addUse(ops[0]);
+      return;
+    }
+
+    if (id == X86InstId.kPop) {
+      // POP: Write op0
+      if (opCount > 0) addDef(ops[0]);
+      return;
+    }
+
+    if (id == X86InstId.kDiv || id == X86InstId.kIdiv || id == X86InstId.kMul) {
+      // Implicit Use/Def of AX/DX
+      // DIV/MUL r/m: Reads AX (and DX for 64-bit/32-bit), Writes AX, DX
+      def.add(X86Gp.rax);
+      def.add(X86Gp.rdx);
+      use.add(X86Gp.rax);
+      use.add(X86Gp.rdx);
+      if (opCount > 0) addUse(ops[0]);
+      return;
+    }
+
+    // Default RMW (Read-Modify-Write) behavior for binary ops (ADD, SUB, XOR, etc)
+    // op0 is R+W, op1 is R
+    if (opCount > 0) {
+      addUse(ops[0]);
+      addDef(ops[0]);
+    }
+    for (var i = 1; i < opCount; i++) {
+      addUse(ops[i]);
     }
   }
 }
