@@ -177,7 +177,8 @@ class X86Encoder {
     final needsRex = w || reg.needsRex;
     if (!needsRex) return;
     if (reg.isHighByte) {
-      throw ArgumentError('High-byte registers (AH/CH/DH/BH) cannot be used with REX prefix');
+      throw ArgumentError(
+          'High-byte registers (AH/CH/DH/BH) cannot be used with REX prefix');
     }
     emitRex(w, false, false, reg.isExtended);
   }
@@ -187,7 +188,8 @@ class X86Encoder {
     final needsRex = w || reg.needsRex || rm.needsRex;
     if (!needsRex) return;
     if (reg.isHighByte || rm.isHighByte) {
-      throw ArgumentError('High-byte registers (AH/CH/DH/BH) cannot be used with REX prefix');
+      throw ArgumentError(
+          'High-byte registers (AH/CH/DH/BH) cannot be used with REX prefix');
     }
     emitRex(w, reg.isExtended, false, rm.isExtended);
   }
@@ -201,7 +203,8 @@ class X86Encoder {
     final needsRex = w || reg.needsRex || baseExt || indexExt;
     if (!needsRex) return;
     if (reg.isHighByte) {
-      throw ArgumentError('High-byte registers (AH/CH/DH/BH) cannot be used with REX prefix');
+      throw ArgumentError(
+          'High-byte registers (AH/CH/DH/BH) cannot be used with REX prefix');
     }
     emitRex(w, reg.isExtended, indexExt, baseExt);
   }
@@ -234,6 +237,7 @@ class X86Encoder {
   void emitModRm(int mod, int reg, int rm) {
     buffer.emit8(((mod & 0x3) << 6) | ((reg & 0x7) << 3) | (rm & 0x7));
   }
+
   /// Emits a SIB byte.
   ///
   /// SIB format: scale(2) index(3) base(3)
@@ -843,27 +847,21 @@ class X86Encoder {
 
     final isImm8 = imm >= -128 && imm <= 127;
 
-    // Accumulator short form (AX/EAX/RAX).
-    if (dst.encoding == 0) {
-      if (dst.bits == 16) buffer.emit8(0x66);
-      if (dst.bits == 64) emitRexForReg(dst, w: true);
-      buffer.emit8(0x25);
-      if (dst.bits == 16) {
-        buffer.emit16(imm);
-      } else {
-        buffer.emit32(imm);
-      }
-      return;
-    }
-
+    // Always prefer imm8 form (83 /4) when possible - it's shorter than
+    // the accumulator special form (25 id) which requires 4+ bytes.
     _emitOpSizeAndRexForReg(dst);
     if (isImm8) {
       buffer.emit8(0x83);
       emitModRmReg(4, dst);
       buffer.emit8(imm & 0xFF);
     } else {
-      buffer.emit8(0x81);
-      emitModRmReg(4, dst);
+      // Use accumulator short form (25 id) for AX/EAX/RAX when needing imm32.
+      if (dst.encoding == 0) {
+        buffer.emit8(0x25);
+      } else {
+        buffer.emit8(0x81);
+        emitModRmReg(4, dst);
+      }
       if (dst.bits == 16) {
         buffer.emit16(imm);
       } else {
@@ -1451,7 +1449,8 @@ class X86Encoder {
   /// BSF r16/r32, r/m16/r/m32
   void bsfRR(X86Gp dst, X86Gp src) {
     if (dst.bits != src.bits || (dst.bits != 16 && dst.bits != 32)) {
-      throw ArgumentError('bsfRR requires 16-bit or 32-bit operands of same size');
+      throw ArgumentError(
+          'bsfRR requires 16-bit or 32-bit operands of same size');
     }
     if (dst.bits == 16) buffer.emit8(0x66);
     buffer.emit8(0x0F);
@@ -1481,7 +1480,8 @@ class X86Encoder {
   /// BSR r16/r32, r/m16/r/m32
   void bsrRR(X86Gp dst, X86Gp src) {
     if (dst.bits != src.bits || (dst.bits != 16 && dst.bits != 32)) {
-      throw ArgumentError('bsrRR requires 16-bit or 32-bit operands of same size');
+      throw ArgumentError(
+          'bsrRR requires 16-bit or 32-bit operands of same size');
     }
     if (dst.bits == 16) buffer.emit8(0x66);
     buffer.emit8(0x0F);
@@ -1500,22 +1500,25 @@ class X86Encoder {
     emitModRmMem(dst.encoding, mem);
   }
 
-  /// BSWAP r16/r32
+  /// BSWAP r16/r32/r64
   void bswapR(X86Gp reg) {
-    if (reg.bits != 16 && reg.bits != 32) {
-      throw ArgumentError('bswapR requires 16-bit or 32-bit register');
+    if (reg.bits == 16) {
+      buffer.emit8(0x66);
+    } else if (reg.bits == 64) {
+      emitRexForReg(reg, w: true);
+    } else if (reg.isExtended) {
+      emitRexForReg(reg);
     }
-    if (reg.bits == 16) buffer.emit8(0x66);
     buffer.emit8(0x0F);
     buffer.emit8(0xC8 + reg.encoding);
   }
 
-  /// BT r/m16,r16 or r/m32,r32
+  /// BT r/m16/32/64, r16/32/64
   void btRR(X86Gp dst, X86Gp src) {
-    if (dst.bits != src.bits || (dst.bits != 16 && dst.bits != 32)) {
-      throw ArgumentError('btRR requires 16-bit or 32-bit operands of same size');
+    if (dst.bits != src.bits) {
+      throw ArgumentError('btRR requires operands of same size');
     }
-    if (dst.bits == 16) buffer.emit8(0x66);
+    _emitOpSizeAndRexForRegRm(src, dst);
     buffer.emit8(0x0F);
     buffer.emit8(0xA3);
     emitModRmReg(src.encoding, dst);
@@ -1532,10 +1535,7 @@ class X86Encoder {
   }
 
   void btRI(X86Gp dst, int imm) {
-    if (dst.bits != 16 && dst.bits != 32) {
-      throw ArgumentError('btRI requires 16-bit or 32-bit destination');
-    }
-    if (dst.bits == 16) buffer.emit8(0x66);
+    _emitOpSizeAndRexForReg(dst);
     buffer.emit8(0x0F);
     buffer.emit8(0xBA);
     emitModRmReg(4, dst);
@@ -1554,12 +1554,12 @@ class X86Encoder {
     buffer.emit8(imm & 0xFF);
   }
 
-  /// BTC r/m16,r16 or r/m32,r32
+  /// BTC r/m16/32/64, r16/32/64
   void btcRR(X86Gp dst, X86Gp src) {
-    if (dst.bits != src.bits || (dst.bits != 16 && dst.bits != 32)) {
-      throw ArgumentError('btcRR requires 16-bit or 32-bit operands of same size');
+    if (dst.bits != src.bits) {
+      throw ArgumentError('btcRR requires operands of same size');
     }
-    if (dst.bits == 16) buffer.emit8(0x66);
+    _emitOpSizeAndRexForRegRm(src, dst);
     buffer.emit8(0x0F);
     buffer.emit8(0xBB);
     emitModRmReg(src.encoding, dst);
@@ -1576,10 +1576,7 @@ class X86Encoder {
   }
 
   void btcRI(X86Gp dst, int imm) {
-    if (dst.bits != 16 && dst.bits != 32) {
-      throw ArgumentError('btcRI requires 16-bit or 32-bit destination');
-    }
-    if (dst.bits == 16) buffer.emit8(0x66);
+    _emitOpSizeAndRexForReg(dst);
     buffer.emit8(0x0F);
     buffer.emit8(0xBA);
     emitModRmReg(7, dst);
@@ -1595,6 +1592,46 @@ class X86Encoder {
     buffer.emit8(0x0F);
     buffer.emit8(0xBA);
     emitModRmMem(7, dst);
+    buffer.emit8(imm & 0xFF);
+  }
+
+  /// BTR r/m16/32/64, r16/32/64 (bit test and reset)
+  void btrRR(X86Gp dst, X86Gp src) {
+    if (dst.bits != src.bits) {
+      throw ArgumentError('btrRR requires operands of same size');
+    }
+    _emitOpSizeAndRexForRegRm(src, dst);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xB3);
+    emitModRmReg(src.encoding, dst);
+  }
+
+  /// BTR r16/32/64, imm8 (bit test and reset)
+  void btrRI(X86Gp dst, int imm) {
+    _emitOpSizeAndRexForReg(dst);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xBA);
+    emitModRmReg(6, dst);
+    buffer.emit8(imm & 0xFF);
+  }
+
+  /// BTS r/m16/32/64, r16/32/64 (bit test and set)
+  void btsRR(X86Gp dst, X86Gp src) {
+    if (dst.bits != src.bits) {
+      throw ArgumentError('btsRR requires operands of same size');
+    }
+    _emitOpSizeAndRexForRegRm(src, dst);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xAB);
+    emitModRmReg(src.encoding, dst);
+  }
+
+  /// BTS r16/32/64, imm8 (bit test and set)
+  void btsRI(X86Gp dst, int imm) {
+    _emitOpSizeAndRexForReg(dst);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xBA);
+    emitModRmReg(5, dst);
     buffer.emit8(imm & 0xFF);
   }
 
@@ -1637,6 +1674,29 @@ class X86Encoder {
   /// CQO - Sign-extend RAX into RDX:RAX
   void cqo() {
     buffer.emit8(0x48); // REX.W
+    buffer.emit8(0x99);
+  }
+
+  /// CBW - Convert byte to word (AL -> AX)
+  void cbw() {
+    buffer.emit8(0x66);
+    buffer.emit8(0x98);
+  }
+
+  /// CWDE - Convert word to doubleword (AX -> EAX)
+  void cwde() {
+    buffer.emit8(0x98);
+  }
+
+  /// CDQE - Convert doubleword to quadword (EAX -> RAX)
+  void cdqe() {
+    buffer.emit8(0x48); // REX.W
+    buffer.emit8(0x98);
+  }
+
+  /// CWD - Convert word to doubleword (AX -> DX:AX)
+  void cwd() {
+    buffer.emit8(0x66);
     buffer.emit8(0x99);
   }
 
@@ -1793,7 +1853,8 @@ class X86Encoder {
 
     if (size == 1) {
       // ADC r/m8, imm8 => 80 /2 ib
-      emitRexForRegMem(al, dst); // use reg operand only to emit correct REX for mem (if any)
+      emitRexForRegMem(
+          al, dst); // use reg operand only to emit correct REX for mem (if any)
       buffer.emit8(0x80);
       emitModRmMem(2, dst);
       buffer.emit8(imm & 0xFF);

@@ -453,45 +453,45 @@ void main() {
       _testInst('f3480fbcc1', (a) => a.tzcnt(rax, rcx));
     });
 
-    test('adc al, byte ptr [rbx+rcx*2+5]', () {
+    test('adc cl, byte ptr [rbx+rcx*2+5]', () {
       _testInst('12 4C 4B 05', (a) {
-        a.adcRM(al, bytePtrSIB(rbx, rcx, 2, 5));
+        a.adcRM(cl, bytePtrSIB(rbx, rcx, 2, 5));
       });
     });
-    test('adc ax, word ptr [rbx+rcx*2+5]', () {
+    test('adc cx, word ptr [rbx+rcx*2+5]', () {
       _testInst('66 13 4C 4B 05', (a) {
-        a.adcRM(ax, wordPtrSIB(rbx, rcx, 2, 5));
+        a.adcRM(cx, wordPtrSIB(rbx, rcx, 2, 5));
       });
     });
-    test('adc eax, dword ptr [rbx+rcx*2+5]', () {
+    test('adc ecx, dword ptr [rbx+rcx*2+5]', () {
       _testInst('13 4C 4B 05', (a) {
-        a.adcRM(eax, dwordPtrSIB(rbx, rcx, 2, 5));
+        a.adcRM(ecx, dwordPtrSIB(rbx, rcx, 2, 5));
       });
     });
-    test('adc rax, qword ptr [rbx+rcx*2+5]', () {
+    test('adc rcx, qword ptr [rbx+rcx*2+5]', () {
       _testInst('48 13 4C 4B 05', (a) {
-        a.adcRM(rax, qwordPtrSIB(rbx, rcx, 2, 5));
+        a.adcRM(rcx, qwordPtrSIB(rbx, rcx, 2, 5));
       });
     });
 
-    test('sbb al, byte ptr [rbx+rcx*2+5]', () {
+    test('sbb cl, byte ptr [rbx+rcx*2+5]', () {
       _testInst('1A 4C 4B 05', (a) {
-        a.sbbRM(al, bytePtrSIB(rbx, rcx, 2, 5));
+        a.sbbRM(cl, bytePtrSIB(rbx, rcx, 2, 5));
       });
     });
-    test('sbb ax, word ptr [rbx+rcx*2+5]', () {
+    test('sbb cx, word ptr [rbx+rcx*2+5]', () {
       _testInst('66 1B 4C 4B 05', (a) {
-        a.sbbRM(ax, wordPtrSIB(rbx, rcx, 2, 5));
+        a.sbbRM(cx, wordPtrSIB(rbx, rcx, 2, 5));
       });
     });
-    test('sbb eax, dword ptr [rbx+rcx*2+5]', () {
+    test('sbb ecx, dword ptr [rbx+rcx*2+5]', () {
       _testInst('1B 4C 4B 05', (a) {
-        a.sbbRM(eax, dwordPtrSIB(rbx, rcx, 2, 5));
+        a.sbbRM(ecx, dwordPtrSIB(rbx, rcx, 2, 5));
       });
     });
-    test('sbb rax, qword ptr [rbx+rcx*2+5]', () {
+    test('sbb rcx, qword ptr [rbx+rcx*2+5]', () {
       _testInst('48 1B 4C 4B 05', (a) {
-        a.sbbRM(rax, qwordPtrSIB(rbx, rcx, 2, 5));
+        a.sbbRM(rcx, qwordPtrSIB(rbx, rcx, 2, 5));
       });
     });
 
@@ -617,7 +617,9 @@ void main() {
       });
     });
 
-    test('cmp r11, [r8 + r9*8 + 128] (base/index estendidos + scale 8 + disp32)', () {
+    test(
+        'cmp r11, [r8 + r9*8 + 128] (base/index estendidos + scale 8 + disp32)',
+        () {
       _testInst('4f3b9cc880000000', (a) {
         final mem = X86Mem.baseIndexScale(r8, r9, 8, disp: 128, size: 8);
         a.cmpRM(r11, mem);
@@ -671,6 +673,137 @@ void main() {
         // disp32 = 0 - (200 + 6) = -206 = 0xFFFFFF32
         a.je(l);
       });
+    });
+
+    // ==========================================================================
+    // Bit Test Instructions
+    // ==========================================================================
+
+    test('bts ecx, 1', () {
+      // 0F BA E9 01
+      _testInst('0FBAE901', (a) => a.btsRI(ecx, 1));
+    });
+
+    test('bts rcx, 1', () {
+      // REX.W + 0F BA E9 01
+      _testInst('480FBAE901', (a) => a.btsRI(rcx, 1));
+    });
+
+    test('bts ecx, edx', () {
+      // 0F AB D1
+      _testInst('0FABD1', (a) => a.btsRR(ecx, edx));
+    });
+
+    test('bts rcx, rdx', () {
+      // REX.W + 0F AB D1
+      _testInst('480FABD1', (a) => a.btsRR(rcx, rdx));
+    });
+
+    test('bt ecx, 1', () {
+      // 0F BA E1 01
+      _testInst('0FBAE101', (a) => a.btRI(ecx, 1));
+    });
+
+    test('bt rcx, 1', () {
+      // REX.W + 0F BA E1 01
+      _testInst('480FBAE101', (a) => a.btRI(rcx, 1));
+    });
+
+    test('bt ecx, edx', () {
+      // 0F A3 D1
+      _testInst('0FA3D1', (a) => a.btRR(ecx, edx));
+    });
+
+    test('bt rcx, rdx', () {
+      // REX.W + 0F A3 D1
+      _testInst('480FA3D1', (a) => a.btRR(rcx, rdx));
+    });
+
+    test('btc ecx, 1', () {
+      // 0F BA F9 01
+      _testInst('0FBAF901', (a) => a.btcRI(ecx, 1));
+    });
+
+    test('btc rcx, rdx', () {
+      // REX.W + 0F BB D1
+      _testInst('480FBBD1', (a) => a.btcRR(rcx, rdx));
+    });
+
+    // ==========================================================================
+    // Sign Extension Instructions
+    // ==========================================================================
+
+    test('cbw (AL -> AX)', () {
+      // 66 98
+      _testInst('6698', (a) => a.cbw());
+    });
+
+    test('cdqe (EAX -> RAX)', () {
+      // REX.W + 98
+      _testInst('4898', (a) => a.cdqe());
+    });
+
+    test('cdq (EAX -> EDX:EAX)', () {
+      // 99
+      _testInst('99', (a) => a.cdq());
+    });
+
+    test('cqo (RAX -> RDX:RAX)', () {
+      // REX.W + 99
+      _testInst('4899', (a) => a.cqo());
+    });
+
+    // ==========================================================================
+    // Flag Manipulation Instructions
+    // ==========================================================================
+
+    test('clc (clear carry flag)', () {
+      // F8
+      _testInst('F8', (a) => a.clc());
+    });
+
+    test('cld (clear direction flag)', () {
+      // FC
+      _testInst('FC', (a) => a.cld());
+    });
+
+    test('cmc (complement carry flag)', () {
+      // F5
+      _testInst('F5', (a) => a.cmc());
+    });
+
+    test('stc (set carry flag)', () {
+      // F9
+      _testInst('F9', (a) => a.stc());
+    });
+
+    test('std (set direction flag)', () {
+      // FD
+      _testInst('FD', (a) => a.std());
+    });
+
+    // ==========================================================================
+    // Byte Swap Instructions
+    // ==========================================================================
+
+    test('bswap eax', () {
+      // 0F C8
+      _testInst('0FC8', (a) => a.bswap(eax));
+    });
+
+    test('bswap rax', () {
+      // REX.W + 0F C8
+      _testInst('480FC8', (a) => a.bswap(rax));
+    });
+
+    test('bswap r8d', () {
+      // REX.B + 0F C8
+      _testInst('410FC8', (a) => a.bswap(r8d));
+    });
+
+    test('bswap r8', () {
+      // REX.WB + 0F C8
+      _testInst('490FC8', (a) => a.bswap(r8));
     });
   });
 }

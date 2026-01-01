@@ -24,7 +24,6 @@ import 'x86_emit_helper.dart';
 /// Provides a high-level API for emitting x86/x64 instructions.
 /// Handles label binding, relocations, and instruction encoding.
 class X86Assembler extends BaseEmitter {
-
   /// The internal code buffer.
   late final CodeBuffer _buf;
 
@@ -830,6 +829,18 @@ class X86Assembler extends BaseEmitter {
   /// BTC [mem], reg.
   void btcMR(X86Mem mem, X86Gp src) => _enc.btcMR(mem, src);
 
+  /// BTR reg, imm.
+  void btrRI(X86Gp dst, int imm) => _enc.btrRI(dst, imm);
+
+  /// BTR reg, reg.
+  void btrRR(X86Gp dst, X86Gp src) => _enc.btrRR(dst, src);
+
+  /// BTS reg, imm.
+  void btsRI(X86Gp dst, int imm) => _enc.btsRI(dst, imm);
+
+  /// BTS reg, reg.
+  void btsRR(X86Gp dst, X86Gp src) => _enc.btsRR(dst, src);
+
   /// POPCNT dst, src (population count).
   void popcnt(X86Gp dst, X86Gp src) {
     _enc.popcntR64R64(dst, src);
@@ -854,6 +865,18 @@ class X86Assembler extends BaseEmitter {
 
   /// CQO - Sign-extend RAX into RDX:RAX
   void cqo() => _enc.cqo();
+
+  /// CBW - Convert byte to word (AL -> AX)
+  void cbw() => _enc.cbw();
+
+  /// CWDE - Convert word to doubleword (AX -> EAX)
+  void cwde() => _enc.cwde();
+
+  /// CDQE - Convert doubleword to quadword (EAX -> RAX)
+  void cdqe() => _enc.cdqe();
+
+  /// CWD - Convert word to doubleword (AX -> DX:AX)
+  void cwd() => _enc.cwd();
 
   /// IDIV reg - Signed divide RDX:RAX by reg
   /// Result: quotient in RAX, remainder in RDX
@@ -1774,7 +1797,6 @@ class X86Assembler extends BaseEmitter {
       _enc.vpmulldXmmXmmMem(dst, src1, mem);
   void vpmulldYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
       _enc.vpmulldYmmYmmMem(dst, src1, mem);
-
 }
 
 extension FuncFrameX86Extensions on FuncFrame {
