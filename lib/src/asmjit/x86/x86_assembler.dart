@@ -1785,6 +1785,33 @@ class X86Assembler extends BaseEmitter {
       _enc.vgatherqpdYmm(dst, mem, mask);
 
   // ===========================================================================
+  // AVX-512 - Mask Instructions
+  // ===========================================================================
+
+  /// KMOVW k, k
+  void kmovwKK(X86KReg dst, X86KReg src) => _enc.kmovwKK(dst, src);
+
+  // ===========================================================================
+  // AVX-512 - Packed arithmetic
+  // ===========================================================================
+
+  /// VPADDD zmm, zmm, zmm
+  void vpadddZmmZmmZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
+      _enc.vpadddZmmZmmZmm(dst, src1, src2);
+
+  /// VPADDD zmm, zmm, zmm {k}
+  void vpadddZmmZmmZmmK(X86Zmm dst, X86Zmm src1, X86Zmm src2, X86KReg k) =>
+      _enc.vpadddZmmZmmZmmK(dst, src1, src2, k);
+
+  /// VPADDD zmm, zmm, zmm {k}{z}
+  void vpadddZmmZmmZmmKz(X86Zmm dst, X86Zmm src1, X86Zmm src2, X86KReg k) =>
+      _enc.vpadddZmmZmmZmmKz(dst, src1, src2, k);
+
+  /// VPTERNLOGD zmm, zmm, zmm, imm8
+  void vpternlogdZmmZmmZmmI(X86Zmm dst, X86Zmm src1, X86Zmm src2, int imm8) =>
+      _enc.vpternlogdZmmZmmZmmImm8(dst, src1, src2, imm8);
+
+  // ===========================================================================
   // AVX - Packed arithmetic 128-bit (VEX-encoded)
   // ===========================================================================
 

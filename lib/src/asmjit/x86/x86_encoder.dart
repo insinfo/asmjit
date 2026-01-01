@@ -4401,10 +4401,20 @@ class X86Encoder {
     buffer.emit8(0x77);
   }
 
-  /// VZEROALL (VEX.256.0F 77) - zero all YMM regs
   void vzeroall() {
     _emitVex2(false, 0, true, _vexPpNone);
     buffer.emit8(0x77);
+  }
+
+  // ===========================================================================
+  // AVX-512 - Mask Instructions
+  // ===========================================================================
+
+  /// KMOVW k, k (VEX.L0.0F.W0 90 /r)
+  void kmovwKK(X86KReg dst, X86KReg src) {
+    _emitVex2(dst.isExtended, 0, false, _vexPpNone);
+    buffer.emit8(0x90);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
   }
 
   // ===========================================================================
@@ -4433,6 +4443,33 @@ class X86Encoder {
     } else {
       _emitVex2(dst.isExtended, src1.id, true, _vexPp66);
     }
+    buffer.emit8(0xFE);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+  }
+
+  /// VPADDD zmm, zmm, zmm (EVEX.512.66.0F.W0 FE /r)
+  void vpadddZmmZmmZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) {
+    _emitEvex(_vexPp66, _vexMmmmm0F, 0,
+        reg: dst,
+        vvvv: src1,
+        rmReg: src2,
+        vectorLen: 2); // vectorLen 2 = 512-bit
+    buffer.emit8(0xFE);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+  }
+
+  /// VPADDD zmm, zmm, zmm {k}
+  void vpadddZmmZmmZmmK(X86Zmm dst, X86Zmm src1, X86Zmm src2, X86KReg k) {
+    _emitEvex(_vexPp66, _vexMmmmm0F, 0,
+        reg: dst, vvvv: src1, rmReg: src2, k: k, vectorLen: 2);
+    buffer.emit8(0xFE);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+  }
+
+  /// VPADDD zmm, zmm, zmm {k}{z}
+  void vpadddZmmZmmZmmKz(X86Zmm dst, X86Zmm src1, X86Zmm src2, X86KReg k) {
+    _emitEvex(_vexPp66, _vexMmmmm0F, 0,
+        reg: dst, vvvv: src1, rmReg: src2, k: k, z: true, vectorLen: 2);
     buffer.emit8(0xFE);
     buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
   }
@@ -4469,6 +4506,19 @@ class X86Encoder {
         src1.id, false, _vexPp66);
     buffer.emit8(0x40);
     buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+  }
+
+  // ===========================================================================
+  // AVX-512 - Ternary Logic
+  // ===========================================================================
+
+  /// VPTERNLOGD zmm, zmm, zmm, imm8 (EVEX.512.66.0F3A.W0 25 /r ib)
+  void vpternlogdZmmZmmZmmImm8(X86Zmm dst, X86Zmm src1, X86Zmm src2, int imm8) {
+    _emitEvex(_vexPp66, _vexMmmmm0F3A, 0,
+        reg: dst, vvvv: src1, rmReg: src2, vectorLen: 2);
+    buffer.emit8(0x25);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+    buffer.emit8(imm8 & 0xFF);
   }
 
   // ===========================================================================
