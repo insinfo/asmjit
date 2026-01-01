@@ -2,7 +2,7 @@
 ///
 /// Low-level x86/x64 instruction encoding.
 /// Ported from asmjit/x86/x86assembler.cpp (encoding parts)
-
+/// C:\MyDartProjects\asmjit\referencias\asmjit-master\asmjit\x86\x86assembler.cpp
 import '../core/code_buffer.dart';
 import '../core/error.dart';
 import '../core/operand.dart';
@@ -28,7 +28,11 @@ class X86Encoder {
   X86Encoder(this.buffer);
 
   X86Gp? _memBase(X86Mem mem) => _asGp(mem.base, 'base');
-  X86Gp? _memIndex(X86Mem mem) => _asGp(mem.index, 'index');
+  BaseReg? _memIndex(X86Mem mem) => mem.index;
+
+  int _encoding(BaseReg r) => r.id & 0x7;
+  bool _isExtended(BaseReg r) => r.id >= 8;
+  bool _isExt(BaseReg? r) => r != null && r.id >= 8;
 
   X86Gp? _asGp(BaseReg? reg, String role) {
     if (reg == null) return null;
@@ -199,7 +203,7 @@ class X86Encoder {
     final base = _memBase(mem);
     final index = _memIndex(mem);
     final baseExt = base?.isExtended ?? false;
-    final indexExt = index?.isExtended ?? false;
+    final indexExt = index != null ? _isExtended(index) : false;
     final needsRex = w || reg.needsRex || baseExt || indexExt;
     if (!needsRex) return;
     if (reg.isHighByte) {
@@ -274,6 +278,17 @@ class X86Encoder {
     final index = _memIndex(mem);
     final disp = mem.displacement;
 
+    // Check if index is a vector register (for VSIB)
+    final isVsib = _isVecReg(index);
+    if (isVsib) {
+      // VSIB addressing
+      // ModRM byte: mod=mod, reg=regOp, rm=4 (SIB present)
+      // SIB byte: scale=scale, index=index.id, base=base.encoding (or 5 if none/rbp special)
+      // Note: VSIB requires AVX2/AVX512.
+      // Index is the vector register id.
+      // Base is the Gp register.
+    }
+
     // Special case: no base or index (absolute address)
     if (base == null && index == null) {
       // [disp32] - use SIB form with no base/index
@@ -313,7 +328,12 @@ class X86Encoder {
       emitModRm(mod, regOp, 4); // r/m = 4 means SIB follows
 
       final baseEnc = base?.encoding ?? 5; // 5 = no base (disp32)
-      final indexEnc = index?.encoding ?? 4; // 4 = no index
+      int indexEnc;
+      if (isVsib) {
+        indexEnc = _encoding(index!); // Vector register ID
+      } else {
+        indexEnc = index != null ? _encoding(index) : 4;
+      }
       final scaleEnc = index != null ? encodeScale(mem.scale) : 0;
 
       emitSib(scaleEnc, indexEnc, baseEnc);
@@ -2191,8 +2211,8 @@ class X86Encoder {
   void movapsXmmMem(X86Xmm dst, X86Mem mem) {
     if (dst.isExtended ||
         _memBase(mem)?.isExtended == true ||
-        _memIndex(mem)?.isExtended == true) {
-      emitRex(false, dst.isExtended, _memIndex(mem)?.isExtended ?? false,
+        _isExt(_memIndex(mem))) {
+      emitRex(false, dst.isExtended, _isExt(_memIndex(mem)),
           _memBase(mem)?.isExtended ?? false);
     }
     buffer.emit8(0x0F);
@@ -2204,8 +2224,8 @@ class X86Encoder {
   void movapsMemXmm(X86Mem mem, X86Xmm src) {
     if (src.isExtended ||
         _memBase(mem)?.isExtended == true ||
-        _memIndex(mem)?.isExtended == true) {
-      emitRex(false, src.isExtended, _memIndex(mem)?.isExtended ?? false,
+        _isExt(_memIndex(mem))) {
+      emitRex(false, src.isExtended, _isExt(_memIndex(mem)),
           _memBase(mem)?.isExtended ?? false);
     }
     buffer.emit8(0x0F);
@@ -3357,15 +3377,16 @@ class X86Encoder {
       dstIsExtended = dst.isExtended;
     else if (dst is X86Ymm) dstIsExtended = dst.isExtended;
 
-    final needsVex3 = dstIsExtended ||
-        (_memBase(mem)?.isExtended ?? false) ||
-        (_memIndex(mem)?.isExtended ?? false) ||
-        w ||
-        mmmmm != _vexMmmmm0F;
+    final index = _memIndex(mem);
+    final indexExt = index != null ? _isExtended(index) : false;
+    final base = _memBase(mem);
+    final baseExt = base?.isExtended ?? false;
+
+    final needsVex3 =
+        dstIsExtended || baseExt || indexExt || w || mmmmm != _vexMmmmm0F;
 
     if (needsVex3) {
-      _emitVex3(dstIsExtended, _memIndex(mem)?.isExtended ?? false,
-          _memBase(mem)?.isExtended ?? false, mmmmm, w, src1.id, l, pp);
+      _emitVex3(dstIsExtended, indexExt, baseExt, mmmmm, w, src1.id, l, pp);
     } else {
       _emitVex2(dstIsExtended, src1.id, l, pp);
     }
@@ -4565,6 +4586,74 @@ class X86Encoder {
   }
 
   // ===========================================================================
+  // AVX2 - Gather Instructions
+  // ===========================================================================
+
+  /// VGATHERDPS xmm, [mem], xmm (VEX.128.66.0F38.W0 92 /r)
+  void vgatherdpsXmm(X86Xmm dst, X86Mem mem, X86Xmm mask) {
+    _emitVexForXmmXmmMem(dst, mask, mem, _vexPp66, _vexMmmmm0F38,
+        l: false, w: false);
+    buffer.emit8(0x92);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VGATHERDPS ymm, [mem], ymm (VEX.256.66.0F38.W0 92 /r)
+  void vgatherdpsYmm(X86Ymm dst, X86Mem mem, X86Ymm mask) {
+    _emitVexForXmmXmmMem(dst, mask, mem, _vexPp66, _vexMmmmm0F38,
+        l: true, w: false);
+    buffer.emit8(0x92);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VGATHERDPD xmm, [mem], xmm (VEX.128.66.0F38.W1 92 /r)
+  void vgatherdpdXmm(X86Xmm dst, X86Mem mem, X86Xmm mask) {
+    _emitVexForXmmXmmMem(dst, mask, mem, _vexPp66, _vexMmmmm0F38,
+        l: false, w: true);
+    buffer.emit8(0x92);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VGATHERDPD ymm, [mem], ymm (VEX.256.66.0F38.W1 92 /r)
+  void vgatherdpdYmm(X86Ymm dst, X86Mem mem, X86Ymm mask) {
+    _emitVexForXmmXmmMem(dst, mask, mem, _vexPp66, _vexMmmmm0F38,
+        l: true, w: true);
+    buffer.emit8(0x92);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VGATHERQPS xmm, [mem], xmm (VEX.128.66.0F38.W0 93 /r)
+  void vgatherqpsXmm(X86Xmm dst, X86Mem mem, X86Xmm mask) {
+    _emitVexForXmmXmmMem(dst, mask, mem, _vexPp66, _vexMmmmm0F38,
+        l: false, w: false);
+    buffer.emit8(0x93);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VGATHERQPS ymm, [mem], ymm (VEX.256.66.0F38.W0 93 /r)
+  void vgatherqpsYmm(X86Ymm dst, X86Mem mem, X86Ymm mask) {
+    _emitVexForXmmXmmMem(dst, mask, mem, _vexPp66, _vexMmmmm0F38,
+        l: true, w: false);
+    buffer.emit8(0x93);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VGATHERQPD xmm, [mem], xmm (VEX.128.66.0F38.W1 93 /r)
+  void vgatherqpdXmm(X86Xmm dst, X86Mem mem, X86Xmm mask) {
+    _emitVexForXmmXmmMem(dst, mask, mem, _vexPp66, _vexMmmmm0F38,
+        l: false, w: true);
+    buffer.emit8(0x93);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VGATHERQPD ymm, [mem], ymm (VEX.256.66.0F38.W1 93 /r)
+  void vgatherqpdYmm(X86Ymm dst, X86Mem mem, X86Ymm mask) {
+    _emitVexForXmmXmmMem(dst, mask, mem, _vexPp66, _vexMmmmm0F38,
+        l: true, w: true);
+    buffer.emit8(0x93);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  // ===========================================================================
   // AVX - Math (SQRT, MIN, MAX)
   // ===========================================================================
 
@@ -4851,6 +4940,175 @@ class X86Encoder {
     buffer.emit8(0xC6);
     buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
     buffer.emit8(imm8 & 0xFF);
+  }
+
+  /// VSHUFPD xmm, xmm, xmm, imm8 (VEX.128.66.0F C6)
+  /// Note: VSHUFPD uses 0F encoding with 66 suffix, unlike VSHUFPS (0F? or 0F3A? wait)
+  /// SSE: SHUFPS (0F C6), SHUFPD (66 0F C6).
+  /// AVX VSHUFPS: VEX.128.0F.WIG C6 /r (source: Intel SDM) -> Map 1 (0F), pp=00?
+  /// Wait. Original code used mmmmm=0F3A for vshufps. Is that correct?
+  /// Intel SDM Vol 2B:
+  /// VSHUFPS xmm1, xmm2, xmm3/m128, imm8 -> VEX.NDS.128.0F.WIG C6 /r ib
+  /// Map is 0F (01).
+  /// VSHUFPD xmm1, xmm2, xmm3/m128, imm8 -> VEX.NDS.128.66.0F.WIG C6 /r ib
+  /// Map is 0F (01). pp=01 (66).
+  ///
+  /// The existing vshufps implementation used 0F3A which might be wrong?
+  /// Let's check 0F3A map.
+  /// 0F3A C6 is VINSERTF128 (yours?). No.
+  /// Intel SDM: VSHUFPS opcode is 0F C6.
+  /// VSHUFPD opcode is 66 0F C6.
+  /// So current vshufps using _vexMmmmm0F3A is likely wrong if opcode is C6.
+  /// 0F3A C6 is "VINSERTF128"? No.
+  /// Let's check opcode C6 in 0F3A.
+  /// 0F 3A C6 => VSHUFPS? No.
+  /// VPERM2F128 is 0F 3A 06.
+  /// I will correct vshufps map to 0F and implement vshufpd with 0F.
+
+  /// VSHUFPS xmm, xmm, xmm, imm8 (VEX.128.0F C6)
+  void vshufpsXmmXmmXmmImm8Corrected(
+      X86Xmm dst, X86Xmm src1, X86Xmm src2, int imm8) {
+    bool needsVex3 = dst.isExtended || src2.isExtended;
+    if (needsVex3) {
+      _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F, false,
+          src1.id, false, _vexPpNone);
+    } else {
+      _emitVex2(dst.isExtended, src1.id, false, _vexPpNone);
+    }
+    buffer.emit8(0xC6);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+    buffer.emit8(imm8 & 0xFF);
+  }
+
+  /// VSHUFPD xmm, xmm, xmm, imm8 (VEX.128.66.0F C6)
+  void vshufpdXmmXmmXmmImm8(X86Xmm dst, X86Xmm src1, X86Xmm src2, int imm8) {
+    _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F, false,
+        src1.id, false, _vexPp66);
+    buffer.emit8(0xC6);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+    buffer.emit8(imm8 & 0xFF);
+  }
+
+  // ===========================================================================
+  // AVX/AVX2 - Permute Instructions
+  // ===========================================================================
+
+  /// VPERMILPS xmm, xmm, imm8 (VEX.128.66.0F3A 04 /r ib)
+  void vpermilpsXmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
+    _emitVex3(dst.isExtended, false, src.isExtended, _vexMmmmm0F3A, false, 0,
+        false, _vexPp66);
+    buffer.emit8(0x04);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+    buffer.emit8(imm8 & 0xFF);
+  }
+
+  /// VPERMILPD xmm, xmm, imm8 (VEX.128.66.0F3A 05 /r ib)
+  void vpermilpdXmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
+    _emitVex3(dst.isExtended, false, src.isExtended, _vexMmmmm0F3A, false, 0,
+        false, _vexPp66);
+    buffer.emit8(0x05);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+    buffer.emit8(imm8 & 0xFF);
+  }
+
+  /// VPERMD ymm, ymm, ymm (VEX.256.66.0F38 36 /r) (AVX2)
+  void vpermdYmmYmmYmm(X86Ymm dst, X86Ymm idx, X86Ymm src) {
+    _emitVex3(dst.isExtended, false, src.isExtended, _vexMmmmm0F38, false,
+        idx.id, true, _vexPp66);
+    buffer.emit8(0x36);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// VPERMQ ymm, ymm, imm8 (VEX.256.66.0F3A 00 /r ib) (AVX2)
+  void vpermqYmmYmmImm8(X86Ymm dst, X86Ymm src, int imm8) {
+    _emitVex3(dst.isExtended, false, src.isExtended, _vexMmmmm0F3A, true, 0,
+        true, _vexPp66);
+    buffer.emit8(0x00);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+    buffer.emit8(imm8 & 0xFF);
+  }
+
+  /// VPERM2F128 ymm, ymm, ymm, imm8 (VEX.256.66.0F3A 06 /r ib)
+  void vperm2f128YmmYmmYmmImm8(X86Ymm dst, X86Ymm src1, X86Ymm src2, int imm8) {
+    _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F3A, false,
+        src1.id, true, _vexPp66);
+    buffer.emit8(0x06);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+    buffer.emit8(imm8 & 0xFF);
+  }
+
+  /// VPERM2I128 ymm, ymm, ymm, imm8 (VEX.256.66.0F3A 46 /r ib) (AVX2)
+  void vperm2i128YmmYmmYmmImm8(X86Ymm dst, X86Ymm src1, X86Ymm src2, int imm8) {
+    _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F3A, false,
+        src1.id, true, _vexPp66);
+    buffer.emit8(0x46);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+    buffer.emit8(imm8 & 0xFF);
+  }
+
+  // ===========================================================================
+  // AVX - Insert/Extract
+  // ===========================================================================
+
+  /// VINSERTF128 ymm, ymm, xmm, imm8 (VEX.256.66.0F3A 18 /r ib)
+  void vinsertf128YmmYmmXmmImm8(
+      X86Ymm dst, X86Ymm src1, X86Xmm src2, int imm8) {
+    _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F3A, false,
+        src1.id, true, _vexPp66);
+    buffer.emit8(0x18);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+    buffer.emit8(imm8 & 0xFF);
+  }
+
+  /// VEXTRACTF128 xmm, ymm, imm8 (VEX.256.66.0F3A 19 /r ib)
+  void vextractf128XmmYmmImm8(X86Xmm dst, X86Ymm src, int imm8) {
+    _emitVex3(dst.isExtended, false, src.isExtended, _vexMmmmm0F3A, false, 0,
+        true, _vexPp66);
+    buffer.emit8(0x19);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+    buffer.emit8(imm8 & 0xFF);
+  }
+
+  /// VINSERTI128 ymm, ymm, xmm, imm8 (VEX.256.66.0F3A 38 /r ib) (AVX2)
+  void vinserti128YmmYmmXmmImm8(
+      X86Ymm dst, X86Ymm src1, X86Xmm src2, int imm8) {
+    _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F3A, false,
+        src1.id, true, _vexPp66);
+    buffer.emit8(0x38);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+    buffer.emit8(imm8 & 0xFF);
+  }
+
+  /// VEXTRACTI128 xmm, ymm, imm8 (VEX.256.66.0F3A 39 /r ib) (AVX2)
+  void vextracti128XmmYmmImm8(X86Xmm dst, X86Ymm src, int imm8) {
+    _emitVex3(dst.isExtended, false, src.isExtended, _vexMmmmm0F3A, false, 0,
+        true, _vexPp66);
+    buffer.emit8(0x39);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+    buffer.emit8(imm8 & 0xFF);
+  }
+
+  // ===========================================================================
+  // AVX - Masked Move
+  // ===========================================================================
+
+  /// VPMASKMOVD xmm, xmm, mem (VEX.128.66.0F38 8C /r)
+  /// dst=dest, src=mask (in register, vvvv), mem=source (in ModRM)
+  /// wait, instruction VPMASKMOVD/Q (Load) -> dst=reg, mask=reg, src=mem
+  void vpmaskmovdLoadXmmXmmMem(X86Xmm dst, X86Xmm mask, X86Mem mem) {
+    _emitVex3(dst.isExtended, false, false, _vexMmmmm0F38, false, mask.id,
+        false, _vexPp66);
+    buffer.emit8(0x8C);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VPMASKMOVD mem, xmm, xmm (VEX.128.66.0F38 8E /r)
+  /// dst=mem, mask=reg(vvvv), src=reg(ModRM)
+  void vpmaskmovdStoreMemXmmXmm(X86Mem mem, X86Xmm mask, X86Xmm src) {
+    _emitVex3(src.isExtended, false, false, _vexMmmmm0F38, false, mask.id,
+        false, _vexPp66);
+    buffer.emit8(0x8E);
+    emitModRmMem(src.encoding, mem);
   }
 
   /// VPSLLD xmm, xmm, imm8 (VEX.128.66.0F 72 /6 ib) - shift left dwords
@@ -5178,7 +5436,7 @@ class X86Encoder {
   /// MOV [mem], imm32 - Move immediate to memory (64-bit mode writes 32-bit)
   void movMemImm32(X86Mem mem, int imm32) {
     final baseExt = _memBase(mem)?.isExtended ?? false;
-    final indexExt = _memIndex(mem)?.isExtended ?? false;
+    final indexExt = _isExt(_memIndex(mem));
     if (baseExt || indexExt) {
       emitRex(true, false, indexExt, baseExt);
     } else {
@@ -5192,7 +5450,7 @@ class X86Encoder {
   /// ADD [mem], imm32 - Add immediate to memory
   void addMemImm32(X86Mem mem, int imm32) {
     final baseExt = _memBase(mem)?.isExtended ?? false;
-    final indexExt = _memIndex(mem)?.isExtended ?? false;
+    final indexExt = _isExt(_memIndex(mem));
     if (baseExt || indexExt) {
       emitRex(true, false, indexExt, baseExt);
     } else {
@@ -5206,7 +5464,7 @@ class X86Encoder {
   /// CMP [mem], imm32 - Compare memory with immediate
   void cmpMemImm32(X86Mem mem, int imm32) {
     final baseExt = _memBase(mem)?.isExtended ?? false;
-    final indexExt = _memIndex(mem)?.isExtended ?? false;
+    final indexExt = _isExt(_memIndex(mem));
     if (baseExt || indexExt) {
       emitRex(true, false, indexExt, baseExt);
     } else {
@@ -6748,7 +7006,7 @@ class X86Encoder {
     // Logic from _emitRexForXmmMem + W=1
     bool regExt = dst.isExtended;
     final baseExt = _memBase(src)?.isExtended ?? false;
-    final indexExt = _memIndex(src)?.isExtended ?? false;
+    final indexExt = _isExt(_memIndex(src));
     // pinsrq MEM requires REX.W=1
     emitRex(true, regExt, indexExt, baseExt);
 
@@ -6819,7 +7077,7 @@ class X86Encoder {
     // Manual REX.W=1 for mem extension
     bool regExt = src.isExtended;
     final baseExt = _memBase(dst)?.isExtended ?? false;
-    final indexExt = _memIndex(dst)?.isExtended ?? false;
+    final indexExt = _isExt(_memIndex(dst));
     emitRex(true, regExt, indexExt, baseExt);
 
     buffer.emit8(0x0F);
@@ -7009,7 +7267,7 @@ class X86Encoder {
     else if (reg is X86Zmm) regExt = reg.isExtended;
 
     final baseExt = _memBase(mem)?.isExtended ?? false;
-    final indexExt = _memIndex(mem)?.isExtended ?? false;
+    final indexExt = _isExt(_memIndex(mem));
     if (regExt || baseExt || indexExt) {
       emitRex(false, regExt, indexExt, baseExt);
     }

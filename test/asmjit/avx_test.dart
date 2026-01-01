@@ -54,4 +54,48 @@ void main() {
           0xC1,
         ]));
   });
+
+  test('AVX Shuffle/Permute/Insert/Extract', () {
+    final code = CodeHolder();
+    final asm = X86Assembler(code);
+
+    // VSHUFPS xmm0, xmm1, xmm2, 0x1B
+    // VEX.128.0F.WIG C6 /r ib
+    // C5 F0 C6 C2 1B
+    asm.vshufpsXXXI(xmm0, xmm1, xmm2, 0x1B);
+
+    // VPERMILPS xmm0, xmm1, 0x1B
+    // VEX.128.66.0F3A 04 /r ib
+    // C4 E3 79 04 C1 1B
+    asm.vpermilpsXXI(xmm0, xmm1, 0x1B);
+
+    // VINSERTF128 ymm0, ymm1, xmm2, 0x01
+    // VEX.256.66.0F3A 18 /r ib
+    // C4 E3 7D 18 C2 01
+    asm.vinsertf128YYXI(ymm0, ymm1, xmm2, 0x01);
+
+    final finalBytes = code.finalize().textBytes;
+
+    expect(
+        finalBytes,
+        equals([
+          0xC5,
+          0xF0,
+          0xC6,
+          0xC2,
+          0x1B,
+          0xC4,
+          0xE3,
+          0x79,
+          0x04,
+          0xC1,
+          0x1B,
+          0xC4,
+          0xE3,
+          0x75,
+          0x18,
+          0xC2,
+          0x01,
+        ]));
+  });
 }

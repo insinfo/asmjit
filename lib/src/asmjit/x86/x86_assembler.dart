@@ -1680,6 +1680,111 @@ class X86Assembler extends BaseEmitter {
       _enc.vmaxsdXmmXmmMem(dst, src1, mem);
 
   // ===========================================================================
+  // AVX - Shuffle / Permute
+  // ===========================================================================
+
+  /// VSHUFPS xmm, xmm, xmm, imm8
+  void vshufpsXXXI(X86Xmm dst, X86Xmm src1, X86Xmm src2, int imm8) =>
+      _enc.vshufpsXmmXmmXmmImm8Corrected(dst, src1, src2, imm8);
+
+  /// VSHUFPD xmm, xmm, xmm, imm8
+  void vshufpdXXXI(X86Xmm dst, X86Xmm src1, X86Xmm src2, int imm8) =>
+      _enc.vshufpdXmmXmmXmmImm8(dst, src1, src2, imm8);
+
+  /// VPERMILPS xmm, xmm, imm8
+  void vpermilpsXXI(X86Xmm dst, X86Xmm src, int imm8) =>
+      _enc.vpermilpsXmmXmmImm8(dst, src, imm8);
+
+  /// VPERMILPD xmm, xmm, imm8
+  void vpermilpdXXI(X86Xmm dst, X86Xmm src, int imm8) =>
+      _enc.vpermilpdXmmXmmImm8(dst, src, imm8);
+
+  /// VPERMD ymm, ymm, ymm (AVX2)
+  void vpermdYYY(X86Ymm dst, X86Ymm idx, X86Ymm src) =>
+      _enc.vpermdYmmYmmYmm(dst, idx, src);
+
+  /// VPERMQ ymm, ymm, imm8 (AVX2)
+  void vpermqYYI(X86Ymm dst, X86Ymm src, int imm8) =>
+      _enc.vpermqYmmYmmImm8(dst, src, imm8);
+
+  /// VPERM2F128 ymm, ymm, ymm, imm8
+  void vperm2f128YYYI(X86Ymm dst, X86Ymm src1, X86Ymm src2, int imm8) =>
+      _enc.vperm2f128YmmYmmYmmImm8(dst, src1, src2, imm8);
+
+  /// VPERM2I128 ymm, ymm, ymm, imm8 (AVX2)
+  void vperm2i128YYYI(X86Ymm dst, X86Ymm src1, X86Ymm src2, int imm8) =>
+      _enc.vperm2i128YmmYmmYmmImm8(dst, src1, src2, imm8);
+
+  // ===========================================================================
+  // AVX - Insert/Extract
+  // ===========================================================================
+
+  /// VINSERTF128 ymm, ymm, xmm, imm8
+  void vinsertf128YYXI(X86Ymm dst, X86Ymm src1, X86Xmm src2, int imm8) =>
+      _enc.vinsertf128YmmYmmXmmImm8(dst, src1, src2, imm8);
+
+  /// VEXTRACTF128 xmm, ymm, imm8
+  void vextractf128XYI(X86Xmm dst, X86Ymm src, int imm8) =>
+      _enc.vextractf128XmmYmmImm8(dst, src, imm8);
+
+  /// VINSERTI128 ymm, ymm, xmm, imm8 (AVX2)
+  void vinserti128YYXI(X86Ymm dst, X86Ymm src1, X86Xmm src2, int imm8) =>
+      _enc.vinserti128YmmYmmXmmImm8(dst, src1, src2, imm8);
+
+  /// VEXTRACTI128 xmm, ymm, imm8
+  void vextracti128XYI(X86Xmm dst, X86Ymm src, int imm8) =>
+      _enc.vextracti128XmmYmmImm8(dst, src, imm8);
+
+  // ===========================================================================
+  // AVX - Masked Move
+  // ===========================================================================
+
+  /// VPMASKMOVD xmm, xmm, mem (Load)
+  void vpmaskmovdLoadXXM(X86Xmm dst, X86Xmm mask, X86Mem mem) =>
+      _enc.vpmaskmovdLoadXmmXmmMem(dst, mask, mem);
+
+  /// VPMASKMOVD mem, xmm, xmm (Store)
+  // Note: Arguments are mem, mask, src (to match encoder logic)
+  void vpmaskmovdStoreMXX(X86Mem mem, X86Xmm mask, X86Xmm src) =>
+      _enc.vpmaskmovdStoreMemXmmXmm(mem, mask, src);
+
+  // ===========================================================================
+  // AVX2 - Gather Instructions
+  // ===========================================================================
+
+  /// VGATHERDPS xmm, [mem], xmm
+  void vgatherdpsXMX(X86Xmm dst, X86Mem mem, X86Xmm mask) =>
+      _enc.vgatherdpsXmm(dst, mem, mask);
+
+  /// VGATHERDPS ymm, [mem], ymm
+  void vgatherdpsYMY(X86Ymm dst, X86Mem mem, X86Ymm mask) =>
+      _enc.vgatherdpsYmm(dst, mem, mask);
+
+  /// VGATHERDPD xmm, [mem], xmm
+  void vgatherdpdXMX(X86Xmm dst, X86Mem mem, X86Xmm mask) =>
+      _enc.vgatherdpdXmm(dst, mem, mask);
+
+  /// VGATHERDPD ymm, [mem], ymm
+  void vgatherdpdYMY(X86Ymm dst, X86Mem mem, X86Ymm mask) =>
+      _enc.vgatherdpdYmm(dst, mem, mask);
+
+  /// VGATHERQPS xmm, [mem], xmm
+  void vgatherqpsXMX(X86Xmm dst, X86Mem mem, X86Xmm mask) =>
+      _enc.vgatherqpsXmm(dst, mem, mask);
+
+  /// VGATHERQPS ymm, [mem], ymm
+  void vgatherqpsYMY(X86Ymm dst, X86Mem mem, X86Ymm mask) =>
+      _enc.vgatherqpsYmm(dst, mem, mask);
+
+  /// VGATHERQPD xmm, [mem], xmm
+  void vgatherqpdXMX(X86Xmm dst, X86Mem mem, X86Xmm mask) =>
+      _enc.vgatherqpdXmm(dst, mem, mask);
+
+  /// VGATHERQPD ymm, [mem], ymm
+  void vgatherqpdYMY(X86Ymm dst, X86Mem mem, X86Ymm mask) =>
+      _enc.vgatherqpdYmm(dst, mem, mask);
+
+  // ===========================================================================
   // AVX - Packed arithmetic 128-bit (VEX-encoded)
   // ===========================================================================
 

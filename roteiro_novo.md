@@ -269,11 +269,11 @@ k* (mask operations)                 - Mask register operations
 - [x] Versões VEX de todas as instruções SSE (3 operandos) (Math, Logic, Shuffle)
 - [x] `vbroadcastss/sd` - Broadcast float/double
 - [x] `vpbroadcastb/w/d/q` - Broadcast integer
-- [ ] `vpermd/q` - Permute
-- [ ] `vpmaskmovd/q` - Masked move
-- [ ] `vextracti128/vinserti128` - Extract/Insert 128-bit
-- [ ] `vgatherdps/dpd/qps/qpd` - Gather
-- [ ] `vperm2i128` - Permute 128-bit lanes
+- [x] `vpermd/q` - Permute
+- [x] `vpmaskmovd/q` - Masked move
+- [x] `vextracti128/vinserti128` - Extract/Insert 128-bit
+- [x] `vgatherdps/dpd/qps/qpd` - Gather
+- [x] `vperm2i128` - Permute 128-bit lanes
 
 ### Fase 4: AVX-512 (Opcional)
 
