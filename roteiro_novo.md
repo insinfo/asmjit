@@ -2,6 +2,8 @@
 
 **Última Atualização**: 2026-01-01
 continue lendo o codigo fonte c++ C:\MyDartProjects\asmjit\referencias\asmjit-master e portando
+
+foco em 64 bits 
 ## 📊 Status Atual
 
 | Componente | Status | Testes |
@@ -264,9 +266,9 @@ k* (mask operations)                 - Mask register operations
 
 ### Fase 3: AVX/AVX2
 
-- [ ] Versões VEX de todas as instruções SSE (3 operandos)
-- [ ] `vbroadcastss/sd/ss/i128` - Broadcast
-- [ ] `vpbroadcastb/w/d/q` - Broadcast integer
+- [x] Versões VEX de todas as instruções SSE (3 operandos) (Math, Logic, Shuffle)
+- [x] `vbroadcastss/sd` - Broadcast float/double
+- [x] `vpbroadcastb/w/d/q` - Broadcast integer
 - [ ] `vpermd/q` - Permute
 - [ ] `vpmaskmovd/q` - Masked move
 - [ ] `vextracti128/vinserti128` - Extract/Insert 128-bit

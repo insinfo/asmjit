@@ -3475,6 +3475,49 @@ class X86Encoder {
     buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
   }
 
+  /// VMOVD xmm, r32 (VEX.128.66.0F.W0 6E /r)
+  void vmovdXmmR32(X86Xmm dst, X86Gp src) {
+    final needsVex3 = src.isExtended;
+    if (needsVex3) {
+      _emitVex3(dst.isExtended, false, src.isExtended, _vexMmmmm0F, false, 0,
+          false, _vexPp66);
+    } else {
+      _emitVex2(dst.isExtended, 0, false, _vexPp66);
+    }
+    buffer.emit8(0x6E);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// VMOVD r32, xmm (VEX.128.66.0F.W0 7E /r)
+  void vmovdR32Xmm(X86Gp dst, X86Xmm src) {
+    // dst is rm (B), src is reg (R)
+    final needsVex3 = dst.isExtended;
+    if (needsVex3) {
+      _emitVex3(src.isExtended, false, dst.isExtended, _vexMmmmm0F, false, 0,
+          false, _vexPp66);
+    } else {
+      _emitVex2(src.isExtended, 0, false, _vexPp66);
+    }
+    buffer.emit8(0x7E);
+    buffer.emit8(0xC0 | (src.encoding << 3) | dst.encoding);
+  }
+
+  /// VMOVQ xmm, r64 (VEX.128.66.0F.W1 6E /r)
+  void vmovqXmmR64(X86Xmm dst, X86Gp src) {
+    _emitVex3(dst.isExtended, false, src.isExtended, _vexMmmmm0F, true, 0,
+        false, _vexPp66);
+    buffer.emit8(0x6E);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// VMOVQ r64, xmm (VEX.128.66.0F.W1 7E /r)
+  void vmovqR64Xmm(X86Gp dst, X86Xmm src) {
+    _emitVex3(src.isExtended, false, dst.isExtended, _vexMmmmm0F, true, 0,
+        false, _vexPp66);
+    buffer.emit8(0x7E);
+    buffer.emit8(0xC0 | (src.encoding << 3) | dst.encoding);
+  }
+
   /// VXORPS xmm, xmm, xmm (VEX.128.0F 57) - zero register idiom
   void vxorpsXmmXmmXmm(X86Xmm dst, X86Xmm src1, X86Xmm src2) {
     final needsVex3 = dst.isExtended || src2.isExtended;
@@ -4068,6 +4111,38 @@ class X86Encoder {
     buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
   }
 
+  /// VADDSD xmm, xmm, [mem]
+  void vaddsdXmmXmmMem(X86Xmm dst, X86Xmm src1, X86Mem mem) {
+    _emitVex3(dst.isExtended, false, false, _vexMmmmm0F, false, src1.id, false,
+        _vexPpF2);
+    buffer.emit8(0x58);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VSUBSD xmm, xmm, [mem]
+  void vsubsdXmmXmmMem(X86Xmm dst, X86Xmm src1, X86Mem mem) {
+    _emitVex3(dst.isExtended, false, false, _vexMmmmm0F, false, src1.id, false,
+        _vexPpF2);
+    buffer.emit8(0x5C);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VMULSD xmm, xmm, [mem]
+  void vmulsdXmmXmmMem(X86Xmm dst, X86Xmm src1, X86Mem mem) {
+    _emitVex3(dst.isExtended, false, false, _vexMmmmm0F, false, src1.id, false,
+        _vexPpF2);
+    buffer.emit8(0x59);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VDIVSD xmm, xmm, [mem]
+  void vdivsdXmmXmmMem(X86Xmm dst, X86Xmm src1, X86Mem mem) {
+    _emitVex3(dst.isExtended, false, false, _vexMmmmm0F, false, src1.id, false,
+        _vexPpF2);
+    buffer.emit8(0x5E);
+    emitModRmMem(dst.encoding, mem);
+  }
+
   /// VADDPS xmm, xmm, xmm (VEX.128.0F 58) - packed single add
   void vaddpsXmmXmmXmm(X86Xmm dst, X86Xmm src1, X86Xmm src2) {
     final needsVex3 = dst.isExtended || src2.isExtended;
@@ -4398,8 +4473,288 @@ class X86Encoder {
   }
 
   // ===========================================================================
-  // AVX single-precision (VEX.F3 prefix)
+  // AVX - Broadcast instructions
   // ===========================================================================
+
+  /// VBROADCASTSS xmm, mem32 (VEX.128.66.0F38 18 /r)
+  void vbroadcastssXmmMem(X86Xmm dst, X86Mem mem) {
+    _emitVex3(
+        dst.isExtended, false, false, _vexMmmmm0F38, false, 0, false, _vexPp66);
+    buffer.emit8(0x18);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VBROADCASTSS ymm, mem32 (VEX.256.66.0F38 18 /r)
+  void vbroadcastssYmmMem(X86Ymm dst, X86Mem mem) {
+    _emitVex3(
+        dst.isExtended, false, false, _vexMmmmm0F38, false, 0, true, _vexPp66);
+    buffer.emit8(0x18);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VBROADCASTSD ymm, mem64 (VEX.256.66.0F38 19 /r)
+  void vbroadcastsdYmmMem(X86Ymm dst, X86Mem mem) {
+    _emitVex3(
+        dst.isExtended, false, false, _vexMmmmm0F38, false, 0, true, _vexPp66);
+    buffer.emit8(0x19);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VPBROADCASTB xmm, xmm (VEX.128.66.0F38 78 /r)
+  void vpbroadcastbXmmXmm(X86Xmm dst, X86Xmm src) {
+    _emitVex3(dst.isExtended, false, src.isExtended, _vexMmmmm0F38, false, 0,
+        false, _vexPp66);
+    buffer.emit8(0x78);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// VPBROADCASTB xmm, mem8 (VEX.128.66.0F38 78 /r)
+  void vpbroadcastbXmmMem(X86Xmm dst, X86Mem mem) {
+    _emitVex3(
+        dst.isExtended, false, false, _vexMmmmm0F38, false, 0, false, _vexPp66);
+    buffer.emit8(0x78);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VPBROADCASTW xmm, xmm (VEX.128.66.0F38 79 /r)
+  void vpbroadcastwXmmXmm(X86Xmm dst, X86Xmm src) {
+    _emitVex3(dst.isExtended, false, src.isExtended, _vexMmmmm0F38, false, 0,
+        false, _vexPp66);
+    buffer.emit8(0x79);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// VPBROADCASTW xmm, mem16 (VEX.128.66.0F38 79 /r)
+  void vpbroadcastwXmmMem(X86Xmm dst, X86Mem mem) {
+    _emitVex3(
+        dst.isExtended, false, false, _vexMmmmm0F38, false, 0, false, _vexPp66);
+    buffer.emit8(0x79);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VPBROADCASTD xmm, xmm (VEX.128.66.0F38 58 /r)
+  void vpbroadcastdXmmXmm(X86Xmm dst, X86Xmm src) {
+    _emitVex3(dst.isExtended, false, src.isExtended, _vexMmmmm0F38, false, 0,
+        false, _vexPp66);
+    buffer.emit8(0x58);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// VPBROADCASTD xmm, mem32 (VEX.128.66.0F38 58 /r)
+  void vpbroadcastdXmmMem(X86Xmm dst, X86Mem mem) {
+    _emitVex3(
+        dst.isExtended, false, false, _vexMmmmm0F38, false, 0, false, _vexPp66);
+    buffer.emit8(0x58);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VPBROADCASTQ xmm, xmm (VEX.128.66.0F38 59 /r)
+  void vpbroadcastqXmmXmm(X86Xmm dst, X86Xmm src) {
+    _emitVex3(dst.isExtended, false, src.isExtended, _vexMmmmm0F38, false, 0,
+        false, _vexPp66);
+    buffer.emit8(0x59);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// VPBROADCASTQ xmm, mem64 (VEX.128.66.0F38 59 /r)
+  void vpbroadcastqXmmMem(X86Xmm dst, X86Mem mem) {
+    _emitVex3(
+        dst.isExtended, false, false, _vexMmmmm0F38, false, 0, false, _vexPp66);
+    buffer.emit8(0x59);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  // ===========================================================================
+  // AVX - Math (SQRT, MIN, MAX)
+  // ===========================================================================
+
+  /// VSQRTPS xmm, xmm
+  void vsqrtpsXmmXmm(X86Xmm dst, X86Xmm src) {
+    _emitVex2(dst.isExtended, 0, false, _vexPpNone);
+    buffer.emit8(0x51);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// VSQRTPS xmm, [mem]
+  void vsqrtpsXmmMem(X86Xmm dst, X86Mem mem) {
+    _emitVex2(dst.isExtended, 0, false, _vexPpNone);
+    buffer.emit8(0x51);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VSQRTPD xmm, xmm
+  void vsqrtpdXmmXmm(X86Xmm dst, X86Xmm src) {
+    _emitVex2(dst.isExtended, 0, false, _vexPp66);
+    buffer.emit8(0x51);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// VSQRTPD xmm, [mem]
+  void vsqrtpdXmmMem(X86Xmm dst, X86Mem mem) {
+    _emitVex2(dst.isExtended, 0, false, _vexPp66);
+    buffer.emit8(0x51);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VSQRTSS xmm, xmm, xmm
+  void vsqrtssXmmXmmXmm(X86Xmm dst, X86Xmm src1, X86Xmm src2) {
+    _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F, false,
+        src1.id, false, _vexPpF3);
+    buffer.emit8(0x51);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+  }
+
+  /// VSQRTSS xmm, xmm, [mem]
+  void vsqrtssXmmXmmMem(X86Xmm dst, X86Xmm src1, X86Mem mem) {
+    _emitVex3(dst.isExtended, false, false, _vexMmmmm0F, false, src1.id, false,
+        _vexPpF3);
+    buffer.emit8(0x51);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VSQRTSD xmm, xmm, xmm
+  void vsqrtsdXmmXmmXmm(X86Xmm dst, X86Xmm src1, X86Xmm src2) {
+    _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F, false,
+        src1.id, false, _vexPpF2);
+    buffer.emit8(0x51);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+  }
+
+  /// VSQRTSD xmm, xmm, [mem]
+  void vsqrtsdXmmXmmMem(X86Xmm dst, X86Xmm src1, X86Mem mem) {
+    _emitVex3(dst.isExtended, false, false, _vexMmmmm0F, false, src1.id, false,
+        _vexPpF2);
+    buffer.emit8(0x51);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VMINPS xmm, xmm, xmm
+  void vminpsXmmXmmXmm(X86Xmm dst, X86Xmm src1, X86Xmm src2) {
+    _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F, false,
+        src1.id, false, _vexPpNone);
+    buffer.emit8(0x5D);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+  }
+
+  /// VMINPS xmm, xmm, [mem]
+  void vminpsXmmXmmMem(X86Xmm dst, X86Xmm src1, X86Mem mem) {
+    _emitVex3(dst.isExtended, false, false, _vexMmmmm0F, false, src1.id, false,
+        _vexPpNone);
+    buffer.emit8(0x5D);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VMINPD xmm, xmm, xmm
+  void vminpdXmmXmmXmm(X86Xmm dst, X86Xmm src1, X86Xmm src2) {
+    _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F, false,
+        src1.id, false, _vexPp66);
+    buffer.emit8(0x5D);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+  }
+
+  /// VMINPD xmm, xmm, [mem]
+  void vminpdXmmXmmMem(X86Xmm dst, X86Xmm src1, X86Mem mem) {
+    _emitVex3(dst.isExtended, false, false, _vexMmmmm0F, false, src1.id, false,
+        _vexPp66);
+    buffer.emit8(0x5D);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VMINSS xmm, xmm, xmm
+  void vminssXmmXmmXmm(X86Xmm dst, X86Xmm src1, X86Xmm src2) {
+    _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F, false,
+        src1.id, false, _vexPpF3);
+    buffer.emit8(0x5D);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+  }
+
+  /// VMINSS xmm, xmm, [mem]
+  void vminssXmmXmmMem(X86Xmm dst, X86Xmm src1, X86Mem mem) {
+    _emitVex3(dst.isExtended, false, false, _vexMmmmm0F, false, src1.id, false,
+        _vexPpF3);
+    buffer.emit8(0x5D);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VMINSD xmm, xmm, xmm
+  void vminsdXmmXmmXmm(X86Xmm dst, X86Xmm src1, X86Xmm src2) {
+    _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F, false,
+        src1.id, false, _vexPpF2);
+    buffer.emit8(0x5D);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+  }
+
+  /// VMINSD xmm, xmm, [mem]
+  void vminsdXmmXmmMem(X86Xmm dst, X86Xmm src1, X86Mem mem) {
+    _emitVex3(dst.isExtended, false, false, _vexMmmmm0F, false, src1.id, false,
+        _vexPpF2);
+    buffer.emit8(0x5D);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VMAXPS xmm, xmm, xmm
+  void vmaxpsXmmXmmXmm(X86Xmm dst, X86Xmm src1, X86Xmm src2) {
+    _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F, false,
+        src1.id, false, _vexPpNone);
+    buffer.emit8(0x5F);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+  }
+
+  /// VMAXPS xmm, xmm, [mem]
+  void vmaxpsXmmXmmMem(X86Xmm dst, X86Xmm src1, X86Mem mem) {
+    _emitVex3(dst.isExtended, false, false, _vexMmmmm0F, false, src1.id, false,
+        _vexPpNone);
+    buffer.emit8(0x5F);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VMAXPD xmm, xmm, xmm
+  void vmaxpdXmmXmmXmm(X86Xmm dst, X86Xmm src1, X86Xmm src2) {
+    _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F, false,
+        src1.id, false, _vexPp66);
+    buffer.emit8(0x5F);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+  }
+
+  /// VMAXPD xmm, xmm, [mem]
+  void vmaxpdXmmXmmMem(X86Xmm dst, X86Xmm src1, X86Mem mem) {
+    _emitVex3(dst.isExtended, false, false, _vexMmmmm0F, false, src1.id, false,
+        _vexPp66);
+    buffer.emit8(0x5F);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VMAXSS xmm, xmm, xmm
+  void vmaxssXmmXmmXmm(X86Xmm dst, X86Xmm src1, X86Xmm src2) {
+    _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F, false,
+        src1.id, false, _vexPpF3);
+    buffer.emit8(0x5F);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+  }
+
+  /// VMAXSS xmm, xmm, [mem]
+  void vmaxssXmmXmmMem(X86Xmm dst, X86Xmm src1, X86Mem mem) {
+    _emitVex3(dst.isExtended, false, false, _vexMmmmm0F, false, src1.id, false,
+        _vexPpF3);
+    buffer.emit8(0x5F);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VMAXSD xmm, xmm, xmm
+  void vmaxsdXmmXmmXmm(X86Xmm dst, X86Xmm src1, X86Xmm src2) {
+    _emitVex3(dst.isExtended, false, src2.isExtended, _vexMmmmm0F, false,
+        src1.id, false, _vexPpF2);
+    buffer.emit8(0x5F);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+  }
+
+  /// VMAXSD xmm, xmm, [mem]
+  void vmaxsdXmmXmmMem(X86Xmm dst, X86Xmm src1, X86Mem mem) {
+    _emitVex3(dst.isExtended, false, false, _vexMmmmm0F, false, src1.id, false,
+        _vexPpF2);
+    buffer.emit8(0x5F);
+    emitModRmMem(dst.encoding, mem);
+  }
 
   /// VADDSS xmm, xmm, xmm (VEX.LIG.F3.0F 58)
   void vaddssXmmXmmXmm(X86Xmm dst, X86Xmm src1, X86Xmm src2) {
@@ -4451,6 +4806,38 @@ class X86Encoder {
     }
     buffer.emit8(0x5E);
     buffer.emit8(0xC0 | (dst.encoding << 3) | src2.encoding);
+  }
+
+  /// VADDSS xmm, xmm, [mem]
+  void vaddssXmmXmmMem(X86Xmm dst, X86Xmm src1, X86Mem mem) {
+    _emitVex3(dst.isExtended, false, false, _vexMmmmm0F, false, src1.id, false,
+        _vexPpF3);
+    buffer.emit8(0x58);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VSUBSS xmm, xmm, [mem]
+  void vsubssXmmXmmMem(X86Xmm dst, X86Xmm src1, X86Mem mem) {
+    _emitVex3(dst.isExtended, false, false, _vexMmmmm0F, false, src1.id, false,
+        _vexPpF3);
+    buffer.emit8(0x5C);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VMULSS xmm, xmm, [mem]
+  void vmulssXmmXmmMem(X86Xmm dst, X86Xmm src1, X86Mem mem) {
+    _emitVex3(dst.isExtended, false, false, _vexMmmmm0F, false, src1.id, false,
+        _vexPpF3);
+    buffer.emit8(0x59);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VDIVSS xmm, xmm, [mem]
+  void vdivssXmmXmmMem(X86Xmm dst, X86Xmm src1, X86Mem mem) {
+    _emitVex3(dst.isExtended, false, false, _vexMmmmm0F, false, src1.id, false,
+        _vexPpF3);
+    buffer.emit8(0x5E);
+    emitModRmMem(dst.encoding, mem);
   }
 
   // ===========================================================================

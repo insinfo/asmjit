@@ -1495,6 +1495,54 @@ class X86Assembler extends BaseEmitter {
   /// VMOVUPS ymm, ymm (VEX move unaligned packed single 256-bit)
   void vmovupsYY(X86Ymm dst, X86Ymm src) => _enc.vmovupsYmmYmm(dst, src);
 
+  /// VMOVD xmm, r32
+  void vmovdXR(X86Xmm dst, X86Gp src) => _enc.vmovdXmmR32(dst, src);
+
+  /// VMOVD r32, xmm
+  void vmovdRX(X86Gp dst, X86Xmm src) => _enc.vmovdR32Xmm(dst, src);
+
+  /// VMOVQ xmm, r64
+  void vmovqXR(X86Xmm dst, X86Gp src) => _enc.vmovqXmmR64(dst, src);
+
+  /// VMOVQ r64, xmm
+  void vmovqRX(X86Gp dst, X86Xmm src) => _enc.vmovqR64Xmm(dst, src);
+
+  /// VBROADCASTSS xmm, mem32
+  void vbroadcastssXM(X86Xmm dst, X86Mem mem) =>
+      _enc.vbroadcastssXmmMem(dst, mem);
+
+  /// VBROADCASTSS ymm, mem32
+  void vbroadcastssYM(X86Ymm dst, X86Mem mem) =>
+      _enc.vbroadcastssYmmMem(dst, mem);
+
+  /// VBROADCASTSD ymm, mem64
+  void vbroadcastsdYM(X86Ymm dst, X86Mem mem) =>
+      _enc.vbroadcastsdYmmMem(dst, mem);
+
+  /// VPBROADCASTB xmm, xmm
+  void vpbroadcastbXX(X86Xmm dst, X86Xmm src) =>
+      _enc.vpbroadcastbXmmXmm(dst, src);
+  void vpbroadcastbXM(X86Xmm dst, X86Mem mem) =>
+      _enc.vpbroadcastbXmmMem(dst, mem);
+
+  /// VPBROADCASTW xmm, xmm
+  void vpbroadcastwXX(X86Xmm dst, X86Xmm src) =>
+      _enc.vpbroadcastwXmmXmm(dst, src);
+  void vpbroadcastwXM(X86Xmm dst, X86Mem mem) =>
+      _enc.vpbroadcastwXmmMem(dst, mem);
+
+  /// VPBROADCASTD xmm, xmm
+  void vpbroadcastdXX(X86Xmm dst, X86Xmm src) =>
+      _enc.vpbroadcastdXmmXmm(dst, src);
+  void vpbroadcastdXM(X86Xmm dst, X86Mem mem) =>
+      _enc.vpbroadcastdXmmMem(dst, mem);
+
+  /// VPBROADCASTQ xmm, xmm
+  void vpbroadcastqXX(X86Xmm dst, X86Xmm src) =>
+      _enc.vpbroadcastqXmmXmm(dst, src);
+  void vpbroadcastqXM(X86Xmm dst, X86Mem mem) =>
+      _enc.vpbroadcastqXmmMem(dst, mem);
+
   // ===========================================================================
   // AVX - Scalar arithmetic (VEX-encoded)
   // ===========================================================================
@@ -1514,6 +1562,122 @@ class X86Assembler extends BaseEmitter {
   /// VDIVSD xmm, xmm, xmm (VEX divide scalar double)
   void vdivsdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
       _enc.vdivsdXmmXmmXmm(dst, src1, src2);
+
+  /// VADDSD xmm, xmm, [mem]
+  void vaddsdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vaddsdXmmXmmMem(dst, src1, mem);
+
+  /// VSUBSD xmm, xmm, [mem]
+  void vsubsdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vsubsdXmmXmmMem(dst, src1, mem);
+
+  /// VMULSD xmm, xmm, [mem]
+  void vmulsdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vmulsdXmmXmmMem(dst, src1, mem);
+
+  /// VDIVSD xmm, xmm, [mem]
+  void vdivsdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vdivsdXmmXmmMem(dst, src1, mem);
+
+  // ===========================================================================
+  // AVX - Scalar arithmetic (Single Precision)
+  // ===========================================================================
+
+  /// VADDSS xmm, xmm, xmm
+  void vaddssXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vaddssXmmXmmXmm(dst, src1, src2);
+  void vaddssXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vaddssXmmXmmMem(dst, src1, mem);
+
+  /// VSUBSS xmm, xmm, xmm
+  void vsubssXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vsubssXmmXmmXmm(dst, src1, src2);
+  void vsubssXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vsubssXmmXmmMem(dst, src1, mem);
+
+  /// VMULSS xmm, xmm, xmm
+  void vmulssXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vmulssXmmXmmXmm(dst, src1, src2);
+  void vmulssXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vmulssXmmXmmMem(dst, src1, mem);
+
+  /// VDIVSS xmm, xmm, xmm
+  void vdivssXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vdivssXmmXmmXmm(dst, src1, src2);
+  void vdivssXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vdivssXmmXmmMem(dst, src1, mem);
+
+  // ===========================================================================
+  // AVX - Math (SQRT, MIN, MAX)
+  // ===========================================================================
+
+  /// VSQRTPS xmm, xmm
+  void vsqrtpsXX(X86Xmm dst, X86Xmm src) => _enc.vsqrtpsXmmXmm(dst, src);
+  void vsqrtpsXM(X86Xmm dst, X86Mem mem) => _enc.vsqrtpsXmmMem(dst, mem);
+
+  /// VSQRTPD xmm, xmm
+  void vsqrtpdXX(X86Xmm dst, X86Xmm src) => _enc.vsqrtpdXmmXmm(dst, src);
+  void vsqrtpdXM(X86Xmm dst, X86Mem mem) => _enc.vsqrtpdXmmMem(dst, mem);
+
+  /// VSQRTSS xmm, xmm, xmm
+  void vsqrtssXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vsqrtssXmmXmmXmm(dst, src1, src2);
+  void vsqrtssXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vsqrtssXmmXmmMem(dst, src1, mem);
+
+  /// VSQRTSD xmm, xmm, xmm
+  void vsqrtsdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vsqrtsdXmmXmmXmm(dst, src1, src2);
+  void vsqrtsdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vsqrtsdXmmXmmMem(dst, src1, mem);
+
+  /// VMINPS xmm, xmm, xmm
+  void vminpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vminpsXmmXmmXmm(dst, src1, src2);
+  void vminpsXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vminpsXmmXmmMem(dst, src1, mem);
+
+  /// VMINPD xmm, xmm, xmm
+  void vminpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vminpdXmmXmmXmm(dst, src1, src2);
+  void vminpdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vminpdXmmXmmMem(dst, src1, mem);
+
+  /// VMINSS xmm, xmm, xmm
+  void vminssXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vminssXmmXmmXmm(dst, src1, src2);
+  void vminssXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vminssXmmXmmMem(dst, src1, mem);
+
+  /// VMINSD xmm, xmm, xmm
+  void vminsdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vminsdXmmXmmXmm(dst, src1, src2);
+  void vminsdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vminsdXmmXmmMem(dst, src1, mem);
+
+  /// VMAXPS xmm, xmm, xmm
+  void vmaxpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vmaxpsXmmXmmXmm(dst, src1, src2);
+  void vmaxpsXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vmaxpsXmmXmmMem(dst, src1, mem);
+
+  /// VMAXPD xmm, xmm, xmm
+  void vmaxpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vmaxpdXmmXmmXmm(dst, src1, src2);
+  void vmaxpdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vmaxpdXmmXmmMem(dst, src1, mem);
+
+  /// VMAXSS xmm, xmm, xmm
+  void vmaxssXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vmaxssXmmXmmXmm(dst, src1, src2);
+  void vmaxssXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vmaxssXmmXmmMem(dst, src1, mem);
+
+  /// VMAXSD xmm, xmm, xmm
+  void vmaxsdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
+      _enc.vmaxsdXmmXmmXmm(dst, src1, src2);
+  void vmaxsdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
+      _enc.vmaxsdXmmXmmMem(dst, src1, mem);
 
   // ===========================================================================
   // AVX - Packed arithmetic 128-bit (VEX-encoded)
