@@ -2738,6 +2738,40 @@ class X86Assembler extends BaseEmitter {
       _enc.vpmulldXmmXmmMem(dst, src1, mem);
   void vpmulldYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
       _enc.vpmulldYmmYmmMem(dst, src1, mem);
+
+  // ===========================================================================
+  // SSE4.1 - Blend (Variable)
+  // ===========================================================================
+
+  void blendvpsXX(X86Xmm dst, X86Xmm src) => _enc.blendvpsXmmXmm(dst, src);
+  void blendvpsXM(X86Xmm dst, X86Mem src) => _enc.blendvpsXmmMem(dst, src);
+
+  void blendvpdXX(X86Xmm dst, X86Xmm src) => _enc.blendvpdXmmXmm(dst, src);
+  void blendvpdXM(X86Xmm dst, X86Mem src) => _enc.blendvpdXmmMem(dst, src);
+
+  // ===========================================================================
+  // SSE4.1 - Insert/Extract (Remaining)
+  // ===========================================================================
+
+  void pextrwRX(X86Gp dst, X86Xmm src, int imm8) =>
+      _enc.pextrwRegXmmImm8(dst, src, imm8);
+  void pextrwMX(X86Mem dst, X86Xmm src, int imm8) =>
+      _enc.pextrwMemXmmImm8(dst, src, imm8);
+
+  void pinsrwXR(X86Xmm dst, X86Gp src, int imm8) =>
+      _enc.pinsrwXmmRegImm8(dst, src, imm8);
+  void pinsrwXM(X86Xmm dst, X86Mem src, int imm8) =>
+      _enc.pinsrwXmmMemImm8(dst, src, imm8);
+
+  void insertpsXXI(X86Xmm dst, X86Xmm src, int imm8) =>
+      _enc.insertpsXmmXmmImm8(dst, src, imm8);
+  void insertpsXMI(X86Xmm dst, X86Mem src, int imm8) =>
+      _enc.insertpsXmmMemImm8(dst, src, imm8);
+
+  void extractpsRX(X86Gp dst, X86Xmm src, int imm8) =>
+      _enc.extractpsRegXmmImm8(dst, src, imm8);
+  void extractpsMX(X86Mem dst, X86Xmm src, int imm8) =>
+      _enc.extractpsMemXmmImm8(dst, src, imm8);
 }
 
 extension FuncFrameX86Extensions on FuncFrame {

@@ -7322,6 +7322,131 @@ class X86Encoder {
       emitRex(false, regExt, indexExt, baseExt);
     }
   }
+
+  // ===========================================================================
+  // SSE4.1 - Blend (Variable)
+  // ===========================================================================
+
+  /// BLENDVPS xmm, xmm, <XMM0>
+  void blendvpsXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x14);
+    emitModRmReg(dst.encoding, src);
+  }
+
+  /// BLENDVPS xmm, [mem], <XMM0>
+  void blendvpsXmmMem(X86Xmm dst, X86Mem src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x14);
+    emitModRmMem(dst.encoding, src);
+  }
+
+  /// BLENDVPD xmm, xmm, <XMM0>
+  void blendvpdXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x15);
+    emitModRmReg(dst.encoding, src);
+  }
+
+  /// BLENDVPD xmm, [mem], <XMM0>
+  void blendvpdXmmMem(X86Xmm dst, X86Mem src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x38);
+    buffer.emit8(0x15);
+    emitModRmMem(dst.encoding, src);
+  }
+
+  // ===========================================================================
+  // SSE4.1 - Insert/Extract (Remaining)
+  // ===========================================================================
+
+  void pinsrwXmmRegImm8(X86Xmm dst, X86Gp src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmReg(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xC4);
+    emitModRmReg(dst.encoding, src);
+    buffer.emit8(imm8);
+  }
+
+  void pinsrwXmmMemImm8(X86Xmm dst, X86Mem src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xC4);
+    emitModRmMem(dst.encoding, src);
+    buffer.emit8(imm8);
+  }
+
+  void pextrwRegXmmImm8(X86Gp dst, X86Xmm src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmReg(src, dst);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xC5);
+    emitModRmReg(src.encoding, dst);
+    buffer.emit8(imm8);
+  }
+
+  void pextrwMemXmmImm8(X86Mem dst, X86Xmm src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(src, dst);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x15);
+    emitModRmMem(src.encoding, dst);
+    buffer.emit8(imm8);
+  }
+
+  void insertpsXmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x21);
+    emitModRmReg(dst.encoding, src);
+    buffer.emit8(imm8);
+  }
+
+  void insertpsXmmMemImm8(X86Xmm dst, X86Mem src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x21);
+    emitModRmMem(dst.encoding, src);
+    buffer.emit8(imm8);
+  }
+
+  void extractpsRegXmmImm8(X86Gp dst, X86Xmm src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmReg(src, dst);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x17);
+    emitModRmReg(src.encoding, dst);
+    buffer.emit8(imm8);
+  }
+
+  void extractpsMemXmmImm8(X86Mem dst, X86Xmm src, int imm8) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(src, dst);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x3A);
+    buffer.emit8(0x17);
+    emitModRmMem(src.encoding, dst);
+    buffer.emit8(imm8);
+  }
 }
 
 /// x86 condition codes.
