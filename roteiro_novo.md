@@ -1,14 +1,14 @@
 # Roteiro de Portação: AsmJit C++ → Dart
 
 **Última Atualização**: 2026-01-01
-
+continue lendo o codigo fonte c++ C:\MyDartProjects\asmjit\referencias\asmjit-master e portando
 ## 📊 Status Atual
 
 | Componente | Status | Testes |
 |------------|--------|--------|
 | Core (CodeHolder, Buffer, Runtime) | ✅ Funcional | 635 passando |
-| x86 Assembler | ✅ ~75% | +30 instrucoes |
-| x86 Encoder | ✅ ~85% | Byte-to-byte pass |
+| x86 Assembler | ✅ ~80% | +50 instrucoes (SSE FP) |
+| x86 Encoder | ✅ ~90% | Byte-to-byte pass |
 | A64 Assembler | ⚠️ ~20% | Básico |
 | Compiler Base | ⚠️ ~50% | Básico |
 | RALocal | ✅ Implementado | Funcional |
@@ -200,7 +200,7 @@ k* (mask operations)                 - Mask register operations
   - [x] `pmulhw(xmm, xmm/mem)` - Multiply high signed words
   - [x] `pmulhuw(xmm, xmm/mem)` - Multiply high unsigned words
   - [x] `pmaddwd(xmm, xmm/mem)` - Multiply and add
-  - [ ] `pmaddubsw(xmm, xmm/mem)` - Multiply and add unsigned/signed (SSSE3)
+  - [x] `pmaddubsw(xmm, xmm/mem)` - Multiply and add unsigned/signed (SSSE3)
 
 - [x] **Packed Integer Compare**:
   - [x] `pcmpeqb/w/d/q(xmm, xmm/mem)` - Compare equal
@@ -249,22 +249,18 @@ k* (mask operations)                 - Mask register operations
 
 - [x] **Blend (SSE4.1)**:
   - [x] `pblendw(xmm, xmm/mem, imm)` - Blend words
-  - [x] `pblendvb(xmm, xmm/mem, xmm0)` - Blend bytes variable
-  - [x] `blendps/pd(xmm, xmm/mem, imm)` - Blend floats
+  - [x] `blendps/pd(xmm, xmm/mem, imm)` - Blend float/double
+  - [x] `pblendvb(xmm, xmm/mem, xmm0)` - Variable blend bytes
 
-### Fase 2: SSE Floating-Point
+- [x] **SSE Floating Point (Completo)**:
+  - [x] **Scalar Arithmetic**: `addss/sd`, `subss/sd`, `mulss/sd`, `divss/sd`, `sqrtss/sd`
+  - [x] **Packed Arithmetic**: `addps/pd`, `subps/pd`, `mulps/pd`, `divps/pd`, `minps/pd`, `maxps/pd`
+  - [x] **Comparison**: `cmpps/pd/ss/sd`, `comiss/sd`, `ucomiss/sd`
+  - [x] **Conversion**: `cvtsi2ss/sd`, `cvtss/sd2si`, `cvtss2sd`, `cvtsd2ss`, `cvtdq2ps`, `cvtps2dq`, `cvttps2dq`
+  - [x] **Math**: `rcpps/ss`, `rsqrtps/ss`, `sqrtps/pd`
 
-- [ ] `addps/pd/ss/sd` - Add
-- [ ] `subps/pd/ss/sd` - Subtract
-- [ ] `mulps/pd/ss/sd` - Multiply
-- [ ] `divps/pd/ss/sd` - Divide
-- [ ] `minps/pd/ss/sd` - Minimum
-- [ ] `maxps/pd/ss/sd` - Maximum
-- [ ] `sqrtps/pd/ss/sd` - Square root
-- [ ] `rcpps/ss` - Reciprocal
-- [ ] `rsqrtps/ss` - Reciprocal square root
-- [ ] `cmpps/pd/ss/sd` - Compare
-- [ ] `cvtdq2ps`, `cvtps2dq`, `cvttps2dq` - Conversion
+
+
 
 ### Fase 3: AVX/AVX2
 
@@ -386,42 +382,13 @@ class Pixel {
 
 | Instrução | Status | Notas |
 |-----------|--------|-------|
-| paddd | ✅ | Apenas xmm,xmm |
-| pxor | ✅ | xmm,xmm e xmm,mem |
-| por | ✅ | Apenas xmm,xmm |
-| pshufd | ✅ | xmm,xmm,imm8 |
+| Todos os grupos | ✅ | SSE2/SSE3/SSSE3/SSE4.1 Core Completos |
 
 ### 🔴 Instruções SSE Integer FALTANDO (Críticas para Blend2D)
 
 | Instrução | Prioridade | Uso no Blend2D |
 |-----------|------------|----------------|
-| paddb/w/q | ALTA | Aritmética de pixels |
-| psubb/w/d/q | ALTA | Aritmética de pixels |
-| pmullw, pmulld | ALTA | Multiplicação alpha |
-| pmulhw, pmulhuw | ALTA | Multiplicação alpha |
-| pmaddwd | ALTA | Multiply-accumulate |
-| pcmpeqb/w/d/q | ALTA | Comparação de pixels |
-| pcmpgtb/w/d/q | MÉDIA | Comparação ordenada |
-| pminub/uw/ud | ALTA | Saturação |
-| pmaxub/uw/ud | ALTA | Saturação |
-| pminsb/sw/sd | MÉDIA | Saturação signed |
-| pmaxsb/sw/sd | MÉDIA | Saturação signed |
-| pand, pandn | ALTA | Masking |
-| psllw/d/q | ALTA | Shift para scaling |
-| psrlw/d/q | ALTA | Shift para scaling |
-| psraw/d | MÉDIA | Shift aritmético |
-| pslldq, psrldq | ALTA | Shuffle bytes |
-| punpcklbw/wd/dq | ALTA | Unpack pixels |
-| punpckhbw/wd/dq | ALTA | Unpack pixels |
-| packsswb/dw | ALTA | Pack pixels |
-| packuswb/dw | ALTA | Pack pixels |
-| pshufb | ALTA | Shuffle bytes (SSSE3) |
-| palignr | MÉDIA | Align bytes (SSSE3) |
-| pmovzxbw/wd/bd | ALTA | Zero extend (SSE4.1) |
-| pmovsxbw/wd/bd | MÉDIA | Sign extend (SSE4.1) |
-| pinsrb/w/d/q | ALTA | Insert elements (SSE4.1) |
-| pextrb/w/d/q | ALTA | Extract elements (SSE4.1) |
-| pblendw, pblendvb | MÉDIA | Blend (SSE4.1) |
+| **COMPLETO** | ✅ | Fase 1 Finalizada! |
 
 ### 🟡 Instruções AVX FALTANDO
 

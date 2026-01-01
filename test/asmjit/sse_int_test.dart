@@ -88,6 +88,32 @@ void main() {
       expect(buffer.bytes, equals([0x66, 0x0F, 0xF5, 0xC1]));
     });
 
+    test('pmaddubsw xmm0, xmm1 encodes correctly', () {
+      encoder.pmaddubswXmmXmm(xmm0, xmm1);
+      expect(buffer.bytes, equals([0x66, 0x0F, 0x38, 0x04, 0xC1]));
+    });
+
+    // ABS/SAD
+    test('pabsb xmm0, xmm1 encodes correctly', () {
+      encoder.pabsbXmmXmm(xmm0, xmm1);
+      expect(buffer.bytes, equals([0x66, 0x0F, 0x38, 0x1C, 0xC1]));
+    });
+
+    test('pabsw xmm0, xmm1 encodes correctly', () {
+      encoder.pabswXmmXmm(xmm0, xmm1);
+      expect(buffer.bytes, equals([0x66, 0x0F, 0x38, 0x1D, 0xC1]));
+    });
+
+    test('pabsd xmm0, xmm1 encodes correctly', () {
+      encoder.pabsdXmmXmm(xmm0, xmm1);
+      expect(buffer.bytes, equals([0x66, 0x0F, 0x38, 0x1E, 0xC1]));
+    });
+
+    test('psadbw xmm0, xmm1 encodes correctly', () {
+      encoder.psadbwXmmXmm(xmm0, xmm1);
+      expect(buffer.bytes, equals([0x66, 0x0F, 0xF6, 0xC1]));
+    });
+
     // Memory operands
     test('paddb xmm0, [rax] encodes correctly', () {
       final mem = ptr(rax);

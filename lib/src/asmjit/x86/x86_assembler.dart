@@ -1127,6 +1127,21 @@ class X86Assembler extends BaseEmitter {
   /// SQRTSD xmm, xmm (square root scalar double)
   void sqrtsdXX(X86Xmm dst, X86Xmm src) => _enc.sqrtsdXmmXmm(dst, src);
 
+  /// ADDSD xmm, [mem]
+  void addsdXM(X86Xmm dst, X86Mem src) => _enc.addsdXmmMem(dst, src);
+
+  /// SUBSD xmm, [mem]
+  void subsdXM(X86Xmm dst, X86Mem src) => _enc.subsdXmmMem(dst, src);
+
+  /// MULSD xmm, [mem]
+  void mulsdXM(X86Xmm dst, X86Mem src) => _enc.mulsdXmmMem(dst, src);
+
+  /// DIVSD xmm, [mem]
+  void divsdXM(X86Xmm dst, X86Mem src) => _enc.divsdXmmMem(dst, src);
+
+  /// SQRTSD xmm, [mem]
+  void sqrtsdXM(X86Xmm dst, X86Mem src) => _enc.sqrtsdXmmMem(dst, src);
+
   // ===========================================================================
   // SSE/SSE2 - Arithmetic (scalar single)
   // ===========================================================================
@@ -1145,6 +1160,46 @@ class X86Assembler extends BaseEmitter {
 
   /// SQRTSS xmm, xmm (square root scalar single)
   void sqrtssXX(X86Xmm dst, X86Xmm src) => _enc.sqrtssXmmXmm(dst, src);
+
+  /// ADDSS xmm, [mem]
+  void addssXM(X86Xmm dst, X86Mem src) => _enc.addssXmmMem(dst, src);
+
+  /// SUBSS xmm, [mem]
+  void subssXM(X86Xmm dst, X86Mem src) => _enc.subssXmmMem(dst, src);
+
+  /// MULSS xmm, [mem]
+  void mulssXM(X86Xmm dst, X86Mem src) => _enc.mulssXmmMem(dst, src);
+
+  /// DIVSS xmm, [mem]
+  void divssXM(X86Xmm dst, X86Mem src) => _enc.divssXmmMem(dst, src);
+
+  /// SQRTSS xmm, [mem]
+  void sqrtssXM(X86Xmm dst, X86Mem src) => _enc.sqrtssXmmMem(dst, src);
+
+  // SSE/SSE2 - Scalar Min/Max and Reciprocal
+  /// MINSD xmm, xmm
+  void minsdXX(X86Xmm dst, X86Xmm src) => _enc.minsdXmmXmm(dst, src);
+  void minsdXM(X86Xmm dst, X86Mem src) => _enc.minsdXmmMem(dst, src);
+
+  /// MINSS xmm, xmm
+  void minssXX(X86Xmm dst, X86Xmm src) => _enc.minssXmmXmm(dst, src);
+  void minssXM(X86Xmm dst, X86Mem src) => _enc.minssXmmMem(dst, src);
+
+  /// MAXSD xmm, xmm
+  void maxsdXX(X86Xmm dst, X86Xmm src) => _enc.maxsdXmmXmm(dst, src);
+  void maxsdXM(X86Xmm dst, X86Mem src) => _enc.maxsdXmmMem(dst, src);
+
+  /// MAXSS xmm, xmm
+  void maxssXX(X86Xmm dst, X86Xmm src) => _enc.maxssXmmXmm(dst, src);
+  void maxssXM(X86Xmm dst, X86Mem src) => _enc.maxssXmmMem(dst, src);
+
+  /// RCPSS xmm, xmm
+  void rcpssXX(X86Xmm dst, X86Xmm src) => _enc.rcpssXmmXmm(dst, src);
+  void rcpssXM(X86Xmm dst, X86Mem src) => _enc.rcpssXmmMem(dst, src);
+
+  /// RSQRTSS xmm, xmm
+  void rsqrtssXX(X86Xmm dst, X86Xmm src) => _enc.rsqrtssXmmXmm(dst, src);
+  void rsqrtssXM(X86Xmm dst, X86Mem src) => _enc.rsqrtssXmmMem(dst, src);
 
   // ===========================================================================
   // SSE/SSE2 - Packed single-precision arithmetic
@@ -1195,6 +1250,68 @@ class X86Assembler extends BaseEmitter {
 
   /// MAXPS xmm, xmm (maximum packed single)
   void maxps(X86Xmm dst, X86Xmm src) => _enc.maxpsXmmXmm(dst, src);
+
+  /// RCPPS xmm, xmm
+  void rcppsXX(X86Xmm dst, X86Xmm src) => _enc.rcppsXmmXmm(dst, src);
+
+  /// RCPPS xmm, [mem]
+  void rcppsXM(X86Xmm dst, X86Mem src) => _enc.rcppsXmmMem(dst, src);
+
+  /// RSQRTPS xmm, xmm
+  void rsqrtpsXX(X86Xmm dst, X86Xmm src) => _enc.rsqrtpsXmmXmm(dst, src);
+
+  /// RSQRTPS xmm, [mem]
+  void rsqrtpsXM(X86Xmm dst, X86Mem src) => _enc.rsqrtpsXmmMem(dst, src);
+
+  /// SQRTPS xmm, xmm
+  void sqrtpsXX(X86Xmm dst, X86Xmm src) => _enc.sqrtpsXmmXmm(dst, src);
+
+  /// SQRTPS xmm, [mem]
+  void sqrtpsXM(X86Xmm dst, X86Mem src) => _enc.sqrtpsXmmMem(dst, src);
+
+  /// SQRTPD xmm, xmm
+  void sqrtpdXX(X86Xmm dst, X86Xmm src) => _enc.sqrtpdXmmXmm(dst, src);
+
+  /// SQRTPD xmm, [mem]
+  void sqrtpdXM(X86Xmm dst, X86Mem src) => _enc.sqrtpdXmmMem(dst, src);
+
+  /// SQRTPS xmm, xmm (alias)
+  void sqrtps(X86Xmm dst, X86Xmm src) => _enc.sqrtpsXmmXmm(dst, src);
+
+  /// SQRTPD xmm, xmm (alias)
+  void sqrtpd(X86Xmm dst, X86Xmm src) => _enc.sqrtpdXmmXmm(dst, src);
+
+  /// RCPPS xmm, xmm (alias)
+  void rcpps(X86Xmm dst, X86Xmm src) => _enc.rcppsXmmXmm(dst, src);
+
+  /// RSQRTPS xmm, xmm (alias)
+  void rsqrtps(X86Xmm dst, X86Xmm src) => _enc.rsqrtpsXmmXmm(dst, src);
+
+  /// MINPS xmm, xmm
+  void minpsXX(X86Xmm dst, X86Xmm src) => _enc.minpsXmmXmm(dst, src);
+
+  /// MINPS xmm, [mem]
+  void minpsXM(X86Xmm dst, X86Mem src) => _enc.minpsXmmMem(dst, src);
+
+  /// MINPD xmm, xmm
+  void minpd(X86Xmm dst, X86Xmm src) => _enc.minpdXmmXmm(dst, src);
+  void minpdXX(X86Xmm dst, X86Xmm src) => _enc.minpdXmmXmm(dst, src);
+
+  /// MINPD xmm, [mem]
+  void minpdXM(X86Xmm dst, X86Mem src) => _enc.minpdXmmMem(dst, src);
+
+  /// MAXPS xmm, xmm
+  void maxpsXX(X86Xmm dst, X86Xmm src) => _enc.maxpsXmmXmm(dst, src);
+
+  /// MAXPS xmm, [mem]
+  void maxpsXM(X86Xmm dst, X86Mem src) => _enc.maxpsXmmMem(dst, src);
+
+  /// MAXPD xmm, xmm
+  void maxpd(X86Xmm dst, X86Xmm src) => _enc.maxpdXmmXmm(dst, src);
+  void maxpdXX(X86Xmm dst, X86Xmm src) => _enc.maxpdXmmXmm(dst, src);
+
+  /// MAXPD xmm, [mem]
+  void maxpdXM(X86Xmm dst, X86Mem src) => _enc.maxpdXmmMem(dst, src);
 
   // ===========================================================================
   // SSE/SSE2 - Logical (convenience aliases)
@@ -1249,6 +1366,37 @@ class X86Assembler extends BaseEmitter {
   /// CVTSS2SD xmm, xmm (convert float to double)
   void cvtss2sdXX(X86Xmm dst, X86Xmm src) => _enc.cvtss2sdXmmXmm(dst, src);
 
+  /// CVTSD2SS xmm, [mem] (convert double to float)
+  void cvtsd2ssXM(X86Xmm dst, X86Mem src) => _enc.cvtsd2ssXmmMem(dst, src);
+
+  /// CVTSS2SD xmm, [mem] (convert float to double)
+  void cvtss2sdXM(X86Xmm dst, X86Mem src) => _enc.cvtss2sdXmmMem(dst, src);
+
+  /// CVTDQ2PS xmm, xmm
+  void cvtdq2psXX(X86Xmm dst, X86Xmm src) => _enc.cvtdq2psXmmXmm(dst, src);
+
+  /// CVTDQ2PS xmm, [mem]
+  void cvtdq2psXM(X86Xmm dst, X86Mem src) => _enc.cvtdq2psXmmMem(dst, src);
+
+  /// CVTPS2DQ xmm, xmm
+  void cvtps2dqXX(X86Xmm dst, X86Xmm src) => _enc.cvtps2dqXmmXmm(dst, src);
+
+  /// CVTPS2DQ xmm, [mem]
+  void cvtps2dqXM(X86Xmm dst, X86Mem src) => _enc.cvtps2dqXmmMem(dst, src);
+
+  /// CVTTPS2DQ xmm, xmm
+  void cvttps2dqXX(X86Xmm dst, X86Xmm src) => _enc.cvttps2dqXmmXmm(dst, src);
+
+  /// CVTTPS2DQ xmm, [mem]
+  void cvttps2dqXM(X86Xmm dst, X86Mem src) => _enc.cvttps2dqXmmMem(dst, src);
+
+  /// CVTSI2SD xmm, [mem] (convert int32/64 to double)
+  void cvtsi2sdXM(X86Xmm dst, X86Mem src) => _enc.cvtsi2sdXmmMem(dst, src);
+
+  /// CVTSI2SS xmm, [mem] (convert int32/64 to float)
+  // void cvtsi2ssXM(X86Xmm dst, X86Mem src) => _enc.cvtsi2ssXmmMem(dst, src);
+  // TODO: Add cvtsi2ssXmmMem to Encoder if needed
+
   // ===========================================================================
   // SSE/SSE2 - Comparison
   // ===========================================================================
@@ -1264,6 +1412,38 @@ class X86Assembler extends BaseEmitter {
 
   /// UCOMISS xmm, xmm (unordered compare single, set EFLAGS)
   void ucomissXX(X86Xmm a, X86Xmm b) => _enc.ucomissXmmXmm(a, b);
+
+  /// CMPPS xmm, xmm, imm8
+  void cmppsXXI(X86Xmm dst, X86Xmm src, int imm8) =>
+      _enc.cmppsXmmXmmImm8(dst, src, imm8);
+
+  /// CMPPS xmm, [mem], imm8
+  void cmppsXMI(X86Xmm dst, X86Mem src, int imm8) =>
+      _enc.cmppsXmmMemImm8(dst, src, imm8);
+
+  /// CMPPD xmm, xmm, imm8
+  void cmppdXXI(X86Xmm dst, X86Xmm src, int imm8) =>
+      _enc.cmppdXmmXmmImm8(dst, src, imm8);
+
+  /// CMPPD xmm, [mem], imm8
+  void cmppdXMI(X86Xmm dst, X86Mem src, int imm8) =>
+      _enc.cmppdXmmMemImm8(dst, src, imm8);
+
+  /// CMPSS xmm, xmm, imm8
+  void cmpssXXI(X86Xmm dst, X86Xmm src, int imm8) =>
+      _enc.cmpssXmmXmmImm8(dst, src, imm8);
+
+  /// CMPSS xmm, [mem], imm8
+  void cmpssXMI(X86Xmm dst, X86Mem src, int imm8) =>
+      _enc.cmpssXmmMemImm8(dst, src, imm8);
+
+  /// CMPSD xmm, xmm, imm8
+  void cmpsdXXI(X86Xmm dst, X86Xmm src, int imm8) =>
+      _enc.cmpsdXmmXmmImm8(dst, src, imm8);
+
+  /// CMPSD xmm, [mem], imm8
+  void cmpsdXMI(X86Xmm dst, X86Mem src, int imm8) =>
+      _enc.cmpsdXmmMemImm8(dst, src, imm8);
 
   // ===========================================================================
   // SSE/SSE2 - GP <-> XMM Transfer
@@ -1719,6 +1899,36 @@ class X86Assembler extends BaseEmitter {
   /// PMADDWD xmm, [mem]
   void pmaddwdXM(X86Xmm dst, X86Mem src) => _enc.pmaddwdXmmMem(dst, src);
 
+  /// PMADDUBSW xmm, xmm (SSSE3)
+  void pmaddubswXX(X86Xmm dst, X86Xmm src) => _enc.pmaddubswXmmXmm(dst, src);
+
+  /// PMADDUBSW xmm, [mem] (SSSE3)
+  void pmaddubswXM(X86Xmm dst, X86Mem src) => _enc.pmaddubswXmmMem(dst, src);
+
+  /// PABSB xmm, xmm (SSSE3)
+  void pabsbXX(X86Xmm dst, X86Xmm src) => _enc.pabsbXmmXmm(dst, src);
+
+  /// PABSB xmm, [mem] (SSSE3)
+  void pabsbXM(X86Xmm dst, X86Mem src) => _enc.pabsbXmmMem(dst, src);
+
+  /// PABSW xmm, xmm (SSSE3)
+  void pabswXX(X86Xmm dst, X86Xmm src) => _enc.pabswXmmXmm(dst, src);
+
+  /// PABSW xmm, [mem] (SSSE3)
+  void pabswXM(X86Xmm dst, X86Mem src) => _enc.pabswXmmMem(dst, src);
+
+  /// PABSD xmm, xmm (SSSE3)
+  void pabsdXX(X86Xmm dst, X86Xmm src) => _enc.pabsdXmmXmm(dst, src);
+
+  /// PABSD xmm, [mem] (SSSE3)
+  void pabsdXM(X86Xmm dst, X86Mem src) => _enc.pabsdXmmMem(dst, src);
+
+  /// PSADBW xmm, xmm
+  void psadbwXX(X86Xmm dst, X86Xmm src) => _enc.psadbwXmmXmm(dst, src);
+
+  /// PSADBW xmm, [mem]
+  void psadbwXM(X86Xmm dst, X86Mem src) => _enc.psadbwXmmMem(dst, src);
+
   // ===========================================================================
   // SSE2/SSE4.1 - Packed Integer Compare
   // ===========================================================================
@@ -2158,25 +2368,6 @@ class X86Assembler extends BaseEmitter {
   void orpdXM(X86Xmm dst, X86Mem mem) => _enc.orpdXmmMem(dst, mem);
 
   // SSE Compare operations (min/max)
-
-  void minpsXM(X86Xmm dst, X86Mem mem) => _enc.minpsXmmMem(dst, mem);
-  void minpd(X86Xmm dst, X86Xmm src) => _enc.minpdXmmXmm(dst, src);
-  void minpdXM(X86Xmm dst, X86Mem mem) => _enc.minpdXmmMem(dst, mem);
-
-  void maxpsXM(X86Xmm dst, X86Mem mem) => _enc.maxpsXmmMem(dst, mem);
-  void maxpd(X86Xmm dst, X86Xmm src) => _enc.maxpdXmmXmm(dst, src);
-  void maxpdXM(X86Xmm dst, X86Mem mem) => _enc.maxpdXmmMem(dst, mem);
-
-  // SSE Math operations (sqrt, rcp, rsqrt)
-  void sqrtps(X86Xmm dst, X86Xmm src) => _enc.sqrtpsXmmXmm(dst, src);
-  void sqrtpsXM(X86Xmm dst, X86Mem mem) => _enc.sqrtpsXmmMem(dst, mem);
-  void sqrtpd(X86Xmm dst, X86Xmm src) => _enc.sqrtpdXmmXmm(dst, src);
-  void sqrtpdXM(X86Xmm dst, X86Mem mem) => _enc.sqrtpdXmmMem(dst, mem);
-
-  void rcpps(X86Xmm dst, X86Xmm src) => _enc.rcppsXmmXmm(dst, src);
-  void rcppsXM(X86Xmm dst, X86Mem mem) => _enc.rcppsXmmMem(dst, mem);
-  void rsqrtps(X86Xmm dst, X86Xmm src) => _enc.rsqrtpsXmmXmm(dst, src);
-  void rsqrtpsXM(X86Xmm dst, X86Mem mem) => _enc.rsqrtpsXmmMem(dst, mem);
 
   // AVX Logical operations
   void vandpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
