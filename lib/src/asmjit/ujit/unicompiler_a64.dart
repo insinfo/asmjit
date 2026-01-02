@@ -129,6 +129,57 @@ mixin UniCompilerA64 on UniCompilerBase {
       }
     }
 
+    if (dst is A64Vec && src is A64Vec) {
+      switch (op) {
+        case UniOpVV.notU32:
+        case UniOpVV.notU64:
+          cc.addNode(InstNode(A64InstId.kMvn, [dst, src]));
+          return;
+
+        case UniOpVV.negF32:
+        case UniOpVV.negF64:
+          cc.addNode(InstNode(A64InstId.kFneg, [dst, src]));
+          return;
+
+        case UniOpVV.absF32:
+        case UniOpVV.absF64:
+          cc.addNode(InstNode(A64InstId.kFabs, [dst, src]));
+          return;
+
+        case UniOpVV.sqrtF32:
+        case UniOpVV.sqrtF64:
+          cc.addNode(InstNode(A64InstId.kFsqrt, [dst, src]));
+          return;
+
+        case UniOpVV.absI8:
+        case UniOpVV.absI16:
+        case UniOpVV.absI32:
+        case UniOpVV.absI64:
+          cc.addNode(InstNode(A64InstId.kAbs, [dst, src]));
+          return;
+
+        // Conversions
+        case UniOpVV.cvtI32ToF32:
+        case UniOpVV.cvtI32LoToF64:
+          cc.addNode(InstNode(A64InstId.kScvtf, [dst, src]));
+          return;
+
+        case UniOpVV.cvtTruncF32ToI32:
+        case UniOpVV.cvtTruncF64ToI32Lo:
+        case UniOpVV.cvtTruncF64ToI32Hi:
+          cc.addNode(InstNode(A64InstId.kFcvtzs, [dst, src]));
+          return;
+
+        case UniOpVV.cvtF32LoToF64:
+        case UniOpVV.cvtF64ToF32Lo:
+          cc.addNode(InstNode(A64InstId.kFcvt, [dst, src]));
+          return;
+
+        default:
+          break;
+      }
+    }
+
     throw UnimplementedError('_emit2vA64: $op not implemented');
   }
 
