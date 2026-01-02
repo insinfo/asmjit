@@ -46,6 +46,7 @@ class X86Assembler extends BaseEmitter {
 
   /// Emits a raw instruction by ID with generic operands.
   void emit(int instId, List<Object> ops) {
+    instructionCount++;
     x86Dispatch(this, instId, ops);
   }
 
@@ -170,6 +171,25 @@ class X86Assembler extends BaseEmitter {
       movRI64(dst, imm);
     } else {
       movRI32(dst, imm);
+    }
+  }
+
+  /// MOV (generic).
+  void mov(Operand dst, Object src) {
+    if (dst is X86Gp) {
+      if (src is X86Gp) {
+        movRR(dst, src);
+      } else if (src is int) {
+        movRI(dst, src);
+      } else if (src is X86Mem) {
+        movRM(dst, src);
+      }
+    } else if (dst is X86Mem) {
+      if (src is X86Gp) {
+        movMR(dst, src);
+      } else if (src is int) {
+        movMI(dst, src);
+      }
     }
   }
 

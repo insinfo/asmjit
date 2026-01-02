@@ -3,6 +3,8 @@
 /// Ported from asmjit/ujit/vecconsttable.h
 
 import 'dart:typed_data';
+import 'dart:ffi'; // For Pointer, Uint8
+import 'package:ffi/ffi.dart'; // For calloc
 
 /// A vector constant.
 ///
@@ -44,13 +46,80 @@ class VecConst {
 
 /// A table of common vector constants.
 class VecConstTable {
-  // We can initialize these lazily or statically.
-  // Using 256-bit generally for x86 compatibility.
+  static const int kSize = 512; // Enough space for common constants
+  static Pointer<Uint8>? _memory;
+  static int _alignedAddress = 0;
 
-  static final VecConst p_0000000000000000 = VecConst.splat64(0);
-  static final VecConst p_FFFFFFFFFFFFFFFF = VecConst.splat64(-1); // 0xFF...
+  static final Map<VecConst, int> _offsets = {};
 
-  // ... Add more as needed by UniCompiler implementation
+  // Standard constants
+  static final VecConst p_0000000000000000 = _register(VecConst.splat64(0));
+  static final VecConst p_FFFFFFFFFFFFFFFF = _register(VecConst.splat64(-1));
+
+  // Float32 Neg/Abs
+  static final VecConst p_8000000080000000 =
+      _register(VecConst.splat64(0x8000000080000000));
+  static final VecConst p_7FFFFFFF7FFFFFFF =
+      _register(VecConst.splat64(0x7FFFFFFF7FFFFFFF));
+
+  // Float64 Neg/Abs
+  static final VecConst p_8000000000000000 =
+      _register(VecConst.splat64(0x8000000000000000));
+  static final VecConst p_7FFFFFFFFFFFFFFF =
+      _register(VecConst.splat64(0x7FFFFFFFFFFFFFFF));
+
+  static int _currentOffset = 0;
+
+  static VecConst _register(VecConst vc) {
+    if (_currentOffset + vc.width > kSize) {
+      throw StateError('VecConstTable overflow');
+    }
+    _offsets[vc] = _currentOffset;
+    _currentOffset += vc.width;
+    // Align next to 32 bytes to be safe/perf friendly
+    if (_currentOffset % 32 != 0) {
+      _currentOffset = (_currentOffset + 31) & ~31;
+    }
+    return vc;
+  }
+
+  /// Returns the offset of the constant in the table.
+  static int getOffset(VecConst c) {
+    if (!_offsets.containsKey(c)) {
+      // Ideally we should support ad-hoc registration, but for now specific constants only
+      throw ArgumentError('VecConst not registered in table');
+    }
+    return _offsets[c]!;
+  }
+
+  /// Returns the base address of the table (aligned).
+  /// Initializes memory on first call.
+  static int getAddress() {
+    if (_memory == null) {
+      // Allocate with padding for alignment (64 bytes alignment)
+      final totalSize = kSize + 64;
+      _memory = calloc.allocate<Uint8>(totalSize);
+
+      int addr = _memory!.address;
+      // Align to 64 bytes
+      _alignedAddress = (addr + 63) & ~63;
+
+      // Populate
+      final view =
+          Pointer<Uint8>.fromAddress(_alignedAddress).asTypedList(kSize);
+      // We can't use view.setRange efficiently strictly with typed_data without copy
+      // But we can iterate.
+
+      _offsets.forEach((vc, offset) {
+        final data = vc.data;
+        for (int i = 0; i < vc.width; i++) {
+          // Safe because we registered them and checked bounds
+          view[offset + i] = data[i];
+        }
+      });
+    }
+    return _alignedAddress;
+  }
 }
 
 class VecConstTableRef {

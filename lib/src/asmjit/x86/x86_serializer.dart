@@ -12,6 +12,7 @@ class X86Serializer implements ir.SerializerContext {
 
   @override
   void onLabel(Label label) {
+    asm.code.ensureLabelCount(label.id + 1);
     asm.bind(label);
   }
 
@@ -20,7 +21,7 @@ class X86Serializer implements ir.SerializerContext {
     if (mode == ir.AlignMode.code) {
       asm.align(alignment);
     }
-    // Data alignment not fully supported in text section mixed with code
+    // TODO Data alignment not fully supported in text section mixed with code
   }
 
   @override

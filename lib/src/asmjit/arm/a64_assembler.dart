@@ -7,14 +7,17 @@ import '../core/code_buffer.dart';
 import '../core/labels.dart';
 import 'a64.dart';
 import 'a64_encoder.dart';
+import 'a64_dispatcher.g.dart';
+
+import '../core/emitter.dart';
 
 /// ARM64 Assembler.
 ///
 /// Provides a high-level API for emitting ARM64 instructions.
 /// Handles label binding, relocations, and instruction encoding.
-class A64Assembler {
-  /// The code holder.
-  final CodeHolder code;
+class A64Assembler extends BaseEmitter {
+  /// Pending label fixups.
+  final List<_A64LabelFixup> _fixups = [];
 
   /// The internal code buffer.
   late final CodeBuffer _buf;
@@ -22,19 +25,22 @@ class A64Assembler {
   /// The instruction encoder.
   late final A64Encoder _enc;
 
-  /// Pending label fixups.
-  final List<_A64LabelFixup> _fixups = [];
-
   /// Creates an ARM64 assembler for the given code holder.
-  A64Assembler(this.code) {
+  A64Assembler(CodeHolder code) : super(code) {
     _buf = code.text.buffer;
-    _enc = A64Encoder(_buf);
+    _enc = A64Encoder(_buf, this);
   }
 
   /// Creates an ARM64 assembler with a new code holder.
   factory A64Assembler.create() {
     final code = CodeHolder();
     return A64Assembler(code);
+  }
+
+  /// Emits a raw instruction by ID with generic operands.
+  void emit(int instId, List<Object> ops) {
+    instructionCount++;
+    a64Dispatch(this, instId, ops);
   }
 
   // ===========================================================================
@@ -131,6 +137,268 @@ class A64Assembler {
   void cmp(A64Gp rn, A64Gp rm,
       {A64Shift shift = A64Shift.lsl, int amount = 0}) {
     _enc.cmpReg(rn, rm, shift: shift, amount: amount);
+  }
+
+  /// ADC - Add with carry.
+  void adc(A64Gp rd, A64Gp rn, A64Gp rm) => _enc.adc(rd, rn, rm);
+
+  /// ADCS - Add with carry, setting flags.
+  void adcs(A64Gp rd, A64Gp rn, A64Gp rm) => _enc.adcs(rd, rn, rm);
+
+  /// SBC - Subtract with carry.
+  void sbc(A64Gp rd, A64Gp rn, A64Gp rm) => _enc.sbc(rd, rn, rm);
+
+  /// ADDS (register).
+  void adds(A64Gp rd, A64Gp rn, A64Gp rm,
+      {A64Shift shift = A64Shift.lsl, int amount = 0}) {
+    _enc.addsReg(rd, rn, rm, shift: shift, amount: amount);
+  }
+
+  /// SUBS (register).
+  void subs(A64Gp rd, A64Gp rn, A64Gp rm,
+      {A64Shift shift = A64Shift.lsl, int amount = 0}) {
+    _enc.subsReg(rd, rn, rm, shift: shift, amount: amount);
+  }
+
+  /// CMN (register) - Compare negative (alias for ADDS with ZR).
+  void cmn(A64Gp rn, A64Gp rm,
+      {A64Shift shift = A64Shift.lsl, int amount = 0}) {
+    final zr = rn.is64Bit ? xzr : wzr;
+    adds(zr, rn, rm, shift: shift, amount: amount);
+  }
+
+  /// SBCS - Subtract with carry, setting flags.
+  void sbcs(A64Gp rd, A64Gp rn, A64Gp rm) => _enc.sbcs(rd, rn, rm);
+
+  /// ANDS - Bitwise AND, setting flags.
+  void ands(A64Gp rd, A64Gp rn, A64Gp rm,
+          {A64Shift shift = A64Shift.lsl, int amount = 0}) =>
+      _enc.andsReg(rd, rn, rm, shift: shift, amount: amount);
+
+  /// BIC - Bitwise Bit Clear.
+  void bic(A64Gp rd, A64Gp rn, A64Gp rm,
+          {A64Shift shift = A64Shift.lsl, int amount = 0}) =>
+      _enc.bicReg(rd, rn, rm, shift: shift, amount: amount);
+
+  /// BICS - Bitwise Bit Clear, setting flags.
+  void bics(A64Gp rd, A64Gp rn, A64Gp rm,
+          {A64Shift shift = A64Shift.lsl, int amount = 0}) =>
+      _enc.bicsReg(rd, rn, rm, shift: shift, amount: amount);
+
+  /// ORN - Bitwise OR NOT.
+  void orn(A64Gp rd, A64Gp rn, A64Gp rm,
+          {A64Shift shift = A64Shift.lsl, int amount = 0}) =>
+      _enc.ornReg(rd, rn, rm, shift: shift, amount: amount);
+
+  /// EON - Bitwise Exclusive OR NOT.
+  void eon(A64Gp rd, A64Gp rn, A64Gp rm,
+          {A64Shift shift = A64Shift.lsl, int amount = 0}) =>
+      _enc.eonReg(rd, rn, rm, shift: shift, amount: amount);
+
+  /// MVN - Bitwise NOT (alias for ORN with ZR).
+  void mvn(A64Gp rd, A64Gp rm,
+      {A64Shift shift = A64Shift.lsl, int amount = 0}) {
+    final zr = rd.is64Bit ? xzr : wzr;
+    orn(rd, zr, rm, shift: shift, amount: amount);
+  }
+
+  /// NEG - Negate (alias for SUB with ZR).
+  void neg(A64Gp rd, A64Gp rm,
+      {A64Shift shift = A64Shift.lsl, int amount = 0}) {
+    final zr = rd.is64Bit ? xzr : wzr;
+    sub(rd, zr, rm, shift: shift, amount: amount);
+  }
+
+  /// NEGS - Negate setting flags (alias for SUBS with ZR).
+  void negs(A64Gp rd, A64Gp rm,
+      {A64Shift shift = A64Shift.lsl, int amount = 0}) {
+    final zr = rd.is64Bit ? xzr : wzr;
+    _enc.subsReg(rd, zr, rm, shift: shift, amount: amount);
+  }
+
+  /// NGC - Negate with carry (alias for SBC with ZR).
+  void ngc(A64Gp rd, A64Gp rm) {
+    final zr = rd.is64Bit ? xzr : wzr;
+    sbc(rd, zr, rm);
+  }
+
+  /// NGCS - Negate with carry setting flags (alias for SBCS with ZR).
+  void ngcs(A64Gp rd, A64Gp rm) {
+    final zr = rd.is64Bit ? xzr : wzr;
+    sbcs(rd, zr, rm);
+  }
+
+  /// ASRV - Arithmetic shift right (register).
+  void asrv(A64Gp rd, A64Gp rn, A64Gp rm) => _enc.asrv(rd, rn, rm);
+
+  /// LSLV - Logical shift left (register).
+  void lslv(A64Gp rd, A64Gp rn, A64Gp rm) => _enc.lslv(rd, rn, rm);
+
+  /// LSRV - Logical shift right (register).
+  void lsrv(A64Gp rd, A64Gp rn, A64Gp rm) => _enc.lsrv(rd, rn, rm);
+
+  /// RORV - Rotate right (register).
+  void rorv(A64Gp rd, A64Gp rn, A64Gp rm) => _enc.rorv(rd, rn, rm);
+
+  /// CLZ - Count Leading Zeros.
+  void clz(A64Gp rd, A64Gp rn) => _enc.clz(rd, rn);
+
+  /// CLS - Count Leading Sign bits.
+  void cls(A64Gp rd, A64Gp rn) => _enc.cls(rd, rn);
+
+  /// RBIT - Reverse Bits.
+  void rbit(A64Gp rd, A64Gp rn) => _enc.rbit(rd, rn);
+
+  /// CCMP - Conditional Compare (register).
+  void ccmp(A64Gp rn, Object rmOrImm, int nzcv, A64Cond cond) {
+    if (rmOrImm is A64Gp) {
+      _enc.ccmpReg(rn, rmOrImm, nzcv, cond);
+    } else {
+      _enc.ccmpImm(rn, rmOrImm as int, nzcv, cond);
+    }
+  }
+
+  /// CCMN - Conditional Compare Negative (register).
+  void ccmn(A64Gp rn, Object rmOrImm, int nzcv, A64Cond cond) {
+    if (rmOrImm is A64Gp) {
+      _enc.ccmnReg(rn, rmOrImm, nzcv, cond);
+    } else {
+      _enc.ccmnImm(rn, rmOrImm as int, nzcv, cond);
+    }
+  }
+
+  void crc32b(A64Gp rd, A64Gp rn, A64Gp rm) => _enc.crc32b(rd, rn, rm);
+  void crc32h(A64Gp rd, A64Gp rn, A64Gp rm) => _enc.crc32h(rd, rn, rm);
+  void crc32w(A64Gp rd, A64Gp rn, A64Gp rm) => _enc.crc32w(rd, rn, rm);
+  void crc32x(A64Gp rd, A64Gp rn, A64Gp rm) => _enc.crc32x(rd, rn, rm);
+  void crc32cb(A64Gp rd, A64Gp rn, A64Gp rm) => _enc.crc32cb(rd, rn, rm);
+  void crc32ch(A64Gp rd, A64Gp rn, A64Gp rm) => _enc.crc32ch(rd, rn, rm);
+  void crc32cw(A64Gp rd, A64Gp rn, A64Gp rm) => _enc.crc32cw(rd, rn, rm);
+  void crc32cx(A64Gp rd, A64Gp rn, A64Gp rm) => _enc.crc32cx(rd, rn, rm);
+
+  /// CSEL - Conditional Select.
+  void csel(A64Gp rd, A64Gp rn, A64Gp rm, A64Cond cond) =>
+      _enc.csel(rd, rn, rm, cond);
+
+  /// CSINC - Conditional Select Increment.
+  void csinc(A64Gp rd, A64Gp rn, A64Gp rm, A64Cond cond) =>
+      _enc.csinc(rd, rn, rm, cond);
+
+  /// CSINV - Conditional Select Invert.
+  void csinv(A64Gp rd, A64Gp rn, A64Gp rm, A64Cond cond) =>
+      _enc.csinv(rd, rn, rm, cond);
+
+  /// CSNEG - Conditional Select Negate.
+  void csneg(A64Gp rd, A64Gp rn, A64Gp rm, A64Cond cond) =>
+      _enc.csneg(rd, rn, rm, cond);
+
+  /// CSET - Conditional Set (alias for CSINC with ZR).
+  void cset(A64Gp rd, A64Cond cond) {
+    final zr = rd.is64Bit ? xzr : wzr;
+    csinc(rd, zr, zr, cond.inverse);
+  }
+
+  /// CSETM - Conditional Set Mask (alias for CSINV with ZR).
+  void csetm(A64Gp rd, A64Cond cond) {
+    final zr = rd.is64Bit ? xzr : wzr;
+    csinv(rd, zr, zr, cond.inverse);
+  }
+
+  /// CINC - Conditional Increment (alias for CSINC).
+  void cinc(A64Gp rd, A64Gp rn, A64Cond cond) =>
+      csinc(rd, rn, rn, cond.inverse);
+
+  /// CINV - Conditional Invert (alias for CSINV).
+  void cinv(A64Gp rd, A64Gp rn, A64Cond cond) =>
+      csinv(rd, rn, rn, cond.inverse);
+
+  /// CNEG - Conditional Negate (alias for CSNEG).
+  void cneg(A64Gp rd, A64Gp rn, A64Cond cond) =>
+      csneg(rd, rn, rn, cond.inverse);
+
+  /// EXTR - Extract.
+  void extr(A64Gp rd, A64Gp rn, A64Gp rm, int amount) =>
+      _enc.extr(rd, rn, rm, amount);
+
+  /// SBFM - Signed Bitfield Move.
+  void sbfm(A64Gp rd, A64Gp rn, int immr, int imms) =>
+      _enc.sbfm(rd, rn, immr, imms);
+
+  /// UBFM - Unsigned Bitfield Move.
+  void ubfm(A64Gp rd, A64Gp rn, int immr, int imms) =>
+      _enc.ubfm(rd, rn, immr, imms);
+
+  /// SBFX - Signed Bitfield Extract (alias for SBFM).
+  void sbfx(A64Gp rd, A64Gp rn, int lsb, int width) =>
+      sbfm(rd, rn, lsb, lsb + width - 1);
+
+  /// SBFIZ - Signed Bitfield Insert in Zero (alias for SBFM).
+  void sbfiz(A64Gp rd, A64Gp rn, int lsb, int width) {
+    final mask = rd.is64Bit ? 63 : 31;
+    sbfm(rd, rn, (-lsb) & mask, width - 1);
+  }
+
+  /// UBFX - Unsigned Bitfield Extract (alias for UBFM).
+  void ubfx(A64Gp rd, A64Gp rn, int lsb, int width) =>
+      ubfm(rd, rn, lsb, lsb + width - 1);
+
+  /// UBFIZ - Unsigned Bitfield Insert in Zero (alias for UBFM).
+  void ubfiz(A64Gp rd, A64Gp rn, int lsb, int width) {
+    final mask = rd.is64Bit ? 63 : 31;
+    ubfm(rd, rn, (-lsb) & mask, width - 1);
+  }
+
+  /// BFXIL - Bitfield Extract and Insert at Low end (alias for BFM).
+  void bfxil(A64Gp rd, A64Gp rn, int lsb, int width) {
+    // BFM: opc=01 (BFC/BFI/BFM/BFXIL are all same group)
+    // Actually BFXIL is BFM with r=lsb, s=lsb+width-1
+    _enc.bfm(rd, rn, lsb, lsb + width - 1);
+  }
+
+  /// BFI - Bitfield Insert (alias for BFM).
+  void bfi(A64Gp rd, A64Gp rn, int lsb, int width) {
+    final mask = rd.is64Bit ? 63 : 31;
+    _enc.bfm(rd, rn, (-lsb) & mask, width - 1);
+  }
+
+  /// BFC - Bitfield Clear (alias for BFI with ZR).
+  void bfc(A64Gp rd, int lsb, int width) {
+    final zr = rd.is64Bit ? xzr : wzr;
+    bfi(rd, zr, lsb, width);
+  }
+
+  /// BFM - Bitfield Move.
+  void bfm(A64Gp rd, A64Gp rn, int immr, int imms) {
+    _enc.bfm(rd, rn, immr, imms);
+  }
+
+  /// SXTB - Sign extend byte.
+  void sxtb(A64Gp rd, A64Gp rn) => sbfm(rd, rn, 0, 7);
+
+  /// SXTH - Sign extend halfword.
+  void sxth(A64Gp rd, A64Gp rn) => sbfm(rd, rn, 0, 15);
+
+  /// SXTW - Sign extend word (only for 64-bit).
+  void sxtw(A64Gp rd, A64Gp rn) => sbfm(rd, rn, 0, 31);
+
+  /// UXTB - Zero extend byte.
+  void uxtb(A64Gp rd, A64Gp rn) => ubfm(rd, rn, 0, 7);
+
+  /// UXTH - Zero extend halfword.
+  void uxth(A64Gp rd, A64Gp rn) => ubfm(rd, rn, 0, 15);
+
+  /// ASR - Arithmetic shift right (immediate).
+  void asr(A64Gp rd, A64Gp rn, int amount) =>
+      sbfm(rd, rn, amount, rd.is64Bit ? 63 : 31);
+
+  /// LSR - Logical shift right (immediate).
+  void lsr(A64Gp rd, A64Gp rn, int amount) =>
+      ubfm(rd, rn, amount, rd.is64Bit ? 63 : 31);
+
+  /// LSL - Logical shift left (immediate).
+  void lsl(A64Gp rd, A64Gp rn, int amount) {
+    final mask = rd.is64Bit ? 63 : 31;
+    ubfm(rd, rn, (-amount) & mask, mask - amount);
   }
 
   // ===========================================================================
@@ -362,19 +630,17 @@ class A64Assembler {
   // ===========================================================================
 
   /// NOP - No operation.
-  void nop() {
-    _enc.nop();
-  }
+  void nop() => _enc.nop();
 
   /// BRK - Breakpoint.
-  void brk(int imm16) {
-    _enc.brk(imm16);
-  }
+  void brk(int imm) => _enc.brk(imm);
 
   /// SVC - Supervisor call.
-  void svc(int imm16) {
-    _enc.svc(imm16);
-  }
+  void svc(int imm) => _enc.svc(imm);
+
+  void dmb(int option) => _enc.dmb(option);
+  void dsb(int option) => _enc.dsb(option);
+  void isb(int option) => _enc.isb(option);
 
   // ===========================================================================
   // Floating Point Instructions
@@ -439,20 +705,20 @@ class A64Assembler {
   // NEON (Integer) - Misc and Logic
   // ===========================================================================
 
-  void neg(A64Vec rd, A64Vec rn) => _enc.neg(rd, rn);
+  void negVec(A64Vec rd, A64Vec rn) => _enc.negVec(rd, rn);
   void abs(A64Vec rd, A64Vec rn) => _enc.abs(rd, rn);
-  void mvn(A64Vec rd, A64Vec rn) => _enc.mvn(rd, rn);
-  void cls(A64Vec rd, A64Vec rn) => _enc.cls(rd, rn);
-  void clz(A64Vec rd, A64Vec rn) => _enc.clz(rd, rn);
-  void cnt(A64Vec rd, A64Vec rn) => _enc.cnt(rd, rn);
+  void mvnVec(A64Vec rd, A64Vec rn) => _enc.mvnVec(rd, rn);
+  void clsVec(A64Vec rd, A64Vec rn) => _enc.clsVec(rd, rn);
+  void clzVec(A64Vec rd, A64Vec rn) => _enc.clzVec(rd, rn);
+  void cntVec(A64Vec rd, A64Vec rn) => _enc.cntVec(rd, rn);
   void rev64(A64Vec rd, A64Vec rn) => _enc.rev64(rd, rn);
   void rev32(A64Vec rd, A64Vec rn) => _enc.rev32(rd, rn);
   void rev16(A64Vec rd, A64Vec rn) => _enc.rev16(rd, rn);
 
-  void bic(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
-      _enc.bic(rd, rn, rm, wide: wide);
-  void orn(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
-      _enc.orn(rd, rn, rm, wide: wide);
+  void bicVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _enc.bicVec(rd, rn, rm, wide: wide);
+  void ornVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
+      _enc.ornVec(rd, rn, rm, wide: wide);
   void bsl(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
       _enc.bsl(rd, rn, rm, wide: wide);
   void bit(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>

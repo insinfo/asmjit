@@ -29,7 +29,7 @@ abstract final class Globals {
   static const int kNoBaseAddress = -1; // ~0 in uint64
 
   /// Number of virtual register groups.
-  static const int kNumVirtGroups = 4;
+  static const int kNumVirtGroups = 5;
 
   /// Maximum label name size.
   static const int kMaxLabelNameSize = 2048;

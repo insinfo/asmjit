@@ -2,6 +2,7 @@ import '../core/builder.dart' as ir;
 import '../core/labels.dart';
 import 'a64_assembler.dart';
 import 'a64_dispatcher.g.dart';
+import 'a64.dart';
 
 /// Serializer that converts Builder IR to A64Assembler calls (subset).
 class A64Serializer implements ir.SerializerContext {
@@ -10,7 +11,10 @@ class A64Serializer implements ir.SerializerContext {
   A64Serializer(this.asm);
 
   @override
-  void onLabel(Label label) => asm.bind(label);
+  void onLabel(Label label) {
+    asm.code.ensureLabelCount(label.id + 1);
+    asm.bind(label);
+  }
 
   @override
   void onAlign(ir.AlignMode mode, int alignment) {
@@ -53,6 +57,8 @@ class A64Serializer implements ir.SerializerContext {
         ops.add(op);
       } else if (op is ir.LabelOp) {
         ops.add(op.label);
+      } else if (op is A64CondOp) {
+        ops.add(op.cond);
       }
     }
     a64Dispatch(asm, instId, ops);

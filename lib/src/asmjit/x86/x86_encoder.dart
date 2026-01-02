@@ -4,6 +4,7 @@
 /// Ported from asmjit/x86/x86assembler.cpp (encoding parts)
 /// C:\MyDartProjects\asmjit\referencias\asmjit-master\asmjit\x86\x86assembler.cpp
 import '../core/code_buffer.dart';
+import '../core/emitter.dart';
 import '../core/error.dart';
 import '../core/operand.dart';
 import '../core/reg_type.dart';
@@ -25,7 +26,10 @@ class X86Encoder {
   /// The code buffer to emit to.
   final CodeBuffer buffer;
 
-  X86Encoder(this.buffer);
+  /// The optional emitter associated with this encoder.
+  final BaseEmitter? emitter;
+
+  X86Encoder(this.buffer, [this.emitter]);
 
   X86Gp? _memBase(X86Mem mem) => _asGp(mem.base, 'base');
   BaseReg? _memIndex(X86Mem mem) => mem.index;

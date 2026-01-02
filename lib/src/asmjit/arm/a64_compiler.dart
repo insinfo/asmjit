@@ -8,7 +8,6 @@ import 'a64.dart';
 import '../core/reg_type.dart';
 import '../core/builder.dart' as ir;
 import 'a64_serializer.dart';
-import '../core/emitter.dart';
 
 /// AArch64 Instruction Analyzer.
 class A64InstructionAnalyzer extends InstructionAnalyzer {
@@ -132,7 +131,7 @@ class A64Compiler extends BaseCompiler {
   // AArch64 usually uses 64-bit pointers
   A64Gp newGpPtr([String? name]) => newGp(RegType.gp64, name);
 
-  A64Vec newVec([String? name]) => A64Vec(newVirtId(), 128);
+  A64Vec newVec(int size, [String? name]) => A64Vec(newVirtId(), size);
 
   // Aliases for typed vectors
   A64Vec newVecB([String? name]) => A64Vec(newVirtId(), 8);
@@ -140,6 +139,32 @@ class A64Compiler extends BaseCompiler {
   A64Vec newVecS([String? name]) => A64Vec(newVirtId(), 32);
   A64Vec newVecD([String? name]) => A64Vec(newVirtId(), 64);
   A64Vec newVecQ([String? name]) => A64Vec(newVirtId(), 128);
+
+  void mov(Operand dst, Operand src) => inst(A64InstId.kMov, [dst, src]);
+  void ldr(Operand rt, Operand rn, [Operand? offset]) =>
+      inst(A64InstId.kLdr, [rt, rn, if (offset != null) offset]);
+  void str(Operand rt, Operand rn, [Operand? offset]) =>
+      inst(A64InstId.kStr, [rt, rn, if (offset != null) offset]);
+
+  void fadd(Operand dst, Operand rn, Operand rm) =>
+      inst(A64InstId.kFadd, [dst, rn, rm]);
+  void fsub(Operand dst, Operand rn, Operand rm) =>
+      inst(A64InstId.kFsub, [dst, rn, rm]);
+  void fmul(Operand dst, Operand rn, Operand rm) =>
+      inst(A64InstId.kFmul, [dst, rn, rm]);
+  void fdiv(Operand dst, Operand rn, Operand rm) =>
+      inst(A64InstId.kFdiv, [dst, rn, rm]);
+  void fmin(Operand dst, Operand rn, Operand rm) =>
+      inst(A64InstId.kFmin, [dst, rn, rm]);
+  void fmax(Operand dst, Operand rn, Operand rm) =>
+      inst(A64InstId.kFmax, [dst, rn, rm]);
+
+  void subs(Operand rd, Operand rn, Operand rm) =>
+      inst(A64InstId.kSubs, [rd, rn, rm]);
+
+  void bHi(Label target) =>
+      inst(A64InstId.kB_cond, [A64CondOp(A64Cond.hi), ir.LabelOp(target)],
+          type: ir.NodeType.jump);
 
   void finalize() {
     runPasses();
@@ -150,7 +175,25 @@ class A64Compiler extends BaseCompiler {
     if (assembler is! A64Assembler) {
       throw ArgumentError('A64Compiler requires A64Assembler');
     }
-    final serializer = A64Serializer(assembler as A64Assembler);
+    final serializer = A64Serializer(assembler);
     ir.serializeNodes(nodes, serializer);
+  }
+
+  @override
+  void emitMove(Operand dst, Operand src) {
+    // AArch64 uses MOV for GP (alias of ORR/ADD) and FMOV/ORR for FP/SIMD.
+    // The Assembler's kMov should handle aliasing if implemented, or we map to kMov.
+    // Assuming A64InstId.kMov handles basic moves.
+    inst(A64InstId.kMov, [dst, src]);
+  }
+
+  @override
+  void emitSwap(Operand a, Operand b) {
+    // AArch64 has no single instruction SWAP.
+    // Must be handled by RA using temporary registers (3 moves).
+    // If called here, it implies we need to emit swap instructions.
+    // Without a scratch register, we can't easily swap two registers without XOR trick or stack.
+    throw UnimplementedError(
+        'emitSwap not implemented for AArch64 (requires scratch reg)');
   }
 }

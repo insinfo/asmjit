@@ -278,6 +278,16 @@ class BaseCompiler extends BaseBuilder {
   /// Get virtual registers.
   List<VirtReg> get virtRegs => List.unmodifiable(_virtRegs);
 
+  /// Sets function argument pack.
+  void setArg(int argIndex, BaseReg reg) {
+    if (_func == null) throw AsmJitError.invalidState; // Must be in function
+    // For now simple implementation: just mapping.
+    // In full implementation, this updates FuncNode._argPacks.
+    // TODO: Implement full FuncValuePack logic
+    // We need to map argument index to virtual register.
+    // For now, ignoring or using rudimentary mapping if available.
+  }
+
   /// Get jump annotations.
   List<JumpAnnotation> get jumpAnnotations =>
       List.unmodifiable(_jumpAnnotations);

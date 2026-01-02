@@ -64,7 +64,8 @@ enum UniOpRR {
   bSwap,
   clz,
   ctz,
-  reflect;
+  reflect,
+  mov;
 }
 
 /// Instruction with `[reg, reg, reg]` operands.

@@ -379,6 +379,23 @@ const lo = A64Cond.cc; // Unsigned lower
 // ARM64 Memory Operand
 // ===========================================================================
 
+/// Operand wrapping an A64Cond.
+class A64CondOp extends Operand {
+  final A64Cond cond;
+
+  const A64CondOp(this.cond);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || other is A64CondOp && other.cond == cond;
+
+  @override
+  int get hashCode => cond.hashCode;
+
+  @override
+  String toString() => 'Cond(${cond.name})';
+}
+
 /// ARM64 Memory operand.
 class A64Mem extends BaseMem {
   /// Base register.

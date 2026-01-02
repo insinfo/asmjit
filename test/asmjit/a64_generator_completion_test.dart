@@ -27,12 +27,12 @@ void main() {
       final code = CodeHolder(env: env);
       final asm = A64Assembler(code);
 
-      asm.neg(v0.s, v1.s);
+      asm.negVec(v0.s, v1.s);
       asm.abs(v0.d, v1.d); // ABS usually vectors
-      asm.mvn(v0.q, v1.q);
-      asm.cls(v0.s, v1.s);
-      asm.clz(v0.s, v1.s);
-      asm.cnt(v0.b, v1.b);
+      asm.mvnVec(v0.q, v1.q);
+      asm.clsVec(v0.s, v1.s);
+      asm.clzVec(v0.s, v1.s);
+      asm.cntVec(v0.b, v1.b);
       asm.rev64(v0.s, v1.s);
       asm.rev32(v0.h, v1.h);
       asm.rev16(v0.b, v1.b);
@@ -41,13 +41,34 @@ void main() {
       expect(bytes.length, equals(9 * 4));
     });
 
+    test('GP Misc/Conditional', () {
+      final env = Environment.aarch64();
+      final code = CodeHolder(env: env);
+      final asm = A64Assembler(code);
+
+      asm.clz(x0, x1);
+      asm.cls(x0, x1);
+      asm.rbit(x0, x1);
+      asm.ccmp(x0, x1, 0, A64Cond.eq);
+      asm.ccmp(x0, 7, 1, A64Cond.ne);
+      asm.ccmn(x0, x1, 2, A64Cond.lt);
+      asm.ccmn(x0, 3, 3, A64Cond.ge);
+
+      asm.dmb(0xF);
+      asm.dsb(0x8);
+      asm.isb(0xF);
+
+      final bytes = asm.finalize().textBytes;
+      expect(bytes.length, equals(10 * 4));
+    });
+
     test('NEON Logic instructions', () {
       final env = Environment.aarch64();
       final code = CodeHolder(env: env);
       final asm = A64Assembler(code);
 
-      asm.bic(v0.s, v1.s, v2.s);
-      asm.orn(v0.s, v1.s, v2.s);
+      asm.bicVec(v0.s, v1.s, v2.s);
+      asm.ornVec(v0.s, v1.s, v2.s);
       asm.bsl(v0.s, v1.s, v2.s);
       asm.bit(v0.s, v1.s, v2.s);
       asm.bif(v0.s, v1.s, v2.s);

@@ -4,6 +4,7 @@
 /// All ARM64 instructions are 32-bit fixed width.
 
 import '../core/code_buffer.dart';
+import '../core/emitter.dart';
 import 'a64.dart';
 
 /// ARM64 instruction encoder.
@@ -14,10 +15,14 @@ class A64Encoder {
   /// The code buffer to emit instructions to.
   final CodeBuffer buffer;
 
-  A64Encoder(this.buffer);
+  /// The optional emitter associated with this encoder.
+  final BaseEmitter? emitter;
+
+  A64Encoder(this.buffer, [this.emitter]);
 
   /// Emit a 32-bit instruction.
   void emit32(int inst) {
+    emitter?.instructionCount++;
     buffer.emit32(inst);
   }
 
@@ -153,6 +158,53 @@ class A64Encoder {
     addsImm(rn.is64Bit ? xzr : wzr, rn, imm12);
   }
 
+  /// ADC - Add with carry.
+  void adc(A64Gp rd, A64Gp rn, A64Gp rm) {
+    final sf = _encSf(rd);
+    final inst = (sf << 31) |
+        (0xD4 << 21) |
+        (_encReg(rm) << 16) |
+        (_encReg(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
+  /// ADCS - Add with carry, setting flags.
+  void adcs(A64Gp rd, A64Gp rn, A64Gp rm) {
+    final sf = _encSf(rd);
+    final inst = (sf << 31) |
+        (1 << 29) |
+        (0xD4 << 21) |
+        (_encReg(rm) << 16) |
+        (_encReg(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
+  /// SBC - Subtract with carry.
+  void sbc(A64Gp rd, A64Gp rn, A64Gp rm) {
+    final sf = _encSf(rd);
+    final inst = (sf << 31) |
+        (1 << 30) |
+        (0xD4 << 21) |
+        (_encReg(rm) << 16) |
+        (_encReg(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
+  /// SBCS - Subtract with carry, setting flags.
+  void sbcs(A64Gp rd, A64Gp rn, A64Gp rm) {
+    final sf = _encSf(rd);
+    final inst = (sf << 31) |
+        (3 << 29) |
+        (0xD4 << 21) |
+        (_encReg(rm) << 16) |
+        (_encReg(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
   // ===========================================================================
   // Data Processing - Register
   // ===========================================================================
@@ -182,6 +234,40 @@ class A64Encoder {
     final inst = (sf << 31) |
         (1 << 30) |
         (0 << 29) |
+        (0x0B << 24) |
+        (_encShift(shift) << 22) |
+        (0 << 21) |
+        (_encReg(rm) << 16) |
+        ((amount & 0x3F) << 10) |
+        (_encReg(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
+  /// ADDS (shifted register).
+  void addsReg(A64Gp rd, A64Gp rn, A64Gp rm,
+      {A64Shift shift = A64Shift.lsl, int amount = 0}) {
+    final sf = _encSf(rd);
+    final inst = (sf << 31) |
+        (0 << 30) |
+        (1 << 29) |
+        (0x0B << 24) |
+        (_encShift(shift) << 22) |
+        (0 << 21) |
+        (_encReg(rm) << 16) |
+        ((amount & 0x3F) << 10) |
+        (_encReg(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
+  /// SUBS (shifted register).
+  void subsReg(A64Gp rd, A64Gp rn, A64Gp rm,
+      {A64Shift shift = A64Shift.lsl, int amount = 0}) {
+    final sf = _encSf(rd);
+    final inst = (sf << 31) |
+        (1 << 30) |
+        (1 << 29) |
         (0x0B << 24) |
         (_encShift(shift) << 22) |
         (0 << 21) |
@@ -243,6 +329,89 @@ class A64Encoder {
     emit32(inst);
   }
 
+  /// EON (shifted register) - Exclusive OR NOT.
+  void eonReg(A64Gp rd, A64Gp rn, A64Gp rm,
+      {A64Shift shift = A64Shift.lsl, int amount = 0}) {
+    final sf = _encSf(rd);
+    final inst = (sf << 31) |
+        (1 << 30) |
+        (0 << 29) |
+        (0x0A << 24) |
+        (_encShift(shift) << 22) |
+        (1 << 21) | // N=1
+        (_encReg(rm) << 16) |
+        ((amount & 0x3F) << 10) |
+        (_encReg(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
+  /// ANDS (shifted register) - Bitwise AND, setting flags.
+  void andsReg(A64Gp rd, A64Gp rn, A64Gp rm,
+      {A64Shift shift = A64Shift.lsl, int amount = 0}) {
+    final sf = _encSf(rd);
+    final inst = (sf << 31) |
+        (3 << 29) |
+        (0x0A << 24) |
+        (_encShift(shift) << 22) |
+        (0 << 21) |
+        (_encReg(rm) << 16) |
+        ((amount & 0x3F) << 10) |
+        (_encReg(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
+  /// BIC (shifted register) - Bitwise Bit Clear.
+  void bicReg(A64Gp rd, A64Gp rn, A64Gp rm,
+      {A64Shift shift = A64Shift.lsl, int amount = 0}) {
+    final sf = _encSf(rd);
+    final inst = (sf << 31) |
+        (0 << 30) |
+        (0 << 29) |
+        (0x0A << 24) |
+        (_encShift(shift) << 22) |
+        (1 << 21) | // N=1
+        (_encReg(rm) << 16) |
+        ((amount & 0x3F) << 10) |
+        (_encReg(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
+  /// BICS (shifted register) - Bitwise Bit Clear, setting flags.
+  void bicsReg(A64Gp rd, A64Gp rn, A64Gp rm,
+      {A64Shift shift = A64Shift.lsl, int amount = 0}) {
+    final sf = _encSf(rd);
+    final inst = (sf << 31) |
+        (3 << 29) |
+        (0x0A << 24) |
+        (_encShift(shift) << 22) |
+        (1 << 21) | // N=1
+        (_encReg(rm) << 16) |
+        ((amount & 0x3F) << 10) |
+        (_encReg(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
+  /// ORN (shifted register) - Bitwise OR NOT.
+  void ornReg(A64Gp rd, A64Gp rn, A64Gp rm,
+      {A64Shift shift = A64Shift.lsl, int amount = 0}) {
+    final sf = _encSf(rd);
+    final inst = (sf << 31) |
+        (0 << 30) |
+        (1 << 29) |
+        (0x0A << 24) |
+        (_encShift(shift) << 22) |
+        (1 << 21) | // N=1
+        (_encReg(rm) << 16) |
+        ((amount & 0x3F) << 10) |
+        (_encReg(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
   /// CMP (shifted register).
   void cmpReg(A64Gp rn, A64Gp rm,
       {A64Shift shift = A64Shift.lsl, int amount = 0}) {
@@ -260,6 +429,142 @@ class A64Encoder {
         _encReg(zr);
     emit32(inst);
   }
+
+  void _ccBase(A64Gp rn, int rmOrImm, int nzcv, A64Cond cond,
+      {bool immediate = false, bool negative = false}) {
+    final sf = _encSf(rn);
+    final op = negative ? 0 : 1;
+    final inst = (sf << 31) |
+        (op << 30) |
+        (0x3A << 24) |
+        (0x2 << 21) |
+        ((rmOrImm & 0x1F) << 16) |
+        (cond.encoding << 12) |
+        (immediate ? (1 << 11) : 0) |
+        (_encReg(rn) << 5) |
+        (nzcv & 0xF);
+    emit32(inst);
+  }
+
+  /// CCMP (register) - Conditional Compare (register).
+  void ccmpReg(A64Gp rn, A64Gp rm, int nzcv, A64Cond cond) =>
+      _ccBase(rn, _encReg(rm), nzcv, cond, immediate: false, negative: false);
+
+  /// CCMP (immediate) - Conditional Compare (immediate).
+  void ccmpImm(A64Gp rn, int imm, int nzcv, A64Cond cond) =>
+      _ccBase(rn, imm, nzcv, cond, immediate: true, negative: false);
+
+  /// CCMN (register) - Conditional Compare Negative (register).
+  void ccmnReg(A64Gp rn, A64Gp rm, int nzcv, A64Cond cond) =>
+      _ccBase(rn, _encReg(rm), nzcv, cond, immediate: false, negative: true);
+
+  /// CCMN (immediate) - Conditional Compare Negative (immediate).
+  void ccmnImm(A64Gp rn, int imm, int nzcv, A64Cond cond) =>
+      _ccBase(rn, imm, nzcv, cond, immediate: true, negative: true);
+
+  void _shiftReg(A64Gp rd, A64Gp rn, A64Gp rm, int op) {
+    final sf = _encSf(rd);
+    final inst = (sf << 31) |
+        (0xD6 << 21) |
+        (_encReg(rm) << 16) |
+        (op << 10) |
+        (_encReg(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
+  /// ASRV - Arithmetic shift right (register).
+  void asrv(A64Gp rd, A64Gp rn, A64Gp rm) => _shiftReg(rd, rn, rm, 0x08);
+
+  /// LSLV - Logical shift left (register).
+  void lslv(A64Gp rd, A64Gp rn, A64Gp rm) => _shiftReg(rd, rn, rm, 0x09);
+
+  /// LSRV - Logical shift right (register).
+  void lsrv(A64Gp rd, A64Gp rn, A64Gp rm) => _shiftReg(rd, rn, rm, 0x0A);
+
+  /// RORV - Rotate right (register).
+  void rorv(A64Gp rd, A64Gp rn, A64Gp rm) => _shiftReg(rd, rn, rm, 0x0B);
+
+  /// CLZ - Count Leading Zeros.
+  void clz(A64Gp rd, A64Gp rn) {
+    final sf = _encSf(rd);
+    final inst = (sf << 31) |
+        (0x2D6 << 21) |
+        (0x04 << 10) |
+        (_encReg(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
+  /// CLS - Count Leading Sign bits.
+  void cls(A64Gp rd, A64Gp rn) {
+    final sf = _encSf(rd);
+    final inst = (sf << 31) |
+        (0x2D6 << 21) |
+        (0x05 << 10) |
+        (_encReg(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
+  /// RBIT - Reverse Bits.
+  void rbit(A64Gp rd, A64Gp rn) {
+    final sf = _encSf(rd);
+    final inst = (sf << 31) |
+        (0x2D6 << 21) |
+        (0x00 << 10) |
+        (_encReg(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
+  void _crc(A64Gp rd, A64Gp rn, A64Gp rm, int c, int sz) {
+    final sf = rd.is64Bit ? 1 : 0;
+    final inst = (sf << 31) |
+        (0xD6 << 21) |
+        (_encReg(rm) << 16) |
+        (0x2 << 13) |
+        (c << 12) |
+        (sz << 10) |
+        (_encReg(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
+  void crc32b(A64Gp rd, A64Gp rn, A64Gp rm) => _crc(rd, rn, rm, 0, 0);
+  void crc32h(A64Gp rd, A64Gp rn, A64Gp rm) => _crc(rd, rn, rm, 0, 1);
+  void crc32w(A64Gp rd, A64Gp rn, A64Gp rm) => _crc(rd, rn, rm, 0, 2);
+  void crc32x(A64Gp rd, A64Gp rn, A64Gp rm) => _crc(rd, rn, rm, 0, 3);
+  void crc32cb(A64Gp rd, A64Gp rn, A64Gp rm) => _crc(rd, rn, rm, 1, 0);
+  void crc32ch(A64Gp rd, A64Gp rn, A64Gp rm) => _crc(rd, rn, rm, 1, 1);
+  void crc32cw(A64Gp rd, A64Gp rn, A64Gp rm) => _crc(rd, rn, rm, 1, 2);
+  void crc32cx(A64Gp rd, A64Gp rn, A64Gp rm) => _crc(rd, rn, rm, 1, 3);
+
+  void _bitfield(A64Gp rd, A64Gp rn, int immr, int imms, int op) {
+    final sf = _encSf(rd);
+    final n = sf;
+    final inst = (sf << 31) |
+        (op << 29) |
+        (0x26 << 23) |
+        (n << 22) |
+        ((immr & 0x3F) << 16) |
+        ((imms & 0x3F) << 10) |
+        (_encReg(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
+  /// SBFM - Signed Bitfield Move.
+  void sbfm(A64Gp rd, A64Gp rn, int immr, int imms) =>
+      _bitfield(rd, rn, immr, imms, 0);
+
+  /// BFM - Bitfield Move.
+  void bfm(A64Gp rd, A64Gp rn, int immr, int imms) =>
+      _bitfield(rd, rn, immr, imms, 1);
+
+  /// UBFM - Unsigned Bitfield Move.
+  void ubfm(A64Gp rd, A64Gp rn, int immr, int imms) =>
+      _bitfield(rd, rn, immr, imms, 2);
 
   // ===========================================================================
   // Move Instructions
@@ -407,9 +712,23 @@ class A64Encoder {
 
   /// RET - Return from subroutine.
   void ret([A64Gp rn = x30]) {
-    final inst = (0xD65F << 16) | (_encReg(rn) << 5);
+    final inst = 0xD65F0000 | (_encReg(rn) << 5);
     emit32(inst);
   }
+
+  void _barrier(int op, int option) {
+    final inst = 0xD503301F | ((option & 0xF) << 8) | ((op & 0x7) << 5);
+    emit32(inst);
+  }
+
+  /// DMB - Data Memory Barrier.
+  void dmb(int option) => _barrier(0x5, option);
+
+  /// DSB - Data Synchronization Barrier.
+  void dsb(int option) => _barrier(0x4, option);
+
+  /// ISB - Instruction Synchronization Barrier.
+  void isb(int option) => _barrier(0x6, option);
 
   // ===========================================================================
   // Load/Store Instructions
@@ -705,6 +1024,60 @@ class A64Encoder {
         (0xD6 << 21) |
         (_encReg(rm) << 16) |
         (0x02 << 10) |
+        (_encReg(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
+  // ===========================================================================
+  // Conditional Select Instructions
+  // ===========================================================================
+
+  void _csBase(int op, int op2, A64Gp rd, A64Gp rn, A64Gp rm, A64Cond cond) {
+    final sf = _encSf(rd);
+    final inst = (sf << 31) |
+        (op << 30) |
+        (0x1A << 24) |
+        (1 << 23) | // M=1
+        (_encReg(rm) << 16) |
+        (_encCond(cond) << 12) |
+        (op2 << 10) |
+        (_encReg(rn) << 5) |
+        _encReg(rd);
+    emit32(inst);
+  }
+
+  /// CSEL - Conditional Select.
+  void csel(A64Gp rd, A64Gp rn, A64Gp rm, A64Cond cond) =>
+      _csBase(0, 0, rd, rn, rm, cond);
+
+  /// CSINC - Conditional Select Increment.
+  void csinc(A64Gp rd, A64Gp rn, A64Gp rm, A64Cond cond) =>
+      _csBase(0, 1, rd, rn, rm, cond);
+
+  /// CSINV - Conditional Select Invert.
+  void csinv(A64Gp rd, A64Gp rn, A64Gp rm, A64Cond cond) =>
+      _csBase(1, 0, rd, rn, rm, cond);
+
+  /// CSNEG - Conditional Select Negate.
+  void csneg(A64Gp rd, A64Gp rn, A64Gp rm, A64Cond cond) =>
+      _csBase(1, 1, rd, rn, rm, cond);
+
+  // ===========================================================================
+  // Bitfield/Extract Instructions
+  // ===========================================================================
+
+  /// EXTR - Extract.
+  /// Encoding: sf|00|100111|N|Rm|imm6|Rn|Rd
+  void extr(A64Gp rd, A64Gp rn, A64Gp rm, int amount) {
+    final sf = _encSf(rd);
+    final n = sf; // N=1 for 64-bit
+    final inst = (sf << 31) |
+        (0x13 << 24) |
+        (1 << 23) |
+        (n << 22) |
+        (_encReg(rm) << 16) |
+        ((amount & 0x3F) << 10) |
         (_encReg(rn) << 5) |
         _encReg(rd);
     emit32(inst);
@@ -1080,22 +1453,22 @@ class A64Encoder {
   }
 
   /// NEG (vector).
-  void neg(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 1, 11);
+  void negVec(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 1, 11);
 
   /// ABS (vector).
   void abs(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 0, 11);
 
   /// MVN (vector) - Bitwise NOT.
-  void mvn(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 1, 5, sizeOverride: 0);
+  void mvnVec(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 1, 5, sizeOverride: 0);
 
   /// CLS (vector) - Count leading sign bits.
-  void cls(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 0, 4);
+  void clsVec(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 0, 4);
 
   /// CLZ (vector) - Count leading zeros.
-  void clz(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 1, 4);
+  void clzVec(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 1, 4);
 
   /// CNT (vector) - Population count.
-  void cnt(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 0, 5, sizeOverride: 0);
+  void cntVec(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 0, 5, sizeOverride: 0);
 
   /// REV64 (vector).
   void rev64(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 0, 0);
@@ -1110,11 +1483,11 @@ class A64Encoder {
   // NEON (logic) - Additional
   // ===========================================================================
 
-  void bic(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
+  void bicVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
     _vec3SameLogic(0x0E, 0x1, 0x03, rd, rn, rm, wide: wide);
   }
 
-  void orn(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
+  void ornVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
     _vec3SameLogic(0x0E, 0x3, 0x03, rd, rn, rm, wide: wide);
   }
 
@@ -1324,6 +1697,320 @@ class A64Encoder {
         (0x0E << 24) |
         (imm5 << 16) |
         (1 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  // ===========================================================================
+  // Widening Multiply (Long)
+  // ===========================================================================
+
+  /// SMULL - Signed multiply long (vector, low half)
+  void smull(A64Vec rd, A64Vec rn, A64Vec rm) {
+    // Encoding: 0 Q 0 01110 size 1 Rm 1100 00 Rn Rd
+    final size = _vecElemSizeBits(rn); // Source element size
+    final q = 0; // Always 0 for low half variant
+    final inst = (q << 30) |
+        (0x0E << 24) |
+        (size << 22) |
+        (1 << 21) |
+        (_encVec(rm) << 16) |
+        (0xC0 << 10) | // 110000
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// UMULL - Unsigned multiply long (vector, low half)
+  void umull(A64Vec rd, A64Vec rn, A64Vec rm) {
+    // Encoding: 0 Q 1 01110 size 1 Rm 1100 00 Rn Rd
+    final size = _vecElemSizeBits(rn);
+    final q = 0;
+    final inst = (q << 30) |
+        (1 << 29) | // U=1 for unsigned
+        (0x0E << 24) |
+        (size << 22) |
+        (1 << 21) |
+        (_encVec(rm) << 16) |
+        (0xC0 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// SMULL2 - Signed multiply long (vector, high half)
+  void smull2(A64Vec rd, A64Vec rn, A64Vec rm) {
+    // Encoding: 0 Q 0 01110 size 1 Rm 1100 00 Rn Rd (Q=1 for high half)
+    final size = _vecElemSizeBits(rn);
+    final q = 1; // High half variant
+    final inst = (q << 30) |
+        (0x0E << 24) |
+        (size << 22) |
+        (1 << 21) |
+        (_encVec(rm) << 16) |
+        (0xC0 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// UMULL2 - Unsigned multiply long (vector, high half)
+  void umull2(A64Vec rd, A64Vec rn, A64Vec rm) {
+    final size = _vecElemSizeBits(rn);
+    final q = 1;
+    final inst = (q << 30) |
+        (1 << 29) |
+        (0x0E << 24) |
+        (size << 22) |
+        (1 << 21) |
+        (_encVec(rm) << 16) |
+        (0xC0 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// SMLAL - Signed multiply-accumulate long (low half)
+  void smlal(A64Vec rd, A64Vec rn, A64Vec rm) {
+    // Encoding: 0 Q 0 01110 size 1 Rm 1000 00 Rn Rd
+    final size = _vecElemSizeBits(rn);
+    final q = 0;
+    final inst = (q << 30) |
+        (0x0E << 24) |
+        (size << 22) |
+        (1 << 21) |
+        (_encVec(rm) << 16) |
+        (0x80 << 10) | // 100000
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// UMLAL - Unsigned multiply-accumulate long (low half)
+  void umlal(A64Vec rd, A64Vec rn, A64Vec rm) {
+    final size = _vecElemSizeBits(rn);
+    final q = 0;
+    final inst = (q << 30) |
+        (1 << 29) |
+        (0x0E << 24) |
+        (size << 22) |
+        (1 << 21) |
+        (_encVec(rm) << 16) |
+        (0x80 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// SMLAL2 - Signed multiply-accumulate long (high half)
+  void smlal2(A64Vec rd, A64Vec rn, A64Vec rm) {
+    final size = _vecElemSizeBits(rn);
+    final q = 1;
+    final inst = (q << 30) |
+        (0x0E << 24) |
+        (size << 22) |
+        (1 << 21) |
+        (_encVec(rm) << 16) |
+        (0x80 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// UMLAL2 - Unsigned multiply-accumulate long (high half)
+  void umlal2(A64Vec rd, A64Vec rn, A64Vec rm) {
+    final size = _vecElemSizeBits(rn);
+    final q = 1;
+    final inst = (q << 30) |
+        (1 << 29) |
+        (0x0E << 24) |
+        (size << 22) |
+        (1 << 21) |
+        (_encVec(rm) << 16) |
+        (0x80 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  // ===========================================================================
+  // Narrowing (Extract Narrow)
+  // ===========================================================================
+
+  /// XTN - Extract narrow
+  void xtn(A64Vec rd, A64Vec rn) {
+    // Encoding: 0 Q 0 01110 size 10000 10010 10 Rn Rd
+    final size = _vecElemSizeBits(rd);
+    final q = 0;
+    final inst = (q << 30) |
+        (0x0E << 24) |
+        (size << 22) |
+        (0x21 << 16) | // 100001
+        (0x28 << 11) | // 01010
+        (0x02 << 10) | // 10
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// XTN2 - Extract narrow (high half)
+  void xtn2(A64Vec rd, A64Vec rn) {
+    final size = _vecElemSizeBits(rd);
+    final q = 1;
+    final inst = (q << 30) |
+        (0x0E << 24) |
+        (size << 22) |
+        (0x21 << 16) |
+        (0x28 << 11) |
+        (0x02 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// SQXTN - Signed saturating extract narrow
+  void sqxtn(A64Vec rd, A64Vec rn) {
+    // Encoding: 0 Q 0 01110 size 10000 10100 10 Rn Rd
+    final size = _vecElemSizeBits(rd);
+    final q = 0;
+    final inst = (q << 30) |
+        (0x0E << 24) |
+        (size << 22) |
+        (0x21 << 16) |
+        (0x48 << 10) | // 0100100010
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// SQXTN2 - Signed saturating extract narrow (high half)
+  void sqxtn2(A64Vec rd, A64Vec rn) {
+    final size = _vecElemSizeBits(rd);
+    final q = 1;
+    final inst = (q << 30) |
+        (0x0E << 24) |
+        (size << 22) |
+        (0x21 << 16) |
+        (0x48 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// UQXTN - Unsigned saturating extract narrow
+  void uqxtn(A64Vec rd, A64Vec rn) {
+    final size = _vecElemSizeBits(rd);
+    final q = 0;
+    final inst = (q << 30) |
+        (1 << 29) | // U=1
+        (0x0E << 24) |
+        (size << 22) |
+        (0x21 << 16) |
+        (0x48 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// UQXTN2 - Unsigned saturating extract narrow (high half)
+  void uqxtn2(A64Vec rd, A64Vec rn) {
+    final size = _vecElemSizeBits(rd);
+    final q = 1;
+    final inst = (q << 30) |
+        (1 << 29) |
+        (0x0E << 24) |
+        (size << 22) |
+        (0x21 << 16) |
+        (0x48 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  // ===========================================================================
+  // Floating Point / Integer Conversions
+  // ===========================================================================
+
+  /// SCVTF - Signed integer to float (vector)
+  void scvtf(A64Vec rd, A64Vec rn) {
+    // Encoding: 0 Q 0 01110 0 sz 10000 11101 10 Rn Rd
+    final q = rd.sizeBits == 128 ? 1 : 0;
+    final sz = rd.sizeBits >= 64 ? 1 : 0; // Element size
+    final inst = (q << 30) |
+        (0x0E << 24) |
+        (sz << 22) |
+        (0x21 << 16) | // 100001
+        (0x1D << 11) | // 11101
+        (0x02 << 10) | // 10
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// UCVTF - Unsigned integer to float (vector)
+  void ucvtf(A64Vec rd, A64Vec rn) {
+    final q = rd.sizeBits == 128 ? 1 : 0;
+    final sz = rd.sizeBits >= 64 ? 1 : 0;
+    final inst = (q << 30) |
+        (1 << 29) | // U=1
+        (0x0E << 24) |
+        (sz << 22) |
+        (0x21 << 16) |
+        (0x1D << 11) |
+        (0x02 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// FCVTZS - Float to signed integer (round toward zero, vector)
+  void fcvtzs(A64Vec rd, A64Vec rn) {
+    // Encoding: 0 Q 0 01110 1 sz 10000 11011 10 Rn Rd
+    final q = rd.sizeBits == 128 ? 1 : 0;
+    final sz = rd.sizeBits >= 64 ? 1 : 0;
+    final inst = (q << 30) |
+        (0x0E << 24) |
+        (1 << 23) | // o1=1
+        (sz << 22) |
+        (0x21 << 16) |
+        (0x1B << 11) | // 11011
+        (0x02 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// FCVTZU - Float to unsigned integer (round toward zero, vector)
+  void fcvtzu(A64Vec rd, A64Vec rn) {
+    final q = rd.sizeBits == 128 ? 1 : 0;
+    final sz = rd.sizeBits >= 64 ? 1 : 0;
+    final inst = (q << 30) |
+        (1 << 29) | // U=1
+        (0x0E << 24) |
+        (1 << 23) |
+        (sz << 22) |
+        (0x21 << 16) |
+        (0x1B << 11) |
+        (0x02 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  /// FCVT - Floating-point convert precision (scalar)
+  void fcvt(A64Vec rd, A64Vec rn) {
+    // Encoding: 000 11110 type 1 0001 opcode 10000 Rn Rd
+    // type: 00=SP, 01=DP, 11=HP
+    // opcode: 01=SP->DP, 00=DP->SP, etc.
+    // Simplified: assume SP<->DP conversion
+    final type = rn.sizeBits == 32 ? 0 : 1;
+    final opcode = rn.sizeBits == 32 ? 1 : 0;
+    final inst = (0x1E << 24) |
+        (type << 22) |
+        (1 << 21) |
+        (opcode << 15) |
+        (0x10 << 10) | // 010000
         (_encVec(rn) << 5) |
         _encVec(rd);
     emit32(inst);

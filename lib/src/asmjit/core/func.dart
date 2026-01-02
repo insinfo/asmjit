@@ -313,6 +313,22 @@ class FuncSignature {
     return sig;
   }
 
+  static FuncSignature build(List<TypeId> args,
+      [TypeId ret = TypeId.void_, CallConvId cc = CallConvId.cdecl]) {
+    final sig = FuncSignature();
+    sig.setRet(ret);
+    sig.setCallConvId(cc);
+    for (final arg in args) {
+      sig.addArg(arg);
+    }
+    return sig;
+  }
+
+  static FuncSignature build32<T>(List<TypeId> args,
+      [CallConvId cc = CallConvId.cdecl]) {
+    return build(args, TypeId.int32, cc);
+  }
+
   static FuncSignature i64([TypeId ret = TypeId.int64]) {
     final sig = FuncSignature();
     sig.setRet(ret);

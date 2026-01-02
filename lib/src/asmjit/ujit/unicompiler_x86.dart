@@ -98,13 +98,25 @@ mixin UniCompilerX86 on UniCompilerBase {
     }
   }
 
-  void _vMovX86(BaseReg dst, BaseReg src) {
-    if (dst.id == src.id) return;
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVmovdqa, [dst, src]));
-    } else {
-      cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src]));
+  void _vMovX86(BaseReg dst, Operand src) {
+    if (src is BaseReg && dst.id == src.id) return;
+
+    if (src is X86Mem) {
+      // Use unaligned load by default for safety
+      final instId = hasAvx ? X86InstId.kVmovdqu : X86InstId.kMovdqu;
+      cc.addNode(InstNode(instId, [dst, src]));
+      return;
     }
+
+    if (src is BaseReg) {
+      if (hasAvx) {
+        cc.addNode(InstNode(X86InstId.kVmovdqa, [dst, src]));
+      } else {
+        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src]));
+      }
+      return;
+    }
+    throw ArgumentError("Invalid src operand type for vMov");
   }
 
   void _vZeroX86(BaseReg dst) {
@@ -146,12 +158,21 @@ mixin UniCompilerX86 on UniCompilerBase {
     if (hasAvx) {
       cc.addNode(InstNode(X86InstId.kVpandn, [dst, b, a]));
     } else {
-      if (b is BaseReg) {
-        if (dst.id != b.id) _vMovX86(dst, b);
-      } else {
-        _vLoadUX86(dst, b as X86Mem);
-      }
-      cc.addNode(InstNode(X86InstId.kPandn, [dst, a]));
+      // ANDN in SSE: dst = (not b) & a ? No, PANDN dst, src -> dst = (not dst) & src
+      // Op: dst = b & ~a (Wait, pandn dest, src is dest = ~dest & src)
+      // UniOp AndNot(dst, a, b) => dst = a & ~b ? Or ~a & b?
+      // Convention: vAndNot(dst, a, b) -> dst = a & ~b (usually)
+      // AsmJit: fn(a, b) -> andn(a, b) usually targets ~a & b in PANDN semantics.
+      // VPANDN dest, src1, src2 -> dest = ~src1 & src2.
+      // So UniOpVVVV.andn implies: ~src1 & src2.
+      // _vAndNotX86(dst, a, b) passed map: a=src1, b=src2.
+      // So dst = ~a & b.
+      // SSE PANDN dst, src -> dst = ~dst & src.
+      // We need dst = ~a & b.
+      // So ensure dst holds 'a'.
+      // Then PANDN dst, b.
+      if (dst.id != a.id) _vMovX86(dst, a);
+      cc.addNode(InstNode(X86InstId.kPandn, [dst, b]));
     }
   }
 
@@ -589,8 +610,8 @@ mixin UniCompilerX86 on UniCompilerBase {
   }
 
   void _emit2vX86(UniOpVV op, Operand dst, Operand src) {
-    if (dst is! BaseReg || src is! BaseReg) {
-      throw ArgumentError('SIMD operands must be registers');
+    if (dst is! BaseReg) {
+      throw ArgumentError('SIMD dst must be register');
     }
     switch (op) {
       case UniOpVV.mov:
@@ -625,7 +646,7 @@ mixin UniCompilerX86 on UniCompilerBase {
         if (hasAvx2) {
           cc.addNode(InstNode(X86InstId.kVpbroadcastb, [dst, src]));
         } else {
-          if (dst.id != src.id) _vMovX86(dst, src);
+          if (src is! BaseReg || dst.id != src.id) _vMovX86(dst, src);
           cc.addNode(InstNode(X86InstId.kPunpcklbw, [dst, dst]));
           cc.addNode(InstNode(X86InstId.kPunpcklwd, [dst, dst]));
           cc.addNode(InstNode(X86InstId.kPshufd, [dst, dst, Imm(0)]));
@@ -635,7 +656,7 @@ mixin UniCompilerX86 on UniCompilerBase {
         if (hasAvx2) {
           cc.addNode(InstNode(X86InstId.kVpbroadcastw, [dst, src]));
         } else {
-          if (dst.id != src.id) _vMovX86(dst, src);
+          if (src is! BaseReg || dst.id != src.id) _vMovX86(dst, src);
           cc.addNode(InstNode(X86InstId.kPshuflw, [dst, dst, Imm(0)]));
           cc.addNode(InstNode(X86InstId.kPshufd, [dst, dst, Imm(0)]));
         }
@@ -801,6 +822,57 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVroundpd, [dst, src, Imm(2)]));
         } else if (hasSse41) {
           cc.addNode(InstNode(X86InstId.kRoundpd, [dst, src, Imm(2)]));
+        }
+        break;
+      case UniOpVV.negF32:
+        {
+          Operand mask = (this as UniCompiler).simdConst(
+              VecConstTable.p_8000000080000000, Bcst.kNA_Unique, VecWidth.k128);
+          // XOR is commutative. Ensure first operand is Reg.
+          // If src is Reg: dst = src ^ mask (mask can be Mem)
+          // If src is Mem: dst = mask ^ src (mask must be loaded to dst first)
+          if (src is BaseReg) {
+            _vXorX86(dst, src, mask);
+          } else {
+            _vMovX86(dst, mask);
+            _vXorX86(dst, dst, src);
+          }
+        }
+        break;
+      case UniOpVV.negF64:
+        {
+          Operand mask = (this as UniCompiler).simdConst(
+              VecConstTable.p_8000000000000000, Bcst.kNA_Unique, VecWidth.k128);
+          if (src is BaseReg) {
+            _vXorX86(dst, src, mask);
+          } else {
+            _vMovX86(dst, mask);
+            _vXorX86(dst, dst, src);
+          }
+        }
+        break;
+      case UniOpVV.absF32:
+        {
+          Operand mask = (this as UniCompiler).simdConst(
+              VecConstTable.p_7FFFFFFF7FFFFFFF, Bcst.kNA_Unique, VecWidth.k128);
+          if (src is BaseReg) {
+            _vAndX86(dst, src, mask);
+          } else {
+            _vMovX86(dst, mask);
+            _vAndX86(dst, dst, src);
+          }
+        }
+        break;
+      case UniOpVV.absF64:
+        {
+          Operand mask = (this as UniCompiler).simdConst(
+              VecConstTable.p_7FFFFFFFFFFFFFFF, Bcst.kNA_Unique, VecWidth.k128);
+          if (src is BaseReg) {
+            _vAndX86(dst, src, mask);
+          } else {
+            _vMovX86(dst, mask);
+            _vAndX86(dst, dst, src);
+          }
         }
         break;
       default:
@@ -1061,6 +1133,38 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kPmaxuw, [dst, src2]));
         }
         break;
+      case UniOpVVV.minI32:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVpminsd, [dst, src1, src2]));
+        } else if (hasSse41) {
+          if (dst.id != src1.id) _vMovX86(dst, src1);
+          cc.addNode(InstNode(X86InstId.kPminsd, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.minU32:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVpminud, [dst, src1, src2]));
+        } else if (hasSse41) {
+          if (dst.id != src1.id) _vMovX86(dst, src1);
+          cc.addNode(InstNode(X86InstId.kPminud, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.maxI32:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVpmaxsd, [dst, src1, src2]));
+        } else if (hasSse41) {
+          if (dst.id != src1.id) _vMovX86(dst, src1);
+          cc.addNode(InstNode(X86InstId.kPmaxsd, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.maxU32:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVpmaxud, [dst, src1, src2]));
+        } else if (hasSse41) {
+          if (dst.id != src1.id) _vMovX86(dst, src1);
+          cc.addNode(InstNode(X86InstId.kPmaxud, [dst, src2]));
+        }
+        break;
       case UniOpVVV.packsI16I8:
         if (hasAvx) {
           cc.addNode(InstNode(X86InstId.kVpacksswb, [dst, src1, src2]));
@@ -1240,6 +1344,96 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kMaxpd, [dst, src2]));
         }
         break;
+      case UniOpVVV.cmpEqF32:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVcmpps, [dst, src1, src2, Imm(0)]));
+        } else {
+          if (dst.id != src1.id) _vMovX86(dst, src1);
+          cc.addNode(InstNode(X86InstId.kCmpps, [dst, src2, Imm(0)]));
+        }
+        break;
+      case UniOpVVV.cmpEqF64:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVcmppd, [dst, src1, src2, Imm(0)]));
+        } else {
+          if (dst.id != src1.id) _vMovX86(dst, src1);
+          cc.addNode(InstNode(X86InstId.kCmppd, [dst, src2, Imm(0)]));
+        }
+        break;
+      case UniOpVVV.cmpLtF32:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVcmpps, [dst, src1, src2, Imm(1)]));
+        } else {
+          if (dst.id != src1.id) _vMovX86(dst, src1);
+          cc.addNode(InstNode(X86InstId.kCmpps, [dst, src2, Imm(1)]));
+        }
+        break;
+      case UniOpVVV.cmpLtF64:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVcmppd, [dst, src1, src2, Imm(1)]));
+        } else {
+          if (dst.id != src1.id) _vMovX86(dst, src1);
+          cc.addNode(InstNode(X86InstId.kCmppd, [dst, src2, Imm(1)]));
+        }
+        break;
+      case UniOpVVV.cmpLeF32:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVcmpps, [dst, src1, src2, Imm(2)]));
+        } else {
+          if (dst.id != src1.id) _vMovX86(dst, src1);
+          cc.addNode(InstNode(X86InstId.kCmpps, [dst, src2, Imm(2)]));
+        }
+        break;
+      case UniOpVVV.cmpLeF64:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVcmppd, [dst, src1, src2, Imm(2)]));
+        } else {
+          if (dst.id != src1.id) _vMovX86(dst, src1);
+          cc.addNode(InstNode(X86InstId.kCmppd, [dst, src2, Imm(2)]));
+        }
+        break;
+      case UniOpVVV.cmpNeF32:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVcmpps, [dst, src1, src2, Imm(4)]));
+        } else {
+          if (dst.id != src1.id) _vMovX86(dst, src1);
+          cc.addNode(InstNode(X86InstId.kCmpps, [dst, src2, Imm(4)]));
+        }
+        break;
+      case UniOpVVV.cmpNeF64:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVcmppd, [dst, src1, src2, Imm(4)]));
+        } else {
+          if (dst.id != src1.id) _vMovX86(dst, src1);
+          cc.addNode(InstNode(X86InstId.kCmppd, [dst, src2, Imm(4)]));
+        }
+        break;
+      case UniOpVVV.cmpGtF32:
+      case UniOpVVV.cmpGeF32:
+      case UniOpVVV.cmpGtF64:
+      case UniOpVVV.cmpGeF64:
+        {
+          Operand op2 = src2;
+          if (src2 is! BaseReg) {
+            final tmp = (this as UniCompiler)
+                .newVecWithWidth((this as UniCompiler).vecWidth, "tmp_swap");
+            _vLoadUX86(tmp, src2 as X86Mem);
+            op2 = tmp;
+          }
+
+          final UniOpVVV newOp;
+          if (op == UniOpVVV.cmpGtF32)
+            newOp = UniOpVVV.cmpLtF32;
+          else if (op == UniOpVVV.cmpGeF32)
+            newOp = UniOpVVV.cmpLeF32;
+          else if (op == UniOpVVV.cmpGtF64)
+            newOp = UniOpVVV.cmpLtF64;
+          else
+            newOp = UniOpVVV.cmpLeF64; // cmpGeF64
+
+          _emit3vX86(newOp, dst, op2, src1);
+        }
+        break;
       default:
         throw UnimplementedError('_emit3vX86: $op not implemented');
     }
@@ -1379,7 +1573,7 @@ mixin UniCompilerX86 on UniCompilerBase {
 
   void _emitCmovX86(UniCondition cond, BaseReg dst, Operand src) {
     // Generate condition test (CMP/TEST/etc.)
-    (this as UniCompiler)._emitConditionTest(cond);
+    (this as UniCompiler)._emitConditionTestX86(cond);
 
     // X86 CMOVcc only works with 16/32/64-bit GP registers
     if (dst is! X86Gp) {

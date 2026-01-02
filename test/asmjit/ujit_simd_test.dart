@@ -1,6 +1,5 @@
 import 'package:asmjit/asmjit.dart';
 import 'package:test/test.dart';
-import 'package:asmjit/src/asmjit/ujit/unicompiler.dart';
 
 void main() {
   group('UJIT SIMD Tests', () {
@@ -71,6 +70,22 @@ void main() {
       // Logic
       cc.emit3v(UniOpVVV.andU32, dst, a, b);
       cc.emit3v(UniOpVVV.xorU64, dst, a, b);
+
+      cc.ret();
+      cc.endFunc();
+      cc.finalize();
+      code.finalize();
+      expect(code.isFinalized, isTrue);
+    });
+    test('SIMD Min/Max', () {
+      final a = cc.newXmm("a");
+      final b = cc.newXmm("b");
+      final dst = cc.newXmm("dst");
+
+      cc.emit3v(UniOpVVV.minI32, dst, a, b);
+      cc.emit3v(UniOpVVV.minU32, dst, a, b);
+      cc.emit3v(UniOpVVV.maxI32, dst, a, b);
+      cc.emit3v(UniOpVVV.maxU32, dst, a, b);
 
       cc.ret();
       cc.endFunc();

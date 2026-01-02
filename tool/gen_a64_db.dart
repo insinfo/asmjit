@@ -308,8 +308,50 @@ class A64DbGenerator {
       'msub',
       'sdiv',
       'udiv',
+      // Conditionals / Bit manipulation
+      'ands',
+      'bics',
+      'csel',
+      'csinc',
+      'csinv',
+      'csneg',
+      'cset',
+      'csetm',
+      'cinc',
+      'cinv',
+      'cneg',
+      'ccmp',
+      'ccmn',
+      'crc32b',
+      'crc32h',
+      'crc32w',
+      'crc32x',
+      'crc32cb',
+      'crc32ch',
+      'crc32cw',
+      'crc32cx',
+      'extr',
+      'sbfx',
+      'sbfiz',
+      'ubfx',
+      'ubfiz',
+      'bfxil',
+      'bfi',
+      'bfc',
+      'sxtb',
+      'sxth',
+      'sxtw',
+      'uxtb',
+      'uxth',
+      'negs',
+      'ngc',
+      'ngcs',
       // Misc
       'nop',
+      'dmb',
+      'dsb',
+      'isb',
+      'rbit',
       'brk',
       'svc',
       // FP/NEON basic arith
@@ -443,8 +485,15 @@ class A64DbGenerator {
         return _useHelper(used, '_br', '_br(asm, ops);');
       case 'blr':
         return _useHelper(used, '_blr', '_blr(asm, ops);');
+      case 'rbit':
+        return _useHelper(used, '_unaryReg',
+            "_unaryReg(asm, ops, (rd, rn) => asm.rbit(rd, rn));");
       case 'ret':
         return _useHelper(used, '_ret', '_ret(asm, ops);');
+      case 'dmb':
+      case 'dsb':
+      case 'isb':
+        return 'if (ops.length == 1 && ops[0] is int) asm.$name(ops[0] as int);';
       case 'ldr':
         return _useHelper(used, '_ldr', '_ldr(asm, ops);');
       case 'str':
@@ -483,6 +532,88 @@ class A64DbGenerator {
       case 'udiv':
         return _useHelper(used, '_ternaryReg',
             "_ternaryReg(asm, ops, (rd, rn, rm) => asm.udiv(rd, rn, rm));");
+      case 'ands':
+        return _useHelper(used, '_ternaryReg',
+            "_ternaryReg(asm, ops, (rd, rn, rm) => asm.ands(rd, rn, rm));");
+      case 'bics':
+        return _useHelper(used, '_ternaryReg',
+            "_ternaryReg(asm, ops, (rd, rn, rm) => asm.bics(rd, rn, rm));");
+      case 'csel':
+        return _useHelper(used, '_csel',
+            "_csel(asm, ops, (rd, rn, rm, cond) => asm.csel(rd, rn, rm, cond));");
+      case 'csinc':
+        return _useHelper(used, '_csel',
+            "_csel(asm, ops, (rd, rn, rm, cond) => asm.csinc(rd, rn, rm, cond));");
+      case 'csinv':
+        return _useHelper(used, '_csel',
+            "_csel(asm, ops, (rd, rn, rm, cond) => asm.csinv(rd, rn, rm, cond));");
+      case 'csneg':
+        return _useHelper(used, '_csel',
+            "_csel(asm, ops, (rd, rn, rm, cond) => asm.csneg(rd, rn, rm, cond));");
+      case 'cset':
+        return _useHelper(used, '_unaryCond',
+            "_unaryCond(asm, ops, (rd, cond) => asm.cset(rd, cond));");
+      case 'csetm':
+        return _useHelper(used, '_unaryCond',
+            "_unaryCond(asm, ops, (rd, cond) => asm.csetm(rd, cond));");
+      case 'ccmn':
+        return _useHelper(used, '_cc', "_cc(asm, ops, true);");
+      case 'ccmp':
+        return _useHelper(used, '_cc', "_cc(asm, ops, false);");
+      case 'crc32b':
+      case 'crc32h':
+      case 'crc32w':
+      case 'crc32x':
+      case 'crc32cb':
+      case 'crc32ch':
+      case 'crc32cw':
+      case 'crc32cx':
+        return _useHelper(used, '_ternaryReg',
+            "_ternaryReg(asm, ops, (rd, rn, rm) => asm.$name(rd, rn, rm));");
+      case 'cinc':
+        return _useHelper(used, '_binCond',
+            "_binCond(asm, ops, (rd, rn, cond) => asm.cinc(rd, rn, cond));");
+      case 'cinv':
+        return _useHelper(used, '_binCond',
+            "_binCond(asm, ops, (rd, rn, cond) => asm.cinv(rd, rn, cond));");
+      case 'cneg':
+        return _useHelper(used, '_binCond',
+            "_binCond(asm, ops, (rd, rn, cond) => asm.cneg(rd, rn, cond));");
+      case 'extr':
+        return 'if (ops.length == 4 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is A64Gp && ops[3] is int) asm.extr(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp, ops[3] as int);';
+      case 'sbfx':
+        return 'if (ops.length == 4 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int && ops[3] is int) asm.sbfx(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int, ops[3] as int);';
+      case 'sbfiz':
+        return 'if (ops.length == 4 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int && ops[3] is int) asm.sbfiz(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int, ops[3] as int);';
+      case 'ubfx':
+        return 'if (ops.length == 4 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int && ops[3] is int) asm.ubfx(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int, ops[3] as int);';
+      case 'ubfiz':
+        return 'if (ops.length == 4 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int && ops[3] is int) asm.ubfiz(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int, ops[3] as int);';
+      case 'bfxil':
+        return 'if (ops.length == 4 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int && ops[3] is int) asm.bfxil(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int, ops[3] as int);';
+      case 'bfi':
+        return 'if (ops.length == 4 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int && ops[3] is int) asm.bfi(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int, ops[3] as int);';
+      case 'bfc':
+        return 'if (ops.length == 3 && ops[0] is A64Gp && ops[1] is int && ops[2] is int) asm.bfc(ops[0] as A64Gp, ops[1] as int, ops[2] as int);';
+      case 'sxtb':
+        return 'if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) asm.sxtb(ops[0] as A64Gp, ops[1] as A64Gp);';
+      case 'sxth':
+        return 'if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) asm.sxth(ops[0] as A64Gp, ops[1] as A64Gp);';
+      case 'sxtw':
+        return 'if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) asm.sxtw(ops[0] as A64Gp, ops[1] as A64Gp);';
+      case 'uxtb':
+        return 'if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) asm.uxtb(ops[0] as A64Gp, ops[1] as A64Gp);';
+      case 'uxth':
+        return 'if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) asm.uxth(ops[0] as A64Gp, ops[1] as A64Gp);';
+      case 'negs':
+        return _useHelper(used, '_unaryReg',
+            "_unaryReg(asm, ops, (rd, rm) => asm.negs(rd, rm));");
+      case 'ngc':
+        return _useHelper(used, '_unaryReg',
+            "_unaryReg(asm, ops, (rd, rm) => asm.ngc(rd, rm));");
+      case 'ngcs':
+        return _useHelper(used, '_unaryReg',
+            "_unaryReg(asm, ops, (rd, rm) => asm.ngcs(rd, rm));");
       case 'nop':
         return 'if (ops.isEmpty) asm.nop();';
       case 'brk':
@@ -518,23 +649,19 @@ class A64DbGenerator {
         return _useHelper(used, '_fcsel', "_fcsel(asm, ops);");
       // NEON integer additional
       case 'neg':
-        return _useHelper(
-            used, '_vec2', "_vec2(asm, ops, (rd, rn) => asm.neg(rd, rn));");
+        return _useHelper(used, '_neg', "_neg(asm, ops);");
       case 'mvn':
-        return _useHelper(
-            used, '_vec2', "_vec2(asm, ops, (rd, rn) => asm.mvn(rd, rn));");
+        return _useHelper(used, '_mvn', "_mvn(asm, ops);");
       case 'abs':
         return _useHelper(
             used, '_vec2', "_vec2(asm, ops, (rd, rn) => asm.abs(rd, rn));");
       case 'cls':
-        return _useHelper(
-            used, '_vec2', "_vec2(asm, ops, (rd, rn) => asm.cls(rd, rn));");
+        return _useHelper(used, '_cls', "_cls(asm, ops);");
       case 'clz':
-        return _useHelper(
-            used, '_vec2', "_vec2(asm, ops, (rd, rn) => asm.clz(rd, rn));");
+        return _useHelper(used, '_clz', "_clz(asm, ops);");
       case 'cnt':
         return _useHelper(
-            used, '_vec2', "_vec2(asm, ops, (rd, rn) => asm.cnt(rd, rn));");
+            used, '_vec2', "_vec2(asm, ops, (rd, rn) => asm.cntVec(rd, rn));");
       case 'rev16':
         return _useHelper(
             used, '_vec2', "_vec2(asm, ops, (rd, rn) => asm.rev16(rd, rn));");
@@ -571,11 +698,9 @@ class A64DbGenerator {
         return _useHelper(used, '_smov', "_smov(asm, ops);");
       // Bit manipulation
       case 'bic':
-        return _useHelper(used, '_vec3',
-            "_vec3(asm, ops, (rd, rn, rm) => asm.bic(rd, rn, rm));");
+        return _useHelper(used, '_bic', "_bic(asm, ops);");
       case 'orn':
-        return _useHelper(used, '_vec3',
-            "_vec3(asm, ops, (rd, rn, rm) => asm.orn(rd, rn, rm));");
+        return _useHelper(used, '_orn', "_orn(asm, ops);");
       case 'bif':
         return _useHelper(used, '_vec3',
             "_vec3(asm, ops, (rd, rn, rm) => asm.bif(rd, rn, rm));");
@@ -1034,6 +1159,116 @@ void _smov(A64Assembler asm, List<Object> ops) {
   }
 }
 ''',
+      '_neg': '''
+void _neg(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) {
+    asm.neg(ops[0] as A64Gp, ops[1] as A64Gp);
+  } else if (ops.length == 2 && ops[0] is A64Vec && ops[1] is A64Vec) {
+    asm.negVec(ops[0] as A64Vec, ops[1] as A64Vec);
+  }
+}
+''',
+      '_mvn': '''
+void _mvn(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) {
+    asm.mvn(ops[0] as A64Gp, ops[1] as A64Gp);
+  } else if (ops.length == 2 && ops[0] is A64Vec && ops[1] is A64Vec) {
+    asm.mvnVec(ops[0] as A64Vec, ops[1] as A64Vec);
+  }
+}
+''',
+      '_csel': '''
+void _csel(A64Assembler asm, List<Object> ops,
+    void Function(A64Gp, A64Gp, A64Gp, A64Cond) fn) {
+  if (ops.length == 4 &&
+      ops[0] is A64Gp &&
+      ops[1] is A64Gp &&
+      ops[2] is A64Gp &&
+      ops[3] is A64Cond) {
+    fn(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp, ops[3] as A64Cond);
+  }
+}
+''',
+      '_binCond': '''
+void _binCond(A64Assembler asm, List<Object> ops,
+    void Function(A64Gp, A64Gp, A64Cond) fn) {
+  if (ops.length == 3 &&
+      ops[0] is A64Gp &&
+      ops[1] is A64Gp &&
+      ops[2] is A64Cond) {
+    fn(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Cond);
+  }
+}
+''',
+      '_unaryCond': '''
+void _unaryCond(A64Assembler asm, List<Object> ops,
+    void Function(A64Gp, A64Cond) fn) {
+  if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Cond) {
+    fn(ops[0] as A64Gp, ops[1] as A64Cond);
+  }
+}
+''',
+      '_unaryReg': '''
+void _unaryReg(A64Assembler asm, List<Object> ops,
+    void Function(A64Gp, A64Gp) fn) {
+  if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) {
+    fn(ops[0] as A64Gp, ops[1] as A64Gp);
+  }
+}
+''',
+      '_cls': '''
+void _cls(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) {
+    asm.cls(ops[0] as A64Gp, ops[1] as A64Gp);
+  } else if (ops.length == 2 && ops[0] is A64Vec && ops[1] is A64Vec) {
+    asm.clsVec(ops[0] as A64Vec, ops[1] as A64Vec);
+  }
+}
+''',
+      '_clz': '''
+void _clz(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) {
+    asm.clz(ops[0] as A64Gp, ops[1] as A64Gp);
+  } else if (ops.length == 2 && ops[0] is A64Vec && ops[1] is A64Vec) {
+    asm.clzVec(ops[0] as A64Vec, ops[1] as A64Vec);
+  }
+}
+''',
+      '_cc': '''
+void _cc(A64Assembler asm, List<Object> ops, bool negative) {
+  if (ops.length == 4 && ops[0] is A64Gp && ops[2] is int && ops[3] is A64Cond) {
+    if (negative) {
+      asm.ccmn(ops[0] as A64Gp, ops[1], ops[2] as int, ops[3] as A64Cond);
+    } else {
+      asm.ccmp(ops[0] as A64Gp, ops[1], ops[2] as int, ops[3] as A64Cond);
+    }
+  }
+}
+''',
+      '_bic': '''
+void _bic(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is A64Gp) {
+    asm.bic(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp);
+  } else if (ops.length == 3 &&
+      ops[0] is A64Vec &&
+      ops[1] is A64Vec &&
+      ops[2] is A64Vec) {
+    asm.bicVec(ops[0] as A64Vec, ops[1] as A64Vec, ops[2] as A64Vec);
+  }
+}
+''',
+      '_orn': '''
+void _orn(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is A64Gp) {
+    asm.orn(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp);
+  } else if (ops.length == 3 &&
+      ops[0] is A64Vec &&
+      ops[1] is A64Vec &&
+      ops[2] is A64Vec) {
+    asm.ornVec(ops[0] as A64Vec, ops[1] as A64Vec, ops[2] as A64Vec);
+  }
+}
+''',
     };
 
     final ordered = [
@@ -1084,6 +1319,17 @@ void _smov(A64Assembler asm, List<Object> ops) {
       '_ins',
       '_umov',
       '_smov',
+      '_neg',
+      '_mvn',
+      '_csel',
+      '_binCond',
+      '_unaryCond',
+      '_unaryReg',
+      '_cls',
+      '_clz',
+      '_cc',
+      '_bic',
+      '_orn',
     ];
 
     final buf = StringBuffer();

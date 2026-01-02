@@ -34,6 +34,9 @@ class BaseEmitter {
   int encodingOptions = EncodingOptions.kNone;
   int diagnosticOptions = DiagnosticOptions.kNone;
 
+  /// Number of instructions emitted.
+  int instructionCount = 0;
+
   BaseEmitter(this.code);
 
   /// Sets a logger for formatted output.

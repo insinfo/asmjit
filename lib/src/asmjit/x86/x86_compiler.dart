@@ -197,6 +197,8 @@ class X86Compiler extends BaseCompiler {
       inst(X86InstId.kJnbe, [LabelOp(target)], type: NodeType.jump);
   void jae(Label target) =>
       inst(X86InstId.kJnb, [LabelOp(target)], type: NodeType.jump);
+  void jns(Label target) =>
+      inst(X86InstId.kJns, [LabelOp(target)], type: NodeType.jump);
 
   // ===========================================================================
   // Shifts / Rotates
@@ -208,11 +210,40 @@ class X86Compiler extends BaseCompiler {
   void rol(Operand dst, Operand count) => inst(X86InstId.kRol, [dst, count]);
   void ror(Operand dst, Operand count) => inst(X86InstId.kRor, [dst, count]);
   // ===========================================================================
+  // AVX Scalar Double
+  // ===========================================================================
+
+  void vmovsd(Operand dst, Operand src) => inst(X86InstId.kVmovsd, [dst, src]);
+
+  void vaddsd(Operand dst, Operand src1, Operand src2) =>
+      inst(X86InstId.kVaddsd, [dst, src1, src2]);
+  void vsubsd(Operand dst, Operand src1, Operand src2) =>
+      inst(X86InstId.kVsubsd, [dst, src1, src2]);
+  void vmulsd(Operand dst, Operand src1, Operand src2) =>
+      inst(X86InstId.kVmulsd, [dst, src1, src2]);
+  void vdivsd(Operand dst, Operand src1, Operand src2) =>
+      inst(X86InstId.kVdivsd, [dst, src1, src2]);
+  void vminsd(Operand dst, Operand src1, Operand src2) =>
+      inst(X86InstId.kVminsd, [dst, src1, src2]);
+  void vmaxsd(Operand dst, Operand src1, Operand src2) =>
+      inst(X86InstId.kVmaxsd, [dst, src1, src2]);
+
+  // ===========================================================================
   // RA Emission Interface Implementation
   // ===========================================================================
 
   @override
   void emitMove(Operand dst, Operand src) {
+    if (dst is BaseReg) {
+      if (dst.isVec) {
+        // Vector move
+        // Using kMovaps as a generic vector move for now (typical for XMM/YMM)
+        // Ideally should match type (Int/Float), but Movaps works for register copies on most SIMD units.
+        inst(X86InstId.kMovaps, [dst, src]);
+        return;
+      }
+    }
+
     if (dst is BaseReg && src is BaseReg) {
       if (dst.group == src.group) {
         // Simple register move

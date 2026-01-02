@@ -27,14 +27,29 @@ void a64Dispatch(A64Assembler asm, int instId, List<Object> ops) {
     case A64InstId.kAnd:
       _and(asm, ops);
       break;
+    case A64InstId.kAnds:
+      _ternaryReg(asm, ops, (rd, rn, rm) => asm.ands(rd, rn, rm));
+      break;
     case A64InstId.kAsr:
       _shift(asm, ops, A64Shift.asr);
       break;
     case A64InstId.kB:
       _b(asm, ops);
       break;
+    case A64InstId.kBfc:
+      if (ops.length == 3 && ops[0] is A64Gp && ops[1] is int && ops[2] is int) asm.bfc(ops[0] as A64Gp, ops[1] as int, ops[2] as int);
+      break;
+    case A64InstId.kBfi:
+      if (ops.length == 4 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int && ops[3] is int) asm.bfi(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int, ops[3] as int);
+      break;
+    case A64InstId.kBfxil:
+      if (ops.length == 4 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int && ops[3] is int) asm.bfxil(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int, ops[3] as int);
+      break;
     case A64InstId.kBic:
-      _vec3(asm, ops, (rd, rn, rm) => asm.bic(rd, rn, rm));
+      _bic(asm, ops);
+      break;
+    case A64InstId.kBics:
+      _ternaryReg(asm, ops, (rd, rn, rm) => asm.bics(rd, rn, rm));
       break;
     case A64InstId.kBif:
       _vec3(asm, ops, (rd, rn, rm) => asm.bif(rd, rn, rm));
@@ -63,11 +78,23 @@ void a64Dispatch(A64Assembler asm, int instId, List<Object> ops) {
     case A64InstId.kCbz:
       _cb(asm, ops, zero: true);
       break;
+    case A64InstId.kCcmn:
+      _cc(asm, ops, true);
+      break;
+    case A64InstId.kCcmp:
+      _cc(asm, ops, false);
+      break;
+    case A64InstId.kCinc:
+      _binCond(asm, ops, (rd, rn, cond) => asm.cinc(rd, rn, cond));
+      break;
+    case A64InstId.kCinv:
+      _binCond(asm, ops, (rd, rn, cond) => asm.cinv(rd, rn, cond));
+      break;
     case A64InstId.kCls:
-      _vec2(asm, ops, (rd, rn) => asm.cls(rd, rn));
+      _cls(asm, ops);
       break;
     case A64InstId.kClz:
-      _vec2(asm, ops, (rd, rn) => asm.clz(rd, rn));
+      _clz(asm, ops);
       break;
     case A64InstId.kCmn:
       _cmn(asm, ops);
@@ -75,14 +102,68 @@ void a64Dispatch(A64Assembler asm, int instId, List<Object> ops) {
     case A64InstId.kCmp:
       _cmp(asm, ops);
       break;
+    case A64InstId.kCneg:
+      _binCond(asm, ops, (rd, rn, cond) => asm.cneg(rd, rn, cond));
+      break;
     case A64InstId.kCnt:
-      _vec2(asm, ops, (rd, rn) => asm.cnt(rd, rn));
+      _vec2(asm, ops, (rd, rn) => asm.cntVec(rd, rn));
+      break;
+    case A64InstId.kCrc32b:
+      _ternaryReg(asm, ops, (rd, rn, rm) => asm.crc32b(rd, rn, rm));
+      break;
+    case A64InstId.kCrc32cb:
+      _ternaryReg(asm, ops, (rd, rn, rm) => asm.crc32cb(rd, rn, rm));
+      break;
+    case A64InstId.kCrc32ch:
+      _ternaryReg(asm, ops, (rd, rn, rm) => asm.crc32ch(rd, rn, rm));
+      break;
+    case A64InstId.kCrc32cw:
+      _ternaryReg(asm, ops, (rd, rn, rm) => asm.crc32cw(rd, rn, rm));
+      break;
+    case A64InstId.kCrc32cx:
+      _ternaryReg(asm, ops, (rd, rn, rm) => asm.crc32cx(rd, rn, rm));
+      break;
+    case A64InstId.kCrc32h:
+      _ternaryReg(asm, ops, (rd, rn, rm) => asm.crc32h(rd, rn, rm));
+      break;
+    case A64InstId.kCrc32w:
+      _ternaryReg(asm, ops, (rd, rn, rm) => asm.crc32w(rd, rn, rm));
+      break;
+    case A64InstId.kCrc32x:
+      _ternaryReg(asm, ops, (rd, rn, rm) => asm.crc32x(rd, rn, rm));
+      break;
+    case A64InstId.kCsel:
+      _csel(asm, ops, (rd, rn, rm, cond) => asm.csel(rd, rn, rm, cond));
+      break;
+    case A64InstId.kCset:
+      _unaryCond(asm, ops, (rd, cond) => asm.cset(rd, cond));
+      break;
+    case A64InstId.kCsetm:
+      _unaryCond(asm, ops, (rd, cond) => asm.csetm(rd, cond));
+      break;
+    case A64InstId.kCsinc:
+      _csel(asm, ops, (rd, rn, rm, cond) => asm.csinc(rd, rn, rm, cond));
+      break;
+    case A64InstId.kCsinv:
+      _csel(asm, ops, (rd, rn, rm, cond) => asm.csinv(rd, rn, rm, cond));
+      break;
+    case A64InstId.kCsneg:
+      _csel(asm, ops, (rd, rn, rm, cond) => asm.csneg(rd, rn, rm, cond));
+      break;
+    case A64InstId.kDmb:
+      if (ops.length == 1 && ops[0] is int) asm.dmb(ops[0] as int);
+      break;
+    case A64InstId.kDsb:
+      if (ops.length == 1 && ops[0] is int) asm.dsb(ops[0] as int);
       break;
     case A64InstId.kDup:
       _dup(asm, ops);
       break;
     case A64InstId.kEor:
       _eor(asm, ops);
+      break;
+    case A64InstId.kExtr:
+      if (ops.length == 4 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is A64Gp && ops[3] is int) asm.extr(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp, ops[3] as int);
       break;
     case A64InstId.kFabs:
       _vec2(asm, ops, (rd, rn) => asm.fabs(rd, rn));
@@ -125,6 +206,9 @@ void a64Dispatch(A64Assembler asm, int instId, List<Object> ops) {
       break;
     case A64InstId.kFsub:
       _vec3(asm, ops, (rd, rn, rm) => asm.fsub(rd, rn, rm));
+      break;
+    case A64InstId.kIsb:
+      if (ops.length == 1 && ops[0] is int) asm.isb(ops[0] as int);
       break;
     case A64InstId.kLdp:
       _ldp(asm, ops);
@@ -178,19 +262,31 @@ void a64Dispatch(A64Assembler asm, int instId, List<Object> ops) {
       _mul(asm, ops);
       break;
     case A64InstId.kMvn:
-      _vec2(asm, ops, (rd, rn) => asm.mvn(rd, rn));
+      _mvn(asm, ops);
       break;
     case A64InstId.kNeg:
-      _vec2(asm, ops, (rd, rn) => asm.neg(rd, rn));
+      _neg(asm, ops);
+      break;
+    case A64InstId.kNegs:
+      _unaryReg(asm, ops, (rd, rm) => asm.negs(rd, rm));
+      break;
+    case A64InstId.kNgc:
+      _unaryReg(asm, ops, (rd, rm) => asm.ngc(rd, rm));
+      break;
+    case A64InstId.kNgcs:
+      _unaryReg(asm, ops, (rd, rm) => asm.ngcs(rd, rm));
       break;
     case A64InstId.kNop:
       if (ops.isEmpty) asm.nop();
       break;
     case A64InstId.kOrn:
-      _vec3(asm, ops, (rd, rn, rm) => asm.orn(rd, rn, rm));
+      _orn(asm, ops);
       break;
     case A64InstId.kOrr:
       _orr(asm, ops);
+      break;
+    case A64InstId.kRbit:
+      _unaryReg(asm, ops, (rd, rn) => asm.rbit(rd, rn));
       break;
     case A64InstId.kRet:
       _ret(asm, ops);
@@ -203,6 +299,12 @@ void a64Dispatch(A64Assembler asm, int instId, List<Object> ops) {
       break;
     case A64InstId.kRev64:
       _vec2(asm, ops, (rd, rn) => asm.rev64(rd, rn));
+      break;
+    case A64InstId.kSbfiz:
+      if (ops.length == 4 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int && ops[3] is int) asm.sbfiz(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int, ops[3] as int);
+      break;
+    case A64InstId.kSbfx:
+      if (ops.length == 4 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int && ops[3] is int) asm.sbfx(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int, ops[3] as int);
       break;
     case A64InstId.kSdiv:
       _ternaryReg(asm, ops, (rd, rn, rm) => asm.sdiv(rd, rn, rm));
@@ -234,11 +336,32 @@ void a64Dispatch(A64Assembler asm, int instId, List<Object> ops) {
     case A64InstId.kSvc:
       if (ops.length == 1 && ops[0] is int) asm.svc(ops[0] as int);
       break;
+    case A64InstId.kSxtb:
+      if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) asm.sxtb(ops[0] as A64Gp, ops[1] as A64Gp);
+      break;
+    case A64InstId.kSxth:
+      if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) asm.sxth(ops[0] as A64Gp, ops[1] as A64Gp);
+      break;
+    case A64InstId.kSxtw:
+      if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) asm.sxtw(ops[0] as A64Gp, ops[1] as A64Gp);
+      break;
+    case A64InstId.kUbfiz:
+      if (ops.length == 4 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int && ops[3] is int) asm.ubfiz(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int, ops[3] as int);
+      break;
+    case A64InstId.kUbfx:
+      if (ops.length == 4 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int && ops[3] is int) asm.ubfx(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int, ops[3] as int);
+      break;
     case A64InstId.kUdiv:
       _ternaryReg(asm, ops, (rd, rn, rm) => asm.udiv(rd, rn, rm));
       break;
     case A64InstId.kUmov:
       _umov(asm, ops);
+      break;
+    case A64InstId.kUxtb:
+      if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) asm.uxtb(ops[0] as A64Gp, ops[1] as A64Gp);
+      break;
+    case A64InstId.kUxth:
+      if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) asm.uxth(ops[0] as A64Gp, ops[1] as A64Gp);
       break;
     default:
       break;
@@ -620,6 +743,105 @@ void _umov(A64Assembler asm, List<Object> ops) {
 void _smov(A64Assembler asm, List<Object> ops) {
   if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Vec && ops[2] is int) {
       asm.smov(ops[0] as A64Gp, ops[1] as A64Vec, ops[2] as int);
+  }
+}
+
+void _neg(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) {
+    asm.neg(ops[0] as A64Gp, ops[1] as A64Gp);
+  } else if (ops.length == 2 && ops[0] is A64Vec && ops[1] is A64Vec) {
+    asm.negVec(ops[0] as A64Vec, ops[1] as A64Vec);
+  }
+}
+
+void _mvn(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) {
+    asm.mvn(ops[0] as A64Gp, ops[1] as A64Gp);
+  } else if (ops.length == 2 && ops[0] is A64Vec && ops[1] is A64Vec) {
+    asm.mvnVec(ops[0] as A64Vec, ops[1] as A64Vec);
+  }
+}
+
+void _csel(A64Assembler asm, List<Object> ops,
+    void Function(A64Gp, A64Gp, A64Gp, A64Cond) fn) {
+  if (ops.length == 4 &&
+      ops[0] is A64Gp &&
+      ops[1] is A64Gp &&
+      ops[2] is A64Gp &&
+      ops[3] is A64Cond) {
+    fn(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp, ops[3] as A64Cond);
+  }
+}
+
+void _binCond(A64Assembler asm, List<Object> ops,
+    void Function(A64Gp, A64Gp, A64Cond) fn) {
+  if (ops.length == 3 &&
+      ops[0] is A64Gp &&
+      ops[1] is A64Gp &&
+      ops[2] is A64Cond) {
+    fn(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Cond);
+  }
+}
+
+void _unaryCond(A64Assembler asm, List<Object> ops,
+    void Function(A64Gp, A64Cond) fn) {
+  if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Cond) {
+    fn(ops[0] as A64Gp, ops[1] as A64Cond);
+  }
+}
+
+void _unaryReg(A64Assembler asm, List<Object> ops,
+    void Function(A64Gp, A64Gp) fn) {
+  if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) {
+    fn(ops[0] as A64Gp, ops[1] as A64Gp);
+  }
+}
+
+void _cls(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) {
+    asm.cls(ops[0] as A64Gp, ops[1] as A64Gp);
+  } else if (ops.length == 2 && ops[0] is A64Vec && ops[1] is A64Vec) {
+    asm.clsVec(ops[0] as A64Vec, ops[1] as A64Vec);
+  }
+}
+
+void _clz(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) {
+    asm.clz(ops[0] as A64Gp, ops[1] as A64Gp);
+  } else if (ops.length == 2 && ops[0] is A64Vec && ops[1] is A64Vec) {
+    asm.clzVec(ops[0] as A64Vec, ops[1] as A64Vec);
+  }
+}
+
+void _cc(A64Assembler asm, List<Object> ops, bool negative) {
+  if (ops.length == 4 && ops[0] is A64Gp && ops[2] is int && ops[3] is A64Cond) {
+    if (negative) {
+      asm.ccmn(ops[0] as A64Gp, ops[1], ops[2] as int, ops[3] as A64Cond);
+    } else {
+      asm.ccmp(ops[0] as A64Gp, ops[1], ops[2] as int, ops[3] as A64Cond);
+    }
+  }
+}
+
+void _bic(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is A64Gp) {
+    asm.bic(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp);
+  } else if (ops.length == 3 &&
+      ops[0] is A64Vec &&
+      ops[1] is A64Vec &&
+      ops[2] is A64Vec) {
+    asm.bicVec(ops[0] as A64Vec, ops[1] as A64Vec, ops[2] as A64Vec);
+  }
+}
+
+void _orn(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is A64Gp) {
+    asm.orn(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp);
+  } else if (ops.length == 3 &&
+      ops[0] is A64Vec &&
+      ops[1] is A64Vec &&
+      ops[2] is A64Vec) {
+    asm.ornVec(ops[0] as A64Vec, ops[1] as A64Vec, ops[2] as A64Vec);
   }
 }
 
