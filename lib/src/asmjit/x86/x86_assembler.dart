@@ -12,6 +12,7 @@ import '../core/labels.dart';
 import '../core/environment.dart';
 import '../core/arch.dart';
 import '../core/reg_utils.dart';
+import '../core/operand.dart';
 import 'x86.dart';
 import 'x86_operands.dart';
 import 'x86_encoder.dart';
@@ -2861,6 +2862,43 @@ class X86Assembler extends BaseEmitter {
       emit(X86InstId.kVpmovsxwd, [dst, src]);
   void vpmovsxwq(Object dst, Object src) =>
       emit(X86InstId.kVpmovsxwq, [dst, src]);
+
+  // ===========================================================================
+  // SSE4.1 Rounding Instructions
+  // ===========================================================================
+
+  /// ROUNDPS xmm, xmm/m128, imm8 - Round packed single-precision values.
+  /// imm8: 0=round to nearest, 1=floor, 2=ceil, 3=truncate
+  void roundps(Object dst, Object src, int imm8) =>
+      emit(X86InstId.kRoundps, [dst, src, Imm(imm8)]);
+
+  /// ROUNDPD xmm, xmm/m128, imm8 - Round packed double-precision values.
+  void roundpd(Object dst, Object src, int imm8) =>
+      emit(X86InstId.kRoundpd, [dst, src, Imm(imm8)]);
+
+  /// ROUNDSS xmm, xmm/m32, imm8 - Round scalar single-precision value.
+  void roundss(Object dst, Object src, int imm8) =>
+      emit(X86InstId.kRoundss, [dst, src, Imm(imm8)]);
+
+  /// ROUNDSD xmm, xmm/m64, imm8 - Round scalar double-precision value.
+  void roundsd(Object dst, Object src, int imm8) =>
+      emit(X86InstId.kRoundsd, [dst, src, Imm(imm8)]);
+
+  /// VROUNDPS - AVX version of ROUNDPS.
+  void vroundps(Object dst, Object src, int imm8) =>
+      emit(X86InstId.kVroundps, [dst, src, Imm(imm8)]);
+
+  /// VROUNDPD - AVX version of ROUNDPD.
+  void vroundpd(Object dst, Object src, int imm8) =>
+      emit(X86InstId.kVroundpd, [dst, src, Imm(imm8)]);
+
+  /// VROUNDSS - AVX version of ROUNDSS.
+  void vroundss(Object dst, Object src1, Object src2, int imm8) =>
+      emit(X86InstId.kVroundss, [dst, src1, src2, Imm(imm8)]);
+
+  /// VROUNDSD - AVX version of ROUNDSD.
+  void vroundsd(Object dst, Object src1, Object src2, int imm8) =>
+      emit(X86InstId.kVroundsd, [dst, src1, src2, Imm(imm8)]);
 }
 
 extension FuncFrameX86Extensions on FuncFrame {

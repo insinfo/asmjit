@@ -319,8 +319,69 @@ mixin UniCompilerA64 on UniCompilerBase {
           cc.addNode(InstNode(A64InstId.kTbl, [dst, src1, src2]));
           return;
 
-        // TODO: Map pack/unpack/transpose if UniOp defines them to UZP/TRN
-        // UniOpVVV.packs* usually map to UZP/TRN or specific narrowing instrs.
+        // Comparisons (Equal)
+        case UniOpVVV.cmpEqU8:
+        case UniOpVVV.cmpEqU16:
+        case UniOpVVV.cmpEqU32:
+        case UniOpVVV.cmpEqU64:
+          cc.addNode(InstNode(A64InstId.kCmeq, [dst, src1, src2]));
+          return;
+
+        // Comparisons (Greater Than Signed)
+        case UniOpVVV.cmpGtI8:
+        case UniOpVVV.cmpGtI16:
+        case UniOpVVV.cmpGtI32:
+        case UniOpVVV.cmpGtI64:
+          cc.addNode(InstNode(A64InstId.kCmgt, [dst, src1, src2]));
+          return;
+
+        // Comparisons (Greater Than Unsigned)
+        case UniOpVVV.cmpGtU8:
+        case UniOpVVV.cmpGtU16:
+        case UniOpVVV.cmpGtU32:
+        case UniOpVVV.cmpGtU64:
+          cc.addNode(InstNode(A64InstId.kCmhi, [dst, src1, src2]));
+          return;
+
+        // Comparisons (Greater or Equal Signed)
+        case UniOpVVV.cmpGeI8:
+        case UniOpVVV.cmpGeI16:
+        case UniOpVVV.cmpGeI32:
+        case UniOpVVV.cmpGeI64:
+          cc.addNode(InstNode(A64InstId.kCmge, [dst, src1, src2]));
+          return;
+
+        // Comparisons (Greater or Equal Unsigned)
+        case UniOpVVV.cmpGeU8:
+        case UniOpVVV.cmpGeU16:
+        case UniOpVVV.cmpGeU32:
+        case UniOpVVV.cmpGeU64:
+          cc.addNode(InstNode(A64InstId.kCmhs, [dst, src1, src2]));
+          return;
+
+        // Average (unsigned rounded)
+        case UniOpVVV.avgrU8:
+        case UniOpVVV.avgrU16:
+          cc.addNode(InstNode(A64InstId.kUrhadd, [dst, src1, src2]));
+          return;
+
+        // Saturating Add/Sub
+        case UniOpVVV.addsI8:
+        case UniOpVVV.addsI16:
+          cc.addNode(InstNode(A64InstId.kSqadd, [dst, src1, src2]));
+          return;
+        case UniOpVVV.addsU8:
+        case UniOpVVV.addsU16:
+          cc.addNode(InstNode(A64InstId.kUqadd, [dst, src1, src2]));
+          return;
+        case UniOpVVV.subsI8:
+        case UniOpVVV.subsI16:
+          cc.addNode(InstNode(A64InstId.kSqsub, [dst, src1, src2]));
+          return;
+        case UniOpVVV.subsU8:
+        case UniOpVVV.subsU16:
+          cc.addNode(InstNode(A64InstId.kUqsub, [dst, src1, src2]));
+          return;
 
         default:
           break;

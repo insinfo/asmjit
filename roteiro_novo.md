@@ -11,18 +11,18 @@ continue portando ujit do c++ para o dart C:\MyDartProjects\asmjit\lib\src\asmji
 
 | Componente | Status | Testes |
 |------------|--------|--------|
-| Core (CodeHolder, Buffer, Runtime) | ✅ Funcional | 715 passando |
-| x86 Assembler | ✅ ~92% | +100 instrucoes (SSE/AVX/AVX-512) |
+| Core (CodeHolder, Buffer, Runtime) | ✅ Funcional | 724 passando |
+| x86 Assembler | ✅ ~94% | +100 instrucoes (SSE/AVX/AVX-512, Rounding) |
 | x86 Encoder | ✅ ~95% | Byte-to-byte pass |
-| A64 Assembler | ✅ ~40% | LD1R/TBL/Permutes added |
+| A64 Assembler | ✅ ~45% | LD1R/TBL/Permutes/Comparisons added |
 | Compiler Base | ✅ ~85% | Fixed Ret/Jump Serialization | 
 | RALocal | ✅ Implementado | Funcional |
 | RAGlobal | ✅ Parcial (Coalescing, Priority, Weighing) | Epilog/Ret Insertion Fixed |
-| **UJIT Layer** | ⚠️ ~75% | X86 AVX-512 Foundation / A64 ~60% |
+| **UJIT Layer** | ⚠️ ~78% | X86 ~90% / A64 ~70% |
 
 ---
 
-## 🆕 UJIT Layer - Progresso (02/01/2026 02:30)
+## 🆕 UJIT Layer - Progresso (02/01/2026 02:47)
 
 ### Arquivos Criados/Atualizados:
 
@@ -30,23 +30,28 @@ continue portando ujit do c++ para o dart C:\MyDartProjects\asmjit\lib\src\asmji
 |---------|--------|-----------|
 | `ujit/unicompiler.dart` | ✅ ~95% | Multi-Arch Dispatch Completo |
 | `ujit/unicompiler_x86.dart` | ✅ ~90% | AVX-512 Mask/Ext Instructions |
-| `x86/x86_assembler.dart` | ✅ ~92% | Added k* ops, vpmovzx/sx |
+| `ujit/unicompiler_a64.dart` | ✅ ~70% | Comparison/Saturating Ops Added |
+| `x86/x86_assembler.dart` | ✅ ~94% | Added rounding instructions |
 | `core/rapass.dart` | ✅ Fixed | Correctly emits RET instruction |
 | `core/builder.dart` | ✅ Fixed | Serializes Jump Nodes |
 
 ### Funcionalidades X86/Compiler Melhoradas:
 1. **AVX-512**: Implementadas instruções de máscara (`kand`, `kor`, `kmov`, etc.) e extensão zero/sinal (`vpmovzx`, `vpmovsx`).
-2. **Compiler Fixes**:
+2. **SSE4.1 Rounding**: Implementadas instruções de arredondamento (`roundps`, `roundpd`, `roundss`, `roundsd`) e versões AVX (`vroundps`, `vroundpd`, `vroundss`, `vroundsd`).
+3. **Compiler Fixes**:
    - Corrigido `RAPass` para emitir instruction `RET` ao encontrar `FuncRetNode`.
    - Corrigido `Builder` para serializar nós de salto (`NodeType.jump`), resolvendo execução incorreta de loops/condicionais.
    - Resolvido crash em testes JIT do X86Compiler.
-3. **A64 Lint**: Removidos casts desnecessários em `a64_code_builder.dart`.
+4. **A64 Lint**: Removidos casts desnecessários em `a64_code_builder.dart`.
 
 ### Funcionalidades A64 Implementadas:
 1. **Load/Store**: `ld1r` implemented for `loadDup` broadcast optimization.
 2. **Shuffles**: `TBL`, `ZIP1/2`, `UZP1/2`, `TRN1/2` integrated into `_emit3vA64`.
 3. **Layout Support**: `A64Vec` now supports `.b8`, `.h4`, `.s4`, etc. layouts.
 4. **Moves/Logic/Arith**: Fully mapped in UJIT dispatchers.
+5. **Comparisons**: Implementadas operações `cmpEq*`, `cmpGt*`, `cmpGe*` (signed/unsigned) usando `CMEQ`, `CMGT`, `CMGE`, `CMHI`, `CMHS`.
+6. **Saturating Ops**: Implementadas operações saturadas (`adds*`, `subs*`, `avgrU*`) usando `SQADD`, `UQADD`, `SQSUB`, `UQSUB`, `URHADD`.
+7. **Unary Ops**: Implementados `neg`, `not`, `abs`, `sqrt` e conversões (`cvtI32ToF*`, `cvtF*ToI32`, `cvtF32<->F64`).
 
 ### Funcionalidades Implementadas no UniCompiler:
 
