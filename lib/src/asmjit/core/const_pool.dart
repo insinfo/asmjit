@@ -62,8 +62,10 @@ class _ConstEntry {
 /// all instructions have been generated. Labels are used to
 /// reference constants via RIP-relative addressing.
 class ConstPool {
+  final LabelManager labelManager;
   final List<_ConstEntry> _entries = [];
-  int _nextLabelId = 0;
+
+  ConstPool(this.labelManager);
 
   /// Number of constants in the pool.
   int get length => _entries.length;
@@ -130,7 +132,7 @@ class ConstPool {
       }
     }
 
-    final label = Label(_nextLabelId++);
+    final label = labelManager.newLabel();
     final entry = _ConstEntry(data: data, label: label, align: align);
     _entries.add(entry);
 
@@ -184,7 +186,6 @@ class ConstPool {
   /// Clears all constants.
   void clear() {
     _entries.clear();
-    _nextLabelId = 0;
   }
 
   /// Gets the total size of the pool (including alignment padding).

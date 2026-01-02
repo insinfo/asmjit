@@ -423,6 +423,41 @@ mixin UniCompilerX86 on UniCompilerBase {
       UniOpVM op, BaseReg dst, X86Mem src, Alignment alignment, int idx) {
     final info = _getUniOpVMInfo(op);
     if (info == null) {
+      // Manual handling for complex operations not fitting single-instruction mapping
+      if (op == UniOpVM.loadDup32) {
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVbroadcastss, [dst, src.withSize(4)]));
+        } else {
+          _vLoad32X86(dst, src); // movd
+          cc.addNode(InstNode(X86InstId.kPshufd, [dst, dst, Imm(0)]));
+        }
+        return;
+      }
+      if (op == UniOpVM.loadDup64) {
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVbroadcastsd, [dst, src.withSize(8)]));
+        } else if (hasSse3) {
+          cc.addNode(InstNode(X86InstId.kMovddup, [dst, src.withSize(8)]));
+        } else {
+          _vLoad64X86(dst, src); // movq
+          // punpcklqdq xmm, xmm -> duplicates lo qword to hi
+          cc.addNode(InstNode(X86InstId.kPunpcklqdq, [dst, dst]));
+        }
+        return;
+      }
+      if (op == UniOpVM.loadDup16) {
+        if (hasAvx2) {
+          cc.addNode(InstNode(X86InstId.kVpbroadcastw, [dst, src.withSize(2)]));
+        } else {
+          // SSE2 sequence
+          _vZeroX86(dst); // Break dependency
+          cc.addNode(
+              InstNode(X86InstId.kPinsrw, [dst, src.withSize(2), Imm(0)]));
+          cc.addNode(InstNode(X86InstId.kPshuflw, [dst, dst, Imm(0)]));
+          cc.addNode(InstNode(X86InstId.kPunpcklqdq, [dst, dst]));
+        }
+        return;
+      }
       throw UnimplementedError('UniOpVM $op not implemented for X86');
     }
 
@@ -584,6 +619,25 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVbroadcastsd, [dst, src]));
         } else {
           cc.addNode(InstNode(X86InstId.kPshufd, [dst, src, Imm(0x44)]));
+        }
+        break;
+      case UniOpVV.broadcastU8:
+        if (hasAvx2) {
+          cc.addNode(InstNode(X86InstId.kVpbroadcastb, [dst, src]));
+        } else {
+          if (dst.id != src.id) _vMovX86(dst, src);
+          cc.addNode(InstNode(X86InstId.kPunpcklbw, [dst, dst]));
+          cc.addNode(InstNode(X86InstId.kPunpcklwd, [dst, dst]));
+          cc.addNode(InstNode(X86InstId.kPshufd, [dst, dst, Imm(0)]));
+        }
+        break;
+      case UniOpVV.broadcastU16:
+        if (hasAvx2) {
+          cc.addNode(InstNode(X86InstId.kVpbroadcastw, [dst, src]));
+        } else {
+          if (dst.id != src.id) _vMovX86(dst, src);
+          cc.addNode(InstNode(X86InstId.kPshuflw, [dst, dst, Imm(0)]));
+          cc.addNode(InstNode(X86InstId.kPshufd, [dst, dst, Imm(0)]));
         }
         break;
       case UniOpVV.absI8:
@@ -1323,6 +1377,71 @@ mixin UniCompilerX86 on UniCompilerBase {
     throw UnimplementedError('_emit9vX86: $op not implemented');
   }
 
+  void _emitCmovX86(UniCondition cond, BaseReg dst, Operand src) {
+    // Generate condition test (CMP/TEST/etc.)
+    (this as UniCompiler)._emitConditionTest(cond);
+
+    // X86 CMOVcc only works with 16/32/64-bit GP registers
+    if (dst is! X86Gp) {
+      throw ArgumentError('emitCmov only supports GP registers on X86');
+    }
+
+    final cmovId = _condCodeToCmov(cond.cond);
+    cc.addNode(InstNode(cmovId, [dst, src]));
+  }
+
+  void _emitSelectX86(
+      UniCondition cond, BaseReg dst, Operand src1, Operand src2) {
+    if (dst is! X86Gp) {
+      throw ArgumentError('emitSelect only supports GP registers on X86');
+    }
+
+    // Typical pattern: mov dst, src2; cmovcc dst, src1
+    if (src2 is! X86Gp || dst.id != src2.id) {
+      (this as UniCompiler).emitMov(dst, src2);
+    }
+    _emitCmovX86(cond, dst, src1);
+  }
+
+  int _condCodeToCmov(int cond) {
+    switch (cond) {
+      case CondCode.kEqual:
+        return X86InstId.kCmovz;
+      case CondCode.kNotEqual:
+        return X86InstId.kCmovnz;
+      case CondCode.kSignedLT:
+        return X86InstId.kCmovl;
+      case CondCode.kSignedGE:
+        return X86InstId.kCmovnl;
+      case CondCode.kSignedLE:
+        return X86InstId.kCmovle;
+      case CondCode.kSignedGT:
+        return X86InstId.kCmovnle;
+      case CondCode.kUnsignedLT:
+        return X86InstId.kCmovb;
+      case CondCode.kUnsignedGE:
+        return X86InstId.kCmovnb;
+      case CondCode.kUnsignedLE:
+        return X86InstId.kCmovbe;
+      case CondCode.kUnsignedGT:
+        return X86InstId.kCmovnbe;
+      case CondCode.kOverflow:
+        return X86InstId.kCmovo;
+      case CondCode.kNotOverflow:
+        return X86InstId.kCmovno;
+      case CondCode.kSign:
+        return X86InstId.kCmovs;
+      case CondCode.kNotSign:
+        return X86InstId.kCmovns;
+      case CondCode.kParityEven:
+        return X86InstId.kCmovp;
+      case CondCode.kParityOdd:
+        return X86InstId.kCmovnp;
+      default:
+        throw ArgumentError('Unsupported condition for CMOV: $cond');
+    }
+  }
+
   UniOpVMInfo? _getUniOpVMInfo(UniOpVM op) {
     switch (op) {
       case UniOpVM.load32U32:
@@ -1397,6 +1516,46 @@ mixin UniCompilerX86 on UniCompilerBase {
             narrowingOp: 0,
             memSize: 4,
             memSizeShift: 2);
+      case UniOpVM.loadCvt64I16ToI32:
+        return const UniOpVMInfo(
+            sseInstId: X86InstId.kPmovsxwd,
+            avxInstId: X86InstId.kVpmovsxwd,
+            asimdInstId: 0,
+            narrowingOp: 0,
+            memSize: 8,
+            memSizeShift: 1);
+      case UniOpVM.loadCvt64U16ToU32:
+        return const UniOpVMInfo(
+            sseInstId: X86InstId.kPmovzxwd,
+            avxInstId: X86InstId.kVpmovzxwd,
+            asimdInstId: 0,
+            narrowingOp: 0,
+            memSize: 8,
+            memSizeShift: 1);
+      case UniOpVM.loadCvt64I32ToI64:
+        return const UniOpVMInfo(
+            sseInstId: X86InstId.kPmovsxdq,
+            avxInstId: X86InstId.kVpmovsxdq,
+            asimdInstId: 0,
+            narrowingOp: 0,
+            memSize: 8,
+            memSizeShift: 1);
+      case UniOpVM.loadCvt64U32ToU64:
+        return const UniOpVMInfo(
+            sseInstId: X86InstId.kPmovzxdq,
+            avxInstId: X86InstId.kVpmovzxdq,
+            asimdInstId: 0,
+            narrowingOp: 0,
+            memSize: 8,
+            memSizeShift: 1);
+      case UniOpVM.load8:
+        return const UniOpVMInfo(
+            sseInstId: X86InstId.kPmovzxbd,
+            avxInstId: X86InstId.kVpmovzxbd,
+            asimdInstId: 0,
+            narrowingOp: 0,
+            memSize: 1,
+            memSizeShift: 0);
       default:
         return null;
     }
@@ -1459,6 +1618,22 @@ mixin UniCompilerX86 on UniCompilerBase {
             asimdInstId: 0,
             narrowingOp: 0,
             memSize: 32,
+            memSizeShift: 0);
+      case UniOpMV.store8:
+        return const UniOpVMInfo(
+            sseInstId: X86InstId.kPextrb,
+            avxInstId: X86InstId.kVpextrb,
+            asimdInstId: 0,
+            narrowingOp: 0,
+            memSize: 1,
+            memSizeShift: 0);
+      case UniOpMV.store16U16:
+        return const UniOpVMInfo(
+            sseInstId: X86InstId.kPextrw,
+            avxInstId: X86InstId.kVpextrw,
+            asimdInstId: 0,
+            narrowingOp: 0,
+            memSize: 2,
             memSizeShift: 0);
       default:
         return null;

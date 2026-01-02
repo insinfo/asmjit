@@ -485,6 +485,30 @@ class A64Assembler {
       _enc.faddp(rd, rn, rm, wide: wide);
 
   // ===========================================================================
+  // Permutation Instructions
+  // ===========================================================================
+
+  void tbl(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.tbl(rd, rn, rm);
+
+  void zip1(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.zip1(rd, rn, rm);
+  void zip2(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.zip2(rd, rn, rm);
+
+  void uzp1(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.uzp1(rd, rn, rm);
+  void uzp2(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.uzp2(rd, rn, rm);
+
+  void trn1(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.trn1(rd, rn, rm);
+  void trn2(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.trn2(rd, rn, rm);
+
+  // ===========================================================================
+  // Load/Store (LD1R)
+  // ===========================================================================
+
+  /// LD1R - Load one single-element structure and replicate to all lanes.
+  void ld1r(A64Vec vt, A64Gp rn, {int offset = 0}) {
+    _enc.ld1r(vt, rn, offset);
+  }
+
+  // ===========================================================================
   // Vector Moves
   // ===========================================================================
 

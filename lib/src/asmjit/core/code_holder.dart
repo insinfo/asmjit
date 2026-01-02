@@ -143,11 +143,17 @@ class CodeHolder {
   /// All sections.
   final List<Section> _sections = [];
 
+  /// Finalized code (cached after finalize()).
+  FinalizedCode? _finalizedCode;
+
   /// Creates a new code holder.
   CodeHolder({Environment? env}) : env = env ?? Environment.host() {
     text = Section.text();
     _sections.add(text);
   }
+
+  /// Whether the code has been finalized.
+  bool get isFinalized => _finalizedCode != null;
 
   // ===========================================================================
   // Section management
@@ -278,12 +284,13 @@ class CodeHolder {
       _resolveReloc(reloc, text.buffer);
     }
 
-    return FinalizedCode._(
+    _finalizedCode = FinalizedCode._(
       env: env,
       textBytes: text.buffer.bytes,
       dataBytes: null,
       totalSize: text.buffer.length,
     );
+    return _finalizedCode!;
   }
 
   void _resolveReloc(Reloc reloc, CodeBuffer buffer) {

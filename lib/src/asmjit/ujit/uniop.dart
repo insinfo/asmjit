@@ -185,7 +185,10 @@ enum UniOpVM {
   loadInsertU64,
   loadInsertF32,
   loadInsertF32x2,
-  loadInsertF64;
+  loadInsertF64,
+  loadDup16,
+  loadDup32,
+  loadDup64;
 }
 
 /// Instruction with `[mem, vec]` operands.

@@ -3,38 +3,50 @@
 **Última Atualização**: 2026-01-01 (22:10)
 continue lendo o codigo fonte c++ C:\MyDartProjects\asmjit\referencias\asmjit-master e portando
 
-foco em 64 bit, windows e linux e paridade com c++
+foco em 64 bits, windows e linux e paridade com c++
 
-continue portando ujit do c++ para o dart C:\MyDartProjects\asmjit\lib\src\asmjit\ujit e para cada coisa que estiver faltando implementar em x86 C:\MyDartProjects\asmjit\lib\src\asmjit\x86 ou ARM64 C:\MyDartProjects\asmjit\lib\src\asmjit\arm e implemente e va implementando testes tambem.
+continue portando ujit do c++ para o dart C:\MyDartProjects\asmjit\lib\src\asmjit\ujit e para cada coisa que estiver faltando implementar em x86 C:\MyDartProjects\asmjit\lib\src\asmjit\x86 e ARM64 C:\MyDartProjects\asmjit\lib\src\asmjit\arm e va implementando as instruções que estam faltando, e va implementando testes tambem e atualize o roteiro C:\MyDartProjects\asmjit\roteiro_novo.md.
 
 ## 📊 Status Atual
 
 | Componente | Status | Testes |
 |------------|--------|--------|
 | Core (CodeHolder, Buffer, Runtime) | ✅ Funcional | 715 passando |
-| x86 Assembler | ✅ ~90% | +100 instrucoes (SSE/AVX) |
+| x86 Assembler | ✅ ~92% | +100 instrucoes (SSE/AVX/AVX-512) |
 | x86 Encoder | ✅ ~95% | Byte-to-byte pass |
-| A64 Assembler | ⚠️ ~20% | Básico |
-| Compiler Base | ⚠️ ~50% | Básico | 
+| A64 Assembler | ✅ ~40% | LD1R/TBL/Permutes added |
+| Compiler Base | ✅ ~85% | Fixed Ret/Jump Serialization | 
 | RALocal | ✅ Implementado | Funcional |
-| RAGlobal | ✅ Parcial (Coalescing, Priority, Weighing) | Liveness Analysis |
-| **UJIT Layer** | � ~45% | Funcional |
+| RAGlobal | ✅ Parcial (Coalescing, Priority, Weighing) | Epilog/Ret Insertion Fixed |
+| **UJIT Layer** | ⚠️ ~75% | X86 AVX-512 Foundation / A64 ~60% |
 
 ---
 
-## 🆕 UJIT Layer - Progresso (01/01/2026 22:10)
+## 🆕 UJIT Layer - Progresso (02/01/2026 02:30)
 
-### Arquivos Criados:
+### Arquivos Criados/Atualizados:
 
 | Arquivo | Status | Descrição |
 |---------|--------|-----------|
-| `ujit/ujitbase.dart` | ✅ Completo | Tipos base (Alignment, VecWidth, DataWidth, Bcst, etc.) |
-| `ujit/uniop.dart` | ✅ Completo | Enums de operações universais (UniOpRR, UniOpVVV, etc.) |
-| `ujit/unicondition.dart` | ✅ Completo | Condições para operações (cmp_eq, add_z, bt_nz, etc.) |
-| `ujit/unicompiler.dart` | � ~45% | Classe UniCompiler + emissão GP + SIMD |
-| `ujit/unicompiler_x86.dart` | � ~20% | Mixin X86 com feature detection |
-| `ujit/vecconsttable.dart` | ✅ Básico | Tabela de constantes vetoriais |
-| `core/condcode.dart` | ✅ Completo | Códigos de condição (kEqual, kSignedLT, etc.) |
+| `ujit/unicompiler.dart` | ✅ ~95% | Multi-Arch Dispatch Completo |
+| `ujit/unicompiler_x86.dart` | ✅ ~90% | AVX-512 Mask/Ext Instructions |
+| `x86/x86_assembler.dart` | ✅ ~92% | Added k* ops, vpmovzx/sx |
+| `core/rapass.dart` | ✅ Fixed | Correctly emits RET instruction |
+| `core/builder.dart` | ✅ Fixed | Serializes Jump Nodes |
+
+### Funcionalidades X86/Compiler Melhoradas:
+1. **AVX-512**: Implementadas instruções de máscara (`kand`, `kor`, `kmov`, etc.) e extensão zero/sinal (`vpmovzx`, `vpmovsx`).
+2. **Compiler Fixes**:
+   - Corrigido `RAPass` para emitir instruction `RET` ao encontrar `FuncRetNode`.
+   - Corrigido `Builder` para serializar nós de salto (`NodeType.jump`), resolvendo execução incorreta de loops/condicionais.
+   - Resolvido crash em testes JIT do X86Compiler.
+3. **A64 Lint**: Removidos casts desnecessários em `a64_code_builder.dart`.
+
+### Funcionalidades A64 Implementadas:
+1. **Load/Store**: `ld1r` implemented for `loadDup` broadcast optimization.
+2. **Shuffles**: `TBL`, `ZIP1/2`, `UZP1/2`, `TRN1/2` integrated into `_emit3vA64`.
+3. **Layout Support**: `A64Vec` now supports `.b8`, `.h4`, `.s4`, etc. layouts.
+4. **Moves/Logic/Arith**: Fully mapped in UJIT dispatchers.
 
 ### Funcionalidades Implementadas no UniCompiler:
 

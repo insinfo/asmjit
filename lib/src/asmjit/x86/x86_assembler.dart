@@ -16,6 +16,7 @@ import 'x86.dart';
 import 'x86_operands.dart';
 import 'x86_encoder.dart';
 import 'x86_simd.dart';
+import 'x86_inst_db.g.dart';
 import 'x86_dispatcher.g.dart';
 import 'x86_emit_helper.dart';
 
@@ -2771,6 +2772,95 @@ class X86Assembler extends BaseEmitter {
       _enc.extractpsRegXmmImm8(dst, src, imm8);
   void extractpsMX(X86Mem dst, X86Xmm src, int imm8) =>
       _enc.extractpsMemXmmImm8(dst, src, imm8);
+
+  // ===========================================================================
+  // AVX-512 Mask Operations (k*)
+  // ===========================================================================
+
+  void kandb(X86KReg k1, X86KReg k2, X86KReg k3) =>
+      emit(X86InstId.kKandb, [k1, k2, k3]);
+  void kandw(X86KReg k1, X86KReg k2, X86KReg k3) =>
+      emit(X86InstId.kKandw, [k1, k2, k3]);
+  void kandd(X86KReg k1, X86KReg k2, X86KReg k3) =>
+      emit(X86InstId.kKandd, [k1, k2, k3]);
+  void kandq(X86KReg k1, X86KReg k2, X86KReg k3) =>
+      emit(X86InstId.kKandq, [k1, k2, k3]);
+
+  void kandnb(X86KReg k1, X86KReg k2, X86KReg k3) =>
+      emit(X86InstId.kKandnb, [k1, k2, k3]);
+  void kandnw(X86KReg k1, X86KReg k2, X86KReg k3) =>
+      emit(X86InstId.kKandnw, [k1, k2, k3]);
+  void kandnd(X86KReg k1, X86KReg k2, X86KReg k3) =>
+      emit(X86InstId.kKandnd, [k1, k2, k3]);
+  void kandnq(X86KReg k1, X86KReg k2, X86KReg k3) =>
+      emit(X86InstId.kKandnq, [k1, k2, k3]);
+
+  void korb(X86KReg k1, X86KReg k2, X86KReg k3) =>
+      emit(X86InstId.kKorb, [k1, k2, k3]);
+  void korw(X86KReg k1, X86KReg k2, X86KReg k3) =>
+      emit(X86InstId.kKorw, [k1, k2, k3]);
+  void kord(X86KReg k1, X86KReg k2, X86KReg k3) =>
+      emit(X86InstId.kKord, [k1, k2, k3]);
+  void korq(X86KReg k1, X86KReg k2, X86KReg k3) =>
+      emit(X86InstId.kKorq, [k1, k2, k3]);
+
+  void kxnorb(X86KReg k1, X86KReg k2, X86KReg k3) =>
+      emit(X86InstId.kKxnorb, [k1, k2, k3]);
+  void kxnorw(X86KReg k1, X86KReg k2, X86KReg k3) =>
+      emit(X86InstId.kKxnorw, [k1, k2, k3]);
+  void kxnord(X86KReg k1, X86KReg k2, X86KReg k3) =>
+      emit(X86InstId.kKxnord, [k1, k2, k3]);
+  void kxnorq(X86KReg k1, X86KReg k2, X86KReg k3) =>
+      emit(X86InstId.kKxnorq, [k1, k2, k3]);
+
+  void kxorb(X86KReg k1, X86KReg k2, X86KReg k3) =>
+      emit(X86InstId.kKxorb, [k1, k2, k3]);
+  void kxorw(X86KReg k1, X86KReg k2, X86KReg k3) =>
+      emit(X86InstId.kKxorw, [k1, k2, k3]);
+  void kxord(X86KReg k1, X86KReg k2, X86KReg k3) =>
+      emit(X86InstId.kKxord, [k1, k2, k3]);
+  void kxorq(X86KReg k1, X86KReg k2, X86KReg k3) =>
+      emit(X86InstId.kKxorq, [k1, k2, k3]);
+
+  void kmovb(Object dst, Object src) => emit(X86InstId.kKmovb, [dst, src]);
+  void kmovw(Object dst, Object src) => emit(X86InstId.kKmovw, [dst, src]);
+  void kmovd(Object dst, Object src) => emit(X86InstId.kKmovd, [dst, src]);
+  void kmovq(Object dst, Object src) => emit(X86InstId.kKmovq, [dst, src]);
+
+  void knotb(X86KReg dst, X86KReg src) => emit(X86InstId.kKnotb, [dst, src]);
+  void knotw(X86KReg dst, X86KReg src) => emit(X86InstId.kKnotw, [dst, src]);
+  void knotd(X86KReg dst, X86KReg src) => emit(X86InstId.kKnotd, [dst, src]);
+  void knotq(X86KReg dst, X86KReg src) => emit(X86InstId.kKnotq, [dst, src]);
+
+  // ===========================================================================
+  // AVX-512 Zero/Sign Extension
+  // ===========================================================================
+
+  void vpmovzxbd(Object dst, Object src) =>
+      emit(X86InstId.kVpmovzxbd, [dst, src]);
+  void vpmovzxbq(Object dst, Object src) =>
+      emit(X86InstId.kVpmovzxbq, [dst, src]);
+  void vpmovzxbw(Object dst, Object src) =>
+      emit(X86InstId.kVpmovzxbw, [dst, src]);
+  void vpmovzxdq(Object dst, Object src) =>
+      emit(X86InstId.kVpmovzxdq, [dst, src]);
+  void vpmovzxwd(Object dst, Object src) =>
+      emit(X86InstId.kVpmovzxwd, [dst, src]);
+  void vpmovzxwq(Object dst, Object src) =>
+      emit(X86InstId.kVpmovzxwq, [dst, src]);
+
+  void vpmovsxbd(Object dst, Object src) =>
+      emit(X86InstId.kVpmovsxbd, [dst, src]);
+  void vpmovsxbq(Object dst, Object src) =>
+      emit(X86InstId.kVpmovsxbq, [dst, src]);
+  void vpmovsxbw(Object dst, Object src) =>
+      emit(X86InstId.kVpmovsxbw, [dst, src]);
+  void vpmovsxdq(Object dst, Object src) =>
+      emit(X86InstId.kVpmovsxdq, [dst, src]);
+  void vpmovsxwd(Object dst, Object src) =>
+      emit(X86InstId.kVpmovsxwd, [dst, src]);
+  void vpmovsxwq(Object dst, Object src) =>
+      emit(X86InstId.kVpmovsxwq, [dst, src]);
 }
 
 extension FuncFrameX86Extensions on FuncFrame {

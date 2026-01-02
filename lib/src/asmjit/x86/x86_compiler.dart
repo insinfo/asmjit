@@ -8,6 +8,8 @@ import 'x86.dart';
 import 'x86_operands.dart';
 import 'x86_simd.dart';
 import '../core/reg_type.dart';
+import '../core/builder.dart' as ir;
+import 'x86_serializer.dart';
 
 /// X86 Compiler.
 class X86Compiler extends BaseCompiler {
@@ -90,23 +92,13 @@ class X86Compiler extends BaseCompiler {
     runPasses();
   }
 
-  void serializeToAssembler(X86Assembler assembler) {
-    for (final node in nodes.nodes) {
-      if (node is InstNode) {
-        if (node.nodeType == NodeType.inst) {
-          assembler.emit(node.instId, node.operands);
-        } else if (node.nodeType == NodeType.jump) {
-          assembler.emit(node.instId, node.operands);
-        } else if (node.nodeType == NodeType.funcRet) {
-          // Abstract Ret handling: translates to actual epilog + ret
-          // For now simple ret
-          assembler.ret();
-        }
-      } else if (node is LabelNode && node.nodeType == NodeType.label) {
-        assembler.bind(node.label);
-      }
-      // Handle other node types if needed
+  @override
+  void serializeToAssembler(BaseEmitter assembler) {
+    if (assembler is! X86Assembler) {
+      throw ArgumentError('X86Compiler requires X86Assembler');
     }
+    final serializer = X86Serializer(assembler);
+    ir.serializeNodes(nodes, serializer);
   }
 
   // ===========================================================================

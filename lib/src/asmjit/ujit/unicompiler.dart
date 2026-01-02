@@ -16,6 +16,8 @@ import '../x86/x86.dart';
 import '../x86/x86_operands.dart';
 import '../x86/x86_simd.dart';
 import '../x86/x86_inst_db.g.dart';
+import '../arm/a64.dart';
+import '../arm/a64_inst_db.g.dart';
 import 'ujitbase.dart';
 import 'vecconsttable.dart';
 import 'uniop.dart';
@@ -23,6 +25,7 @@ import 'unicondition.dart';
 import '../core/condcode.dart';
 
 part 'unicompiler_x86.dart';
+part 'unicompiler_a64.dart';
 
 // ============================================================================
 // [X86 Extension Enums]
@@ -261,7 +264,7 @@ abstract class UniCompilerBase {
 ///
 /// Provides a cross-platform JIT compilation API that abstracts architecture
 /// differences.
-class UniCompiler extends UniCompilerBase with UniCompilerX86 {
+class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
   UniCompiler(BaseCompiler cc, {CpuFeatures? features, VecConstTableRef? ctRef})
       : super(cc) {
     if (features != null) {
@@ -408,6 +411,16 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86 {
   AsmJitError endFunc() {
     unhookFunc();
     return cc.endFunc();
+  }
+
+  /// Finalizes the compiler (runs passes like register allocation).
+  void finalize() {
+    cc.finalize();
+  }
+
+  /// Serializes the intermediate representation to an assembler.
+  void serializeToAssembler(BaseEmitter assembler) {
+    cc.serializeToAssembler(assembler);
   }
 
   /// Emits a return.
@@ -984,20 +997,28 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86 {
   // ============================================================================
 
   /// Emit instruction with [vec, mem] operands.
-  void emitVM(UniOpVM op, BaseReg dst, X86Mem src,
+  void emitVM(UniOpVM op, BaseReg dst, BaseMem src,
       {Alignment alignment = Alignment.none, int idx = 0}) {
     if (isX86Family) {
+      if (src is! X86Mem) throw ArgumentError('X86 requires X86Mem');
       _emitVMX86(op, dst, src, alignment, idx);
+    } else if (isArm64) {
+      if (src is! A64Mem) throw ArgumentError('A64 requires A64Mem');
+      _emitVMA64(op, dst, src, alignment, idx);
     } else {
       throw UnimplementedError('emitVM not implemented for $arch');
     }
   }
 
   /// Emit instruction with [mem, vec] operands.
-  void emitMV(UniOpMV op, X86Mem dst, BaseReg src,
+  void emitMV(UniOpMV op, BaseMem dst, BaseReg src,
       {Alignment alignment = Alignment.none, int idx = 0}) {
     if (isX86Family) {
+      if (dst is! X86Mem) throw ArgumentError('X86 requires X86Mem');
       _emitMVX86(op, dst, src, alignment, idx);
+    } else if (isArm64) {
+      if (dst is! A64Mem) throw ArgumentError('A64 requires A64Mem');
+      _emitMVA64(op, dst, src, alignment, idx);
     } else {
       throw UnimplementedError('emitMV not implemented for $arch');
     }
@@ -1007,6 +1028,8 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86 {
   void emit2v(UniOpVV op, Operand dst, Operand src) {
     if (isX86Family) {
       _emit2vX86(op, dst, src);
+    } else if (isArm64) {
+      _emit2vA64(op, dst, src);
     } else {
       throw UnimplementedError('emit2v not implemented for $arch');
     }
@@ -1016,6 +1039,8 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86 {
   void emit3v(UniOpVVV op, Operand dst, Operand src1, Operand src2) {
     if (isX86Family) {
       _emit3vX86(op, dst, src1, src2);
+    } else if (isArm64) {
+      _emit3vA64(op, dst, src1, src2);
     } else {
       throw UnimplementedError('emit3v not implemented for $arch');
     }
@@ -1025,6 +1050,8 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86 {
   void emit2vi(UniOpVVI op, Operand dst, Operand src, int imm) {
     if (isX86Family) {
       _emit2viX86(op, dst, src, imm);
+    } else if (isArm64) {
+      _emit2viA64(op, dst, src, imm);
     } else {
       throw UnimplementedError('emit2vi not implemented for $arch');
     }
@@ -1034,6 +1061,8 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86 {
   void emit3vi(UniOpVVVI op, Operand dst, Operand src1, Operand src2, int imm) {
     if (isX86Family) {
       _emit3viX86(op, dst, src1, src2, imm);
+    } else if (isArm64) {
+      _emit3viA64(op, dst, src1, src2, imm);
     } else {
       throw UnimplementedError('emit3vi not implemented for $arch');
     }
@@ -1044,6 +1073,8 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86 {
       UniOpVVVV op, Operand dst, Operand src1, Operand src2, Operand src3) {
     if (isX86Family) {
       _emit4vX86(op, dst, src1, src2, src3);
+    } else if (isArm64) {
+      _emit4vA64(op, dst, src1, src2, src3);
     } else {
       throw UnimplementedError('emit4v not implemented for $arch');
     }
@@ -1054,6 +1085,8 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86 {
       Operand src3, Operand src4) {
     if (isX86Family) {
       _emit5vX86(op, dst, src1, src2, src3, src4);
+    } else if (isArm64) {
+      _emit5vA64(op, dst, src1, src2, src3, src4);
     } else {
       throw UnimplementedError('emit5v not implemented for $arch');
     }
@@ -1073,8 +1106,36 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86 {
       Operand src8) {
     if (isX86Family) {
       _emit9vX86(op, dst, src1, src2, src3, src4, src5, src6, src7, src8);
+    } else if (isArm64) {
+      _emit9vA64(op, dst, src1, src2, src3, src4, src5, src6, src7, src8);
     } else {
       throw UnimplementedError('emit9v not implemented for $arch');
+    }
+  }
+
+  // ============================================================================
+  // [High-Level SIMD Operations]
+  // ============================================================================
+
+  /// Emit conditional move: dst = cond ? src : dst
+  void emitCmov(UniCondition cond, BaseReg dst, Operand src) {
+    if (isX86Family) {
+      _emitCmovX86(cond, dst, src);
+    } else if (isArm64) {
+      _emitCmovA64(cond, dst, src);
+    } else {
+      throw UnimplementedError('emitCmov not implemented for $arch');
+    }
+  }
+
+  /// Emit conditional selection: dst = cond ? src1 : src2
+  void emitSelect(UniCondition cond, BaseReg dst, Operand src1, Operand src2) {
+    if (isX86Family) {
+      _emitSelectX86(cond, dst, src1, src2);
+    } else if (isArm64) {
+      _emitSelectA64(cond, dst, src1, src2);
+    } else {
+      throw UnimplementedError('emitSelect not implemented for $arch');
     }
   }
 

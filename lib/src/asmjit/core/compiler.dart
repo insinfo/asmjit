@@ -16,8 +16,10 @@ import 'arch.dart';
 import 'const_pool.dart';
 import 'type.dart';
 import 'support.dart' as support;
+import 'emitter.dart';
 
 export 'builder.dart';
+export 'emitter.dart';
 
 /// Jump annotation used to annotate jumps.
 class JumpAnnotation {
@@ -248,11 +250,24 @@ class BaseCompiler extends BaseBuilder {
   final List<JumpAnnotation> _jumpAnnotations = [];
 
   /// Local and global constant pools.
-  final ConstPool? _constPools = ConstPool();
+  late final ConstPool? _constPools;
 
   BaseCompiler({Environment? env, LabelManager? labelManager})
       : _env = env ?? Environment.host(),
-        super(labelManager: labelManager);
+        super(labelManager: labelManager ?? LabelManager()) {
+    _constPools = ConstPool(this.labelManager!);
+  }
+
+  /// Finalizes the compiler (runs passes).
+  void finalize() {
+    runPasses();
+  }
+
+  /// Serializes the builder's IR to an assembler.
+  void serializeToAssembler(BaseEmitter assembler) {
+    throw UnimplementedError(
+        "serializeToAssembler not implemented in BaseCompiler");
+  }
 
   Environment get environment => _env;
   Environment get env => _env;

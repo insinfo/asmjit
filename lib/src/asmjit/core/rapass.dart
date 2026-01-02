@@ -1370,32 +1370,32 @@ class RAPass extends CompilerPass {
     }
 
     // Epilog - finding all Ret nodes
+    final retNodes = <InstNode>[];
     for (final node in compiler.nodes.nodes) {
       if (node is InstNode && node.nodeType == NodeType.funcRet) {
-        if (is64Bit) {
-          final rbp = X86Gp.r64(X86RegId.rbp.index);
-          final rsp = X86Gp.r64(X86RegId.rsp.index);
-          final stackSize = func.frame.frameSize;
+        retNodes.add(node);
+      }
+    }
 
-          if (stackSize > 0) {
-            // add rsp, stackSize
-            // Often typical epilog is 'leave' (mov rsp, rbp; pop rbp) which handles restoration.
-            // If we use RBP frame pointer, we don't strictly need add rsp, stackSize.
-            // But let's assume standard leave equivalent sequence:
-            // mov rsp, rbp
-            // pop rbp
-            // This restores RSP to RBP (which was OLD RSP).
-            // So explicit add is not needed if we use RBP.
-            // But if we didn't use RBP, we would need it.
-            // Since we force RBP usage in prolog, we are good with just mov/pop.
-          }
+    for (final node in retNodes) {
+      if (is64Bit) {
+        final rbp = X86Gp.r64(X86RegId.rbp.index);
+        final rsp = X86Gp.r64(X86RegId.rsp.index);
 
-          final movRspRbp = InstNode(X86InstId.kMov, [rsp, rbp]);
-          final popRbp = InstNode(X86InstId.kPop, [rbp]);
+        // Standard epilog: mov rsp, rbp; pop rbp
+        final movRspRbp = InstNode(X86InstId.kMov, [rsp, rbp]);
+        final popRbp = InstNode(X86InstId.kPop, [rbp]);
 
-          _insertNodeBefore(node, movRspRbp);
-          _insertNodeBefore(node, popRbp);
-        }
+        _insertNodeBefore(node, movRspRbp);
+        _insertNodeBefore(node, popRbp);
+
+        // Emit RET
+        // Handle immediate for stdcall etc if needed later.
+        final retInst = InstNode(X86InstId.kRet, []);
+        _insertNodeBefore(node, retInst);
+
+        // Remove the abstract FuncRetNode
+        compiler.nodes.remove(node);
       }
     }
   }

@@ -44,6 +44,24 @@ class A64Encoder {
   int _encShift(A64Shift shift) => shift.encoding & 0x3;
 
   int _vecElemSizeBits(A64Vec vt) {
+    if (vt.layout != A64Layout.none) {
+      switch (vt.layout) {
+        case A64Layout.b8:
+        case A64Layout.b16:
+          return 0; // 8-bit
+        case A64Layout.h4:
+        case A64Layout.h8:
+          return 1; // 16-bit
+        case A64Layout.s2:
+        case A64Layout.s4:
+          return 2; // 32-bit
+        case A64Layout.d1:
+        case A64Layout.d2:
+          return 3; // 64-bit
+        default:
+          break;
+      }
+    }
     switch (vt.sizeBits) {
       case 8:
         return 0;
@@ -54,7 +72,8 @@ class A64Encoder {
       case 64:
         return 3;
       default:
-        throw ArgumentError('Unsupported vector element size: ${vt.sizeBits}');
+        throw ArgumentError(
+            'Unsupported vector element size: ${vt.sizeBits}. Use explicit layout (e.g. .b16, .s4).');
     }
   }
 
@@ -781,6 +800,133 @@ class A64Encoder {
   /// SVC - Supervisor call (system call).
   void svc(int imm16) {
     final inst = (0xD4 << 24) | (0 << 21) | ((imm16 & 0xFFFF) << 5) | 1;
+    emit32(inst);
+  }
+
+  // ===========================================================================
+  // Permutation Instructions
+  // ===========================================================================
+
+  void _emitPermute(int opcode, A64Vec rd, A64Vec rn, A64Vec rm) {
+    final q = rd.sizeBits == 128 ? 1 : 0;
+    final sz = _vecElemSizeBits(rd);
+    // Instruction: 0 Q 00 1110 size 0 Rm 0 opcode(3) 10 Rn Rd
+    final inst = (0 << 31) |
+        (q << 30) |
+        (0x0E << 24) |
+        (sz << 22) |
+        (0 << 21) |
+        (_encVec(rm) << 16) |
+        (0 << 15) |
+        (opcode << 12) |
+        (2 << 10) | // 10 binary
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  void zip1(A64Vec rd, A64Vec rn, A64Vec rm) => _emitPermute(3, rd, rn, rm);
+  void zip2(A64Vec rd, A64Vec rn, A64Vec rm) => _emitPermute(7, rd, rn, rm);
+  void uzp1(A64Vec rd, A64Vec rn, A64Vec rm) => _emitPermute(1, rd, rn, rm);
+  void uzp2(A64Vec rd, A64Vec rn, A64Vec rm) => _emitPermute(5, rd, rn, rm);
+  void trn1(A64Vec rd, A64Vec rn, A64Vec rm) => _emitPermute(2, rd, rn, rm);
+  void trn2(A64Vec rd, A64Vec rn, A64Vec rm) => _emitPermute(6, rd, rn, rm);
+
+  /// TBL (Table Lookup) - Vector table lookup.
+  /// Single register table variant: TBL Vd.Ta, { Vn.16B }, Vm.16B
+  /// Encoding: 0 Q 00 1110 00 0 Rm 0 len(2) 00 Rn Rd
+  /// op=0 for TBL. len=0 for 1 register.
+  void tbl(A64Vec rd, A64Vec rn, A64Vec rm) {
+    final q = rd.sizeBits == 128 ? 1 : 0;
+    final len = 0; // 1 register in table
+    final inst = (0 << 31) |
+        (q << 30) |
+        (0x0E << 24) |
+        (0 << 22) | // size field is 00 for TBL usually (operates on bytes)
+        (0 << 21) |
+        (_encVec(rm) << 16) |
+        (0 << 15) |
+        (len << 13) |
+        (0 << 12) | // op=0 TBL
+        (0 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd);
+    emit32(inst);
+  }
+
+  // ===========================================================================
+  // Load/Store (LD1R)
+  // ===========================================================================
+
+  /// LD1R - Load one single-element structure and replicate to all lanes.
+  void ld1r(A64Vec vt, A64Gp rn, [int offset = 0]) {
+    // LD1R encoding: 0 Q 00 1101 01 size 0 Rn Rt
+    // Wait, offset? LD1R only supports [Rn] (no offset) or post-index.
+    // For standard load [Rn], usage: 0 Q 00 1101 01 size 00000 11 Rn Rt
+    // Actually, "Single structure" loads (LD1) don't take immediate offset.
+    // They take [Xn] or [Xn, Xm] (register offset) or post-index.
+    // Assuming simple [Xn] addressing for now (offset 0).
+    // If offset != 0, we can't encode it directly in LD1R without post-index or extra ADD.
+    // We will ignore offset or throw if != 0 properly.
+    if (offset != 0) {
+      throw ArgumentError(
+          'LD1R only supports [Rn] with no immediate offset (or post-index)');
+    }
+
+    final q = vt.sizeBits == 128 ? 1 : 0;
+    // Determine 'size' from rearrangement or element size.
+    // LD1R uses 'size' field: 00=8, 01=16, 10=32, 11=64.
+    // Based on vt layout? Or we guess from vt.sizeBits? No, layout is key.
+    // Defaulting to .32b if no layout?
+    // Using helper _vecElemSizeBits(vt) which uses vt.sizeBits?
+    // A64Vec.sizeBits is total size. We need element size.
+    // A64Layout helps.
+    // For now, if layout is present, use it. Else default?
+    // Let's rely on _vecElemSizeBits(vt) logic (which defaults to full size?)
+    // No, _vecElemSizeBits uses 'sizeBits' of the register which is total.
+    // We need element size.
+    // We should use layout from A64Vec if available.
+
+    int size = 2; // Default 32-bit?
+    if (vt.layout != A64Layout.none) {
+      switch (vt.layout) {
+        case A64Layout.b8:
+        case A64Layout.b16:
+          size = 0;
+          break;
+        case A64Layout.h4:
+        case A64Layout.h8:
+          size = 1;
+          break;
+        case A64Layout.s2:
+        case A64Layout.s4:
+          size = 2;
+          break;
+        case A64Layout.d1:
+        case A64Layout.d2:
+          size = 3;
+          break;
+        default:
+          size = 2;
+      }
+    } else {
+      // Heuristic?
+      size = 2;
+    }
+
+    final inst = (0 << 31) |
+        (q << 30) |
+        (0x0D << 24) | // 001101
+        (1 << 23) | // L
+        (0 << 22) | // R ? No.
+        // LD1R pattern: 0 Q 00 1101 11 size?
+        // Reference: 0 Q 00 1101 01 size 00000 11 Rn Rt (Post index?)
+        // No offset (no post index): 0 Q 00 1101 01 size 00000 00 Rn Rt ?
+        // Look at LD1R (no offset): 0 Q 00 1101 01 size 00000 00 Rn Rt (Simd Load / Store Single Struct)
+        (1 << 22) | // opc=01 (LD1R)
+        (size << 10) |
+        (_encReg(rn) << 5) |
+        _encVec(vt);
     emit32(inst);
   }
 

@@ -72,6 +72,23 @@ class A64Gp extends BaseReg {
   }
 }
 
+/// ARM64 Vector Arrangement / Layout.
+enum A64Layout {
+  none(0),
+  b8(1),
+  b16(2),
+  h4(3),
+  h8(4),
+  s2(5),
+  s4(6),
+  d1(7),
+  d2(8),
+  q1(9);
+
+  final int id;
+  const A64Layout(this.id);
+}
+
 /// ARM64 SIMD/FP Register (8, 16, 32, 64, or 128 bits).
 class A64Vec extends BaseReg {
   /// Register ID (0-31).
@@ -81,10 +98,14 @@ class A64Vec extends BaseReg {
   /// Size in bits.
   final int sizeBits;
 
-  const A64Vec(this.id, this.sizeBits);
+  /// Vector arrangement.
+  final A64Layout layout;
+
+  const A64Vec(this.id, this.sizeBits, [this.layout = A64Layout.none]);
 
   @override
-  RegType get type => RegType.vec128;
+  RegType get type =>
+      RegType.vec128; // Always vec128 storage effectively for allocator
 
   @override
   RegGroup get group => RegGroup.vec;
@@ -98,29 +119,43 @@ class A64Vec extends BaseReg {
 
   /// Get as B (byte, 8-bit).
   A64Vec get b => A64Vec(id, 8);
+  A64Vec get b8 => A64Vec(id, 64, A64Layout.b8);
+  A64Vec get b16 => A64Vec(id, 128, A64Layout.b16);
 
   /// Get as H (half, 16-bit).
   A64Vec get h => A64Vec(id, 16);
+  A64Vec get h4 => A64Vec(id, 64, A64Layout.h4);
+  A64Vec get h8 => A64Vec(id, 128, A64Layout.h8);
 
   /// Get as S (single, 32-bit).
   A64Vec get s => A64Vec(id, 32);
+  A64Vec get s2 => A64Vec(id, 64, A64Layout.s2);
+  A64Vec get s4 => A64Vec(id, 128, A64Layout.s4);
 
   /// Get as D (double, 64-bit).
   A64Vec get d => A64Vec(id, 64);
+  A64Vec get d1 => A64Vec(id, 64, A64Layout.d1);
+  A64Vec get d2 => A64Vec(id, 128, A64Layout.d2);
 
   /// Get as Q (quad, 128-bit).
   A64Vec get q => A64Vec(id, 128);
 
+  // Modifiers
+  A64Vec cloneWithLayout(A64Layout l) => A64Vec(id, sizeBits, l);
+
   @override
-  BaseReg toPhys(int physId) => A64Vec(physId, sizeBits);
+  BaseReg toPhys(int physId) => A64Vec(physId, sizeBits, layout);
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is A64Vec && other.id == id && other.sizeBits == sizeBits;
+      other is A64Vec &&
+          other.id == id &&
+          other.sizeBits == sizeBits &&
+          other.layout == layout;
 
   @override
-  int get hashCode => Object.hash(id, sizeBits);
+  int get hashCode => Object.hash(id, sizeBits, layout);
 
   @override
   String toString() {
@@ -132,7 +167,11 @@ class A64Vec extends BaseReg {
       128 => 'q',
       _ => 'v',
     };
-    return '$prefix$id';
+    var suffix = '';
+    if (layout != A64Layout.none) {
+      suffix = '.${layout.name.toUpperCase()}';
+    }
+    return '$prefix$id$suffix';
   }
 }
 
@@ -341,14 +380,17 @@ const lo = A64Cond.cc; // Unsigned lower
 // ===========================================================================
 
 /// ARM64 Memory operand.
-class A64Mem {
+class A64Mem extends BaseMem {
   /// Base register.
+  @override
   final A64Gp? base;
 
-  /// Offset (immediate).
-  final int offset;
+  /// Offset (displacement).
+  @override
+  final int displacement;
 
   /// Index register (for indexed addressing).
+  @override
   final A64Gp? index;
 
   /// Shift amount for index.
@@ -357,44 +399,62 @@ class A64Mem {
   /// Addressing mode.
   final A64AddrMode addrMode;
 
+  /// Memory access size (0 = unspecified).
+  @override
+  final int size;
+
+  /// Alias for displacement to match other AArch64 conventions/existing code.
+  int get offset => displacement;
+
   const A64Mem._({
     this.base,
-    this.offset = 0,
+    this.displacement = 0,
     this.index,
     this.shift = 0,
     this.addrMode = A64AddrMode.offset,
+    this.size = 0,
   });
 
   /// [base] - Simple base register addressing.
-  factory A64Mem.base(A64Gp base) {
-    return A64Mem._(base: base);
+  factory A64Mem.base(A64Gp base, {int size = 0}) {
+    return A64Mem._(base: base, size: size);
   }
 
   /// [base, #offset] - Base + immediate offset.
-  factory A64Mem.baseOffset(A64Gp base, int offset) {
-    return A64Mem._(base: base, offset: offset);
+  factory A64Mem.baseOffset(A64Gp base, int offset, {int size = 0}) {
+    return A64Mem._(base: base, displacement: offset, size: size);
   }
 
   /// [base], #offset - Post-index.
-  factory A64Mem.postIndex(A64Gp base, int offset) {
+  factory A64Mem.postIndex(A64Gp base, int offset, {int size = 0}) {
     return A64Mem._(
-        base: base, offset: offset, addrMode: A64AddrMode.postIndex);
+        base: base,
+        displacement: offset,
+        addrMode: A64AddrMode.postIndex,
+        size: size);
   }
 
   /// [base, #offset]! - Pre-index.
-  factory A64Mem.preIndex(A64Gp base, int offset) {
-    return A64Mem._(base: base, offset: offset, addrMode: A64AddrMode.preIndex);
+  factory A64Mem.preIndex(A64Gp base, int offset, {int size = 0}) {
+    return A64Mem._(
+        base: base,
+        displacement: offset,
+        addrMode: A64AddrMode.preIndex,
+        size: size);
   }
 
   /// [base, index] - Base + index register.
-  factory A64Mem.baseIndex(A64Gp base, A64Gp index, {int shift = 0}) {
-    return A64Mem._(base: base, index: index, shift: shift);
+  factory A64Mem.baseIndex(A64Gp base, A64Gp index,
+      {int shift = 0, int size = 0}) {
+    return A64Mem._(base: base, index: index, shift: shift, size: size);
   }
 
   /// Has base register.
+  @override
   bool get hasBase => base != null;
 
   /// Has index register.
+  @override
   bool get hasIndex => index != null;
 
   /// Is post-index mode.
@@ -417,14 +477,14 @@ class A64Mem {
       if (shift != 0) {
         buf.write(', lsl #$shift');
       }
-    } else if (offset != 0) {
-      buf.write(', #$offset');
+    } else if (displacement != 0) {
+      buf.write(', #$displacement');
     }
 
     buf.write(']');
 
-    if (isPostIndex && offset != 0) {
-      return '[${base}], #$offset';
+    if (isPostIndex && displacement != 0) {
+      return '[${base}], #$displacement';
     }
     if (isPreIndex) {
       buf.write('!');

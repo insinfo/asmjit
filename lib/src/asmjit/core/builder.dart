@@ -540,6 +540,7 @@ void serializeNodes(NodeList nodes, SerializerContext ctx) {
         ctx.onLabel((node as LabelNode).label);
         break;
       case NodeType.inst:
+      case NodeType.jump:
         final inst = node as InstNode;
         ctx.onInst(inst.instId, inst.operands, inst.options);
         break;
@@ -563,7 +564,6 @@ void serializeNodes(NodeList nodes, SerializerContext ctx) {
       case NodeType.section:
       case NodeType.constPool:
       case NodeType.embedLabel:
-      case NodeType.jump:
         // These nodes are either handled by higher-level passes or ignored.
         break;
       default:

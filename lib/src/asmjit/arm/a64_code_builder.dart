@@ -327,7 +327,7 @@ class _A64FuncSerializer extends A64Serializer {
         );
         rewritten.add(newReg);
       } else if (op is ir.BaseMem && op is A64Mem) {
-        final mem = op as A64Mem;
+        final mem = op;
         final base = _rewriteMemBase(mem.base, scratch, preSpills);
         final index = _rewriteMemIndex(mem.index, scratch, preSpills);
         final rebuilt = _rebuildMem(mem, base, index);
@@ -361,7 +361,7 @@ class _A64FuncSerializer extends A64Serializer {
           scratch.reserve(reg);
         }
       } else if (op is ir.BaseMem && op is A64Mem) {
-        final mem = op as A64Mem;
+        final mem = op;
         if (mem.base is _A64VirtReg) {
           final reg = mem.base as _A64VirtReg;
           if (!reg.isSpilled) {
@@ -733,7 +733,7 @@ class _A64RegAlloc {
       seen.add(vreg);
       _recordUse(vreg, pos);
     } else if (op is ir.BaseMem && op is A64Mem) {
-      final mem = op as A64Mem;
+      final mem = op;
       if (mem.base is _A64VirtReg) {
         final vreg = mem.base as _A64VirtReg;
         seen.add(vreg);
