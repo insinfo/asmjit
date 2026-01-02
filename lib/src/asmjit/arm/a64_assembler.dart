@@ -519,6 +519,75 @@ class A64Assembler {
   void smov(A64Gp rd, A64Vec rn, int index) => _enc.smov(rd, rn, index);
 
   // ===========================================================================
+  // Widening Multiply
+  // ===========================================================================
+
+  /// SMULL - Signed multiply long (lo)
+  void smull(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.smull(rd, rn, rm);
+
+  /// UMULL - Unsigned multiply long (lo)
+  void umull(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.umull(rd, rn, rm);
+
+  /// SMULL2 - Signed multiply long (hi)
+  void smull2(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.smull2(rd, rn, rm);
+
+  /// UMULL2 - Unsigned multiply long (hi)
+  void umull2(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.umull2(rd, rn, rm);
+
+  /// SMLAL - Signed multiply-accumulate long (lo)
+  void smlal(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.smlal(rd, rn, rm);
+
+  /// UMLAL - Unsigned multiply-accumulate long (lo)
+  void umlal(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.umlal(rd, rn, rm);
+
+  /// SMLAL2 - Signed multiply-accumulate long (hi)
+  void smlal2(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.smlal2(rd, rn, rm);
+
+  /// UMLAL2 - Unsigned multiply-accumulate long (hi)
+  void umlal2(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.umlal2(rd, rn, rm);
+
+  // ===========================================================================
+  // Narrowing (Packing)
+  // ===========================================================================
+
+  /// XTN - Extract narrow
+  void xtn(A64Vec rd, A64Vec rn) => _enc.xtn(rd, rn);
+
+  /// XTN2 - Extract narrow (high)
+  void xtn2(A64Vec rd, A64Vec rn) => _enc.xtn2(rd, rn);
+
+  /// SQXTN - Signed saturating extract narrow
+  void sqxtn(A64Vec rd, A64Vec rn) => _enc.sqxtn(rd, rn);
+
+  /// SQXTN2 - Signed saturating extract narrow (high)
+  void sqxtn2(A64Vec rd, A64Vec rn) => _enc.sqxtn2(rd, rn);
+
+  /// UQXTN - Unsigned saturating extract narrow
+  void uqxtn(A64Vec rd, A64Vec rn) => _enc.uqxtn(rd, rn);
+
+  /// UQXTN2 - Unsigned saturating extract narrow (high)
+  void uqxtn2(A64Vec rd, A64Vec rn) => _enc.uqxtn2(rd, rn);
+
+  // ===========================================================================
+  // Conversions
+  // ===========================================================================
+
+  /// SCVTF - Signed integer to float
+  void scvtf(A64Vec rd, A64Vec rn) => _enc.scvtf(rd, rn);
+
+  /// UCVTF - Unsigned integer to float
+  void ucvtf(A64Vec rd, A64Vec rn) => _enc.ucvtf(rd, rn);
+
+  /// FCVTZS - Float to signed integer (round toward zero)
+  void fcvtzs(A64Vec rd, A64Vec rn) => _enc.fcvtzs(rd, rn);
+
+  /// FCVTZU - Float to unsigned integer (round toward zero)
+  void fcvtzu(A64Vec rd, A64Vec rn) => _enc.fcvtzu(rd, rn);
+
+  /// FCVT - Floating-point convert precision
+  void fcvt(A64Vec rd, A64Vec rn) => _enc.fcvt(rd, rn);
+
+  // ===========================================================================
   // Prologue/Epilogue Helpers
   // ===========================================================================
 

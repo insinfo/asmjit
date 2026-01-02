@@ -383,6 +383,81 @@ mixin UniCompilerA64 on UniCompilerBase {
           cc.addNode(InstNode(A64InstId.kUqsub, [dst, src1, src2]));
           return;
 
+        // Widening Multiply (Low)
+        case UniOpVVV.mulwLoI8:
+          cc.addNode(InstNode(A64InstId.kSmull, [dst, src1, src2]));
+          return;
+        case UniOpVVV.mulwLoU8:
+          cc.addNode(InstNode(A64InstId.kUmull, [dst, src1, src2]));
+          return;
+        case UniOpVVV.mulwLoI16:
+          cc.addNode(InstNode(A64InstId.kSmull, [dst, src1, src2]));
+          return;
+        case UniOpVVV.mulwLoU16:
+          cc.addNode(InstNode(A64InstId.kUmull, [dst, src1, src2]));
+          return;
+        case UniOpVVV.mulwLoI32:
+          cc.addNode(InstNode(A64InstId.kSmull, [dst, src1, src2]));
+          return;
+        case UniOpVVV.mulwLoU32:
+          cc.addNode(InstNode(A64InstId.kUmull, [dst, src1, src2]));
+          return;
+
+        // Widening Multiply (High)
+        case UniOpVVV.mulwHiI8:
+          cc.addNode(InstNode(A64InstId.kSmull2, [dst, src1, src2]));
+          return;
+        case UniOpVVV.mulwHiU8:
+          cc.addNode(InstNode(A64InstId.kUmull2, [dst, src1, src2]));
+          return;
+        case UniOpVVV.mulwHiI16:
+          cc.addNode(InstNode(A64InstId.kSmull2, [dst, src1, src2]));
+          return;
+        case UniOpVVV.mulwHiU16:
+          cc.addNode(InstNode(A64InstId.kUmull2, [dst, src1, src2]));
+          return;
+        case UniOpVVV.mulwHiI32:
+          cc.addNode(InstNode(A64InstId.kSmull2, [dst, src1, src2]));
+          return;
+        case UniOpVVV.mulwHiU32:
+          cc.addNode(InstNode(A64InstId.kUmull2, [dst, src1, src2]));
+          return;
+
+        // Multiply-Accumulate Widening (Low)
+        case UniOpVVV.mAddwLoI8:
+        case UniOpVVV.mAddwLoI16:
+        case UniOpVVV.mAddwLoI32:
+          cc.addNode(InstNode(A64InstId.kSmlal, [dst, src1, src2]));
+          return;
+        case UniOpVVV.mAddwLoU8:
+        case UniOpVVV.mAddwLoU16:
+        case UniOpVVV.mAddwLoU32:
+          cc.addNode(InstNode(A64InstId.kUmlal, [dst, src1, src2]));
+          return;
+
+        // Multiply-Accumulate Widening (High)
+        case UniOpVVV.mAddwHiI8:
+        case UniOpVVV.mAddwHiI16:
+        case UniOpVVV.mAddwHiI32:
+          cc.addNode(InstNode(A64InstId.kSmlal2, [dst, src1, src2]));
+          return;
+        case UniOpVVV.mAddwHiU8:
+        case UniOpVVV.mAddwHiU16:
+        case UniOpVVV.mAddwHiU32:
+          cc.addNode(InstNode(A64InstId.kUmlal2, [dst, src1, src2]));
+          return;
+
+        // Packing (Narrowing) - uses XTN for narrow
+        case UniOpVVV.packsI16I8:
+        case UniOpVVV.packsI16U8:
+          // SQXTN/UQXTN for saturating narrow
+          cc.addNode(InstNode(A64InstId.kSqxtn, [dst, src1]));
+          return;
+        case UniOpVVV.packsI32I16:
+        case UniOpVVV.packsI32U16:
+          cc.addNode(InstNode(A64InstId.kSqxtn, [dst, src1]));
+          return;
+
         default:
           break;
       }
@@ -416,11 +491,51 @@ mixin UniCompilerA64 on UniCompilerBase {
           return;
 
         // Byte Shifts (Whole vector)
-        // AArch64 doesn't have direct whole-vector shift by bytes instruction except via EXT (for right shift).
-        // Left shift bytes (sllb) can be done with EXT if we zero-extend?
-        // DST = EXT(SRC, ZERO, 16 - imm) ?
-        // Usually handled by specific helper or EXT.
-        // For now, leaving sllb/srlb unimplemented or stubbed.
+        // A64 uses EXT for byte-level vector shifts
+        case UniOpVVI.sllbU128:
+          // Left shift bytes: Need to shift left by 'imm' bytes
+          // Implementation: Use EXT with a zero vector
+          // EXT dst, zero, src, (16 - imm)
+          // This extracts starting from position (16-imm) of concatenated [zero:src]
+          if (imm == 0) {
+            // No shift needed, just move
+            if (dst.id != src.id) {
+              cc.addNode(InstNode(A64InstId.kOrr, [dst, src, src]));
+            }
+          } else if (imm >= 16) {
+            // Shift by 16+ bytes = zero out
+            cc.addNode(InstNode(A64InstId.kEor, [dst, dst, dst]));
+          } else {
+            // Create zero vector (we'll use EOR dst, dst, dst first)
+            final zero = dst; // We'll reuse dst as temp zero
+            cc.addNode(InstNode(A64InstId.kEor, [zero, zero, zero]));
+            // EXT dst, zero, src, (16 - imm)
+            cc.addNode(
+                InstNode(A64InstId.kExt, [dst, zero, src, Imm(16 - imm)]));
+          }
+          return;
+
+        case UniOpVVI.srlbU128:
+          // Right shift bytes: Need to shift right by 'imm' bytes
+          // Implementation: Use EXT
+          // EXT dst, src, zero, imm
+          // This extracts starting from position 'imm' of concatenated [src:zero]
+          if (imm == 0) {
+            // No shift needed, just move
+            if (dst.id != src.id) {
+              cc.addNode(InstNode(A64InstId.kOrr, [dst, src, src]));
+            }
+          } else if (imm >= 16) {
+            // Shift by 16+ bytes = zero out
+            cc.addNode(InstNode(A64InstId.kEor, [dst, dst, dst]));
+          } else {
+            // Create zero vector
+            final zero = dst; // Reuse dst as temp
+            cc.addNode(InstNode(A64InstId.kEor, [zero, zero, zero]));
+            // EXT dst, src, zero, imm
+            cc.addNode(InstNode(A64InstId.kExt, [dst, src, zero, Imm(imm)]));
+          }
+          return;
 
         default:
           break;
