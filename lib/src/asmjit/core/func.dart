@@ -840,6 +840,7 @@ class FuncFrame {
     }
 
     for (var group in RegGroup.values) {
+      if (group.index >= Globals.kNumVirtGroups) continue;
       _dirtyRegs[group.index] = func.usedRegs(group);
       _preservedRegs[group.index] = func.preservedRegs(group);
     }
@@ -847,6 +848,7 @@ class FuncFrame {
     _preservedRegs[RegGroup.gp.index] &= ~support.bitMask(archTraits.spRegId);
 
     for (var group in RegGroup.values) {
+      if (group.index >= Globals.kNumVirtGroups) continue;
       _saveRestoreRegSize[group.index] =
           func.callConv.saveRestoreRegSize(group);
       _saveRestoreAlignment[group.index] =
@@ -1101,6 +1103,7 @@ class FuncFrame {
 
     List<int> saveRestoreSizes = [0, 0];
     for (var group in RegGroup.values) {
+      if (group.index >= Globals.kNumVirtGroups) continue;
       // Use different index based on whether this group supports push/pop
       int idx = archTraits.hasInstPushPop(group) ? 0 : 1;
       saveRestoreSizes[idx] += support.alignUp(

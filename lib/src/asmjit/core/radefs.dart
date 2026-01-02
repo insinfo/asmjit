@@ -323,6 +323,12 @@ class RALiveSpans {
     _data.add(RALiveSpan(start, end));
   }
 
+  void addFrom(RALiveSpans other) {
+    for (final span in other._data) {
+      openAt(span.a, span.b);
+    }
+  }
+
   void closeAt(NodePosition end) {
     assert(_data.isNotEmpty);
     _data.last.b = end;
@@ -632,6 +638,36 @@ class RAWorkReg {
   int _preferredMask = 0xFFFFFFFF;
   int get preferredMask => _preferredMask;
   void restrictPreferredMask(int mask) => _preferredMask &= mask;
+
+  int _consecutiveMask = 0xFFFFFFFF;
+  int get consecutiveMask => _consecutiveMask;
+  void restrictConsecutiveMask(int mask) => _consecutiveMask &= mask;
+
+  RAWorkReg? _consecutiveParent;
+  RAWorkReg? get consecutiveParent => _consecutiveParent;
+
+  bool _isLeadConsecutive = false;
+  bool get isLeadConsecutive => _isLeadConsecutive;
+  void makeLeadConsecutive() => _isLeadConsecutive = true;
+
+  bool _isProcessedConsecutive = false;
+  bool get isProcessedConsecutive => _isProcessedConsecutive;
+  void markProcessedConsecutive() => _isProcessedConsecutive = true;
+
+  final Set<int> _immediateConsecutives = {};
+  Set<int> get immediateConsecutives => _immediateConsecutives;
+  bool get hasImmediateConsecutives => _immediateConsecutives.isNotEmpty;
+  void addImmediateConsecutive(RAWorkId id) => _immediateConsecutives.add(id);
+
+  bool get isAllocated => hasFlag(RAWorkRegFlags.kAllocated);
+  void markAllocated() => addFlags(RAWorkRegFlags.kAllocated);
+  void setHomeRegId(int id) {
+    _homeRegId = id;
+    markAllocated();
+  }
+
+  bool get isStackSlot => hasFlag(RAWorkRegFlags.kStackSlot);
+  void markStackSlot() => addFlags(RAWorkRegFlags.kStackSlot);
 }
 
 /// Flags for RAWorkReg.
@@ -642,6 +678,7 @@ class RAWorkRegFlags {
   static const int kStackPreferred = 1 << 2;
   static const int kWithinSingleBlock = 1 << 3;
   static const int kStackArgToStack = 1 << 4;
+  static const int kStackSlot = 1 << 5;
 }
 
 /// Constants for RAAssignment.

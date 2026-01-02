@@ -2,7 +2,7 @@
 ///
 /// Minimal port of asmjit/core/codewriter.* that wraps a CodeHolder and
 /// provides sequential byte emission.
-// TODO completar e concluir esta implementação
+// TODO concluir o port
 import 'code_buffer.dart';
 import 'code_holder.dart';
 

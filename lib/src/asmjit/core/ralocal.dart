@@ -73,9 +73,10 @@ class RALocalAllocator {
     _clobberedRegs.reset();
 
     // Initialize physical register counts based on architecture
+    // We use strict 32 for now as AsmJit handles up to 32 regs per group.
+    // Using popcnt(available) was incorrect because physId is used as index.
     for (final group in enumerateRegGroupsMax()) {
-      final count = support.popcnt(availableRegs[group]);
-      _physRegCount.set(group, count);
+      _physRegCount.set(group, 32); // Max possible regs
     }
 
     return _initMaps();
@@ -314,7 +315,8 @@ class RALocalAllocator {
     int physId,
     void Function(RAWorkReg workReg, int physId) emitSave,
   ) {
-    if (_curAssignment.isPhysDirty(group, physId)) {
+    bool dirty = _curAssignment.isPhysDirty(group, physId);
+    if (dirty) {
       final err = onSaveReg(group, workReg, workId, physId, emitSave);
       if (err != AsmJitError.ok) return err;
     }
@@ -549,7 +551,8 @@ class RALocalAllocator {
           final assignedId = _curAssignment.workToPhysId(group, workId);
 
           if (!tiedReg.hasUseId) {
-            final allocableRegs = tiedReg.useRegMask & ~(willFree | willUse);
+            final allocableRegs = (tiedReg.useRegMask & _availableRegs[group]) &
+                ~(willFree | willUse);
             final useId =
                 decideOnAssignment(group, workReg, assignedId, allocableRegs);
 
@@ -795,7 +798,8 @@ class RALocalAllocator {
 
           int physId = tiedReg.outId;
           if (physId == RAAssignment.kPhysNone) {
-            int allocableRegs = tiedReg.outRegMask & ~(outRegs | avoidOut);
+            int allocableRegs = (tiedReg.outRegMask & _availableRegs[group]) &
+                ~(outRegs | avoidOut);
 
             if ((allocableRegs & ~liveRegs) == 0) {
               final (spillPhysId, spillWorkId) =

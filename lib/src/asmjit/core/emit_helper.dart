@@ -18,7 +18,8 @@ import 'reg_type.dart';
 const int _kVarIdNone = 0xFF;
 
 /// Determines a suitable register group for a mem→mem move.
-OperandSignature getSuitableRegForMemToMemMove(Arch arch, TypeId dstType, TypeId srcType) {
+OperandSignature getSuitableRegForMemToMemMove(
+    Arch arch, TypeId dstType, TypeId srcType) {
   final dstSize = dstType.sizeInBytes;
   final srcSize = srcType.sizeInBytes;
   final maxSize = dstSize > srcSize ? dstSize : srcSize;
@@ -26,19 +27,19 @@ OperandSignature getSuitableRegForMemToMemMove(Arch arch, TypeId dstType, TypeId
   final bothInt = dstType.isInt && srcType.isInt;
 
   if (maxSize <= regSize || bothInt) {
-    return const OperandSignature(RegGroup.gp);
+    return const OperandSignature(OperandSignature.kGroupGp);
   }
 
   if (maxSize <= 16) {
-    return const OperandSignature(RegGroup.vec);
+    return const OperandSignature(OperandSignature.kGroupVec);
   }
 
   if (maxSize <= 32) {
-    return const OperandSignature(RegGroup.vec);
+    return const OperandSignature(OperandSignature.kGroupVec);
   }
 
   if (maxSize <= 64) {
-    return const OperandSignature(RegGroup.vec);
+    return const OperandSignature(OperandSignature.kGroupVec);
   }
 
   return OperandSignature.invalid;
@@ -127,7 +128,8 @@ class MemOperand extends BaseMem implements EmitOperand {
   BaseReg? get index => null;
 
   @override
-  String toString() => 'MemOperand(base=${baseReg?.regId}, disp=$displacement, size=$memSize)';
+  String toString() =>
+      'MemOperand(base=${baseReg?.regId}, disp=$displacement, size=$memSize)';
 }
 
 class _SwapOutcome {
@@ -136,7 +138,8 @@ class _SwapOutcome {
   final bool swapped;
   final int? scratchRegId;
 
-  const _SwapOutcome(this.error, this.flags, {this.swapped = false, this.scratchRegId});
+  const _SwapOutcome(this.error, this.flags,
+      {this.swapped = false, this.scratchRegId});
 }
 
 /// Base emit helper that implements argument shuffling independent of the emitter.
@@ -148,16 +151,15 @@ abstract class BaseEmitHelper {
   RegType _gpRegTypeForArch(Arch arch) =>
       Environment.regSizeOfArch(arch) >= 8 ? RegType.gp64 : RegType.gp32;
 
-  RegType _regTypeForGroup(RegGroup group, Arch arch) {
-    switch (group) {
-      case RegGroup.gp:
-        return _gpRegTypeForArch(arch);
-      case RegGroup.vec:
-        return RegType.vec128;
-      case RegGroup.mask:
-        return RegType.mask;
-      default:
-        return _gpRegTypeForArch(arch);
+  RegType _regTypeForGroup(int group, Arch arch) {
+    if (group == OperandSignature.kGroupGp) {
+      return _gpRegTypeForArch(arch);
+    } else if (group == OperandSignature.kGroupVec) {
+      return RegType.vec128;
+    } else if (group == OperandSignature.kGroupMask) {
+      return RegType.mask;
+    } else {
+      return _gpRegTypeForArch(arch);
     }
   }
 
@@ -185,7 +187,8 @@ abstract class BaseEmitHelper {
       if (frame.hasPreservedFP && archTraits.fpRegId >= 0) {
         sa.setRegId(archTraits.fpRegId);
       } else {
-        final saId = saVarId < varCount ? ctx.vars[saVarId].cur.regId : frame.saRegId;
+        final saId =
+            saVarId < varCount ? ctx.vars[saVarId].cur.regId : frame.saRegId;
         if (saId != Reg.kIdBad) {
           sa.setRegId(saId);
         }
@@ -207,7 +210,7 @@ abstract class BaseEmitHelper {
         final dstStackPtr = baseStackPtr.cloneAdjusted(out.stackOffset);
         final srcStackPtr = baseArgPtr.cloneAdjusted(cur.stackOffset);
 
-          late final RegOperand tempReg;
+        late final RegOperand tempReg;
 
         if (cur.isIndirect) {
           if (cur.isStack) {
@@ -223,13 +226,14 @@ abstract class BaseEmitHelper {
           tempReg = RegOperand(cur.fullRegType, regId);
           wd.unassign(varId, regId);
         } else {
-          final signature = getSuitableRegForMemToMemMove(arch, out.typeId, cur.typeId);
+          final signature =
+              getSuitableRegForMemToMemMove(arch, out.typeId, cur.typeId);
           if (!signature.isValid) {
             return AsmJitError.invalidState;
           }
 
-          final targetGroup = signature.regGroup();
-          final wd = workData[targetGroup.index];
+          final targetGroup = signature.regGroup;
+          final wd = workData[targetGroup];
           var available = wd.availableRegs();
           if (available == 0) {
             return AsmJitError.invalidState;
@@ -239,7 +243,8 @@ abstract class BaseEmitHelper {
           final regType = _regTypeForGroup(targetGroup, arch);
           tempReg = RegOperand(regType, selected);
 
-          final movErr = emitArgMove(tempReg, out.typeId, srcStackPtr, cur.typeId);
+          final movErr =
+              emitArgMove(tempReg, out.typeId, srcStackPtr, cur.typeId);
           if (movErr != AsmJitError.ok) return movErr;
         }
 
@@ -348,7 +353,8 @@ abstract class BaseEmitHelper {
     if (ctx.hasStackSrc) {
       var iterCount = 1;
       if (frame.hasDynamicAlignment() && !frame.hasPreservedFP) {
-        final saId = saVarId < varCount ? ctx.vars[saVarId].cur.regId : frame.saRegId;
+        final saId =
+            saVarId < varCount ? ctx.vars[saVarId].cur.regId : frame.saRegId;
         if (saId != Reg.kIdBad) {
           sa.setRegId(saId);
         }
@@ -380,7 +386,8 @@ abstract class BaseEmitHelper {
           final dstReg = RegOperand(out.fullRegType, outId);
           final srcMem = baseArgPtr.cloneAdjusted(variable.cur.stackOffset);
 
-          final loadErr = emitArgMove(dstReg, out.typeId, srcMem, variable.cur.typeId);
+          final loadErr =
+              emitArgMove(dstReg, out.typeId, srcMem, variable.cur.typeId);
           if (loadErr != AsmJitError.ok) return loadErr;
 
           wd.assign(varId, outId);
@@ -406,14 +413,16 @@ abstract class BaseEmitHelper {
   ) {
     final dstReg = RegOperand(variable.out.fullRegType, targetId);
     final srcReg = RegOperand(variable.cur.fullRegType, curId);
-    final err = emitArgMove(dstReg, variable.out.typeId, srcReg, variable.cur.typeId);
+    final err =
+        emitArgMove(dstReg, variable.out.typeId, srcReg, variable.cur.typeId);
     if (err != AsmJitError.ok) return err;
 
     if (curId != targetId) {
       wd.reassign(varId, targetId, curId);
     }
 
-    variable.cur.initReg(variable.out.fullRegType, targetId, variable.out.typeId);
+    variable.cur
+        .initReg(variable.out.fullRegType, targetId, variable.out.typeId);
     if (targetId == variable.out.regId) {
       variable.markDone();
     }
@@ -462,7 +471,8 @@ abstract class BaseEmitHelper {
 
       if (mask != 0) {
         final scratchId = ctz(mask);
-        return _SwapOutcome(AsmJitError.ok, kWorkPending, scratchRegId: scratchId);
+        return _SwapOutcome(AsmJitError.ok, kWorkPending,
+            scratchRegId: scratchId);
       }
     }
 
@@ -473,5 +483,6 @@ abstract class BaseEmitHelper {
 
   AsmJitError emitRegSwap(RegOperand a, RegOperand b);
 
-  AsmJitError emitArgMove(RegOperand dst, TypeId dstTypeId, EmitOperand src, TypeId srcTypeId);
+  AsmJitError emitArgMove(
+      RegOperand dst, TypeId dstTypeId, EmitOperand src, TypeId srcTypeId);
 }

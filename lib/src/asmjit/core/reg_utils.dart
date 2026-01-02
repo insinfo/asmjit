@@ -21,23 +21,92 @@ class Reg {
       Reg(regType: regType ?? this.regType, id: id ?? this.id);
 }
 
-/// Simplified operand signature that only tracks the register group.
+/// Operand Signature.
+///
+/// Encodes operand type, register type, element type, and other metadata in a single integer.
 class OperandSignature {
-  final RegGroup _regGroup;
-  final bool _isValid;
+  final int value;
 
-  const OperandSignature(this._regGroup, {bool isValid = true})
-      : _isValid = isValid;
+  const OperandSignature(this.value);
 
-  /// Returns the register group described by this signature.
-  RegGroup regGroup() => _regGroup;
+  /// Constants for bit layout.
+  static const int kOpTypeShift = 0;
+  static const int kOpTypeMask = 0x7;
 
-  /// Whether this signature contains a valid group.
-  bool get isValid => _isValid;
+  static const int kRegTypeShift = 3;
+  static const int kRegTypeMask = 0x1F;
 
-  /// Invalid signature (no register group).
-  static const OperandSignature invalid =
-      OperandSignature(RegGroup.extra, isValid: false);
+  static const int kRegGroupShift = 8;
+  static const int kRegGroupMask = 0xF;
+
+  static const int kMemBaseTypeShift = 3;
+  static const int kMemBaseTypeMask = 0x1F;
+
+  static const int kMemIndexTypeShift = 8;
+  static const int kMemIndexTypeMask = 0x1F;
+
+  static const int kMemRegHomeFlag = 0x20000000; // Example bit
+
+  // Reg Groups (Consolidated here for const usage)
+  static const int kGroupGp = 0;
+  static const int kGroupVec = 1;
+  static const int kGroupMask = 2;
+  static const int kGroupMm = 3;
+  static const int kGroupExtra = 4; // Or 15?
+  // Enum RegGroup logic: gp=0, vec=1, mask=2, x86Mm=3, extra=4.
+
+  // Op Types
+  static const int kOpNone = 0;
+  static const int kOpReg = 1;
+  static const int kOpMem = 2;
+  static const int kOpImm = 3;
+  static const int kOpLabel = 4;
+
+  bool get isValid => value != 0;
+
+  int get opType => (value >> kOpTypeShift) & kOpTypeMask;
+  int get regType => (value >> kRegTypeShift) & kRegTypeMask;
+  int get regGroup => (value >> kRegGroupShift) & kRegGroupMask;
+
+  OperandSignature withOpType(int type) {
+    return OperandSignature((value & ~(kOpTypeMask << kOpTypeShift)) |
+        ((type & kOpTypeMask) << kOpTypeShift));
+  }
+
+  OperandSignature withRegType(RegType type) {
+    int typeId = type.index; // Assuming RegType is enum
+    return OperandSignature((value & ~(kRegTypeMask << kRegTypeShift)) |
+        ((typeId & kRegTypeMask) << kRegTypeShift));
+  }
+
+  OperandSignature withRegGroup(RegGroup group) {
+    int groupId = group.index;
+    return OperandSignature((value & ~(kRegGroupMask << kRegGroupShift)) |
+        ((groupId & kRegGroupMask) << kRegGroupShift));
+  }
+
+  OperandSignature withMemBaseType(RegType type) {
+    int typeId = type.index;
+    return OperandSignature((value & ~(kMemBaseTypeMask << kMemBaseTypeShift)) |
+        ((typeId & kMemBaseTypeMask) << kMemBaseTypeShift));
+  }
+
+  OperandSignature withVirtId(int id) {
+    // Usually VirtID is stored in the ID field of the operand, not strictly in signature.
+    // But if we encode it here for some reason:
+    // For now just return this as typically ID is separate in BaseReg.
+    // If C++ uses it in signature, we need more bits.
+    // Assuming signature is 32-bits, we have limited space.
+    // BaseReg has `_id`. Metadata `VirtReg` has `_id`.
+    // We typically don't store ID in signature.
+    return this;
+  }
+
+  OperandSignature withBits(int bits) {
+    return OperandSignature(value | bits);
+  }
+
+  static const OperandSignature invalid = OperandSignature(0);
 }
 
 /// Register utility helpers.

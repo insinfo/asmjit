@@ -1,4 +1,3 @@
-import '../core/builder.dart';
 import '../core/compiler.dart';
 import 'x86_assembler.dart';
 import '../core/labels.dart';
@@ -9,7 +8,6 @@ import 'x86.dart';
 import 'x86_operands.dart';
 import 'x86_simd.dart';
 import '../core/reg_type.dart';
-import '../core/operand.dart';
 
 /// X86 Compiler.
 class X86Compiler extends BaseCompiler {
@@ -72,9 +70,12 @@ class X86Compiler extends BaseCompiler {
   X86Zmm newZmmInt16x32([String? name]) => newZmm(name);
 
   /// Create new stack allocation.
-  X86Mem newStack(int size, [int alignment = 1]) {
-    // TODO: Implement proper stack allocation with alignment
-    return X86Mem.base(X86Gp.rsp, disp: -size);
+  X86Mem newStack(int size, [int alignment = 1, String? name]) {
+    final vReg = createStackVirtReg(size, alignment, name);
+    // Create memory operand pointing to the virtual register.
+    // The RA will assign the stack offset.
+    // We use r64 for base as the virtual ID holder (typical for 64-bit pointers).
+    return X86Mem.base(X86Gp.r64(vReg.id), size: size);
   }
 
   /// Create new memory operand with index.
@@ -225,7 +226,8 @@ class X86Compiler extends BaseCompiler {
         inst(X86InstId.kMov, [dst, src]);
         return;
       }
-      // TODO: Handle cross-group moves if necessary (e.g. MOVD/MOVQ)
+      // Note: Cross-group moves (e.g. MOVD/MOVQ) are handled by specialized methods or explicit inst calls.
+      // Automatic conversion is not yet implemented.
     }
     // Handle memory operands
     inst(X86InstId.kMov, [dst, src]);

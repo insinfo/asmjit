@@ -1,6 +1,5 @@
 import 'package:asmjit/asmjit.dart';
 
-import 'package:asmjit/src/asmjit/core/builder.dart';
 import 'package:test/test.dart';
 
 void main() {

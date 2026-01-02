@@ -75,5 +75,20 @@ void main() {
       compiler.finalize();
       // Should converge liveness and allocate without issues.
     });
+
+    test('Stack Allocation - explicitly allocates stack slots', () {
+      final compiler = X86Compiler(env: Environment.host());
+      compiler.addFunc(FuncSignature.noArgs());
+
+      final stackVar = compiler.newStack(8, 8);
+      final rax = compiler.newGp64('rax');
+
+      compiler.mov(rax, Imm(42));
+      compiler.mov(stackVar, rax); // Should write to stack
+      compiler.mov(rax, stackVar); // Should read from stack
+
+      compiler.endFunc();
+      compiler.finalize();
+    });
   });
 }

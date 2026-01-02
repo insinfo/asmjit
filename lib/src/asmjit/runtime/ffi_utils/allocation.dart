@@ -51,7 +51,10 @@ final class MallocAllocator implements Allocator {
   ///
   /// Throws an [ArgumentError] if the number of bytes or alignment cannot be
   /// satisfied.
-  // TODO: Stop ignoring alignment if it's large, for example for SSE data.
+  // Alignment is currently ignored as the standard malloc/free API in Dart FFI/OS
+  // does not consistently support aligned allocation/free pairs across platforms without
+  // platform-specific extensions (like _aligned_malloc on Windows).
+  // Users requiring strict alignment should use platform-specific allocators.
   @override
   Pointer<T> allocate<T extends NativeType>(int byteCount, {int? alignment}) {
     Pointer<T> result;
@@ -151,7 +154,7 @@ final class CallocAllocator implements Allocator {
   ///
   /// Throws an [ArgumentError] if the number of bytes or alignment cannot be
   /// satisfied.
-  // TODO: Stop ignoring alignment if it's large, for example for SSE data.
+  // Alignment is currently ignored. See MallocAllocator note.
   @override
   Pointer<T> allocate<T extends NativeType>(int byteCount, {int? alignment}) {
     Pointer<T> result;

@@ -23,19 +23,19 @@ OperandSignature getSuitableRegForMemToMemMove(
   final bothInt = dstType.isInt && srcType.isInt;
 
   if (maxSize <= regSize || bothInt) {
-    return const OperandSignature(RegGroup.gp);
+    return const OperandSignature(OperandSignature.kGroupGp);
   }
 
   if (maxSize <= 16) {
-    return const OperandSignature(RegGroup.vec);
+    return const OperandSignature(OperandSignature.kGroupVec);
   }
 
   if (maxSize <= 32) {
-    return const OperandSignature(RegGroup.vec);
+    return const OperandSignature(OperandSignature.kGroupVec);
   }
 
   if (maxSize <= 64) {
-    return const OperandSignature(RegGroup.vec);
+    return const OperandSignature(OperandSignature.kGroupVec);
   }
 
   return OperandSignature.invalid;
@@ -250,7 +250,7 @@ class FuncArgsContext {
           if (!signature.isValid) {
             return AsmJitError.invalidState;
           }
-          _stackDstMask |= bitMask(signature.regGroup().index);
+          _stackDstMask |= bitMask(signature.regGroup);
         }
 
         if (src.isReg) {

@@ -14,6 +14,9 @@ import 'builder.dart';
 import 'reg_utils.dart';
 import 'arch.dart';
 import 'const_pool.dart';
+import 'type.dart';
+import 'support.dart' as support;
+import 'operand.dart';
 
 export 'builder.dart';
 
@@ -42,8 +45,42 @@ class JumpNode extends InstNode {
   JumpNode(int instId, List<Operand> operands,
       {int options = 0, this.annotation})
       : super(instId, operands, options: options, type: NodeType.jump);
+}
 
-  bool get hasAnnotation => annotation != null;
+/// Virtual Register Data.
+class VirtReg {
+  /// Virtual ID.
+  final int id;
+
+  /// Operand signature.
+  final OperandSignature signature;
+
+  /// Virtual size (in bytes).
+  int size;
+
+  /// Alignment (in bytes).
+  int alignment;
+
+  /// Type ID.
+  final TypeId typeId;
+
+  /// Name (optional).
+  String? name;
+
+  /// Internal flags.
+  int flags;
+
+  /// Back-reference to RAWorkReg (during RA).
+  Object? workReg;
+
+  // Helpers
+  bool get isStack => (flags & kIsStack) != 0;
+
+  // Flags constants
+  static const int kIsStack = 0x1;
+
+  VirtReg(this.id, this.signature, this.size, this.alignment, this.typeId,
+      {this.name, this.flags = 0});
 }
 
 /// Function node represents a function used by [BaseCompiler].
@@ -204,13 +241,13 @@ abstract class InstructionAnalyzer {
 class BaseCompiler extends BaseBuilder {
   FuncNode? _func;
   Environment _env;
-  
+
   /// Stores array of virtual registers.
-  final List<BaseReg> _virtRegs = [];
-  
+  final List<VirtReg> _virtRegs = [];
+
   /// Stores jump annotations.
   final List<JumpAnnotation> _jumpAnnotations = [];
-  
+
   /// Local and global constant pools.
   final ConstPool? _constPools = ConstPool();
 
@@ -218,23 +255,75 @@ class BaseCompiler extends BaseBuilder {
       : _env = env ?? Environment.host(),
         super(labelManager: labelManager);
 
+  Environment get environment => _env;
   Environment get env => _env;
   Arch get arch => _env.arch;
 
   FuncNode? get func => _func;
-  
+
   /// Get virtual registers.
-  List<BaseReg> get virtRegs => List.unmodifiable(_virtRegs);
-  
+  List<VirtReg> get virtRegs => List.unmodifiable(_virtRegs);
+
   /// Get jump annotations.
-  List<JumpAnnotation> get jumpAnnotations => List.unmodifiable(_jumpAnnotations);
-  
+  List<JumpAnnotation> get jumpAnnotations =>
+      List.unmodifiable(_jumpAnnotations);
+
   /// Get constant pools.
   ConstPool? get constPools => _constPools;
 
+  /// internal
   int _virtIdCounter = Globals.kMinVirtId;
 
-  int newVirtId() => _virtIdCounter++;
+  int _newVirtId() {
+    // Create a simplified VirtReg for raw ID requests (legacy support)
+    // Ideally we shouldn't use this.
+    final id = _virtIdCounter++;
+    // We must push a placeholder to _virtRegs to keep indices in sync
+    _virtRegs.add(VirtReg(id, OperandSignature(0), 0, 0, TypeId.void_));
+    return id;
+  }
+
+  // Legacy alias for compatibility during porting
+  int newVirtId() => _newVirtId();
+
+  VirtReg newVirtReg(TypeId typeId, OperandSignature signature,
+      [String? name]) {
+    final id = _virtIdCounter++;
+    int size = typeId.sizeInBytes;
+    // Default alignment based on size
+    int alignment = size > 0 ? support.min(size, 64) : 1;
+    // Ensure power of 2
+    if (!support.isPowerOf2(alignment)) {
+      alignment = 1; // Fallback
+    }
+
+    final vReg = VirtReg(id, signature, size, alignment, typeId, name: name);
+    // Explicitly handle array growth? List does it automatically.
+    _virtRegs.add(vReg);
+    return vReg;
+  }
+
+  /// Allocates a new virtual stack slot.
+  ///
+  /// Returns the [VirtReg] representing the stack slot.
+  /// The caller should create the appropriate Memory Operand (e.g. X86Mem).
+  VirtReg createStackVirtReg(int size, int alignment, [String? name]) {
+    if (size == 0) throw ArgumentError("Size must be > 0");
+    if (!support.isZeroOrPowerOf2(alignment))
+      throw ArgumentError("Alignment must be power of 2");
+
+    if (alignment == 0) alignment = 1;
+    if (alignment > 64) alignment = 64;
+
+    // Create VirtReg for stack
+    // Stack slots have TypeId.void_ usually, or specific if known.
+    final vReg = newVirtReg(TypeId.void_, OperandSignature(0), name);
+    vReg.size = size;
+    vReg.alignment = alignment;
+    vReg.flags |= VirtReg.kIsStack;
+
+    return vReg;
+  }
 
   FuncNode newFunc(FuncSignature signature) {
     final func = FuncNode();
@@ -242,6 +331,13 @@ class BaseCompiler extends BaseBuilder {
     if (err != AsmJitError.ok) {
       throw AsmJitException(err, "Failed to initialize function detail");
     }
+
+    // Initialize frame with details from function
+    final frameErr = func.frame.init(func.funcDetail);
+    if (frameErr != AsmJitError.ok) {
+      throw AsmJitException(frameErr, "Failed to initialize function frame");
+    }
+
     return func;
   }
 
@@ -300,27 +396,28 @@ class BaseCompiler extends BaseBuilder {
     _func = null;
     return AsmJitError.ok;
   }
-  
+
   /// Create new FuncRetNode.
   FuncRetNode newFuncRetNode(Operand o0, Operand o1) {
     return FuncRetNode([o0, o1]);
   }
-  
+
   /// Add FuncRetNode to instruction stream.
   FuncRetNode addFuncRetNode(Operand o0, Operand o1) {
     final node = newFuncRetNode(o0, o1);
     addNode(node);
     return node;
   }
-  
+
   /// Add return instruction.
   AsmJitError addRet(Operand o0, Operand o1) {
     addFuncRetNode(o0, o1);
     return AsmJitError.ok;
   }
-  
+
   /// Create new InvokeNode.
-  InvokeNode newInvokeNode(int instId, Operand target, FuncSignature signature) {
+  InvokeNode newInvokeNode(
+      int instId, Operand target, FuncSignature signature) {
     final node = InvokeNode(instId, [target]);
     final err = node.init(signature, _env);
     if (err != AsmJitError.ok) {
@@ -328,14 +425,15 @@ class BaseCompiler extends BaseBuilder {
     }
     return node;
   }
-  
+
   /// Add InvokeNode to instruction stream.
-  InvokeNode addInvokeNode(int instId, Operand target, FuncSignature signature) {
+  InvokeNode addInvokeNode(
+      int instId, Operand target, FuncSignature signature) {
     final node = newInvokeNode(instId, target, signature);
     addNode(node);
     return node;
   }
-  
+
   /// Create new jump annotation.
   JumpAnnotation newJumpAnnotation() {
     final annotation = JumpAnnotation(this, _jumpAnnotations.length);

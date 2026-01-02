@@ -2483,6 +2483,15 @@ class X86Encoder {
     buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
   }
 
+  /// CVTSI2SS xmm, [mem]
+  void cvtsi2ssXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0xF3);
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x2A);
+    emitModRmMem(dst.encoding, mem);
+  }
+
   /// SQRTSS xmm, [mem]
   void sqrtssXmmMem(X86Xmm dst, X86Mem mem) {
     buffer.emit8(0xF3);

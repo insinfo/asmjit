@@ -221,6 +221,16 @@ class Environment {
         'endian: ${endian == Endian.little ? "little" : "big"}'
         ')';
   }
+
+  /// Helper to get OS string name, compatible with logic expecting strings.
+  String get os {
+    if (platform == TargetPlatform.windows) return 'windows';
+    if (platform == TargetPlatform.linux) return 'linux';
+    if (platform == TargetPlatform.macos) return 'macos';
+    if (platform == TargetPlatform.android) return 'android';
+    if (platform == TargetPlatform.ios) return 'ios';
+    return 'unknown';
+  }
 }
 
 /// Target platform - the operating system.

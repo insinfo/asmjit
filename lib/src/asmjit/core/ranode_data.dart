@@ -31,6 +31,7 @@ class RAInst {
 /// Extended data for blocks during RA.
 class RABlockData {
   final int id;
+  double weight = 1.0;
 
   /// GEN set: virtual registers defined in this block before being used.
   late BitVector gen;

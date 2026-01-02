@@ -1394,8 +1394,7 @@ class X86Assembler extends BaseEmitter {
   void cvtsi2sdXM(X86Xmm dst, X86Mem src) => _enc.cvtsi2sdXmmMem(dst, src);
 
   /// CVTSI2SS xmm, [mem] (convert int32/64 to float)
-  // void cvtsi2ssXM(X86Xmm dst, X86Mem src) => _enc.cvtsi2ssXmmMem(dst, src);
-  // TODO: Add cvtsi2ssXmmMem to Encoder if needed
+  void cvtsi2ssXM(X86Xmm dst, X86Mem src) => _enc.cvtsi2ssXmmMem(dst, src);
 
   // ===========================================================================
   // SSE/SSE2 - Comparison
