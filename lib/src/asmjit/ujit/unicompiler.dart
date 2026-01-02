@@ -92,6 +92,12 @@ abstract class X86Vec extends BaseReg {
   X86Zmm get zmm;
 }
 
+class VecConstData {
+  final VecConst constant;
+  final int virtRegId;
+  const VecConstData(this.constant, this.virtRegId);
+}
+
 // ============================================================================
 // [UniCompilerBase]
 // ============================================================================
@@ -125,6 +131,10 @@ abstract class UniCompilerBase {
 
   // Constant table
   VecConstTableRef? _ctRef;
+  final List<VecConstData> _vecConsts = [];
+  final List<BaseReg?> _kReg = List.generate(kMaxKRegConstCount, (_) => null);
+  final List<int> _kImm = List.generate(kMaxKRegConstCount, (_) => 0);
+  BaseReg? _commonTablePtr;
 
   // Function hook
   BaseNode? _funcInitHook;
@@ -259,12 +269,16 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86 {
     }
     _ctRef = ctRef;
     _initDefaults();
+    if (isX86Family) {
+      _updateX86Features();
+    }
   }
 
   /// Access to constant table reference.
   VecConstTableRef? get ctRef => _ctRef;
 
   void _initDefaults() {
+    initVecWidth(VecWidth.k128);
     if (isX86Family) {
       _vecRegCount = isX86 ? 8 : 16;
       _scalarOpBehavior = ScalarOpBehavior.preservingVec128;
@@ -518,347 +532,361 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86 {
 
   /// Emit aligned vector load: dst = *mem (aligned)
   void vLoadA(BaseReg dst, X86Mem src) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVmovdqa, [dst, src]));
+    if (isX86Family) {
+      _vLoadAX86(dst, src);
     } else {
-      cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src]));
+      throw UnimplementedError('vLoadA not implemented for $arch');
     }
   }
 
   /// Emit unaligned vector load: dst = *mem (unaligned)
   void vLoadU(BaseReg dst, X86Mem src) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVmovdqu, [dst, src]));
+    if (isX86Family) {
+      _vLoadUX86(dst, src);
     } else {
-      cc.addNode(InstNode(X86InstId.kMovdqu, [dst, src]));
+      throw UnimplementedError('vLoadU not implemented for $arch');
     }
   }
 
   /// Emit aligned vector store: *mem = src (aligned)
   void vStoreA(X86Mem dst, BaseReg src) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVmovdqa, [dst, src]));
+    if (isX86Family) {
+      _vStoreAX86(dst, src);
     } else {
-      cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src]));
+      throw UnimplementedError('vStoreA not implemented for $arch');
     }
   }
 
   /// Emit unaligned vector store: *mem = src (unaligned)
   void vStoreU(X86Mem dst, BaseReg src) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVmovdqu, [dst, src]));
+    if (isX86Family) {
+      _vStoreUX86(dst, src);
     } else {
-      cc.addNode(InstNode(X86InstId.kMovdqu, [dst, src]));
+      throw UnimplementedError('vStoreU not implemented for $arch');
     }
   }
 
   /// Emit vector move: dst = src
   void vMov(BaseReg dst, BaseReg src) {
-    if (dst.id == src.id) return;
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVmovdqa, [dst, src]));
+    if (isX86Family) {
+      _vMovX86(dst, src);
     } else {
-      cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src]));
+      throw UnimplementedError('vMov not implemented for $arch');
     }
   }
 
   /// Emit vector zero: dst = 0
   void vZero(BaseReg dst) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpxor, [dst, dst, dst]));
+    if (isX86Family) {
+      _vZeroX86(dst);
     } else {
-      cc.addNode(InstNode(X86InstId.kPxor, [dst, dst]));
+      throw UnimplementedError('vZero not implemented for $arch');
     }
   }
 
   /// Emit vector XOR: dst = a ^ b
   void vXor(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpxor, [dst, a, b]));
+    if (isX86Family) {
+      _vXorX86(dst, a, b);
     } else {
-      if (dst.id != a.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, a]));
-      }
-      cc.addNode(InstNode(X86InstId.kPxor, [dst, b]));
+      throw UnimplementedError('vXor not implemented for $arch');
     }
   }
 
   /// Emit vector OR: dst = a | b
   void vOr(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpor, [dst, a, b]));
+    if (isX86Family) {
+      _vOrX86(dst, a, b);
     } else {
-      if (dst.id != a.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, a]));
-      }
-      cc.addNode(InstNode(X86InstId.kPor, [dst, b]));
+      throw UnimplementedError('vOr not implemented for $arch');
     }
   }
 
   /// Emit vector AND: dst = a & b
   void vAnd(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpand, [dst, a, b]));
+    if (isX86Family) {
+      _vAndX86(dst, a, b);
     } else {
-      if (dst.id != a.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, a]));
-      }
-      cc.addNode(InstNode(X86InstId.kPand, [dst, b]));
+      throw UnimplementedError('vAnd not implemented for $arch');
     }
   }
 
   /// Emit vector ANDN: dst = a & ~b
   void vAndNot(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(
-          InstNode(X86InstId.kVpandn, [dst, b, a])); // Note: reversed operands
+    if (isX86Family) {
+      _vAndNotX86(dst, a, b);
     } else {
-      if (b is BaseReg && dst.id != b.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, b]));
-      } else if (b is! BaseReg) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, b]));
-      }
-      cc.addNode(InstNode(X86InstId.kPandn, [dst, a]));
+      throw UnimplementedError('vAndNot not implemented for $arch');
     }
   }
 
   /// Emit packed add bytes: dst = a + b (i8)
   void vAddI8(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpaddb, [dst, a, b]));
+    if (isX86Family) {
+      _vAddI8X86(dst, a, b);
     } else {
-      if (dst.id != a.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, a]));
-      }
-      cc.addNode(InstNode(X86InstId.kPaddb, [dst, b]));
+      throw UnimplementedError('vAddI8 not implemented for $arch');
     }
   }
 
   /// Emit packed add words: dst = a + b (i16)
   void vAddI16(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpaddw, [dst, a, b]));
+    if (isX86Family) {
+      _vAddI16X86(dst, a, b);
     } else {
-      if (dst.id != a.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, a]));
-      }
-      cc.addNode(InstNode(X86InstId.kPaddw, [dst, b]));
+      throw UnimplementedError('vAddI16 not implemented for $arch');
     }
   }
 
   /// Emit packed add dwords: dst = a + b (i32)
   void vAddI32(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpaddd, [dst, a, b]));
+    if (isX86Family) {
+      _vAddI32X86(dst, a, b);
     } else {
-      if (dst.id != a.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, a]));
-      }
-      cc.addNode(InstNode(X86InstId.kPaddd, [dst, b]));
+      throw UnimplementedError('vAddI32 not implemented for $arch');
     }
   }
 
   /// Emit packed sub bytes: dst = a - b (i8)
   void vSubI8(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpsubb, [dst, a, b]));
+    if (isX86Family) {
+      _vSubI8X86(dst, a, b);
     } else {
-      if (dst.id != a.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, a]));
-      }
-      cc.addNode(InstNode(X86InstId.kPsubb, [dst, b]));
+      throw UnimplementedError('vSubI8 not implemented for $arch');
     }
   }
 
   /// Emit packed sub words: dst = a - b (i16)
   void vSubI16(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpsubw, [dst, a, b]));
+    if (isX86Family) {
+      _vSubI16X86(dst, a, b);
     } else {
-      if (dst.id != a.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, a]));
-      }
-      cc.addNode(InstNode(X86InstId.kPsubw, [dst, b]));
+      throw UnimplementedError('vSubI16 not implemented for $arch');
     }
   }
 
   /// Emit packed sub dwords: dst = a - b (i32)
   void vSubI32(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpsubd, [dst, a, b]));
+    if (isX86Family) {
+      _vSubI32X86(dst, a, b);
     } else {
-      if (dst.id != a.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, a]));
-      }
-      cc.addNode(InstNode(X86InstId.kPsubd, [dst, b]));
+      throw UnimplementedError('vSubI32 not implemented for $arch');
     }
   }
 
   /// Emit packed multiply low words: dst = (a * b) & 0xFFFF (i16)
   void vMulLoI16(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpmullw, [dst, a, b]));
+    if (isX86Family) {
+      _vMulLoI16X86(dst, a, b);
     } else {
-      if (dst.id != a.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, a]));
-      }
-      cc.addNode(InstNode(X86InstId.kPmullw, [dst, b]));
+      throw UnimplementedError('vMulLoI16 not implemented for $arch');
     }
   }
 
   /// Emit packed multiply high words signed: dst = (a * b) >> 16 (i16)
   void vMulHiI16(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpmulhw, [dst, a, b]));
+    if (isX86Family) {
+      _vMulHiI16X86(dst, a, b);
     } else {
-      if (dst.id != a.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, a]));
-      }
-      cc.addNode(InstNode(X86InstId.kPmulhw, [dst, b]));
+      throw UnimplementedError('vMulHiI16 not implemented for $arch');
     }
   }
 
   /// Emit packed multiply high words unsigned: dst = (a * b) >> 16 (u16)
   void vMulHiU16(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpmulhuw, [dst, a, b]));
+    if (isX86Family) {
+      _vMulHiU16X86(dst, a, b);
     } else {
-      if (dst.id != a.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, a]));
-      }
-      cc.addNode(InstNode(X86InstId.kPmulhuw, [dst, b]));
+      throw UnimplementedError('vMulHiU16 not implemented for $arch');
     }
   }
 
   /// Emit packed shuffle bytes: dst = shuffle(a, b)
   void vShufB(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpshufb, [dst, a, b]));
+    if (isX86Family) {
+      _vShufBX86(dst, a, b);
     } else {
-      if (dst.id != a.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, a]));
-      }
-      cc.addNode(InstNode(X86InstId.kPshufb, [dst, b]));
+      throw UnimplementedError('vShufB not implemented for $arch');
     }
   }
 
   /// Emit pack signed words with saturation: dst = pack_sat(a, b) -> u8
   void vPackUSWB(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpackuswb, [dst, a, b]));
+    if (isX86Family) {
+      _vPackUSWBX86(dst, a, b);
     } else {
-      if (dst.id != a.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, a]));
-      }
-      cc.addNode(InstNode(X86InstId.kPackuswb, [dst, b]));
+      throw UnimplementedError('vPackUSWB not implemented for $arch');
     }
   }
 
   /// Emit pack signed dwords with saturation: dst = pack_sat(a, b) -> i16
   void vPackSSDW(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpackssdw, [dst, a, b]));
+    if (isX86Family) {
+      _vPackSSDWX86(dst, a, b);
     } else {
-      if (dst.id != a.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, a]));
-      }
-      cc.addNode(InstNode(X86InstId.kPackssdw, [dst, b]));
+      throw UnimplementedError('vPackSSDW not implemented for $arch');
+    }
+  }
+
+  /// Emit blend instruction: dst = src1 blended with src2 (i16)
+  void vBlend(BaseReg dst, BaseReg src1, Operand src2, int imm) {
+    if (isX86Family) {
+      _vBlendX86(dst, src1, src2, imm);
+    } else {
+      throw UnimplementedError('vBlend not implemented for $arch');
+    }
+  }
+
+  /// Emit variable blend instruction: dst = src1 blended with src2 by mask (i8)
+  void vBlendV(BaseReg dst, BaseReg src1, Operand src2, BaseReg mask) {
+    if (isX86Family) {
+      _vBlendVX86(dst, src1, src2, mask);
+    } else {
+      throw UnimplementedError('vBlendV not implemented for $arch');
     }
   }
 
   /// Emit unpack low bytes: dst = interleave_lo(a, b)
   void vUnpackLoI8(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpunpcklbw, [dst, a, b]));
+    if (isX86Family) {
+      _vUnpackLoI8X86(dst, a, b);
     } else {
-      if (dst.id != a.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, a]));
-      }
-      cc.addNode(InstNode(X86InstId.kPunpcklbw, [dst, b]));
+      throw UnimplementedError('vUnpackLoI8 not implemented for $arch');
     }
   }
 
   /// Emit unpack high bytes: dst = interleave_hi(a, b)
   void vUnpackHiI8(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpunpckhbw, [dst, a, b]));
+    if (isX86Family) {
+      _vUnpackHiI8X86(dst, a, b);
     } else {
-      if (dst.id != a.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, a]));
-      }
-      cc.addNode(InstNode(X86InstId.kPunpckhbw, [dst, b]));
+      throw UnimplementedError('vUnpackHiI8 not implemented for $arch');
     }
   }
 
   /// Emit compare equal bytes: dst = (a == b) ? 0xFF : 0x00
   void vCmpEqI8(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpcmpeqb, [dst, a, b]));
+    if (isX86Family) {
+      _vCmpEqI8X86(dst, a, b);
     } else {
-      if (dst.id != a.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, a]));
-      }
-      cc.addNode(InstNode(X86InstId.kPcmpeqb, [dst, b]));
+      throw UnimplementedError('vCmpEqI8 not implemented for $arch');
     }
   }
 
   /// Emit compare equal words: dst = (a == b) ? 0xFFFF : 0x0000
   void vCmpEqI16(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpcmpeqw, [dst, a, b]));
+    if (isX86Family) {
+      _vCmpEqI16X86(dst, a, b);
     } else {
-      if (dst.id != a.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, a]));
-      }
-      cc.addNode(InstNode(X86InstId.kPcmpeqw, [dst, b]));
+      throw UnimplementedError('vCmpEqI16 not implemented for $arch');
     }
   }
 
   /// Emit compare greater than signed bytes: dst = (a > b) ? 0xFF : 0x00
   void vCmpGtI8(BaseReg dst, BaseReg a, Operand b) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpcmpgtb, [dst, a, b]));
+    if (isX86Family) {
+      _vCmpGtI8X86(dst, a, b);
     } else {
-      if (dst.id != a.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, a]));
-      }
-      cc.addNode(InstNode(X86InstId.kPcmpgtb, [dst, b]));
+      throw UnimplementedError('vCmpGtI8 not implemented for $arch');
     }
   }
 
   /// Emit shift left logical words: dst = a << imm (i16)
   void vSllI16(BaseReg dst, BaseReg src, int imm) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpsllw, [dst, src, Imm(imm)]));
+    if (isX86Family) {
+      _vSllI16X86(dst, src, imm);
     } else {
-      if (dst.id != src.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src]));
-      }
-      cc.addNode(InstNode(X86InstId.kPsllw, [dst, Imm(imm)]));
+      throw UnimplementedError('vSllI16 not implemented for $arch');
     }
   }
 
   /// Emit shift right logical words: dst = a >> imm (u16)
   void vSrlI16(BaseReg dst, BaseReg src, int imm) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpsrlw, [dst, src, Imm(imm)]));
+    if (isX86Family) {
+      _vSrlI16X86(dst, src, imm);
     } else {
-      if (dst.id != src.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src]));
-      }
-      cc.addNode(InstNode(X86InstId.kPsrlw, [dst, Imm(imm)]));
+      throw UnimplementedError('vSrlI16 not implemented for $arch');
     }
   }
 
   /// Emit shift right arithmetic words: dst = a >> imm (i16)
   void vSraI16(BaseReg dst, BaseReg src, int imm) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpsraw, [dst, src, Imm(imm)]));
+    if (isX86Family) {
+      _vSraI16X86(dst, src, imm);
     } else {
-      if (dst.id != src.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src]));
-      }
-      cc.addNode(InstNode(X86InstId.kPsraw, [dst, Imm(imm)]));
+      throw UnimplementedError('vSraI16 not implemented for $arch');
+    }
+  }
+
+  /// Load 64-bit from memory to vector.
+  void vLoad64(BaseReg dst, X86Mem src) {
+    if (isX86Family) {
+      _vLoad64X86(dst, src);
+    } else {
+      throw UnimplementedError('vLoad64 not implemented for $arch');
+    }
+  }
+
+  /// Store 64-bit from vector to memory.
+  void vStore64(X86Mem dst, BaseReg src) {
+    if (isX86Family) {
+      _vStore64X86(dst, src);
+    } else {
+      throw UnimplementedError('vStore64 not implemented for $arch');
+    }
+  }
+
+  /// Load 32-bit from memory to vector.
+  void vLoad32(BaseReg dst, X86Mem src) {
+    if (isX86Family) {
+      _vLoad32X86(dst, src);
+    } else {
+      throw UnimplementedError('vLoad32 not implemented for $arch');
+    }
+  }
+
+  /// Store 32-bit from vector to memory.
+  void vStore32(X86Mem dst, BaseReg src) {
+    if (isX86Family) {
+      _vStore32X86(dst, src);
+    } else {
+      throw UnimplementedError('vStore32 not implemented for $arch');
+    }
+  }
+
+  /// Emit scalar move: dst = src (first element)
+  void sMov(BaseReg dst, BaseReg src) {
+    if (isX86Family) {
+      _sMovX86(dst, src);
+    } else {
+      throw UnimplementedError('sMov not implemented for $arch');
+    }
+  }
+
+  /// Emit extract 16-bit word: dst = src[imm] (u16)
+  void sExtractU16(Operand dst, BaseReg src, int imm) {
+    if (isX86Family) {
+      _sExtractU16X86(dst, src, imm);
+    } else {
+      throw UnimplementedError('sExtractU16 not implemented for $arch');
+    }
+  }
+
+  /// Emit insert 16-bit word: dst = src, dst[imm] = val
+  void sInsertU16(BaseReg dst, BaseReg src, Operand val, int imm) {
+    if (isX86Family) {
+      _sInsertU16X86(dst, src, val, imm);
+    } else {
+      throw UnimplementedError('sInsertU16 not implemented for $arch');
+    }
+  }
+
+  /// Non-temporal store (bypass cache).
+  void vStoreNT(X86Mem dst, BaseReg src) {
+    if (isX86Family) {
+      _vStoreNTX86(dst, src);
+    } else {
+      throw UnimplementedError('vStoreNT not implemented for $arch');
     }
   }
 
@@ -952,1141 +980,311 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86 {
   }
 
   // ============================================================================
-  // [High-Level SIMD Operations - emit_2v]
+  // [High-Level SIMD Operations]
   // ============================================================================
 
-  /// Emit 2-operand vector instruction based on UniOpVV.
+  /// Emit instruction with [vec, mem] operands.
+  void emitVM(UniOpVM op, BaseReg dst, X86Mem src,
+      {Alignment alignment = Alignment.none, int idx = 0}) {
+    if (isX86Family) {
+      _emitVMX86(op, dst, src, alignment, idx);
+    } else {
+      throw UnimplementedError('emitVM not implemented for $arch');
+    }
+  }
+
+  /// Emit instruction with [mem, vec] operands.
+  void emitMV(UniOpMV op, X86Mem dst, BaseReg src,
+      {Alignment alignment = Alignment.none, int idx = 0}) {
+    if (isX86Family) {
+      _emitMVX86(op, dst, src, alignment, idx);
+    } else {
+      throw UnimplementedError('emitMV not implemented for $arch');
+    }
+  }
+
+  /// Emit 2-operand vector instruction.
   void emit2v(UniOpVV op, Operand dst, Operand src) {
-    switch (op) {
-      case UniOpVV.mov:
-        vMov(dst as BaseReg, src as BaseReg);
-        break;
-      case UniOpVV.movU64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVmovq, [dst, src]));
-        } else {
-          cc.addNode(InstNode(X86InstId.kMovq, [dst, src]));
-        }
-        break;
-      case UniOpVV.broadcastU32:
-        if (hasAvx2) {
-          cc.addNode(InstNode(X86InstId.kVpbroadcastd, [dst, src]));
-        } else if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVbroadcastss, [dst, src]));
-        } else {
-          cc.addNode(InstNode(X86InstId.kPshufd, [dst, src, Imm(0)]));
-        }
-        break;
-      case UniOpVV.broadcastU64:
-        if (hasAvx2) {
-          cc.addNode(InstNode(X86InstId.kVpbroadcastq, [dst, src]));
-        } else if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVbroadcastsd, [dst, src]));
-        } else {
-          cc.addNode(InstNode(X86InstId.kPshufd, [dst, src, Imm(0x44)]));
-        }
-        break;
-      case UniOpVV.absI8:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpabsb, [dst, src]));
-        } else if (hasSsse3) {
-          if (dst != src) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src]));
-          }
-          cc.addNode(InstNode(X86InstId.kPabsb, [dst, dst]));
-        }
-        break;
-      case UniOpVV.absI16:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpabsw, [dst, src]));
-        } else if (hasSsse3) {
-          if (dst != src) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src]));
-          }
-          cc.addNode(InstNode(X86InstId.kPabsw, [dst, dst]));
-        }
-        break;
-      case UniOpVV.absI32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpabsd, [dst, src]));
-        } else if (hasSsse3) {
-          if (dst != src) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src]));
-          }
-          cc.addNode(InstNode(X86InstId.kPabsd, [dst, dst]));
-        }
-        break;
-      case UniOpVV.notU32:
-      case UniOpVV.notU64:
-        // NOT = XOR with all ones
-        if (hasAvx) {
-          // Create all-ones mask and XOR
-          cc.addNode(InstNode(X86InstId.kVpcmpeqd, [dst, dst, dst]));
-          cc.addNode(InstNode(X86InstId.kVpxor, [dst, dst, src]));
-        } else {
-          cc.addNode(InstNode(X86InstId.kPcmpeqd, [dst, dst]));
-          cc.addNode(InstNode(X86InstId.kPxor, [dst, src]));
-        }
-        break;
-      case UniOpVV.cvtU8LoToU16:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpmovzxbw, [dst, src]));
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kPmovzxbw, [dst, src]));
-        } else {
-          // SSE2 fallback: unpack with zero
-          vZero(dst as BaseReg);
-          cc.addNode(InstNode(X86InstId.kPunpcklbw, [dst, src]));
-        }
-        break;
-      case UniOpVV.cvtI8LoToI16:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpmovsxbw, [dst, src]));
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kPmovsxbw, [dst, src]));
-        }
-        break;
-      case UniOpVV.cvtU16LoToU32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpmovzxwd, [dst, src]));
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kPmovzxwd, [dst, src]));
-        } else {
-          // SSE2 fallback: unpack with zero
-          vZero(dst as BaseReg);
-          cc.addNode(InstNode(X86InstId.kPunpcklwd, [dst, src]));
-        }
-        break;
-      case UniOpVV.cvtI16LoToI32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpmovsxwd, [dst, src]));
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kPmovsxwd, [dst, src]));
-        }
-        break;
-      case UniOpVV.cvtU32LoToU64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpmovzxdq, [dst, src]));
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kPmovzxdq, [dst, src]));
-        } else {
-          // SSE2 fallback: unpack with zero
-          vZero(dst as BaseReg);
-          cc.addNode(InstNode(X86InstId.kPunpckldq, [dst, src]));
-        }
-        break;
-      case UniOpVV.cvtI32LoToI64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpmovsxdq, [dst, src]));
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kPmovsxdq, [dst, src]));
-        }
-        break;
-      // Floating point operations
-      case UniOpVV.sqrtF32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVsqrtps, [dst, src]));
-        } else {
-          if (dst != src) {
-            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src]));
-          }
-          cc.addNode(InstNode(X86InstId.kSqrtps, [dst, dst]));
-        }
-        break;
-      case UniOpVV.sqrtF64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVsqrtpd, [dst, src]));
-        } else {
-          if (dst != src) {
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src]));
-          }
-          cc.addNode(InstNode(X86InstId.kSqrtpd, [dst, dst]));
-        }
-        break;
-      case UniOpVV.rcpF32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVrcpps, [dst, src]));
-        } else {
-          if (dst != src) {
-            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src]));
-          }
-          cc.addNode(InstNode(X86InstId.kRcpps, [dst, dst]));
-        }
-        break;
-      case UniOpVV.cvtI32ToF32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVcvtdq2ps, [dst, src]));
-        } else {
-          cc.addNode(InstNode(X86InstId.kCvtdq2ps, [dst, src]));
-        }
-        break;
-      case UniOpVV.cvtF32LoToF64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVcvtps2pd, [dst, src]));
-        } else {
-          cc.addNode(InstNode(X86InstId.kCvtps2pd, [dst, src]));
-        }
-        break;
-      case UniOpVV.cvtTruncF32ToI32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVcvttps2dq, [dst, src]));
-        } else {
-          cc.addNode(InstNode(X86InstId.kCvttps2dq, [dst, src]));
-        }
-        break;
-      case UniOpVV.truncF32:
-        if (hasAvx) {
-          cc.addNode(InstNode(
-              X86InstId.kVroundps, [dst, src, Imm(3)])); // 3 = truncate mode
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kRoundps, [dst, src, Imm(3)]));
-        }
-        break;
-      case UniOpVV.truncF64:
-        if (hasAvx) {
-          cc.addNode(InstNode(
-              X86InstId.kVroundpd, [dst, src, Imm(3)])); // 3 = truncate mode
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kRoundpd, [dst, src, Imm(3)]));
-        }
-        break;
-      case UniOpVV.floorF32:
-        if (hasAvx) {
-          cc.addNode(InstNode(
-              X86InstId.kVroundps, [dst, src, Imm(1)])); // 1 = floor mode
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kRoundps, [dst, src, Imm(1)]));
-        }
-        break;
-      case UniOpVV.floorF64:
-        if (hasAvx) {
-          cc.addNode(InstNode(
-              X86InstId.kVroundpd, [dst, src, Imm(1)])); // 1 = floor mode
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kRoundpd, [dst, src, Imm(1)]));
-        }
-        break;
-      case UniOpVV.ceilF32:
-        if (hasAvx) {
-          cc.addNode(InstNode(
-              X86InstId.kVroundps, [dst, src, Imm(2)])); // 2 = ceil mode
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kRoundps, [dst, src, Imm(2)]));
-        }
-        break;
-      case UniOpVV.ceilF64:
-        if (hasAvx) {
-          cc.addNode(InstNode(
-              X86InstId.kVroundpd, [dst, src, Imm(2)])); // 2 = ceil mode
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kRoundpd, [dst, src, Imm(2)]));
-        }
-        break;
-      default:
-        throw UnimplementedError('emit2v: $op not implemented');
+    if (isX86Family) {
+      _emit2vX86(op, dst, src);
+    } else {
+      throw UnimplementedError('emit2v not implemented for $arch');
     }
   }
 
-  // ============================================================================
-  // [High-Level SIMD Operations - emit_3v]
-  // ============================================================================
-
-  /// Emit 3-operand vector instruction based on UniOpVVV.
+  /// Emit 3-operand vector instruction.
   void emit3v(UniOpVVV op, Operand dst, Operand src1, Operand src2) {
-    switch (op) {
-      case UniOpVVV.andU32:
-      case UniOpVVV.andU64:
-        vAnd(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      case UniOpVVV.orU32:
-      case UniOpVVV.orU64:
-        vOr(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      case UniOpVVV.xorU32:
-      case UniOpVVV.xorU64:
-        vXor(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      case UniOpVVV.andnU32:
-      case UniOpVVV.andnU64:
-        vAndNot(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      case UniOpVVV.addU8:
-        vAddI8(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      case UniOpVVV.addU16:
-        vAddI16(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      case UniOpVVV.addU32:
-        vAddI32(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      case UniOpVVV.addU64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpaddq, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPaddq, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.subU8:
-        vSubI8(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      case UniOpVVV.subU16:
-        vSubI16(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      case UniOpVVV.subU32:
-        vSubI32(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      case UniOpVVV.subU64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpsubq, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPsubq, [dst, src2]));
-        }
-        break;
-      // Saturating arithmetic operations
-      case UniOpVVV.addsI8:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpaddsb, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPaddsb, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.addsU8:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpaddusb, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPaddusb, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.addsI16:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpaddsw, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPaddsw, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.addsU16:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpaddusw, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPaddusw, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.subsI8:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpsubsb, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPsubsb, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.subsU8:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpsubusb, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPsubusb, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.subsI16:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpsubsw, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPsubsw, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.subsU16:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpsubusw, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPsubusw, [dst, src2]));
-        }
-        break;
-      // BIC (bit clear) - dst = a & ~b
-      case UniOpVVV.bicU32:
-      case UniOpVVV.bicU64:
-        // BIC is ANDN with reversed operands
-        vAndNot(dst as BaseReg, src2 as BaseReg, src1);
-        break;
-      // Average operations (rounded)
-      case UniOpVVV.avgrU8:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpavgb, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPavgb, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.avgrU16:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpavgw, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPavgw, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.mulU16:
-        vMulLoI16(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      case UniOpVVV.mulhI16:
-        vMulHiI16(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      case UniOpVVV.mulhU16:
-        vMulHiU16(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      case UniOpVVV.mulU32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpmulld, [dst, src1, src2]));
-        } else if (hasSse41) {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPmulld, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.cmpEqU8:
-        vCmpEqI8(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      case UniOpVVV.cmpEqU16:
-        vCmpEqI16(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      case UniOpVVV.cmpEqU32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpcmpeqd, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPcmpeqd, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.cmpGtI8:
-        vCmpGtI8(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      case UniOpVVV.cmpGtI16:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpcmpgtw, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPcmpgtw, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.cmpGtI32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpcmpgtd, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPcmpgtd, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.minI8:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpminsb, [dst, src1, src2]));
-        } else if (hasSse41) {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPminsb, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.minU8:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpminub, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPminub, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.minI16:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpminsw, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPminsw, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.minU16:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpminuw, [dst, src1, src2]));
-        } else if (hasSse41) {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPminuw, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.maxI8:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpmaxsb, [dst, src1, src2]));
-        } else if (hasSse41) {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPmaxsb, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.maxU8:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpmaxub, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPmaxub, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.maxI16:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpmaxsw, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPmaxsw, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.maxU16:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpmaxuw, [dst, src1, src2]));
-        } else if (hasSse41) {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPmaxuw, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.packsI16I8:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpacksswb, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPacksswb, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.packsI16U8:
-        vPackUSWB(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      case UniOpVVV.packsI32I16:
-        vPackSSDW(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      case UniOpVVV.interleaveLoU8:
-        vUnpackLoI8(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      case UniOpVVV.interleaveHiU8:
-        vUnpackHiI8(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      case UniOpVVV.interleaveLoU16:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpunpcklwd, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPunpcklwd, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.interleaveHiU16:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpunpckhwd, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPunpckhwd, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.interleaveLoU32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpunpckldq, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPunpckldq, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.interleaveHiU32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpunpckhdq, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPunpckhdq, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.interleaveLoU64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpunpcklqdq, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPunpcklqdq, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.interleaveHiU64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpunpckhqdq, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPunpckhqdq, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.swizzlevU8:
-        vShufB(dst as BaseReg, src1 as BaseReg, src2);
-        break;
-      // Floating point operations
-
-      case UniOpVVV.addF32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVaddps, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kAddps, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.addF64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVaddpd, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kAddpd, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.subF32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVsubps, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kSubps, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.subF64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVsubpd, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kSubpd, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.mulF32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVmulps, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kMulps, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.mulF64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVmulpd, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kMulpd, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.divF32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVdivps, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kDivps, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.divF64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVdivpd, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kDivpd, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.minF32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVminps, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kMinps, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.minF64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVminpd, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kMinpd, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.maxF32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVmaxps, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kMaxps, [dst, src2]));
-        }
-        break;
-      case UniOpVVV.maxF64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVmaxpd, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kMaxpd, [dst, src2]));
-        }
-        break;
-      default:
-        throw UnimplementedError('emit3v: $op not implemented');
+    if (isX86Family) {
+      _emit3vX86(op, dst, src1, src2);
+    } else {
+      throw UnimplementedError('emit3v not implemented for $arch');
     }
   }
 
-  // ============================================================================
-  // [High-Level SIMD Operations - emit_2vi (shift with immediate)]
-  // ============================================================================
-
-  /// Emit 2-operand vector instruction with immediate based on UniOpVVI.
+  /// Emit instruction with [vec, vec, imm] operands.
   void emit2vi(UniOpVVI op, Operand dst, Operand src, int imm) {
-    switch (op) {
-      case UniOpVVI.sllU16:
-        vSllI16(dst as BaseReg, src as BaseReg, imm);
-        break;
-      case UniOpVVI.sllU32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpslld, [dst, src, Imm(imm)]));
-        } else {
-          if ((dst as BaseReg).id != (src as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src]));
-          }
-          cc.addNode(InstNode(X86InstId.kPslld, [dst, Imm(imm)]));
-        }
-        break;
-      case UniOpVVI.sllU64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpsllq, [dst, src, Imm(imm)]));
-        } else {
-          if ((dst as BaseReg).id != (src as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src]));
-          }
-          cc.addNode(InstNode(X86InstId.kPsllq, [dst, Imm(imm)]));
-        }
-        break;
-      case UniOpVVI.srlU16:
-        vSrlI16(dst as BaseReg, src as BaseReg, imm);
-        break;
-      case UniOpVVI.srlU32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpsrld, [dst, src, Imm(imm)]));
-        } else {
-          if ((dst as BaseReg).id != (src as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src]));
-          }
-          cc.addNode(InstNode(X86InstId.kPsrld, [dst, Imm(imm)]));
-        }
-        break;
-      case UniOpVVI.srlU64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpsrlq, [dst, src, Imm(imm)]));
-        } else {
-          if ((dst as BaseReg).id != (src as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src]));
-          }
-          cc.addNode(InstNode(X86InstId.kPsrlq, [dst, Imm(imm)]));
-        }
-        break;
-      case UniOpVVI.sraI16:
-        vSraI16(dst as BaseReg, src as BaseReg, imm);
-        break;
-      case UniOpVVI.sraI32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpsrad, [dst, src, Imm(imm)]));
-        } else {
-          if ((dst as BaseReg).id != (src as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src]));
-          }
-          cc.addNode(InstNode(X86InstId.kPsrad, [dst, Imm(imm)]));
-        }
-        break;
-      case UniOpVVI.sllbU128:
-        // Shift left bytes
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpslldq, [dst, src, Imm(imm)]));
-        } else {
-          if ((dst as BaseReg).id != (src as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src]));
-          }
-          cc.addNode(InstNode(X86InstId.kPslldq, [dst, Imm(imm)]));
-        }
-        break;
-      case UniOpVVI.srlbU128:
-        // Shift right bytes
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpsrldq, [dst, src, Imm(imm)]));
-        } else {
-          if ((dst as BaseReg).id != (src as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src]));
-          }
-          cc.addNode(InstNode(X86InstId.kPsrldq, [dst, Imm(imm)]));
-        }
-        break;
-      case UniOpVVI.swizzleU32x4:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpshufd, [dst, src, Imm(imm)]));
-        } else {
-          cc.addNode(InstNode(X86InstId.kPshufd, [dst, src, Imm(imm)]));
-        }
-        break;
-      case UniOpVVI.swizzleLoU16x4:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpshuflw, [dst, src, Imm(imm)]));
-        } else {
-          cc.addNode(InstNode(X86InstId.kPshuflw, [dst, src, Imm(imm)]));
-        }
-        break;
-      case UniOpVVI.swizzleHiU16x4:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpshufhw, [dst, src, Imm(imm)]));
-        } else {
-          cc.addNode(InstNode(X86InstId.kPshufhw, [dst, src, Imm(imm)]));
-        }
-        break;
-      default:
-        throw UnimplementedError('emit2vi: $op not implemented');
+    if (isX86Family) {
+      _emit2viX86(op, dst, src, imm);
+    } else {
+      throw UnimplementedError('emit2vi not implemented for $arch');
     }
   }
 
-  // ============================================================================
-  // [High-Level SIMD Operations - emit_3vi (shuffle/blend with immediate)]
-  // ============================================================================
-
-  /// Emit 3-operand vector instruction with immediate based on UniOpVVVI.
+  /// Emit instruction with [vec, vec, vec, imm] operands.
   void emit3vi(UniOpVVVI op, Operand dst, Operand src1, Operand src2, int imm) {
-    switch (op) {
-      case UniOpVVVI.alignrU128:
-        if (hasAvx) {
-          cc.addNode(
-              InstNode(X86InstId.kVpalignr, [dst, src1, src2, Imm(imm)]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPalignr, [dst, src2, Imm(imm)]));
-        }
-        break;
-      case UniOpVVVI.interleaveShuffleU32x4:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVshufps, [dst, src1, src2, Imm(imm)]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kShufps, [dst, src2, Imm(imm)]));
-        }
-        break;
-      case UniOpVVVI.interleaveShuffleF64x2:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVshufpd, [dst, src1, src2, Imm(imm)]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kShufpd, [dst, src2, Imm(imm)]));
-        }
-        break;
-      default:
-        throw UnimplementedError('emit3vi: $op not implemented');
-    }
-  }
-
-  // ============================================================================
-  // [Scalar Vector Operations]
-  // ============================================================================
-
-  /// Move GP to/from vector scalar.
-  void sMov(Operand dst, Operand src) {
-    if (dst is X86Gp && src is BaseReg) {
-      // Vec -> GP
-      if (hasAvx) {
-        cc.addNode(InstNode(X86InstId.kVmovd, [dst, src]));
-      } else {
-        cc.addNode(InstNode(X86InstId.kMovd, [dst, src]));
-      }
-    } else if (dst is BaseReg && src is X86Gp) {
-      // GP -> Vec
-      if (hasAvx) {
-        cc.addNode(InstNode(X86InstId.kVmovd, [dst, src]));
-      } else {
-        cc.addNode(InstNode(X86InstId.kMovd, [dst, src]));
-      }
-    }
-  }
-
-  /// Extract u16 from vector at index.
-  void sExtractU16(X86Gp dst, BaseReg src, int idx) {
-    if (hasSse41 || hasAvx) {
-      if (hasAvx) {
-        cc.addNode(InstNode(X86InstId.kVpextrw, [dst, src, Imm(idx)]));
-      } else {
-        cc.addNode(InstNode(X86InstId.kPextrw, [dst, src, Imm(idx)]));
-      }
+    if (isX86Family) {
+      _emit3viX86(op, dst, src1, src2, imm);
     } else {
-      cc.addNode(InstNode(X86InstId.kPextrw, [dst, src, Imm(idx)]));
+      throw UnimplementedError('emit3vi not implemented for $arch');
     }
   }
 
-  /// Insert u16 into vector at index.
-  void sInsertU16(BaseReg dst, X86Gp src, int idx) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpinsrw, [dst, dst, src, Imm(idx)]));
-    } else {
-      cc.addNode(InstNode(X86InstId.kPinsrw, [dst, src, Imm(idx)]));
-    }
-  }
-
-  // ============================================================================
-  // [Blend Operations]
-  // ============================================================================
-
-  /// Blend vector elements based on immediate mask.
-  void vBlend(BaseReg dst, BaseReg src1, Operand src2, int imm) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpblendw, [dst, src1, src2, Imm(imm)]));
-    } else if (hasSse41) {
-      if (dst.id != src1.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-      }
-      cc.addNode(InstNode(X86InstId.kPblendw, [dst, src2, Imm(imm)]));
-    }
-  }
-
-  /// Variable blend (using mask in XMM0 for SSE4.1).
-  void vBlendV(BaseReg dst, BaseReg src1, Operand src2, BaseReg mask) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpblendvb, [dst, src1, src2, mask]));
-    } else if (hasSse41) {
-      // SSE4.1 pblendvb implicitly uses XMM0 as mask
-      // Need to move mask to XMM0 first
-      if (dst.id != src1.id) {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-      }
-      cc.addNode(InstNode(X86InstId.kPblendvb, [dst, src2]));
-    }
-  }
-
-  // ============================================================================
-  // [High-Level SIMD Operations - emit_4v (FMA operations)]
-  // ============================================================================
-
-  /// Emit 4-operand vector instruction based on UniOpVVVV.
+  /// Emit instruction with 4 vector operands.
   void emit4v(
       UniOpVVVV op, Operand dst, Operand src1, Operand src2, Operand src3) {
-    switch (op) {
-      case UniOpVVVV.blendvU8:
-        vBlendV(dst as BaseReg, src1 as BaseReg, src2, src3 as BaseReg);
-        break;
-      case UniOpVVVV.mAddU16:
-        // Madd = Multiply and Add for integers (pmaddwd)
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpmaddwd, [dst, src1, src2]));
-        } else {
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kPmaddwd, [dst, src2]));
-        }
-        break;
-      case UniOpVVVV.mAddF32S:
-      case UniOpVVVV.mAddF32:
-        // FMA: dst = src1 * src2 + src3
-        if (hasFma) {
-          cc.addNode(InstNode(X86InstId.kVfmadd213ps, [dst, src1, src2]));
-        } else if (hasAvx) {
-          // Fallback: mul then add
-          final temp = newVec();
-          cc.addNode(InstNode(X86InstId.kVmulps, [temp, src1, src2]));
-          cc.addNode(InstNode(X86InstId.kVaddps, [dst, temp, src3]));
-        } else {
-          // SSE fallback
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kMulps, [dst, src2]));
-          cc.addNode(InstNode(X86InstId.kAddps, [dst, src3]));
-        }
-        break;
-      case UniOpVVVV.mAddF64S:
-      case UniOpVVVV.mAddF64:
-        // FMA: dst = src1 * src2 + src3
-        if (hasFma) {
-          cc.addNode(InstNode(X86InstId.kVfmadd213pd, [dst, src1, src2]));
-        } else if (hasAvx) {
-          // Fallback: mul then add
-          final temp = newVec();
-          cc.addNode(InstNode(X86InstId.kVmulpd, [temp, src1, src2]));
-          cc.addNode(InstNode(X86InstId.kVaddpd, [dst, temp, src3]));
-        } else {
-          // SSE fallback
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kMulpd, [dst, src2]));
-          cc.addNode(InstNode(X86InstId.kAddpd, [dst, src3]));
-        }
-        break;
-      case UniOpVVVV.mSubF32S:
-      case UniOpVVVV.mSubF32:
-        // FMS: dst = src1 * src2 - src3
-        if (hasFma) {
-          cc.addNode(InstNode(X86InstId.kVfmsub213ps, [dst, src1, src2]));
-        } else if (hasAvx) {
-          // Fallback: mul then sub
-          final temp = newVec();
-          cc.addNode(InstNode(X86InstId.kVmulps, [temp, src1, src2]));
-          cc.addNode(InstNode(X86InstId.kVsubps, [dst, temp, src3]));
-        } else {
-          // SSE fallback
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kMulps, [dst, src2]));
-          cc.addNode(InstNode(X86InstId.kSubps, [dst, src3]));
-        }
-        break;
-      case UniOpVVVV.mSubF64S:
-      case UniOpVVVV.mSubF64:
-        // FMS: dst = src1 * src2 - src3
-        if (hasFma) {
-          cc.addNode(InstNode(X86InstId.kVfmsub213pd, [dst, src1, src2]));
-        } else if (hasAvx) {
-          // Fallback: mul then sub
-          final temp = newVec();
-          cc.addNode(InstNode(X86InstId.kVmulpd, [temp, src1, src2]));
-          cc.addNode(InstNode(X86InstId.kVsubpd, [dst, temp, src3]));
-        } else {
-          // SSE fallback
-          if ((dst as BaseReg).id != (src1 as BaseReg).id) {
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
-          }
-          cc.addNode(InstNode(X86InstId.kMulpd, [dst, src2]));
-          cc.addNode(InstNode(X86InstId.kSubpd, [dst, src3]));
-        }
-        break;
-      default:
-        throw UnimplementedError('emit4v: $op not implemented');
+    if (isX86Family) {
+      _emit4vX86(op, dst, src1, src2, src3);
+    } else {
+      throw UnimplementedError('emit4v not implemented for $arch');
+    }
+  }
+
+  /// Emit instruction with 5 vector operands.
+  void emit5v(UniOpVVVVV op, Operand dst, Operand src1, Operand src2,
+      Operand src3, Operand src4) {
+    if (isX86Family) {
+      _emit5vX86(op, dst, src1, src2, src3, src4);
+    } else {
+      throw UnimplementedError('emit5v not implemented for $arch');
+    }
+  }
+
+  /// Emit instruction with 9 vector operands.
+  void emit9v(
+      UniOpVVVVVVVVV op,
+      Operand dst,
+      Operand src1,
+      Operand src2,
+      Operand src3,
+      Operand src4,
+      Operand src5,
+      Operand src6,
+      Operand src7,
+      Operand src8) {
+    if (isX86Family) {
+      _emit9vX86(op, dst, src1, src2, src3, src4, src5, src6, src7, src8);
+    } else {
+      throw UnimplementedError('emit9v not implemented for $arch');
     }
   }
 
   // ============================================================================
-  // [Memory Operations with Vector]
+  // [Constants]
   // ============================================================================
 
-  /// Load 64-bit from memory to vector.
-  void vLoad64(BaseReg dst, X86Mem src) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVmovq, [dst, src]));
-    } else {
-      cc.addNode(InstNode(X86InstId.kMovq, [dst, src]));
+  void _initVecConstTablePtr() {
+    if (_commonTablePtr == null && _ctRef != null) {
+      final prev = cc.cursor;
+      cc.setCursor(_funcInitHook!);
+      _commonTablePtr = (cc as X86Compiler).newGpPtr("common_table_ptr");
+      // Placeholder for actual address loading
+      cc.addNode(InstNode(X86InstId.kMov, [_commonTablePtr!, Imm(0)]));
+      _funcInitHook = cc.cursor;
+      cc.setCursor(prev);
     }
   }
 
-  /// Store 64-bit from vector to memory.
-  void vStore64(X86Mem dst, BaseReg src) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVmovq, [dst, src]));
+  BaseReg kConst(int value) {
+    for (int i = 0; i < UniCompilerBase.kMaxKRegConstCount; i++) {
+      if (_kReg[i] != null && _kImm[i] == value) {
+        return _kReg[i]!;
+      }
+    }
+
+    int slot = -1;
+    for (int i = 0; i < UniCompilerBase.kMaxKRegConstCount; i++) {
+      if (_kReg[i] == null) {
+        slot = i;
+        break;
+      }
+    }
+
+    final prev = cc.cursor;
+    cc.setCursor(_funcInitHook!);
+
+    final kReg = (cc as X86Compiler)
+        .newKReg("k0x${value.toRadixString(16).toUpperCase()}");
+
+    if (value > 0xFFFFFFFF || value < 0) {
+      final tmp = (cc as X86Compiler).newGp64("kTmp");
+      cc.addNode(InstNode(X86InstId.kMov, [tmp, Imm(value)]));
+      cc.addNode(InstNode(X86InstId.kKmovq, [kReg, tmp]));
     } else {
-      cc.addNode(InstNode(X86InstId.kMovq, [dst, src]));
+      final tmp = (cc as X86Compiler).newGp32("kTmp");
+      cc.addNode(InstNode(X86InstId.kMov, [tmp, Imm(value)]));
+      cc.addNode(InstNode(X86InstId.kKmovd, [kReg, tmp]));
+    }
+
+    _funcInitHook = cc.cursor;
+    cc.setCursor(prev);
+
+    if (slot != -1) {
+      _kReg[slot] = kReg;
+      _kImm[slot] = value;
+    }
+
+    return kReg;
+  }
+
+  Operand simdConst(VecConst c, Bcst bcstWidth, VecWidth constWidth) {
+    for (final vc in _vecConsts) {
+      if (vc.constant == c) {
+        final sig = VecWidthUtils.signatureOf(constWidth);
+        return BaseReg_fromSigId(sig, vc.virtRegId);
+      }
+    }
+
+    if (!hasAvx512) {
+      if (c != VecConstTable.p_0000000000000000) {
+        return simdMemConst(c, bcstWidth, constWidth);
+      }
+    }
+
+    return _newVecConst(c, bcstWidth == Bcst.kNA_Unique)
+        .cloneAsWidth(constWidth);
+  }
+
+  Operand simdConstSimilarTo(VecConst c, Bcst bcstWidth, BaseReg similarTo) {
+    return simdConst(c, bcstWidth, VecWidthUtils.vecWidthOf(similarTo));
+  }
+
+  BaseReg simdVecConst(VecConst c, Bcst bcstWidth, VecWidth constWidth) {
+    for (final vc in _vecConsts) {
+      if (vc.constant == c) {
+        final sig = VecWidthUtils.signatureOf(constWidth);
+        return BaseReg_fromSigId(sig, vc.virtRegId);
+      }
+    }
+    return _newVecConst(c, bcstWidth == Bcst.kNA_Unique)
+        .cloneAsWidth(constWidth);
+  }
+
+  X86Mem simdMemConst(VecConst c, Bcst bcstWidth, VecWidth constWidth) {
+    final m = _getMemConst(c);
+    return m;
+  }
+
+  X86Mem _getMemConst(VecConst c) {
+    _initVecConstTablePtr();
+    if (_commonTablePtr != null) {
+      return X86Mem.base(_commonTablePtr!, disp: 0, size: c.width);
+    }
+    return X86Mem.abs(0, size: c.width);
+  }
+
+  BaseReg _newVecConst(VecConst c, bool isUnique) {
+    final prev = cc.cursor;
+    cc.setCursor(_funcInitHook!);
+
+    final vec = newVecWithWidth(_vecWidth, "vec_const");
+    _vecConsts.add(VecConstData(c, vec.id));
+
+    if (c == VecConstTable.p_0000000000000000) {
+      vZero(vec);
+    } else {
+      final m = _getMemConst(c);
+      if (isX86Family) {
+        _vLoadAX86(vec, m);
+      }
+    }
+
+    _funcInitHook = cc.cursor;
+    cc.setCursor(prev);
+
+    return vec;
+  }
+}
+
+/// Helper to create a register from signature and ID (Internal to UniCompiler)
+BaseReg BaseReg_fromSigId(OperandSignature sig, int id) {
+  // This is a bit hacky but works for the current port
+  if (sig.isX86Xmm) return X86Xmm(id);
+  if (sig.isX86Ymm) return X86Ymm(id);
+  if (sig.isX86Zmm) return X86Zmm(id);
+  throw UnimplementedError('Unsupported register signature: $sig');
+}
+
+extension BaseRegUniExt on BaseReg {
+  BaseReg cloneAsWidth(VecWidth vw) {
+    final sig = VecWidthUtils.signatureOf(vw);
+    return BaseReg_fromSigId(sig, id);
+  }
+}
+
+/// Operand array, mostly used for code generation that uses SIMD.
+class OpArray {
+  /// Maximum number of active operands [OpArray] can hold.
+  static const int kMaxSize = 8;
+
+  int _size = 0;
+  final List<Operand> _v = List.generate(kMaxSize, (_) => NoneOperand.instance);
+
+  OpArray() : _size = 0;
+
+  OpArray.from1(Operand op0) : _size = 1 {
+    _v[0] = op0;
+  }
+
+  OpArray.fromList(List<Operand> list) : _size = list.length {
+    if (_size > kMaxSize) throw ArgumentError('OpArray size too large');
+    for (int i = 0; i < _size; i++) {
+      _v[i] = list[i];
     }
   }
 
-  /// Load 32-bit from memory to vector.
-  void vLoad32(BaseReg dst, X86Mem src) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVmovd, [dst, src]));
-    } else {
-      cc.addNode(InstNode(X86InstId.kMovd, [dst, src]));
-    }
+  int get size => _size;
+  bool get isEmpty => _size == 0;
+  bool get isScalar => _size == 1;
+  bool get isVector => _size > 1;
+
+  Operand operator [](int index) {
+    if (index >= _size) throw RangeError.index(index, _v);
+    return _v[index];
   }
 
-  /// Store 32-bit from vector to memory.
-  void vStore32(X86Mem dst, BaseReg src) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVmovd, [dst, src]));
-    } else {
-      cc.addNode(InstNode(X86InstId.kMovd, [dst, src]));
-    }
-  }
+  OpArray lo() => _subset(0, 1, (_size + 1) ~/ 2);
+  OpArray hi() => _subset(_size > 1 ? (_size + 1) ~/ 2 : 0, 1, _size);
+  OpArray even() => _subset(0, 2, _size);
+  OpArray odd() => _subset(_size > 1 ? 1 : 0, 2, _size);
 
-  /// Non-temporal store (bypass cache).
-  void vStoreNT(X86Mem dst, BaseReg src) {
-    if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVmovntdq, [dst, src]));
-    } else {
-      cc.addNode(InstNode(X86InstId.kMovntdq, [dst, src]));
+  OpArray _subset(int from, int inc, int limit) {
+    final result = OpArray();
+    int di = 0;
+    for (int si = from; si < limit; si += inc) {
+      result._v[di++] = _v[si];
     }
+    result._size = di;
+    return result;
+  }
+}
+
+/// Vector operand array.
+class VecArray extends OpArray {
+  VecArray() : super();
+
+  VecArray.from1(BaseReg op0) : super.from1(op0);
+
+  @override
+  BaseReg operator [](int index) => super[index] as BaseReg;
+
+  VecWidth get vecWidth => VecWidthUtils.vecWidthOf(this[0]);
+
+  VecArray cloneAs(VecWidth vw) {
+    final result = VecArray();
+    result._size = _size;
+    for (int i = 0; i < _size; i++) {
+      result._v[i] = this[i].cloneAsWidth(vw);
+    }
+    return result;
   }
 }

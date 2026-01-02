@@ -42,6 +42,7 @@ class X86Compiler extends BaseCompiler {
   X86Xmm newXmm([String? name]) => X86Xmm(newVirtId());
   X86Ymm newYmm([String? name]) => X86Ymm(newVirtId());
   X86Zmm newZmm([String? name]) => X86Zmm(newVirtId());
+  X86KReg newKReg([String? name]) => X86KReg(newVirtId());
 
   /// Create new 128-bit vector register (XMM).
   X86Xmm newXmmF32x1([String? name]) => newXmm(name);

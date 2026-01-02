@@ -134,6 +134,19 @@ class OperandSignature {
   }
 
   static const OperandSignature invalid = OperandSignature(0);
+
+  bool get isX86Xmm =>
+      opType == kOpReg &&
+      regGroup == kGroupVec &&
+      regType == RegType.vec128.index;
+  bool get isX86Ymm =>
+      opType == kOpReg &&
+      regGroup == kGroupVec &&
+      regType == RegType.vec256.index;
+  bool get isX86Zmm =>
+      opType == kOpReg &&
+      regGroup == kGroupVec &&
+      regType == RegType.vec512.index;
 }
 
 /// Register utility helpers.

@@ -16,7 +16,6 @@ import 'arch.dart';
 import 'const_pool.dart';
 import 'type.dart';
 import 'support.dart' as support;
-import 'operand.dart';
 
 export 'builder.dart';
 

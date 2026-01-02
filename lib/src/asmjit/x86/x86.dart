@@ -6,6 +6,8 @@
 import '../core/operand.dart';
 import '../core/reg_type.dart';
 
+export 'x86_compiler.dart';
+
 /// x86/x64 register IDs.
 ///
 /// These correspond to the physical register encoding in x86.

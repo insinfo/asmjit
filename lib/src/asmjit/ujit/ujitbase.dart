@@ -2,11 +2,9 @@
 ///
 /// Ported from asmjit/ujit/ujitbase.h
 
-import '../core/operand.dart';
 import '../core/reg_type.dart';
 import '../core/reg_utils.dart';
 import '../core/compiler.dart';
-import '../core/builder.dart';
 
 /// Data alignment.
 enum Alignment {
@@ -139,6 +137,10 @@ class VecWidthUtils {
         OperandSignature.fromSize(regSize);
     return sig;
   }
+
+  static VecWidth vecWidthOf(BaseReg reg) {
+    return VecWidth.values[reg.type.index - RegType.vec128.index];
+  }
 }
 
 /// Swizzle Parameter (2 elements)
@@ -204,4 +206,23 @@ class ScopedInjector {
       cc.setCursor(prev);
     }
   }
+}
+
+/// Metadata about a SIMD load/store operation.
+class UniOpVMInfo {
+  final int sseInstId;
+  final int avxInstId;
+  final int asimdInstId;
+  final int narrowingOp;
+  final int memSize;
+  final int memSizeShift;
+
+  const UniOpVMInfo({
+    required this.sseInstId,
+    required this.avxInstId,
+    required this.asimdInstId,
+    required this.narrowingOp,
+    required this.memSize,
+    required this.memSizeShift,
+  });
 }

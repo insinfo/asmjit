@@ -3,7 +3,6 @@ import 'package:asmjit/src/asmjit/core/compiler.dart';
 import 'package:asmjit/src/asmjit/core/func.dart';
 import 'package:asmjit/src/asmjit/core/operand.dart';
 import 'package:asmjit/src/asmjit/x86/x86.dart';
-import 'package:asmjit/src/asmjit/x86/x86_compiler.dart';
 
 void main() {
   group('RAPass', () {
@@ -48,7 +47,9 @@ void main() {
       // assumir que só sobra 1 MOV. O importante aqui é que o RAPass
       // tenha colapsado os movimentos virtuais em um MOV rcx, rax.
       final hasMovRcxRax = nodes.any((n) {
-        return n.operands.length == 2 && n.operands[0] == rcx && n.operands[1] == rax;
+        return n.operands.length == 2 &&
+            n.operands[0] == rcx &&
+            n.operands[1] == rax;
       });
       expect(hasMovRcxRax, isTrue);
     });

@@ -374,7 +374,8 @@ enum UniOpVVI {
   permuteU8,
   permuteU16,
   permuteU32,
-  permuteU64;
+  permuteU64,
+  shufI8;
 }
 
 /// Instruction with `[vec, vec, vec]` operands.
@@ -616,4 +617,14 @@ enum UniOpVVVV {
   mSubF64S,
   mSubF32,
   mSubF64;
+}
+
+/// Instruction with 5 operands.
+enum UniOpVVVVV {
+  none;
+}
+
+/// Instruction with 9 operands.
+enum UniOpVVVVVVVVV {
+  none;
 }
