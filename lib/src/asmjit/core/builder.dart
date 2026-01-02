@@ -388,12 +388,42 @@ class BaseBuilder {
   /// Label counter for creating new labels if no labelManager is provided.
   int _labelCounter = 0;
 
-  BaseBuilder({this.labelManager});
+  BaseNode? _cursor;
+  BaseNode? get cursor => _cursor;
+  void setCursor(BaseNode? node) {
+    _cursor = node;
+  }
+
+  BaseBuilder({this.labelManager}) {
+    // If not null, cursor implied at end? No, implied null at start.
+  }
+
+  /// Adds a node to the builder at the current cursor position.
+  void addNode(BaseNode node) {
+    if (_cursor != null) {
+      nodes.insertAfter(node, _cursor!);
+      _cursor = node;
+    } else {
+      // If cursor is null, we assume we are at the end (or beginning?).
+      // AsmJit behavior: if cursor is unset, it often defaults to append.
+      // But if we want to support insertion at head, we need to handle _cursor == null vs empty.
+      // For now, let's treat cursor==null as "append to end" which is default behavior until explicit setCursor.
+      // Actually, if we setCursor(null), it might mean "at beginning".
+      // But typically we want to append.
+      if (nodes.isEmpty) {
+        nodes.append(node);
+      } else {
+        nodes.append(node);
+      }
+      _cursor = node;
+    }
+  }
 
   /// Clear all nodes.
   void clear() {
     nodes.clear();
     _labelCounter = 0;
+    _cursor = null;
   }
 
   /// Create a new label.
@@ -408,14 +438,14 @@ class BaseBuilder {
   InstNode inst(int instId, List<Operand> operands,
       {int options = 0, NodeType type = NodeType.inst}) {
     final node = InstNode(instId, operands, options: options, type: type);
-    nodes.append(node);
+    addNode(node);
     return node;
   }
 
   /// Add a label node (bind a label here).
   LabelNode label(Label label) {
     final node = LabelNode(label);
-    nodes.append(node);
+    addNode(node);
     return node;
   }
 
@@ -427,28 +457,28 @@ class BaseBuilder {
   /// Add alignment.
   AlignNode align(AlignMode mode, int alignment) {
     final node = AlignNode(mode, alignment);
-    nodes.append(node);
+    addNode(node);
     return node;
   }
 
   /// Embed data bytes.
   EmbedDataNode embedData(List<int> data, {int typeSize = 1}) {
     final node = EmbedDataNode(data, typeSize: typeSize);
-    nodes.append(node);
+    addNode(node);
     return node;
   }
 
   /// Add a comment.
   CommentNode comment(String text) {
     final node = CommentNode(text);
-    nodes.append(node);
+    addNode(node);
     return node;
   }
 
   /// Add a sentinel.
   SentinelNode sentinel([SentinelType type = SentinelType.unknown]) {
     final node = SentinelNode(type);
-    nodes.append(node);
+    addNode(node);
     return node;
   }
 
@@ -471,11 +501,6 @@ class BaseBuilder {
 
   /// Count of instructions.
   int get instCount => nodes.instructions.length;
-
-  /// Add a generic node.
-  void addNode(BaseNode node) {
-    nodes.append(node);
-  }
 
   /// Serialize this builder's instructions to the given context.
   void serialize(SerializerContext ctx) {

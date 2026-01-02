@@ -29,6 +29,29 @@ class OperandSignature {
 
   const OperandSignature(this.value);
 
+  // Constants
+  static const int kSizeShift = 24;
+  static const int kSizeMask =
+      0xFF; // 8 bits for size? C++ uses 8 bits for size (1..255)
+
+  // Helpers
+  static OperandSignature fromOpType(int type) {
+    return OperandSignature((type & kOpTypeMask) << kOpTypeShift);
+  }
+
+  static OperandSignature fromRegTypeAndGroup(RegType type, RegGroup group) {
+    return OperandSignature(((type.index & kRegTypeMask) << kRegTypeShift) |
+        ((group.index & kRegGroupMask) << kRegGroupShift));
+  }
+
+  static OperandSignature fromSize(int size) {
+    return OperandSignature((size & kSizeMask) << kSizeShift);
+  }
+
+  OperandSignature operator |(OperandSignature other) {
+    return OperandSignature(value | other.value);
+  }
+
   /// Constants for bit layout.
   static const int kOpTypeShift = 0;
   static const int kOpTypeMask = 0x7;
@@ -59,8 +82,12 @@ class OperandSignature {
   static const int kOpNone = 0;
   static const int kOpReg = 1;
   static const int kOpMem = 2;
+
   static const int kOpImm = 3;
   static const int kOpLabel = 4;
+
+  // Size
+  int get size => (value >> kSizeShift) & kSizeMask;
 
   bool get isValid => value != 0;
 

@@ -19,7 +19,15 @@ export 'src/asmjit/core/formatter.dart';
 export 'src/asmjit/core/emitter.dart';
 export 'src/asmjit/core/inst_api.dart';
 export 'src/asmjit/core/type.dart';
+export 'src/asmjit/core/condcode.dart';
 export 'src/asmjit/core/func.dart';
+
+// UJIT (Universal JIT)
+export 'src/asmjit/ujit/ujitbase.dart';
+export 'src/asmjit/ujit/uniop.dart';
+export 'src/asmjit/ujit/unicondition.dart';
+export 'src/asmjit/ujit/unicompiler.dart';
+export 'src/asmjit/ujit/vecconsttable.dart';
 
 export 'src/asmjit/core/builder.dart'
     hide Operand, NodeType, InstNode, LabelNode;
