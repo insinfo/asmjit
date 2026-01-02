@@ -555,14 +555,6 @@ mixin UniCompilerA64 on UniCompilerBase {
           _vBitA64(d, s1, mask);
         }
         break;
-      case UniOpVVV.maxU64:
-        {
-          final mask = (cc as dynamic).newVec(128, "maxMask");
-          _vCmhiA64(mask, s1, s2Reg);
-          if (d.id != s2Reg.id) _vMovA64(d, s2Reg);
-          _vBitA64(d, s1, mask);
-        }
-        break;
 
       // Interleaves (ZIP)
       case UniOpVVV.interleaveLoU8:

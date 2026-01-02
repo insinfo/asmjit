@@ -28,43 +28,40 @@ continue portando ujit do c++ para o dart C:\MyDartProjects\asmjit\lib\src\asmji
 
 ---
 
-## 🆕 UJIT Layer - Progresso (02/01/2026 18:30)
+## 🆕 UJIT Layer - Progresso (02/01/2026 22:00)
 
 ### Arquivos Criados/Atualizados:
 | Arquivo | Status | Descrição |
 |---------|--------|-----------|
-| `ujit/unicompiler.dart` | ✅ ~98% | RRR/RRI Dispatch, Conditional Moves |
-| `ujit/unicompiler_a64.dart` | ✅ ~98% | Condition Test (CMP/TST), Bit Tests (TBZ), RRR/RRI |
-| `ujit/unicondition.dart` | ✅ Verified | API Stable |
-| `test/asmjit/ujit_conditional_test.dart` | ✅ PASSED | Logic/Branch/Select/Cmov Verified |
-| `test/asmjit/ujit_logic_shift_test.dart` | ✅ PASSED | And, Or, Xor, Shift Ops Verified |
+| `ujit/unicompiler.dart` | ✅ ~99% | Implementação `emitM`, `emit3v` dispatch |
+| `ujit/unicompiler_a64.dart` | ✅ ~99% | Suporte Float Arith, StoreZero, Cleanups |
+| `test/asmjit/ujit_float_test.dart` | ✅ PASSED | Testes verificados para Add/Sub/Mul/Div Float |
+| `test/asmjit/ujit_mem_test.dart` | ✅ PASSED | M/RM/MR Ops verificados (Load/Store) |
 
 ### Funcionalidades Implementadas:
-1. **Conditional Ops**:
-   - Implemented `emitJIf` correctly for X86 and A64 (generating CMP/TST + Branch).
-   - Implemented A64 specialized bit-tests (`TBZ`/`TBNZ`) in `emitJIfA64Impl`.
-   - `emitCmov` and `emitSelect` fully functional cross-arch.
-2. **Scalar Logic & Shifts (RRR/RRI)**:
-   - Added `emitRRR` (And, Or, Xor, Add, Sub, Mul, Shifts) and `emitRRI` (Immediate forms).
-   - Implemented X86 and A64 dispatch logic (`_emitRRRX86`, `_emitRRRA64` etc).
-3. **Register Allocator Support**:
-   - Implemented `emitMove` in `X86Compiler` (improved vector support) and `A64Compiler`.
-4. **Lint Cleanup**:
-   - Resolved switch-case lints in `unicompiler_a64.dart`.
+1. **Float Arithmetic Ops**:
+   - Adicionado suporte para `addF32/F64`, `subF32/F64`, `mulF32/F64`, `divF32/F64` em AArch64 e X86.
+   - Testes de integridade (IR check) passando para operações flutuantes vetoriais.
+
+2. **Memory Ops (M/RM/MR)**:
+   - Implementado `emitM` (para StoreZero, Prefetch).
+   - Implementado `_emitMA64` para AArch64 (usando WZR/XZR para storeZero).
+   - Testes de Load Extensions e Stores básicos passando.
+
+3. **Cleanup e Otimizações**:
+   - Removido código duplicado (Switch Case Unreachable) em `unicompiler_a64.dart`.
+   - Removidos imports desnecessários nos testes.
+   - Corrigidos avisos de linter (variáveis não utilizadas).
 
 ### Próximos Passos UJIT:
 
-1. **Memory Operands (Deep Test):**
-   - Create `ujit_mem_test.dart` for M/RM/MR operations (Loads/Stores/Extensions).
-   - Improve `UniOpVM` coverage for A64.
+1. **JIT Execution Enablement**:
+   - Debugar e corrigir assert `physToWorkId` no `RAPass` para permitir execução real (`finalize()`).
+   - Habilitar execução de código nos testes além da verificação de IR.
 
-2. **JIT Execution Enablement**:
-   - Debug `RAPass` assertion issue (`physToWorkId` failure on CFG) to enable `finalize()` execution.
-   - Currently testing via IR verification until optimizations are stable.
-
-3. **Complex SIMD Ops (A64):**
-   - `_emit3viA64` (alignr, shuffles).
-   - `_emit5vA64`, `_emit9vA64` (se necessário para crypto/hashes).
+2. **Complex SIMD Ops (A64)**:
+   - Terminar implementação de `_emit3viA64` (para `alignr`, `shuffles` complexos).
+   - Implementar `_emit5vA64` e `_emit9vA64` se necessário.
 
 ---
 

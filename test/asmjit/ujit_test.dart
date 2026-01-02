@@ -1,5 +1,4 @@
 import 'package:asmjit/asmjit.dart';
-import 'package:asmjit/src/asmjit/x86/x86_compiler.dart'; // Explicit import for casting
 import 'package:test/test.dart';
 
 void main() {

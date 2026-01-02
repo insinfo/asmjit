@@ -25,7 +25,6 @@ void main() {
 
       cc.addFunc(FuncSignature.build(
           [TypeId.float32, TypeId.float32], TypeId.float32, CallConvId.cdecl));
-      final a = cc.newVec("a"); // UJIT float args usually passed in Vecs or GP?
       // Scalar float: passed in XMM/V0 but treated as scalar.
       // UniCompiler setArg maps to standard calling convention.
       // For F32, it's usually XMM/V register.

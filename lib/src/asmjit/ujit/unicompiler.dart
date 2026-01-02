@@ -3,9 +3,12 @@
 /// Ported from asmjit/ujit/unicompiler.h
 
 import '../core/compiler.dart';
+import '../core/code_holder.dart';
 import '../core/reg_type.dart';
 import '../core/type.dart';
 import '../core/arch.dart';
+import '../x86/x86_compiler.dart';
+import '../arm/a64_compiler.dart';
 import '../core/labels.dart';
 import '../core/error.dart';
 import '../core/func.dart';
@@ -266,6 +269,22 @@ abstract class UniCompilerBase {
 /// Provides a cross-platform JIT compilation API that abstracts architecture
 /// differences.
 class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
+  /// Creates a UniCompiler automatically selecting X86Compiler or A64Compiler
+  /// based on the [code] environment.
+  factory UniCompiler.auto(CodeHolder code,
+      {CpuFeatures? features, VecConstTableRef? ctRef}) {
+    BaseCompiler compiler;
+    if (code.env.arch.isX86Family) {
+      compiler = X86Compiler(env: code.env, labelManager: code.labelManager);
+    } else if (code.env.arch.isArmFamily) {
+      compiler = A64Compiler(env: code.env, labelManager: code.labelManager);
+    } else {
+      throw UnsupportedError(
+          "Unsupported architecture for UniCompiler: ${code.env.arch}");
+    }
+    return UniCompiler(compiler, features: features, ctRef: ctRef);
+  }
+
   UniCompiler(BaseCompiler cc, {CpuFeatures? features, VecConstTableRef? ctRef})
       : super(cc) {
     if (features != null) {

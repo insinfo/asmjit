@@ -42,10 +42,8 @@ void main() {
 
       // Verify instruction generation in IR
       bool foundAnd = false;
-      int instCount = 0;
       for (var node in compiler.nodes.nodes) {
         if (node is InstNode) {
-          instCount++;
           // Basic check for AND instruction ID
           if (rt.environment.arch == Arch.x64) {
             if (node.instId == X86InstId.kAnd) foundAnd = true;
