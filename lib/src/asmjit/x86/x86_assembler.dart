@@ -1564,6 +1564,30 @@ class X86Assembler extends BaseEmitter {
   void vpbroadcastqXM(X86Xmm dst, X86Mem mem) =>
       _enc.vpbroadcastqXmmMem(dst, mem);
 
+  /// VPBROADCASTB ymm, xmm
+  void vpbroadcastbYX(X86Ymm dst, X86Xmm src) =>
+      _enc.vpbroadcastbYmmXmm(dst, src);
+  void vpbroadcastbYM(X86Ymm dst, X86Mem mem) =>
+      _enc.vpbroadcastbYmmMem(dst, mem);
+
+  /// VPBROADCASTW ymm, xmm
+  void vpbroadcastwYX(X86Ymm dst, X86Xmm src) =>
+      _enc.vpbroadcastwYmmXmm(dst, src);
+  void vpbroadcastwYM(X86Ymm dst, X86Mem mem) =>
+      _enc.vpbroadcastwYmmMem(dst, mem);
+
+  /// VPBROADCASTD ymm, xmm
+  void vpbroadcastdYX(X86Ymm dst, X86Xmm src) =>
+      _enc.vpbroadcastdYmmXmm(dst, src);
+  void vpbroadcastdYM(X86Ymm dst, X86Mem mem) =>
+      _enc.vpbroadcastdYmmMem(dst, mem);
+
+  /// VPBROADCASTQ ymm, xmm
+  void vpbroadcastqYX(X86Ymm dst, X86Xmm src) =>
+      _enc.vpbroadcastqYmmXmm(dst, src);
+  void vpbroadcastqYM(X86Ymm dst, X86Mem mem) =>
+      _enc.vpbroadcastqYmmMem(dst, mem);
+
   // ===========================================================================
   // AVX - Scalar arithmetic (VEX-encoded)
   // ===========================================================================
@@ -1640,6 +1664,30 @@ class X86Assembler extends BaseEmitter {
   void vsqrtpdXX(X86Xmm dst, X86Xmm src) => _enc.vsqrtpdXmmXmm(dst, src);
   void vsqrtpdXM(X86Xmm dst, X86Mem mem) => _enc.vsqrtpdXmmMem(dst, mem);
 
+  /// VSQRTPS ymm, ymm
+  void vsqrtpsYY(X86Ymm dst, X86Ymm src) => _enc.vsqrtpsYmmYmm(dst, src);
+  void vsqrtpsYM(X86Ymm dst, X86Mem mem) => _enc.vsqrtpsYmmMem(dst, mem);
+
+  /// VSQRTPD ymm, ymm
+  void vsqrtpdYY(X86Ymm dst, X86Ymm src) => _enc.vsqrtpdYmmYmm(dst, src);
+  void vsqrtpdYM(X86Ymm dst, X86Mem mem) => _enc.vsqrtpdYmmMem(dst, mem);
+
+  /// VRSQRTPS xmm, xmm
+  void vrsqrtpsXX(X86Xmm dst, X86Xmm src) => _enc.vrsqrtpsXmmXmm(dst, src);
+  void vrsqrtpsXM(X86Xmm dst, X86Mem mem) => _enc.vrsqrtpsXmmMem(dst, mem);
+
+  /// VRSQRTPS ymm, ymm
+  void vrsqrtpsYY(X86Ymm dst, X86Ymm src) => _enc.vrsqrtpsYmmYmm(dst, src);
+  void vrsqrtpsYM(X86Ymm dst, X86Mem mem) => _enc.vrsqrtpsYmmMem(dst, mem);
+
+  /// VRCPPS xmm, xmm
+  void vrcppsXX(X86Xmm dst, X86Xmm src) => _enc.vrcppsXmmXmm(dst, src);
+  void vrcppsXM(X86Xmm dst, X86Mem mem) => _enc.vrcppsXmmMem(dst, mem);
+
+  /// VRCPPS ymm, ymm
+  void vrcppsYY(X86Ymm dst, X86Ymm src) => _enc.vrcppsYmmYmm(dst, src);
+  void vrcppsYM(X86Ymm dst, X86Mem mem) => _enc.vrcppsYmmMem(dst, mem);
+
   /// VSQRTSS xmm, xmm, xmm
   void vsqrtssXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
       _enc.vsqrtssXmmXmmXmm(dst, src1, src2);
@@ -1664,6 +1712,18 @@ class X86Assembler extends BaseEmitter {
   void vminpdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
       _enc.vminpdXmmXmmMem(dst, src1, mem);
 
+  /// VMINPS ymm, ymm, ymm
+  void vminpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vminpsYmmYmmYmm(dst, src1, src2);
+  void vminpsYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vminpsYmmYmmMem(dst, src1, mem);
+
+  /// VMINPD ymm, ymm, ymm
+  void vminpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vminpdYmmYmmYmm(dst, src1, src2);
+  void vminpdYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vminpdYmmYmmMem(dst, src1, mem);
+
   /// VMINSS xmm, xmm, xmm
   void vminssXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
       _enc.vminssXmmXmmXmm(dst, src1, src2);
@@ -1687,6 +1747,18 @@ class X86Assembler extends BaseEmitter {
       _enc.vmaxpdXmmXmmXmm(dst, src1, src2);
   void vmaxpdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
       _enc.vmaxpdXmmXmmMem(dst, src1, mem);
+
+  /// VMAXPS ymm, ymm, ymm
+  void vmaxpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vmaxpsYmmYmmYmm(dst, src1, src2);
+  void vmaxpsYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vmaxpsYmmYmmMem(dst, src1, mem);
+
+  /// VMAXPD ymm, ymm, ymm
+  void vmaxpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
+      _enc.vmaxpdYmmYmmYmm(dst, src1, src2);
+  void vmaxpdYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
+      _enc.vmaxpdYmmYmmMem(dst, src1, mem);
 
   /// VMAXSS xmm, xmm, xmm
   void vmaxssXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
@@ -2646,6 +2718,9 @@ class X86Assembler extends BaseEmitter {
 
   /// POR xmm, xmm
   void porXX(X86Xmm dst, X86Xmm src) => _enc.porXmmXmm(dst, src);
+
+  /// POR xmm, [mem]
+  void porXM(X86Xmm dst, X86Mem src) => _enc.porXmmMem(dst, src);
 
   void vmovups(X86Xmm dst, X86Xmm src) => _enc.vmovupsXmmXmm(dst, src);
   void vmovupsXM(X86Xmm dst, X86Mem mem) => _enc.vmovupsXmmMem(dst, mem);

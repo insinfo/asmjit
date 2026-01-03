@@ -98,6 +98,12 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
     case X86InstId.kCqo:
       asm.cqo();
       break;
+    case X86InstId.kCvtdq2ps:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.cvtdq2psXM(d, s) : asm.cvtdq2psXX(d, s as X86Xmm));
+      break;
+    case X86InstId.kCvtps2dq:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.cvtps2dqXM(d, s) : asm.cvtps2dqXX(d, s as X86Xmm));
+      break;
     case X86InstId.kCvtsd2ss:
       if (ops.length == 2 && ops[0] is X86Xmm && ops[1] is X86Xmm) asm.cvtsd2ssXX(ops[0] as X86Xmm, ops[1] as X86Xmm);
       break;
@@ -109,6 +115,9 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       break;
     case X86InstId.kCvtss2sd:
       if (ops.length == 2 && ops[0] is X86Xmm && ops[1] is X86Xmm) asm.cvtss2sdXX(ops[0] as X86Xmm, ops[1] as X86Xmm);
+      break;
+    case X86InstId.kCvttps2dq:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.cvttps2dqXM(d, s) : asm.cvttps2dqXX(d, s as X86Xmm));
       break;
     case X86InstId.kCvttsd2si:
       if (ops.length == 2 && ops[0] is X86Gp && ops[1] is X86Xmm) asm.cvttsd2siRX(ops[0] as X86Gp, ops[1] as X86Xmm);
@@ -267,7 +276,7 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       _binary(asm, ops, (a, b) => asm.orRR(a, b), (a, imm) => asm.orRI(a, imm));
       break;
     case X86InstId.kPaddb:
-      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.padddXM(d, s) : asm.padddXX(d, s as X86Xmm));
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.paddbXM(d, s) : asm.paddbXX(d, s as X86Xmm));
       break;
     case X86InstId.kPaddd:
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.padddXM(d, s) : asm.padddXX(d, s as X86Xmm));
@@ -276,10 +285,31 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.paddqXM(d, s) : asm.paddqXX(d, s as X86Xmm));
       break;
     case X86InstId.kPaddw:
-      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.padddXM(d, s) : asm.padddXX(d, s as X86Xmm));
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.paddwXM(d, s) : asm.paddwXX(d, s as X86Xmm));
+      break;
+    case X86InstId.kPand:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.pandXM(d, s) : asm.pandXX(d, s as X86Xmm));
+      break;
+    case X86InstId.kPcmpeqd:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.pcmpeqdXM(d, s) : asm.pcmpeqdXX(d, s as X86Xmm));
+      break;
+    case X86InstId.kPmullw:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.pmullwXM(d, s) : asm.pmullwXX(d, s as X86Xmm));
       break;
     case X86InstId.kPop:
       _pop(asm, ops);
+      break;
+    case X86InstId.kPor:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.porXM(d, s) : asm.porXX(d, s as X86Xmm));
+      break;
+    case X86InstId.kPshufd:
+      if (ops.length == 3 && ops[0] is X86Xmm && ops[1] is X86Xmm && (ops[2] is int || ops[2] is Imm)) asm.pshufdXXI(ops[0] as X86Xmm, ops[1] as X86Xmm, ops[2] is Imm ? (ops[2] as Imm).value : ops[2] as int);
+      break;
+    case X86InstId.kPslld:
+      _simd2(asm, ops, xmm: (d, s) => (s is int || s is Imm) ? asm.pslldXI(d, s is Imm ? s.value : s as int) : asm.pslldXX(d, s as X86Xmm));
+      break;
+    case X86InstId.kPsrld:
+      _simd2(asm, ops, xmm: (d, s) => (s is int || s is Imm) ? asm.psrldXI(d, s is Imm ? s.value : s as int) : asm.psrldXX(d, s as X86Xmm));
       break;
     case X86InstId.kPsubb:
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.psubdXM(d, s) : asm.psubdXX(d, s as X86Xmm));
@@ -299,6 +329,9 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
     case X86InstId.kPxor:
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.pxorXM(d, s) : asm.pxor(d, s as X86Xmm));
       break;
+    case X86InstId.kRcpps:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.rcppsXM(d, s) : asm.rcpps(d, s as X86Xmm));
+      break;
     case X86InstId.kRet:
       _ret(asm, ops);
       break;
@@ -307,6 +340,9 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       break;
     case X86InstId.kRor:
       _shift(asm, ops, (r, imm) => asm.rorRI(r, imm), null);
+      break;
+    case X86InstId.kRsqrtps:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.rsqrtpsXM(d, s) : asm.rsqrtps(d, s as X86Xmm));
       break;
     case X86InstId.kSar:
       _shift(asm, ops, (r, imm) => asm.sarRI(r, imm), (r) => asm.sarRCl(r));
@@ -365,6 +401,12 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
     case X86InstId.kShr:
       _shift(asm, ops, (r, imm) => asm.shrRI(r, imm), (r) => asm.shrRCl(r));
       break;
+    case X86InstId.kSqrtpd:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.sqrtpdXM(d, s) : asm.sqrtpd(d, s as X86Xmm));
+      break;
+    case X86InstId.kSqrtps:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.sqrtpsXM(d, s) : asm.sqrtps(d, s as X86Xmm));
+      break;
     case X86InstId.kSqrtsd:
       _simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.sqrtsdXX(d, s); });
       break;
@@ -419,6 +461,18 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
     case X86InstId.kVfmadd231sd:
       _simd3(asm, ops, xmm: (d, s1, s2) { if (s2 is X86Xmm) asm.vfmadd231sdXXX(d, s1, s2); });
       break;
+    case X86InstId.kVmaxpd:
+      _simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vmaxpdXXM(d, s1, s2) : asm.vmaxpdXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vmaxpdYYM(d, s1, s2) : asm.vmaxpdYYY(d, s1, s2 as X86Ymm));
+      break;
+    case X86InstId.kVmaxps:
+      _simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vmaxpsXXM(d, s1, s2) : asm.vmaxpsXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vmaxpsYYM(d, s1, s2) : asm.vmaxpsYYY(d, s1, s2 as X86Ymm));
+      break;
+    case X86InstId.kVminpd:
+      _simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vminpdXXM(d, s1, s2) : asm.vminpdXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vminpdYYM(d, s1, s2) : asm.vminpdYYY(d, s1, s2 as X86Ymm));
+      break;
+    case X86InstId.kVminps:
+      _simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vminpsXXM(d, s1, s2) : asm.vminpsXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vminpsYYM(d, s1, s2) : asm.vminpsYYY(d, s1, s2 as X86Ymm));
+      break;
     case X86InstId.kVmovaps:
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vmovapsXM(d, s) : asm.vmovaps(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vmovapsYM(d, s) : asm.vmovapsY(d, s as X86Ymm), memXmm: (m, s) => asm.vmovapsMX(m, s), memYmm: (m, s) => asm.vmovapsMY(m, s));
       break;
@@ -440,6 +494,18 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
     case X86InstId.kVpandq:
       _simd3(asm, ops, zmm: (d, s1, s2) => asm.vpandqZmm(d, s1, s2 as X86Zmm));
       break;
+    case X86InstId.kVpbroadcastb:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vpbroadcastbXM(d, s) : asm.vpbroadcastbXX(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vpbroadcastbYM(d, s) : asm.vpbroadcastbYX(d, s as X86Xmm));
+      break;
+    case X86InstId.kVpbroadcastd:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vpbroadcastdXM(d, s) : asm.vpbroadcastdXX(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vpbroadcastdYM(d, s) : asm.vpbroadcastdYX(d, s as X86Xmm));
+      break;
+    case X86InstId.kVpbroadcastq:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vpbroadcastqXM(d, s) : asm.vpbroadcastqXX(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vpbroadcastqYM(d, s) : asm.vpbroadcastqYX(d, s as X86Xmm));
+      break;
+    case X86InstId.kVpbroadcastw:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vpbroadcastwXM(d, s) : asm.vpbroadcastwXX(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vpbroadcastwYM(d, s) : asm.vpbroadcastwYX(d, s as X86Xmm));
+      break;
     case X86InstId.kVpord:
       _simd3(asm, ops, zmm: (d, s1, s2) => asm.vpordZmm(d, s1, s2 as X86Zmm));
       break;
@@ -454,6 +520,18 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       break;
     case X86InstId.kVpxorq:
       _simd3(asm, ops, zmm: (d, s1, s2) => asm.vpxorqZmm(d, s1, s2 as X86Zmm));
+      break;
+    case X86InstId.kVrcpps:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vrcppsXM(d, s) : asm.vrcppsXX(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vrcppsYM(d, s) : asm.vrcppsYY(d, s as X86Ymm));
+      break;
+    case X86InstId.kVrsqrtps:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vrsqrtpsXM(d, s) : asm.vrsqrtpsXX(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vrsqrtpsYM(d, s) : asm.vrsqrtpsYY(d, s as X86Ymm));
+      break;
+    case X86InstId.kVsqrtpd:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vsqrtpdXM(d, s) : asm.vsqrtpdXX(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vsqrtpdYM(d, s) : asm.vsqrtpdYY(d, s as X86Ymm));
+      break;
+    case X86InstId.kVsqrtps:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vsqrtpsXM(d, s) : asm.vsqrtpsXX(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vsqrtpsYM(d, s) : asm.vsqrtpsYY(d, s as X86Ymm));
       break;
     case X86InstId.kVsubpd:
       _simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vsubpdXXM(d, s1, s2) : asm.vsubpdXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vsubpdYYM(d, s1, s2) : asm.vsubpdYYY(d, s1, s2 as X86Ymm));
@@ -499,6 +577,12 @@ void _mov(X86Assembler asm, List<Object> ops) {
     asm.movMR(dst, src);
   } else if (dst is X86Mem && src is int) {
     asm.movMI(dst, src);
+  } else if (dst is X86Xmm && src is X86Xmm) {
+    asm.movapsXX(dst, src);
+  } else if (dst is X86Xmm && src is X86Mem) {
+    asm.movapsXM(dst, src);
+  } else if (dst is X86Mem && src is X86Xmm) {
+    asm.movapsMX(dst, src);
   }
 }
 

@@ -96,8 +96,41 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 
 ### Instruções Implementadas Nesta Sessão:
 
-1. **AVX/AVX2 Foundation (Completo)**:
-   - `vbroadcastss/sd` - Broadcast float/double
+1. **SSE2 Integer Arithmetic (Completo)**:
+   - `pmullw` - Multiply Packed Signed Integers (Low)
+   - `pand`, `por`, `pxor` - Bitwise Logical Operations
+   - `psubd` - Subtract Packed Doublewords
+   - `pslld`, `psrld` - Shift Packed Doublewords (Left/Right Logical)
+   - `pcmpeqd` - Compare Packed Doublewords for Equal
+   - `pshufd` - Shuffle Packed Doublewords
+
+2. **SSE Packed Floating Point (Completo)**:
+   - `minps`, `maxps` - Minimum/Maximum Packed Single-Precision Floating-Point
+   - `minpd`, `maxpd` - Minimum/Maximum Packed Double-Precision Floating-Point
+   - `sqrtps`, `sqrtpd` - Square Root Packed Single/Double-Precision
+   - `rsqrtps` - Reciprocal Square Root Packed Single-Precision (Approx)
+   - `rcpps` - Reciprocal Packed Single-Precision (Approx)
+
+3. **Generator & Dispatcher**:
+   - Atualizado `tool/gen_x86_db.dart` para suportar operandos `Imm` em instruções de shift (`pslld`, `psrld`) e shuffle (`pshufd`).
+   - Adicionadas instruções faltantes (`sqrtps`, `rsqrtps`, etc.) à lista de suporte do gerador.
+   - Corrigido bug no helper `_mov` para usar `movaps` corretamente com registradores XMM.
+
+4. **Testes de Integração**:
+   - Expandido `test/asmjit/integration_simd_test.dart` com novos grupos de teste cobrindo todas as instruções acima.
+   - Verificada execução correta via FFI (JIT).
+
+### Próximos Passos:
+
+1. **Expandir Suporte AVX**:
+   - Implementar versões VEX (`vminps`, `vmaxps`, `vsqrtps`, etc.) no gerador e assembler.
+   - Adicionar testes de integração para AVX.
+
+2. **Conversão de Tipos (CVT)**:
+   - Implementar instruções de conversão (`cvtdq2ps`, `cvtps2dq`, etc.).
+
+3. **Blend2D Porting**:
+   - Continuar a portar a lógica do JIT do Blend2D usando as novas instruções disponíveis.
    - `vpbroadcastb/w/d/q` - Broadcast integer
    - `vpermd/q`, `vperm2i128` - Permute
    - `vpmaskmovd/q` - Masked move
@@ -136,4 +169,34 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 1.  **SIMD Integration Test**:
     - `test/asmjit/integration_simd_test.dart` agora compila e passa com sucesso.
     - Verifica execução real de código JIT com instruções SSE2 (`paddd`, `movdqu`).
+
+## 🚀 Expansão AVX e Conversão (03/01/2026 00:30)
+
+### Instruções Implementadas:
+1.  **AVX Packed Floating Point**:
+    - `vminps`, `vmaxps` (XMM/YMM)
+    - `vsqrtps`, `vrsqrtps`, `vrcpps` (XMM/YMM)
+    - `vsqrtpd` (XMM/YMM)
+    - `vminpd`, `vmaxpd` (XMM/YMM)
+    - Atualizado `X86Encoder` com suporte VEX (L=1 para YMM).
+    - Atualizado `X86Assembler` para expor novos métodos.
+
+2.  **Conversão de Tipos (SSE/AVX)**:
+    - `cvtdq2ps` (Int32 -> Float)
+    - `cvtps2dq` (Float -> Int32)
+    - `cvttps2dq` (Float -> Int32 Truncated)
+    - Adicionado suporte no gerador (`gen_x86_db.dart`) e dispatcher.
+
+3.  **AVX2 Broadcast**:
+    - `vpbroadcastb`, `vpbroadcastw`, `vpbroadcastd`, `vpbroadcastq` (XMM/YMM).
+    - Adicionado suporte no gerador e dispatcher.
+    - Adicionado teste de integração com detecção de feature (`CpuInfo.host().features.avx2`).
+
+### Testes:
+- **Novos Testes de Integração**:
+    - Adicionados casos de teste em `integration_simd_test.dart` para:
+        - `AVX Packed Floating Point` (vminps, vmaxps, vsqrtps).
+        - `SSE Conversion` (cvtdq2ps, cvtps2dq).
+        - `AVX2 Broadcast` (vpbroadcastd) - Skipped se AVX2 não disponível.
+    - Todos os testes passando com execução via FFI.
 
