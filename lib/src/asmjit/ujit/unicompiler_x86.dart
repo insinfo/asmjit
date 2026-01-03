@@ -546,6 +546,17 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(
               InstNode(info.sseInstId, [dst, src.withSize(info.memSize)]));
           return;
+        case UniOpVM.load128U32:
+        case UniOpVM.load128U64:
+        case UniOpVM.load128F32:
+        case UniOpVM.load128F64:
+          final mem = src.withSize(info.memSize);
+          bool aligned = alignment.size != 0 && alignment.size >= info.memSize;
+          int instId = (op.name.contains('F'))
+              ? (aligned ? X86InstId.kMovaps : X86InstId.kMovups)
+              : (aligned ? X86InstId.kMovdqa : X86InstId.kMovdqu);
+          cc.addNode(InstNode(instId, [dst, mem]));
+          return;
         default:
           if (info.sseInstId != 0) {
             cc.addNode(
@@ -602,6 +613,17 @@ mixin UniCompilerX86 on UniCompilerBase {
         case UniOpMV.store64F64:
           cc.addNode(
               InstNode(info.sseInstId, [dst.withSize(info.memSize), src]));
+          return;
+        case UniOpMV.store128U32:
+        case UniOpMV.store128U64:
+        case UniOpMV.store128F32:
+        case UniOpMV.store128F64:
+          final mem = dst.withSize(info.memSize);
+          bool aligned = alignment.size != 0 && alignment.size >= info.memSize;
+          int instId = (op.name.contains('F'))
+              ? (aligned ? X86InstId.kMovaps : X86InstId.kMovups)
+              : (aligned ? X86InstId.kMovdqa : X86InstId.kMovdqu);
+          cc.addNode(InstNode(instId, [mem, src]));
           return;
         default:
           break;
@@ -1509,6 +1531,16 @@ mixin UniCompilerX86 on UniCompilerBase {
         } else if (hasSsse3) {
           if (dst != src) _vMovX86(dst, src);
           cc.addNode(InstNode(X86InstId.kPshufb, [dst, Imm(imm)]));
+        }
+        break;
+      case UniOpVVI.swizzleU32x4:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVpshufd, [dst, src, Imm(imm)]));
+        } else {
+          if (dst.id != src.id) {
+            _vMovX86(dst, src);
+          }
+          cc.addNode(InstNode(X86InstId.kPshufd, [dst, Imm(imm)]));
         }
         break;
       default:

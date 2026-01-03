@@ -1,3 +1,4 @@
+//C:\MyDartProjects\asmjit\lib\src\asmjit\core\rapass.dart
 /// AsmJit Register Allocation Pass
 ///
 /// Implements `RAPass`, which drives the register allocation process.
@@ -169,8 +170,7 @@ class RAPass extends CompilerPass {
 
       int gpMask = 0xFFFF;
       gpMask &= ~(1 << 4); // Remove RSP
-      // RBP is allocatable if frame pointer is omitted, but usually preserved unless specific check.
-      // We'll mark RBP as allocatable but preserved.
+      gpMask &= ~(1 << 5); // Remove RBP (Frame Pointer)
 
       avail[RegGroup.gp] = gpMask;
       avail[RegGroup.vec] = 0xFFFFFFFF; // All 32 vector regs available
@@ -326,11 +326,12 @@ class RAPass extends CompilerPass {
   void _analyzeInstLiveness(InstNode node, RABlockData data) {
     for (int i = 0; i < node.opCount; i++) {
       final op = node.operands[i];
+      
+      // Handle direct virtual registers
       if (op is BaseReg && !op.isPhysical && !op.isNone) {
         final workId = _virtIdToWorkId[op.id];
         if (workId != null) {
           final workReg = _allocator.workRegById(workId);
-
           // Update frequency
           workReg.liveStats.freq += data.weight;
 
@@ -349,6 +350,28 @@ class RAPass extends CompilerPass {
               data.gen.setBit(workId);
             }
           }
+        }
+      } else if (op is X86Mem) {
+        // Handle memory operands (Base and Index are implicit USE)
+        if (op.base != null && !op.base!.isPhysical) {
+           final workId = _virtIdToWorkId[op.base!.id];
+           if (workId != null) {
+              final workReg = _allocator.workRegById(workId);
+              workReg.liveStats.freq += data.weight;
+              if (!data.kill.testBit(workId)) {
+                 data.gen.setBit(workId);
+              }
+           }
+        }
+        if (op.index != null && !op.index!.isPhysical) {
+           final workId = _virtIdToWorkId[op.index!.id];
+           if (workId != null) {
+              final workReg = _allocator.workRegById(workId);
+              workReg.liveStats.freq += data.weight;
+              if (!data.kill.testBit(workId)) {
+                 data.gen.setBit(workId);
+              }
+           }
         }
       }
     }
@@ -449,6 +472,22 @@ class RAPass extends CompilerPass {
               final workReg = _allocator.workRegById(workId);
               workReg.liveSpans.openAt(position, position + 2);
             }
+          } else if (op is X86Mem) {
+             // Handle Mem Liveness
+             if (op.base != null && !op.base!.isPhysical) {
+                final workId = _virtIdToWorkId[op.base!.id];
+                if (workId != null) {
+                   _lastUsePos[op.base!.id] = position;
+                   _allocator.workRegById(workId).liveSpans.openAt(position, position + 2);
+                }
+             }
+             if (op.index != null && !op.index!.isPhysical) {
+                final workId = _virtIdToWorkId[op.index!.id];
+                if (workId != null) {
+                   _lastUsePos[op.index!.id] = position;
+                   _allocator.workRegById(workId).liveSpans.openAt(position, position + 2);
+                }
+             }
           }
         }
         position += 2;
@@ -1243,32 +1282,66 @@ class RAPass extends CompilerPass {
   }
 
   void _rewriteInstruction(InstNode node, List<RATiedReg> tiedRegs) {
-    // Create a map/list to identify which operand index corresponds to which tiedReg?
-    // Our _analyzeInstruction iterated indices. We need to match them back.
-    // For this simplified version, assuming tiedRegs order matches virtual operands order seen.
-
     int tiedIdx = 0;
     for (int i = 0; i < node.opCount; i++) {
       final op = node.operands[i];
       if (op is BaseReg && !op.isPhysical && !op.isNone) {
         if (tiedIdx < tiedRegs.length) {
           final tied = tiedRegs[tiedIdx++];
-
-          // Replace virtual with physical
-          int physId = RAAssignment.kPhysNone;
-          if (tied.isOut && tied.outId != RAAssignment.kPhysNone) {
-            physId = tied.outId;
-          } else if (tied.isUse && tied.useId != RAAssignment.kPhysNone) {
-            physId = tied.useId;
-          }
+          final physId = _resolvePhysId(tied);
 
           if (physId != RAAssignment.kPhysNone) {
-            // Replace!
             node.operands[i] = tied.workReg.virtReg.toPhys(physId);
           }
         }
+      } else if (op is X86Mem) {
+        BaseReg? newBase = op.base;
+        BaseReg? newIndex = op.index;
+        bool changed = false;
+
+        if (op.base != null && !op.base!.isPhysical) {
+          if (tiedIdx < tiedRegs.length) {
+            final tied = tiedRegs[tiedIdx++];
+            final physId = _resolvePhysId(tied);
+            if (physId != RAAssignment.kPhysNone) {
+              newBase = tied.workReg.virtReg.toPhys(physId);
+              changed = true;
+            }
+          }
+        }
+
+        if (op.index != null && !op.index!.isPhysical) {
+          if (tiedIdx < tiedRegs.length) {
+            final tied = tiedRegs[tiedIdx++];
+            final physId = _resolvePhysId(tied);
+            if (physId != RAAssignment.kPhysNone) {
+              newIndex = tied.workReg.virtReg.toPhys(physId);
+              changed = true;
+            }
+          }
+        }
+
+        if (changed) {
+          node.operands[i] = X86Mem(
+              base: newBase,
+              index: newIndex,
+              scale: op.scale,
+              displacement: op.displacement,
+              size: op.size,
+              segment: op.segment,
+              label: op.label);
+        }
       }
     }
+  }
+
+  int _resolvePhysId(RATiedReg tied) {
+    if (tied.isOut && tied.outId != RAAssignment.kPhysNone) {
+      return tied.outId;
+    } else if (tied.isUse && tied.useId != RAAssignment.kPhysNone) {
+      return tied.useId;
+    }
+    return RAAssignment.kPhysNone;
   }
 
   // Emission callbacks
@@ -1341,11 +1414,37 @@ class RAPass extends CompilerPass {
     if (func == null) return;
 
     // Finalize frame to calculate total size
-    // Finalize frame to calculate total size
     func.frame.finalize();
 
     final arch = compiler.arch;
     final is64Bit = arch == Arch.x64;
+
+    // Calculate registers to save
+    final gpClobbered = _allocator.clobberedRegs[RegGroup.gp];
+    final gpPreserved = _allocator.funcPreservedRegs[RegGroup.gp];
+    final gpToSave = gpClobbered & gpPreserved;
+
+    final savedRegs = <X86Gp>[];
+    for (int i = 0; i < 16; i++) {
+      if ((gpToSave & (1 << i)) != 0) {
+        savedRegs.add(X86Gp.r64(i));
+      }
+    }
+
+    // Calculate sizes
+    // Align locals to 8 bytes to ensure saved regs are aligned
+    int localsSize = _spillStackSize;
+    if (localsSize % 8 != 0) {
+      localsSize += 8 - (localsSize % 8);
+    }
+
+    int savedSize = savedRegs.length * 8;
+
+    // Align total stack size to 16 bytes (ABI requirement)
+    int totalStackSize = localsSize + savedSize;
+    if (totalStackSize % 16 != 0) {
+      totalStackSize += 16 - (totalStackSize % 16);
+    }
 
     // Prolog
     if (is64Bit) {
@@ -1360,12 +1459,24 @@ class RAPass extends CompilerPass {
       _insertNodeAfter(func, pushRbp);
       _insertNodeAfter(pushRbp, movRbpRsp);
 
-      // Adjust Stack Pointer if needed
-      final stackSize = func.frame.frameSize;
-      if (stackSize > 0) {
-        // sub rsp, stackSize
-        final subRsp = InstNode(X86InstId.kSub, [rsp, Imm(stackSize)]);
-        _insertNodeAfter(movRbpRsp, subRsp);
+      var lastNode = movRbpRsp;
+
+      // Allocate stack (Locals + Saved Regs)
+      if (totalStackSize > 0) {
+        final subRsp = InstNode(X86InstId.kSub, [rsp, Imm(totalStackSize)]);
+        _insertNodeAfter(lastNode, subRsp);
+        lastNode = subRsp;
+      }
+
+      // Save registers to [RBP - localsSize - 8*n]
+      // We place them *below* the locals to avoid collision with locals at [RBP - 4] etc.
+      int currentOffset = localsSize;
+      for (final reg in savedRegs) {
+        currentOffset += 8;
+        final mem = X86Mem.baseDisp(rbp, -currentOffset);
+        final save = InstNode(X86InstId.kMov, [mem, reg]);
+        _insertNodeAfter(lastNode, save);
+        lastNode = save;
       }
     }
 
@@ -1382,7 +1493,17 @@ class RAPass extends CompilerPass {
         final rbp = X86Gp.r64(X86RegId.rbp.index);
         final rsp = X86Gp.r64(X86RegId.rsp.index);
 
-        // Standard epilog: mov rsp, rbp; pop rbp
+        // Restore registers
+        // Must match the save order/offsets
+        int currentOffset = localsSize;
+        for (final reg in savedRegs) {
+          currentOffset += 8;
+          final mem = X86Mem.baseDisp(rbp, -currentOffset);
+          final restore = InstNode(X86InstId.kMov, [reg, mem]);
+          _insertNodeBefore(node, restore);
+        }
+
+        // Restore RSP and RBP
         final movRspRbp = InstNode(X86InstId.kMov, [rsp, rbp]);
         final popRbp = InstNode(X86InstId.kPop, [rbp]);
 
@@ -1390,7 +1511,6 @@ class RAPass extends CompilerPass {
         _insertNodeBefore(node, popRbp);
 
         // Emit RET
-        // Handle immediate for stdcall etc if needed later.
         final retInst = InstNode(X86InstId.kRet, []);
         _insertNodeBefore(node, retInst);
 

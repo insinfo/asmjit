@@ -6,20 +6,21 @@
 /// 4. Dart usando somente ponteiros FFI
 /// 5. Dart "inline asm" via shellcode + VirtualAlloc/mmap
 /// 6. Dart com asmjit gerando código dinâmico
-///
+/// 7. Dart com asmjit otimizado
 /// Uso: dart run benchmark/chacha20_benchmark.dart [--quick]
-library;
+
 
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'impl/chacha20_baseline.dart';
-import 'impl/chacha20_optimized.dart';
-import 'impl/chacha20_ffi_pointer.dart';
-import 'impl/chacha20_inline_asm.dart';
-import 'impl/chacha20_asmjit.dart';
-import 'impl/chacha20_c_ffi.dart';
+import 'chacha20_impl/chacha20_baseline.dart';
+import 'chacha20_impl/chacha20_optimized.dart';
+import 'chacha20_impl/chacha20_ffi_pointer.dart';
+import 'chacha20_impl/chacha20_inline_asm.dart';
+import 'chacha20_impl/chacha20_asmjit.dart';
+import 'chacha20_impl/chacha20_c_ffi.dart';
+import 'chacha20_impl/chacha20_asmjit_optimized.dart';
 
 /// Resultado de um benchmark
 class BenchResult {
@@ -70,7 +71,7 @@ BenchResult runBench(
   int bytesPerIter,
   void Function() fn,
 ) {
-  try {
+  //try {
     // Warmup
     for (var i = 0; i < min(100, iterations ~/ 10); i++) {
       fn();
@@ -96,9 +97,10 @@ BenchResult runBench(
       nsPerOp: nsPerOp,
       mibPerSec: mibPerSec,
     );
-  } catch (e) {
-    return BenchResult.failed(name, category, e.toString());
-  }
+  // } catch (e) {
+  //   return BenchResult.failed(name, category, e.toString());
+  // }
+  //return BenchResult.failed(name, category, 'e.toString()');
 }
 
 /// Gera dados de teste
@@ -119,6 +121,9 @@ Uint8List generateNonce() {
 
 void main(List<String> args) {
   final quick = args.contains('--quick');
+  final filter = args
+      .firstWhere((a) => a.startsWith('--filter='), orElse: () => '')
+      .replaceAll('--filter=', '');
   // final verbose = args.contains('--verbose') || args.contains('-v');
 
   // Configurações de benchmark
@@ -140,299 +145,331 @@ void main(List<String> args) {
 
   final results = <BenchResult>[];
 
+  bool shouldRun(String name) =>
+      filter.isEmpty || name.toLowerCase().contains(filter.toLowerCase());
+
   // ============================================================
   // 1. C PURO (DLL)
   // ============================================================
-  stdout.writeln('\n${'=' * 70}');
-  stdout.writeln('1. C PURO (DLL via FFI)');
-  stdout.writeln('${'=' * 70}');
+  if (shouldRun('C DLL')) {
+    stdout.writeln('\n${'=' * 70}');
+    stdout.writeln('1. C PURO (DLL via FFI)');
+    stdout.writeln('${'=' * 70}');
 
-  if (ChaCha20DLL.load()) {
-    stdout.writeln('DLL loaded successfully');
+    if (ChaCha20DLL.load()) {
+      stdout.writeln('DLL loaded successfully');
 
-    final cLib = ChaCha20CLib(key, nonce);
-    final cLibPooled = ChaCha20CLibPooled(key, nonce, maxBufferSize: largeSize);
-    final outputSmall = Uint8List(smallSize);
-    final outputMedium = Uint8List(mediumSize);
-    final outputLarge = Uint8List(largeSize);
+      final cLib = ChaCha20CLib(key, nonce);
+      final cLibPooled =
+          ChaCha20CLibPooled(key, nonce, maxBufferSize: largeSize);
+      final outputSmall = Uint8List(smallSize);
+      final outputMedium = Uint8List(mediumSize);
+      final outputLarge = Uint8List(largeSize);
 
-    results.add(runBench('C DLL (64B)', 'C', smallIters, smallSize, () {
-      cLib.cryptInto(smallData, outputSmall);
-    })
-      ..print());
+      results.add(runBench('C DLL (64B)', 'C', smallIters, smallSize, () {
+        cLib.cryptInto(smallData, outputSmall);
+      })
+        ..print());
 
-    results.add(runBench('C DLL (1KB)', 'C', mediumIters, mediumSize, () {
-      cLib.cryptInto(mediumData, outputMedium);
-    })
-      ..print());
+      results.add(runBench('C DLL (1KB)', 'C', mediumIters, mediumSize, () {
+        cLib.cryptInto(mediumData, outputMedium);
+      })
+        ..print());
 
-    results.add(runBench('C DLL (64KB)', 'C', largeIters, largeSize, () {
-      cLib.cryptInto(largeData, outputLarge);
-    })
-      ..print());
+      results.add(runBench('C DLL (64KB)', 'C', largeIters, largeSize, () {
+        cLib.cryptInto(largeData, outputLarge);
+      })
+        ..print());
 
-    results.add(runBench('C DLL Pooled (64KB)', 'C', largeIters, largeSize, () {
-      cLibPooled.cryptInto(largeData, outputLarge);
-    })
-      ..print());
+      results
+          .add(runBench('C DLL Pooled (64KB)', 'C', largeIters, largeSize, () {
+        cLibPooled.cryptInto(largeData, outputLarge);
+      })
+            ..print());
 
-    // FFI call overhead
-    results.add(runBench('C DLL noop() overhead', 'C', smallIters * 10, 0, () {
-      ChaCha20DLL.noop!();
-    })
-      ..print());
+      // FFI call overhead
+      results
+          .add(runBench('C DLL noop() overhead', 'C', smallIters * 10, 0, () {
+        ChaCha20DLL.noop!();
+      })
+            ..print());
 
-    cLib.dispose();
-    cLibPooled.dispose();
-  } else {
-    stdout.writeln('DLL not found: ${ChaCha20DLL.loadError}');
-    stdout.writeln(
-        'Build with: powershell benchmark/native/build_chacha20_impl.ps1');
-    results.add(BenchResult.failed('C DLL', 'C', ChaCha20DLL.loadError));
+      cLib.dispose();
+      cLibPooled.dispose();
+    } else {
+      stdout.writeln('DLL not found: ${ChaCha20DLL.loadError}');
+      stdout.writeln(
+          'Build with: powershell benchmark/native/build_chacha20_impl.ps1');
+      results.add(BenchResult.failed('C DLL', 'C', ChaCha20DLL.loadError));
+    }
   }
 
   // ============================================================
   // 2. DART PURO (BASELINE)
   // ============================================================
-  stdout.writeln('\n${'=' * 70}');
-  stdout.writeln('2. DART PURO (Baseline - List<int>)');
-  stdout.writeln('${'=' * 70}');
+  if (shouldRun('Dart Baseline')) {
+    stdout.writeln('\n${'=' * 70}');
+    stdout.writeln('2. DART PURO (Baseline - List<int>)');
+    stdout.writeln('${'=' * 70}');
 
-  {
-    final baseline = ChaCha20Baseline(key, nonce);
-    final outputSmall = Uint8List(smallSize);
-    final outputMedium = Uint8List(mediumSize);
-    final outputLarge = Uint8List(largeSize);
-
-    results.add(runBench(
-        'Dart Baseline (64B)', 'Dart Baseline', smallIters, smallSize, () {
-      baseline.cryptInto(smallData, outputSmall);
-    })
-      ..print());
-
-    results.add(runBench(
-        'Dart Baseline (1KB)', 'Dart Baseline', mediumIters, mediumSize, () {
-      baseline.cryptInto(mediumData, outputMedium);
-    })
-      ..print());
-
-    results.add(runBench(
-        'Dart Baseline (64KB)', 'Dart Baseline', largeIters, largeSize, () {
-      baseline.cryptInto(largeData, outputLarge);
-    })
-      ..print());
-  }
-
-  // ============================================================
-  // 3. DART OTIMIZADO (Uint32List, ByteData, Unroll)
-  // ============================================================
-  stdout.writeln('\n${'=' * 70}');
-  stdout.writeln('3. DART OTIMIZADO (Uint32List, ByteData, Unroll)');
-  stdout.writeln('${'=' * 70}');
-
-  {
-    final optimized = ChaCha20Optimized(key, nonce);
-    final unrolled = ChaCha20OptimizedUnroll(key, nonce);
-    final outputSmall = Uint8List(smallSize);
-    final outputMedium = Uint8List(mediumSize);
-    final outputLarge = Uint8List(largeSize);
-
-    results.add(runBench(
-        'Dart Optimized (64B)', 'Dart Optimized', smallIters, smallSize, () {
-      optimized.cryptInto(smallData, outputSmall);
-    })
-      ..print());
-
-    results.add(runBench(
-        'Dart Optimized (1KB)', 'Dart Optimized', mediumIters, mediumSize, () {
-      optimized.cryptInto(mediumData, outputMedium);
-    })
-      ..print());
-
-    results.add(runBench(
-        'Dart Optimized (64KB)', 'Dart Optimized', largeIters, largeSize, () {
-      optimized.cryptInto(largeData, outputLarge);
-    })
-      ..print());
-
-    results.add(runBench(
-        'Dart Unrolled (64B)', 'Dart Optimized', smallIters, smallSize, () {
-      unrolled.cryptInto(smallData, outputSmall);
-    })
-      ..print());
-
-    results.add(runBench(
-        'Dart Unrolled (1KB)', 'Dart Optimized', mediumIters, mediumSize, () {
-      unrolled.cryptInto(mediumData, outputMedium);
-    })
-      ..print());
-
-    results.add(runBench(
-        'Dart Unrolled (64KB)', 'Dart Optimized', largeIters, largeSize, () {
-      unrolled.cryptInto(largeData, outputLarge);
-    })
-      ..print());
-  }
-
-  // ============================================================
-  // 4. DART FFI POINTER (C-style)
-  // ============================================================
-  stdout.writeln('\n${'=' * 70}');
-  stdout.writeln('4. DART FFI POINTER (Pointer<T> direto)');
-  stdout.writeln('${'=' * 70}');
-
-  {
-    final ffiPointer = ChaCha20FFIPointer(key, nonce);
-    final ffiPointerOpt = ChaCha20FFIPointerOptimized(key, nonce);
-    final outputSmall = Uint8List(smallSize);
-    final outputMedium = Uint8List(mediumSize);
-    final outputLarge = Uint8List(largeSize);
-
-    results.add(runBench(
-        'Dart FFI Pointer (64B)', 'Dart FFI', smallIters, smallSize, () {
-      ffiPointer.cryptInto(smallData, outputSmall);
-    })
-      ..print());
-
-    results.add(runBench(
-        'Dart FFI Pointer (1KB)', 'Dart FFI', mediumIters, mediumSize, () {
-      ffiPointer.cryptInto(mediumData, outputMedium);
-    })
-      ..print());
-
-    results.add(runBench(
-        'Dart FFI Pointer (64KB)', 'Dart FFI', largeIters, largeSize, () {
-      ffiPointer.cryptInto(largeData, outputLarge);
-    })
-      ..print());
-
-    results.add(runBench(
-        'Dart FFI Ptr Opt (64B)', 'Dart FFI', smallIters, smallSize, () {
-      ffiPointerOpt.cryptInto(smallData, outputSmall);
-    })
-      ..print());
-
-    results.add(runBench(
-        'Dart FFI Ptr Opt (1KB)', 'Dart FFI', mediumIters, mediumSize, () {
-      ffiPointerOpt.cryptInto(mediumData, outputMedium);
-    })
-      ..print());
-
-    results.add(runBench(
-        'Dart FFI Ptr Opt (64KB)', 'Dart FFI', largeIters, largeSize, () {
-      ffiPointerOpt.cryptInto(largeData, outputLarge);
-    })
-      ..print());
-
-    ffiPointer.dispose();
-    ffiPointerOpt.dispose();
-  }
-
-  // ============================================================
-  // 5. INLINE ASM (Shellcode SSE2)
-  // ============================================================
-  stdout.writeln('\n${'=' * 70}');
-  stdout.writeln('5. INLINE ASM (Shellcode SSE2 + VirtualAlloc)');
-  stdout.writeln('${'=' * 70}');
-
-  if (ChaCha20InlineAsmSupport.isSSE2Supported) {
-    stdout.writeln('SSE2 supported: yes');
-
-    try {
-      final inlineAsm = ChaCha20InlineAsm(key, nonce);
+    {
+      final baseline = ChaCha20Baseline(key, nonce);
       final outputSmall = Uint8List(smallSize);
       final outputMedium = Uint8List(mediumSize);
       final outputLarge = Uint8List(largeSize);
 
       results.add(runBench(
-          'Inline ASM SSE2 (64B)', 'Inline ASM', smallIters, smallSize, () {
-        inlineAsm.cryptInto(smallData, outputSmall);
+          'Dart Baseline (64B)', 'Dart Baseline', smallIters, smallSize, () {
+        baseline.cryptInto(smallData, outputSmall);
       })
         ..print());
 
       results.add(runBench(
-          'Inline ASM SSE2 (1KB)', 'Inline ASM', mediumIters, mediumSize, () {
-        inlineAsm.cryptInto(mediumData, outputMedium);
+          'Dart Baseline (1KB)', 'Dart Baseline', mediumIters, mediumSize, () {
+        baseline.cryptInto(mediumData, outputMedium);
       })
         ..print());
 
       results.add(runBench(
-          'Inline ASM SSE2 (64KB)', 'Inline ASM', largeIters, largeSize, () {
-        inlineAsm.cryptInto(largeData, outputLarge);
+          'Dart Baseline (64KB)', 'Dart Baseline', largeIters, largeSize, () {
+        baseline.cryptInto(largeData, outputLarge);
       })
         ..print());
-
-      inlineAsm.dispose();
-    } catch (e) {
-      stdout.writeln('Inline ASM failed: $e');
-      results.add(BenchResult.failed('Inline ASM', 'Inline ASM', e.toString()));
     }
-  } else {
-    stdout.writeln('SSE2 not supported on this platform');
-    results.add(
-        BenchResult.failed('Inline ASM', 'Inline ASM', 'SSE2 not supported'));
+  }
+
+  // ============================================================
+  // 3. DART OTIMIZADO (Uint32List, ByteData, Unroll)
+  // ============================================================
+  if (shouldRun('Dart Optimized')) {
+    stdout.writeln('\n${'=' * 70}');
+    stdout.writeln('3. DART OTIMIZADO (Uint32List, ByteData, Unroll)');
+    stdout.writeln('${'=' * 70}');
+
+    {
+      final optimized = ChaCha20Optimized(key, nonce);
+      final unrolled = ChaCha20OptimizedUnroll(key, nonce);
+      final outputSmall = Uint8List(smallSize);
+      final outputMedium = Uint8List(mediumSize);
+      final outputLarge = Uint8List(largeSize);
+
+      results.add(runBench(
+          'Dart Optimized (64B)', 'Dart Optimized', smallIters, smallSize, () {
+        optimized.cryptInto(smallData, outputSmall);
+      })
+        ..print());
+
+      results.add(runBench(
+          'Dart Optimized (1KB)', 'Dart Optimized', mediumIters, mediumSize,
+          () {
+        optimized.cryptInto(mediumData, outputMedium);
+      })
+        ..print());
+
+      results.add(runBench(
+          'Dart Optimized (64KB)', 'Dart Optimized', largeIters, largeSize, () {
+        optimized.cryptInto(largeData, outputLarge);
+      })
+        ..print());
+
+      results.add(runBench(
+          'Dart Unrolled (64B)', 'Dart Optimized', smallIters, smallSize, () {
+        unrolled.cryptInto(smallData, outputSmall);
+      })
+        ..print());
+
+      results.add(runBench(
+          'Dart Unrolled (1KB)', 'Dart Optimized', mediumIters, mediumSize, () {
+        unrolled.cryptInto(mediumData, outputMedium);
+      })
+        ..print());
+
+      results.add(runBench(
+          'Dart Unrolled (64KB)', 'Dart Optimized', largeIters, largeSize, () {
+        unrolled.cryptInto(largeData, outputLarge);
+      })
+        ..print());
+    }
+  }
+
+  // ============================================================
+  // 4. DART FFI POINTER (C-style)
+  // ============================================================
+  if (shouldRun('Dart FFI')) {
+    stdout.writeln('\n${'=' * 70}');
+    stdout.writeln('4. DART FFI POINTER (Pointer<T> direto)');
+    stdout.writeln('${'=' * 70}');
+
+    {
+      final ffiPointer = ChaCha20FFIPointer(key, nonce);
+      final ffiPointerOpt = ChaCha20FFIPointerOptimized(key, nonce);
+      final outputSmall = Uint8List(smallSize);
+      final outputMedium = Uint8List(mediumSize);
+      final outputLarge = Uint8List(largeSize);
+
+      results.add(runBench(
+          'Dart FFI Pointer (64B)', 'Dart FFI', smallIters, smallSize, () {
+        ffiPointer.cryptInto(smallData, outputSmall);
+      })
+        ..print());
+
+      results.add(runBench(
+          'Dart FFI Pointer (1KB)', 'Dart FFI', mediumIters, mediumSize, () {
+        ffiPointer.cryptInto(mediumData, outputMedium);
+      })
+        ..print());
+
+      results.add(runBench(
+          'Dart FFI Pointer (64KB)', 'Dart FFI', largeIters, largeSize, () {
+        ffiPointer.cryptInto(largeData, outputLarge);
+      })
+        ..print());
+
+      results.add(runBench(
+          'Dart FFI Ptr Opt (64B)', 'Dart FFI', smallIters, smallSize, () {
+        ffiPointerOpt.cryptInto(smallData, outputSmall);
+      })
+        ..print());
+
+      results.add(runBench(
+          'Dart FFI Ptr Opt (1KB)', 'Dart FFI', mediumIters, mediumSize, () {
+        ffiPointerOpt.cryptInto(mediumData, outputMedium);
+      })
+        ..print());
+
+      results.add(runBench(
+          'Dart FFI Ptr Opt (64KB)', 'Dart FFI', largeIters, largeSize, () {
+        ffiPointerOpt.cryptInto(largeData, outputLarge);
+      })
+        ..print());
+
+      ffiPointer.dispose();
+      ffiPointerOpt.dispose();
+    }
+  }
+
+  // ============================================================
+  // 5. INLINE ASM (Shellcode SSE2)
+  // ============================================================
+  if (shouldRun('Inline ASM')) {
+    stdout.writeln('\n${'=' * 70}');
+    stdout.writeln('5. INLINE ASM (Shellcode SSE2 + VirtualAlloc)');
+    stdout.writeln('${'=' * 70}');
+
+    if (ChaCha20InlineAsmSupport.isSSE2Supported) {
+      stdout.writeln('SSE2 supported: yes');
+
+      try {
+        final inlineAsm = ChaCha20InlineAsm(key, nonce);
+        final outputSmall = Uint8List(smallSize);
+        final outputMedium = Uint8List(mediumSize);
+        final outputLarge = Uint8List(largeSize);
+
+        results.add(runBench(
+            'Inline ASM SSE2 (64B)', 'Inline ASM', smallIters, smallSize, () {
+          inlineAsm.cryptInto(smallData, outputSmall);
+        })
+          ..print());
+
+        results.add(runBench(
+            'Inline ASM SSE2 (1KB)', 'Inline ASM', mediumIters, mediumSize, () {
+          inlineAsm.cryptInto(mediumData, outputMedium);
+        })
+          ..print());
+
+        results.add(runBench(
+            'Inline ASM SSE2 (64KB)', 'Inline ASM', largeIters, largeSize, () {
+          inlineAsm.cryptInto(largeData, outputLarge);
+        })
+          ..print());
+
+        inlineAsm.dispose();
+      } catch (e) {
+        stdout.writeln('Inline ASM failed: $e');
+        results
+            .add(BenchResult.failed('Inline ASM', 'Inline ASM', e.toString()));
+      }
+    } else {
+      stdout.writeln('SSE2 not supported on this platform');
+      results.add(
+          BenchResult.failed('Inline ASM', 'Inline ASM', 'SSE2 not supported'));
+    }
   }
 
   // ============================================================
   // 6. ASMJIT (Código gerado dinamicamente)
   // ============================================================
-  stdout.writeln('\n${'=' * 70}');
-  stdout.writeln('6. ASMJIT (Código SSE2 gerado em runtime)');
-  stdout.writeln('${'=' * 70}');
+  if (shouldRun('AsmJit SSE2')) {
+    stdout.writeln('\n${'=' * 70}');
+    stdout.writeln('6. ASMJIT (Código SSE2 gerado em runtime)');
+    stdout.writeln('${'=' * 70}');
 
-  try {
-    final asmjit = ChaCha20AsmJit(key, nonce);
-    final outputSmall = Uint8List(smallSize);
-    final outputMedium = Uint8List(mediumSize);
-    final outputLarge = Uint8List(largeSize);
+    try {
+      final asmjit = ChaCha20AsmJit(key, nonce);
+      final outputSmall = Uint8List(smallSize);
+      final outputMedium = Uint8List(mediumSize);
+      final outputLarge = Uint8List(largeSize);
 
-    results
-        .add(runBench('AsmJit SSE2 (64B)', 'AsmJit', smallIters, smallSize, () {
-      asmjit.cryptInto(smallData, outputSmall);
-    })
-          ..print());
+      results.add(
+          runBench('AsmJit SSE2 (64B)', 'AsmJit', smallIters, smallSize, () {
+        asmjit.cryptInto(smallData, outputSmall);
+      })
+            ..print());
 
-    results.add(
-        runBench('AsmJit SSE2 (1KB)', 'AsmJit', mediumIters, mediumSize, () {
-      asmjit.cryptInto(mediumData, outputMedium);
-    })
-          ..print());
+      results.add(
+          runBench('AsmJit SSE2 (1KB)', 'AsmJit', mediumIters, mediumSize, () {
+        asmjit.cryptInto(mediumData, outputMedium);
+      })
+            ..print());
 
-    results.add(
-        runBench('AsmJit SSE2 (64KB)', 'AsmJit', largeIters, largeSize, () {
-      asmjit.cryptInto(largeData, outputLarge);
-    })
-          ..print());
+      results.add(
+          runBench('AsmJit SSE2 (64KB)', 'AsmJit', largeIters, largeSize, () {
+        asmjit.cryptInto(largeData, outputLarge);
+      })
+            ..print());
 
-    asmjit.dispose();
+      asmjit.dispose();
+    } catch (e) {
+      stdout.writeln('AsmJit failed: $e');
+      results.add(BenchResult.failed('AsmJit', 'AsmJit', e.toString()));
+    }
+  }
 
-    // Testa também o Builder (Removido)
-    /*
-    final asmjitBuilder = ChaCha20AsmJitBuilder(key, nonce);
+  // ============================================================
+  // 7. ASMJIT OPTIMIZED (Scalar Unrolled Port)
+  // ============================================================
+  if (shouldRun('AsmJit Opt')) {
+    stdout.writeln('\n${'=' * 70}');
+    stdout.writeln('7. ASMJIT OPTIMIZED (Scalar Unrolled Port)');
+    stdout.writeln('${'=' * 70}');
 
-    results.add(
-        runBench('AsmJit Builder (64B)', 'AsmJit', smallIters, smallSize, () {
-      asmjitBuilder.cryptInto(smallData, outputSmall);
-    })
-          ..print());
+    
+      final asmjitOpt = ChaCha20AsmJitOptimized(key, nonce);
+      final outputSmall = Uint8List(smallSize);
+      final outputMedium = Uint8List(mediumSize);
+      final outputLarge = Uint8List(largeSize);
 
-    results.add(
-        runBench('AsmJit Builder (1KB)', 'AsmJit', mediumIters, mediumSize, () {
-      asmjitBuilder.cryptInto(mediumData, outputMedium);
-    })
-          ..print());
+      results.add(runBench(
+          'AsmJit SCALAR (64B)', 'AsmJit Opt', smallIters, smallSize, () {
+        asmjitOpt.cryptInto(smallData, outputSmall);
+      })
+        ..print());
 
-    results.add(
-        runBench('AsmJit Builder (64KB)', 'AsmJit', largeIters, largeSize, () {
-      asmjitBuilder.cryptInto(largeData, outputLarge);
-    })
-          ..print());
+      results.add(runBench(
+          'AsmJit SCALAR (1KB)', 'AsmJit Opt', mediumIters, mediumSize, () {
+        asmjitOpt.cryptInto(mediumData, outputMedium);
+      })
+        ..print());
 
-    asmjitBuilder.dispose();
-    */
-  } catch (e) {
-    stdout.writeln('AsmJit failed: $e');
-    results.add(BenchResult.failed('AsmJit', 'AsmJit', e.toString()));
+      results.add(runBench(
+          'AsmJit SCALAR (64KB)', 'AsmJit Opt', largeIters, largeSize, () {
+        asmjitOpt.cryptInto(largeData, outputLarge);
+      })
+        ..print());
+
+      asmjitOpt.dispose();
+      ChaCha20AsmJitOptimized.disposeStatic();
+   
   }
 
   // ============================================================
@@ -451,7 +488,7 @@ void printHeader(bool quick) {
   stdout.writeln(
       '╔═══════════════════════════════════════════════════════════════════════╗');
   stdout.writeln(
-      '║               ChaCha20 Benchmark - 6 Implementações                    ║');
+      '║               ChaCha20 Benchmark - 7 Implementações                    ║');
   stdout.writeln(
       '╠═══════════════════════════════════════════════════════════════════════╣');
   stdout.writeln(
@@ -466,6 +503,8 @@ void printHeader(bool quick) {
       '║  5. Inline ASM - Shellcode SSE2 + VirtualAlloc                         ║');
   stdout.writeln(
       '║  6. AsmJit - Código SSE2 gerado em runtime                             ║');
+  stdout.writeln(
+      '║  7. AsmJit Optimized - Scalar Unrolled (New)                           ║');
   stdout.writeln(
       '╚═══════════════════════════════════════════════════════════════════════╝');
   stdout.writeln('');

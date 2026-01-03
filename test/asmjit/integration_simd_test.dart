@@ -659,7 +659,7 @@ void main() {
         exec(dst.cast(), src1.cast(), nullptr);
 
         final dstFloat = dst.cast<Float>();
-        final dstInt = dst.cast<Uint8>().elementAt(16).cast<Int32>();
+        final dstInt = (dst.cast<Uint8>() + 16).cast<Int32>();
 
         // 1. cvtdq2ps
         expect(dstFloat[0], equals(10.0));

@@ -261,6 +261,13 @@ class X86Compiler extends BaseCompiler {
   void emitSwap(Operand a, Operand b) {
     inst(X86InstId.kXchg, [a, b]);
   }
+
+  // ===========================================================================
+  // SIMD (Manual additions)
+  // ===========================================================================
+
+  void movdqu(Operand dst, Operand src) => inst(X86InstId.kMovdqu, [dst, src]);
+  void pxor(Operand dst, Operand src) => inst(X86InstId.kPxor, [dst, src]);
 }
 
 /// X86 Instruction Analyzer.

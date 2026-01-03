@@ -251,7 +251,7 @@ class ChaCha20InlineAsm {
       rex_w, mov_rm_r, 0xCB, // mov rbx, rcx (key)
       rex_wb, mov_rm_r, 0xD2, // mov r10, rdx (nonce)
       rex_wrb, mov_rm_r, 0xC3, // mov r11, r8 (const)
-      rex_r, mov_rm_r, 0xCC, // mov r12d, r9d (counter)
+      rex_rb, mov_rm_r, 0xCC, // mov r12d, r9d (counter)
       rex_wr, mov_r_rm, 0xAC, rsp_disp, 0xC0, 0x00, 0x00,
       0x00, // mov r13, [rsp+192] (output param)
     ]);

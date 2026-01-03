@@ -665,42 +665,74 @@ class X86Assembler extends BaseEmitter {
 
   /// SHL reg, imm (left shift).
   void shlRI(X86Gp reg, int imm) {
-    _enc.shlR64Imm8(reg, imm);
+    if (reg.bits == 64) {
+      _enc.shlR64Imm8(reg, imm);
+    } else {
+      _enc.shlR32Imm8(reg.as32, imm);
+    }
   }
 
   /// SHL reg, CL (left shift by CL).
   void shlRCl(X86Gp reg) {
-    _enc.shlR64Cl(reg);
+    if (reg.bits == 64) {
+      _enc.shlR64Cl(reg);
+    } else {
+      _enc.shlR32Cl(reg.as32);
+    }
   }
 
   /// SHR reg, imm (logical right shift).
   void shrRI(X86Gp reg, int imm) {
-    _enc.shrR64Imm8(reg, imm);
+    if (reg.bits == 64) {
+      _enc.shrR64Imm8(reg, imm);
+    } else {
+      _enc.shrR32Imm8(reg.as32, imm);
+    }
   }
 
   /// SHR reg, CL (logical right shift by CL).
   void shrRCl(X86Gp reg) {
-    _enc.shrR64Cl(reg);
+    if (reg.bits == 64) {
+      _enc.shrR64Cl(reg);
+    } else {
+      _enc.shrR32Cl(reg.as32);
+    }
   }
 
   /// SAR reg, imm (arithmetic right shift).
   void sarRI(X86Gp reg, int imm) {
-    _enc.sarR64Imm8(reg, imm);
+    if (reg.bits == 64) {
+      _enc.sarR64Imm8(reg, imm);
+    } else {
+      _enc.sarR32Imm8(reg.as32, imm);
+    }
   }
 
   /// SAR reg, CL (arithmetic right shift by CL).
   void sarRCl(X86Gp reg) {
-    _enc.sarR64Cl(reg);
+    if (reg.bits == 64) {
+      _enc.sarR64Cl(reg);
+    } else {
+      _enc.sarR32Cl(reg.as32);
+    }
   }
 
   /// ROL reg, imm (rotate left).
   void rolRI(X86Gp reg, int imm) {
-    _enc.rolR64Imm8(reg, imm);
+    if (reg.bits == 64) {
+      _enc.rolR64Imm8(reg, imm);
+    } else {
+      _enc.rolR32Imm8(reg.as32, imm);
+    }
   }
 
   /// ROR reg, imm (rotate right).
   void rorRI(X86Gp reg, int imm) {
-    _enc.rorR64Imm8(reg, imm);
+    if (reg.bits == 64) {
+      _enc.rorR64Imm8(reg, imm);
+    } else {
+      _enc.rorR32Imm8(reg.as32, imm);
+    }
   }
 
   // ===========================================================================

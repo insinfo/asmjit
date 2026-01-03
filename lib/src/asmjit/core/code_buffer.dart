@@ -13,6 +13,11 @@ class CodeBuffer {
   Uint8List _data;
   int _length = 0;
 
+  /// alias for get bytes prop
+  Uint8List asUint8List() {
+    return bytes;
+  }
+
   /// Creates a new code buffer.
   ///
   /// [initialCapacity] is the initial size of the internal buffer.

@@ -21,6 +21,11 @@ class Section {
 
   /// The code/data buffer.
   final CodeBuffer buffer;
+  
+  /// return buffer.bytes
+  Uint8List asUint8List() {
+    return buffer.bytes;
+  }
 
   /// Relocations in this section.
   final List<Reloc> relocs = [];

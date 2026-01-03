@@ -4,7 +4,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart' as pkgffi;
-import 'impl/chacha20_asmjit.dart';
+import 'chacha20_impl/chacha20_asmjit.dart';
 
 typedef _ChaCha20XorNative = ffi.Void Function(
   ffi.Pointer<ffi.Uint8>,

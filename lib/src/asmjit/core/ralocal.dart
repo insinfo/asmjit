@@ -113,6 +113,9 @@ class RALocalAllocator {
   /// Get the work-to-physics map.
   WorkToPhysMap? get workToPhysMap => _curAssignment.workToPhysMap;
 
+  /// Get preserved registers.
+  RARegMask get funcPreservedRegs => _funcPreservedRegs;
+
   /// Cost calculation based on frequency.
   int costByFrequency(double freq) {
     return (freq * CostModel.kCostOfFrequency).toInt();

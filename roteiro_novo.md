@@ -1,6 +1,6 @@
 # Roteiro de Portação: AsmJit C++ → Dart
 
-**Última Atualização**: 2026-01-02 (18:00)
+**Última Atualização**: 2026-01-03 (00:15)
 continue lendo o codigo fonte c++ C:\MyDartProjects\asmjit\referencias\asmjit-master e portando
 
 foco em 64 bits, windows e linux e paridade com c++
@@ -17,17 +17,43 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 
 | Componente | Status | Testes |
 |------------|--------|--------|
-| Core (CodeHolder, Buffer, Runtime) | ✅ Funcional | **730 passando** ✨ |
-| x86 Assembler | ✅ ~94% | +100 instrucoes (SSE/AVX/AVX-512, Rounding) |
-| x86 Encoder | ✅ ~95% | Byte-to-byte pass |
+| Core (CodeHolder, Buffer, Runtime) | ✅ Funcional | **757 passando** ✨ |
+| x86 Assembler | ✅ ~95% | +100 instrucoes (SSE/AVX/AVX-512, Rounding) |
+| x86 Encoder | ✅ ~96% | Byte-to-byte pass (Fixed 32-bit Shifts) |
 | A64 Assembler | ✅ ~62% | logic/shifts/bitmasks/adc/sbc added |
 | A64 Encoder | ✅ ~58% | logic/shifts/bitmasks/adc/sbc added |
 | Compiler Base | ✅ ~85% | Fixed Ret/Jump Serialization | 
 | RALocal | ✅ Implementado | Funcional |
 | RAGlobal | ✅ Parcial (Coalescing, Priority, Weighing) | Epilog/Ret Insertion Fixed |
 | **UJIT Layer** | ✅ ~90% | X86 ~92% / A64 ~90% |
-| **Benchmarks** | ✅ Operacionais | X64 & A64 GP/SSE (MInst/s metrics) |
+| **Benchmarks** | ✅ Operacionais | ChaCha20 Optimized (Fixed Console Flood) |
 | **Lint Status** | ✅ Clean | 0 erros, Warns Resolved |
+
+---
+
+## ✅ Progresso Recente (03/01/2026)
+
+### Correções Críticas e Estabilidade:
+
+1.  **Correção de ABI (Windows/x64)**:
+    - **Problema**: `RAPass` usava `PUSH` no prólogo para salvar registradores callee-saved, o que colidia com slots de stack alocados para variáveis locais (spill slots).
+    - **Solução**: Substituído `PUSH` por `MOV [RBP-offset], REG` no prólogo e `MOV REG, [RBP-offset]` no epílogo.
+    - **Verificação**: Criado `test/asmjit/integration_abi_test.dart` que verifica a preservação de `RBX`, `RSI`, `RDI`, `R12`-`R15`. Teste passando com sucesso.
+
+2.  **Correção de Encoding 32-bit (Shift/Rotate)**:
+    - **Problema**: Instruções como `shl`, `shr`, `sar`, `rol`, `ror` com registrador de 32 bits estavam forçando o prefixo `REX.W` (64-bit), gerando código incorreto para operações de 32 bits (essencial para criptografia como ChaCha20).
+    - **Solução**:
+        - Adicionados métodos específicos `*R32*` em `x86_encoder.dart` (`shlR32Imm8`, `rolR32Cl`, etc.).
+        - Atualizado `x86_assembler.dart` para despachar para a versão correta (R32 ou R64) baseando-se em `reg.bits`.
+    - **Verificação**: Benchmark ChaCha20 agora produz resultados corretos de criptografia.
+
+3.  **Limpeza e Otimização de Benchmarks**:
+    - Removidos `print`s de debug excessivos em `chacha20_asmjit_optimized.dart` que causavam "flood" no console e falsa impressão de travamento/bug.
+    - Benchmark agora roda limpo e reporta métricas corretamente.
+
+4.  **Lint Cleanup**:
+    - Resolvidos todos os avisos do linter (`dart analyze` limpo).
+    - Removidas variáveis não utilizadas e chamadas depreciadas (`elementAt`).
 
 ---
 
@@ -199,4 +225,40 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
         - `SSE Conversion` (cvtdq2ps, cvtps2dq).
         - `AVX2 Broadcast` (vpbroadcastd) - Skipped se AVX2 não disponível.
     - Todos os testes passando com execução via FFI.
+
+## 🐛 Correção Crítica no RAPass (03/01/2026 10:00)
+
+### Problema Resolvido:
+- **Access Violation em Código JIT**:
+    - Identificado crash causado por corrupção de pilha e registradores *callee-saved* (RBX, RDI, RSI, etc.) não sendo preservados corretamente.
+    - O uso de instruções `PUSH` no prólogo após a configuração do frame pointer (`MOV RBP, RSP`) causava colisão com slots de variáveis locais (`_stackSlot`), que são alocados em offsets negativos a partir de RBP.
+
+### Solução Implementada (`rapass.dart`):
+1.  **Substituição de PUSH por MOV**:
+    - O salvamento de registradores agora utiliza `MOV [rbp - offset], reg` em vez de `PUSH`.
+    - Os registradores salvos são posicionados na pilha *abaixo* da área reservada para variáveis locais e spills, evitando sobrescrita.
+2.  **Cálculo de Stack Frame**:
+    - O tamanho total da pilha agora inclui explicitamente o espaço para registradores salvos + variáveis locais, alinhado a 16 bytes (requisito da ABI).
+3.  **Detecção de Registradores**:
+    - Utilização de `clobberedRegs` e `funcPreservedRegs` do alocador para determinar exatamente quais registradores precisam ser salvos.
+4.  **Epílogo Simétrico**:
+    - O epílogo restaura os registradores usando `MOV reg, [rbp - offset]` na ordem correta antes de destruir o frame.
+
+### Status:
+- ✅ Correção aplicada em `lib/src/asmjit/core/rapass.dart`.
+- ✅ Verificado via benchmark (`debug_asmjit_win64.dart`).
+- ✅ Verificado via novo teste de integração (`test/asmjit/integration_abi_test.dart`).
+
+## 🧪 Novos Testes de Integração (03/01/2026 11:00)
+
+### `test/asmjit/integration_abi_test.dart`
+- **Objetivo**: Verificar conformidade com ABI (Application Binary Interface) x64.
+- **Cenário**:
+    1. Compila uma função "Target" que usa intensivamente registradores (forçando spills e uso de callee-saved regs).
+    2. Compila uma função "Tester" (em Assembly puro) que:
+        - Salva registradores do host.
+        - Define valores "canary" em RBX, RSI, RDI, R12-R15.
+        - Chama a função "Target".
+        - Verifica se os valores "canary" foram preservados.
+- **Resultado**: Confirma que o `RAPass` gera prólogo/epílogo corretos e que a pilha é alinhada e restaurada adequadamente.
 

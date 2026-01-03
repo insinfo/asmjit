@@ -1,3 +1,4 @@
+//C:\MyDartProjects\asmjit\lib\src\asmjit\x86\x86_encoder.dart
 /// AsmJit x86/x64 Instruction Encoder
 ///
 /// Low-level x86/x64 instruction encoding.
@@ -546,7 +547,7 @@ class X86Encoder {
   /// ADD r64, imm32
   void addR64Imm32(X86Gp dst, int imm32) {
     emitRexForReg(dst, w: true);
-    if (dst.encoding == 0) {
+    if (dst.id == 0) {
       // ADD RAX, imm32 has a short form
       buffer.emit8(0x05);
     } else {
@@ -569,7 +570,7 @@ class X86Encoder {
     final isImm8 = imm >= -128 && imm <= 127;
 
     // Accumulator short form (AX/EAX/RAX).
-    if (dst.encoding == 0) {
+    if (dst.id == 0) {
       if (dst.bits == 16) buffer.emit8(0x66);
       if (dst.bits == 64) emitRexForReg(dst, w: true);
       buffer.emit8(0x05);
@@ -723,7 +724,7 @@ class X86Encoder {
   /// SUB r64, imm32
   void subR64Imm32(X86Gp dst, int imm32) {
     emitRexForReg(dst, w: true);
-    if (dst.encoding == 0) {
+    if (dst.id == 0) {
       buffer.emit8(0x2D);
     } else {
       buffer.emit8(0x81);
@@ -829,7 +830,7 @@ class X86Encoder {
   /// CMP r64, imm32
   void cmpR64Imm32(X86Gp dst, int imm32) {
     emitRexForReg(dst, w: true);
-    if (dst.encoding == 0) {
+    if (dst.id == 0) {
       buffer.emit8(0x3D);
     } else {
       buffer.emit8(0x81);
@@ -848,7 +849,7 @@ class X86Encoder {
   /// TEST r64, imm32
   void testR64Imm32(X86Gp dst, int imm32) {
     emitRexForReg(dst, w: true);
-    if (dst.encoding == 0) {
+    if (dst.id == 0) {
       buffer.emit8(0xA9);
     } else {
       buffer.emit8(0xF7);
@@ -860,7 +861,7 @@ class X86Encoder {
   /// AND r64, imm32
   void andR64Imm32(X86Gp dst, int imm32) {
     emitRexForReg(dst, w: true);
-    if (dst.encoding == 0) {
+    if (dst.id == 0) {
       buffer.emit8(0x25);
     } else {
       buffer.emit8(0x81);
@@ -882,7 +883,7 @@ class X86Encoder {
     if (dst.bits == 8) {
       _emitOpSizeAndRexForReg(dst);
       // AND r/m8, imm8 => 80 /4 ib (or AL short-form 24 ib)
-      if (dst.encoding == 0) {
+      if (dst.id == 0) {
         buffer.emit8(0x24);
         buffer.emit8(imm & 0xFF);
       } else {
@@ -904,7 +905,7 @@ class X86Encoder {
       buffer.emit8(imm & 0xFF);
     } else {
       // Use accumulator short form (25 id) for AX/EAX/RAX when needing imm32.
-      if (dst.encoding == 0) {
+      if (dst.id == 0) {
         buffer.emit8(0x25);
       } else {
         buffer.emit8(0x81);
@@ -921,7 +922,7 @@ class X86Encoder {
   /// OR r64, imm32
   void orR64Imm32(X86Gp dst, int imm32) {
     emitRexForReg(dst, w: true);
-    if (dst.encoding == 0) {
+    if (dst.id == 0) {
       buffer.emit8(0x0D);
     } else {
       buffer.emit8(0x81);
@@ -941,7 +942,7 @@ class X86Encoder {
   /// XOR r64, imm32
   void xorR64Imm32(X86Gp dst, int imm32) {
     emitRexForReg(dst, w: true);
-    if (dst.encoding == 0) {
+    if (dst.id == 0) {
       buffer.emit8(0x35);
     } else {
       buffer.emit8(0x81);
@@ -1370,6 +1371,92 @@ class X86Encoder {
   /// ROR r64, imm8
   void rorR64Imm8(X86Gp reg, int imm8) {
     emitRexForReg(reg, w: true);
+    if (imm8 == 1) {
+      buffer.emit8(0xD1);
+      emitModRmReg(1, reg);
+    } else {
+      buffer.emit8(0xC1);
+      emitModRmReg(1, reg);
+      buffer.emit8(imm8);
+    }
+  }
+
+  /// SHL r32, imm8
+  void shlR32Imm8(X86Gp reg, int imm8) {
+    emitRexForReg(reg, w: false);
+    if (imm8 == 1) {
+      buffer.emit8(0xD1);
+      emitModRmReg(4, reg);
+    } else {
+      buffer.emit8(0xC1);
+      emitModRmReg(4, reg);
+      buffer.emit8(imm8);
+    }
+  }
+
+  /// SHL r32, CL
+  void shlR32Cl(X86Gp reg) {
+    emitRexForReg(reg, w: false);
+    buffer.emit8(0xD3);
+    emitModRmReg(4, reg);
+  }
+
+  /// SHR r32, imm8 (logical shift right)
+  void shrR32Imm8(X86Gp reg, int imm8) {
+    emitRexForReg(reg, w: false);
+    if (imm8 == 1) {
+      buffer.emit8(0xD1);
+      emitModRmReg(5, reg);
+    } else {
+      buffer.emit8(0xC1);
+      emitModRmReg(5, reg);
+      buffer.emit8(imm8);
+    }
+  }
+
+  /// SHR r32, CL
+  void shrR32Cl(X86Gp reg) {
+    emitRexForReg(reg, w: false);
+    buffer.emit8(0xD3);
+    emitModRmReg(5, reg);
+  }
+
+  /// SAR r32, imm8 (arithmetic shift right)
+  void sarR32Imm8(X86Gp reg, int imm8) {
+    emitRexForReg(reg, w: false);
+    if (imm8 == 1) {
+      buffer.emit8(0xD1);
+      emitModRmReg(7, reg);
+    } else {
+      buffer.emit8(0xC1);
+      emitModRmReg(7, reg);
+      buffer.emit8(imm8);
+    }
+  }
+
+  /// SAR r32, CL
+  void sarR32Cl(X86Gp reg) {
+    emitRexForReg(reg, w: false);
+    buffer.emit8(0xD3);
+    emitModRmReg(7, reg);
+  }
+
+  /// ROL r32, imm8
+  void rolR32Imm8(X86Gp reg, int imm8) {
+    emitRexForReg(reg, w: false);
+    if (imm8 == 1) {
+      buffer.emit8(0xD1);
+      emitModRmReg(0, reg);
+    } else {
+      buffer.emit8(0xC1);
+      emitModRmReg(0, reg);
+      buffer.emit8(imm8);
+    }
+  }
+
+  /// ROR r32, imm8
+  void rorR32Imm8(X86Gp reg, int imm8) {
+    emitRexForReg(reg, w: false);
     if (imm8 == 1) {
       buffer.emit8(0xD1);
       emitModRmReg(1, reg);
