@@ -1,3 +1,4 @@
+//C:\MyDartProjects\asmjit\lib\src\asmjit\x86\x86_serializer.dart
 import '../core/builder.dart' as ir;
 import '../core/labels.dart';
 import 'x86_assembler.dart';
@@ -18,10 +19,10 @@ class X86Serializer implements ir.SerializerContext {
 
   @override
   void onAlign(ir.AlignMode mode, int alignment) {
-    if (mode == ir.AlignMode.code) {
+    // Honor both code and data alignment so embedded constants are safely accessed.
+    if (mode == ir.AlignMode.code || mode == ir.AlignMode.data) {
       asm.align(alignment);
     }
-    // TODO Data alignment not fully supported in text section mixed with code
   }
 
   @override

@@ -1,6 +1,7 @@
+//C:\MyDartProjects\asmjit\benchmark\asmjit\chacha20_impl\chacha20_baseline.dart
 /// ChaCha20 - Implementação Dart pura (Baseline)
 /// RFC 7539 - Versão simples para comparação de performance
-library;
+
 
 import 'dart:math';
 import 'dart:typed_data';

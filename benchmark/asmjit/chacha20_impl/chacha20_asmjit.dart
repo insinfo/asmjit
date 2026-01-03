@@ -1,6 +1,7 @@
+//C:\MyDartProjects\asmjit\benchmark\asmjit\chacha20_impl\chacha20_asmjit.dart
 /// ChaCha20 - Implementação usando AsmJit para gerar código dinâmico
 /// Usa a biblioteca asmjit para gerar código SSE2 em runtime
-library;
+
 
 import 'dart:ffi' as ffi;
 import 'dart:math';

@@ -11117,11 +11117,7 @@ class BaseCompiler extends BaseBuilder {
   /// Sets function argument pack.
   void setArg(int argIndex, BaseReg reg) {
     if (_func == null) throw AsmJitError.invalidState; // Must be in function
-    // For now simple implementation: just mapping.
-    // In full implementation, this updates FuncNode._argPacks.
-    // TODO: Implement full FuncValuePack logic
-    // We need to map argument index to virtual register.
-    // For now, ignoring or using rudimentary mapping if available.
+    _func!.setArg(argIndex, 0, reg);
   }
 
   /// Get jump annotations.
@@ -11197,6 +11193,9 @@ class BaseCompiler extends BaseBuilder {
     if (frameErr != AsmJitError.ok) {
       throw AsmJitException(frameErr, "Failed to initialize function frame");
     }
+
+    // Initialize arg packs
+    func._argPacks = List.generate(func.argCount, (_) => FuncValuePack());
 
     return func;
   }
@@ -17886,10 +17885,14 @@ import 'ralocal.dart';
 import 'bitvector.dart';
 import 'ranode_data.dart';
 import '../x86/x86.dart';
+import '../x86/x86_simd.dart';
 
 import '../x86/x86_operands.dart';
 import '../x86/x86_inst_db.g.dart';
 import 'raassignment.dart';
+import 'reg_type.dart';
+import 'type.dart';
+import 'operand.dart';
 
 class _RAConsecutiveReg {
   final RAWorkReg workReg;
@@ -17959,6 +17962,8 @@ class RAPass extends CompilerPass {
     _func = func;
     _spillStackSize = 0; // Reset for new function
 
+    _insertArgMoves(func);
+
     // 2. Initialize Allocator
     // We need availableRegs and preservedRegs.
     // Ideally these come from the Compiler/Arch.
@@ -18002,6 +18007,83 @@ class RAPass extends CompilerPass {
 
     // 4. Finalize
     _insertPrologEpilog();
+  }
+
+  void _insertArgMoves(FuncNode func) {
+    if (func.argPacks == null) return;
+
+    // Find entry block
+    BaseNode? node = func.next;
+    while (node != null && node is! BlockNode) {
+      node = node.next;
+    }
+    if (node == null) return;
+
+    final block = node as BlockNode;
+    BaseNode insertPoint = block;
+
+    final detail = func.detail;
+    final argCount = func.argCount;
+
+    for (int i = 0; i < argCount; i++) {
+      final pack = func.argPacks![i];
+      final argVal = pack[0];
+
+      if (argVal.isReg) {
+        final virtId = argVal.regId;
+        final physArg = detail.args[i][0];
+
+        if (physArg.isReg) {
+          final virtRegData = compiler.virtRegs[virtId - Globals.kMinVirtId];
+          final typeId = virtRegData.typeId;
+
+          BaseReg virtRegOperand;
+          if (typeId.isVec) {
+            if (virtRegData.size == 32) {
+              virtRegOperand = X86Ymm(virtId);
+            } else if (virtRegData.size == 64) {
+              virtRegOperand = X86Zmm(virtId);
+            } else {
+              virtRegOperand = X86Xmm(virtId);
+            }
+          } else {
+            if (virtRegData.size == 4) {
+              virtRegOperand = X86Gp.r32(virtId);
+            } else {
+              virtRegOperand = X86Gp.r64(virtId);
+            }
+          }
+
+          final physReg = _makePhysReg(physArg.fullRegType, physArg.regId);
+
+          int opcode = X86InstId.kMov;
+          if (typeId.isVec) {
+            opcode = X86InstId.kMovaps;
+          }
+
+          final move = InstNode(opcode, [virtRegOperand, physReg]);
+          _insertNodeAfter(insertPoint, move);
+          insertPoint = move;
+        }
+      }
+    }
+  }
+
+  BaseReg _makePhysReg(RegType type, int id) {
+    switch (type) {
+      case RegType.gp32:
+        return X86Gp.r32(id);
+      case RegType.gp64:
+        return X86Gp.r64(id);
+      case RegType.vec128:
+        return X86Xmm(id);
+      case RegType.vec256:
+        return X86Ymm(id);
+      case RegType.vec512:
+        return X86Zmm(id);
+      default:
+        return X86Gp.r64(id);
+    }
   }
 
   void _initRegMasks(RARegMask avail, RARegMask preserved) {
@@ -19294,6 +19376,10 @@ class RAPass extends CompilerPass {
     final gpPreserved = _allocator.funcPreservedRegs[RegGroup.gp];
     final gpToSave = gpClobbered & gpPreserved;
 
+    final vecClobbered = _allocator.clobberedRegs[RegGroup.vec];
+    final vecPreserved = _allocator.funcPreservedRegs[RegGroup.vec];
+    final vecToSave = vecClobbered & vecPreserved;
+
     final savedRegs = <X86Gp>[];
     for (int i = 0; i < 16; i++) {
       if ((gpToSave & (1 << i)) != 0) {
@@ -19301,20 +19387,37 @@ class RAPass extends CompilerPass {
       }
     }
 
-    // Calculate sizes
-    // Align locals to 8 bytes to ensure saved regs are aligned
-    int localsSize = _spillStackSize;
-    if (localsSize % 8 != 0) {
-      localsSize += 8 - (localsSize % 8);
+    final savedVecRegs = <X86Xmm>[];
+    for (int i = 0; i < 32; i++) {
+      if ((vecToSave & (1 << i)) != 0) {
+        savedVecRegs.add(X86Xmm(i));
+      }
     }
 
-    int savedSize = savedRegs.length * 8;
+    // Calculate layout (locals -> aligned vec spills -> aligned gp spills)
+    int localsSize = _alignUp(_spillStackSize, 16);
+    final vecSlots = <MapEntry<X86Xmm, int>>[];
+    final gpSlots = <MapEntry<X86Gp, int>>[];
 
-    // Align total stack size to 16 bytes (ABI requirement)
-    int totalStackSize = localsSize + savedSize;
-    if (totalStackSize % 16 != 0) {
-      totalStackSize += 16 - (totalStackSize % 16);
+    int currentOffset = localsSize;
+
+    if (savedVecRegs.isNotEmpty) {
+      currentOffset = _alignUp(currentOffset, 16);
+      for (final reg in savedVecRegs) {
+        currentOffset += 16;
+        vecSlots.add(MapEntry(reg, currentOffset));
+      }
     }
+
+    if (savedRegs.isNotEmpty) {
+      currentOffset = _alignUp(currentOffset, 8);
+      for (final reg in savedRegs) {
+        currentOffset += 8;
+        gpSlots.add(MapEntry(reg, currentOffset));
+      }
+    }
+
+    int totalStackSize = _alignUp(currentOffset, 16);
 
     // Prolog
     if (is64Bit) {
@@ -19338,13 +19441,19 @@ class RAPass extends CompilerPass {
         lastNode = subRsp;
       }
 
-      // Save registers to [RBP - localsSize - 8*n]
-      // We place them *below* the locals to avoid collision with locals at [RBP - 4] etc.
-      int currentOffset = localsSize;
-      for (final reg in savedRegs) {
-        currentOffset += 8;
-        final mem = X86Mem.baseDisp(rbp, -currentOffset);
-        final save = InstNode(X86InstId.kMov, [mem, reg]);
+      // Spill preserved vector registers using aligned stores.
+      for (final slot in vecSlots) {
+        final mem =
+            X86Mem.baseDisp(rbp, -slot.value, size: 16);
+        final save = InstNode(X86InstId.kMovaps, [mem, slot.key]);
+        _insertNodeAfter(lastNode, save);
+        lastNode = save;
+      }
+
+      // Spill preserved GP registers just below the vector area.
+      for (final slot in gpSlots) {
+        final mem = X86Mem.baseDisp(rbp, -slot.value);
+        final save = InstNode(X86InstId.kMov, [mem, slot.key]);
         _insertNodeAfter(lastNode, save);
         lastNode = save;
       }
@@ -19363,13 +19472,17 @@ class RAPass extends CompilerPass {
         final rbp = X86Gp.r64(X86RegId.rbp.index);
         final rsp = X86Gp.r64(X86RegId.rsp.index);
 
-        // Restore registers
-        // Must match the save order/offsets
-        int currentOffset = localsSize;
-        for (final reg in savedRegs) {
-          currentOffset += 8;
-          final mem = X86Mem.baseDisp(rbp, -currentOffset);
-          final restore = InstNode(X86InstId.kMov, [reg, mem]);
+        // Restore registers (mirrors spill order)
+        for (final slot in gpSlots.reversed) {
+          final mem = X86Mem.baseDisp(rbp, -slot.value);
+          final restore = InstNode(X86InstId.kMov, [slot.key, mem]);
+          _insertNodeBefore(node, restore);
+        }
+
+        for (final slot in vecSlots.reversed) {
+          final mem =
+              X86Mem.baseDisp(rbp, -slot.value, size: 16);
+          final restore = InstNode(X86InstId.kMovaps, [slot.key, mem]);
           _insertNodeBefore(node, restore);
         }
 
@@ -19388,6 +19501,12 @@ class RAPass extends CompilerPass {
         compiler.nodes.remove(node);
       }
     }
+  }
+
+  int _alignUp(int value, int alignment) {
+    if (alignment <= 0) return value;
+    final mask = alignment - 1;
+    return (value + mask) & ~mask;
   }
 
   void _insertNodeAfter(BaseNode after, BaseNode newNode) {
@@ -22444,6 +22563,7 @@ int _memoryFlagsToPosix(MemoryFlags flags) {
 import '../core/reg_type.dart';
 import '../core/reg_utils.dart';
 import '../core/compiler.dart';
+import '../core/operand.dart';
 
 /// Data alignment.
 enum Alignment {
@@ -22487,6 +22607,18 @@ enum FMinFMaxOpBehavior {
 
   /// Min and max is implemented like `if a <|> b ? a : b`.
   ternaryLogic;
+}
+
+/// Universal Memory Operand.
+class UniMem extends Operand {
+  final BaseMem _mem;
+
+  UniMem(this._mem);
+
+  @override
+  bool get isMem => true;
+
+  BaseMem get mem => _mem;
 }
 
 /// The behavior of floating point `madd` instructions.
@@ -24141,10 +24273,12 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
   }
 
   void emitMR(UniOpMR op, Operand dst, Operand src) {
+    Operand finalDst = dst;
+    if (finalDst is UniMem) finalDst = finalDst.mem;
     if (isX86Family) {
-      _emitMRX86(op, dst as X86Mem, src as BaseReg);
+      _emitMRX86(op, finalDst as X86Mem, src as BaseReg);
     } else if (isArm64) {
-      (this as UniCompilerA64)._emitMRA64(op, dst as A64Mem, src as BaseReg);
+      (this as UniCompilerA64)._emitMRA64(op, finalDst as A64Mem, src as BaseReg);
     } else {
       throw UnimplementedError('emitMR not implemented for $arch');
     }
@@ -24240,6 +24374,15 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
   // ============================================================================
 
   /// Emit 3-operand scalar instruction (RRR).
+  void emitCV(UniOpCV op, BaseReg dst, BaseReg src) {
+    if (isX86Family) {
+      (this as UniCompilerX86).emitCVX86(op, dst, src);
+    } else {
+      // (this as UniCompilerA64).emitCVA64(op, dst, src);
+      throw UnimplementedError('emitCV not implemented for AArch64');
+    }
+  }
+
   void emitRRR(UniOpRRR op, Operand dst, Operand src1, Operand src2) {
     if (isX86Family) {
       _emitRRRX86(op, dst as BaseReg, src1 as BaseReg, src2);
@@ -25490,6 +25633,23 @@ mixin UniCompilerX86 on UniCompilerBase {
       cc.addNode(InstNode(X86InstId.kVmovdqu, [dst, src]));
     } else {
       cc.addNode(InstNode(X86InstId.kMovdqu, [dst, src]));
+    }
+  }
+
+  void emitCVX86(UniOpCV op, BaseReg dst, BaseReg src) {
+    switch (op) {
+      case UniOpCV.cvtI2F:
+        cc.addNode(InstNode(X86InstId.kCvtsi2ss, [dst, src]));
+        break;
+      case UniOpCV.cvtI2D:
+        cc.addNode(InstNode(X86InstId.kCvtsi2sd, [dst, src]));
+        break;
+      case UniOpCV.cvtF2I:
+        cc.addNode(InstNode(X86InstId.kCvttss2si, [dst, src]));
+        break;
+      case UniOpCV.cvtD2I:
+        cc.addNode(InstNode(X86InstId.kCvttsd2si, [dst, src]));
+        break;
     }
   }
 
@@ -27473,6 +27633,14 @@ enum UniOpRRR {
 }
 
 /// Instruction with `[vec, reg]` operands.
+enum UniOpCV {
+  cvtI2F,
+  cvtI2D,
+  cvtF2I,
+  cvtD2I;
+}
+
+/// Instruction with `[vec, reg]` operands.
 enum UniOpVR {
   mov,
   movU32,
@@ -29173,42 +29341,74 @@ class X86Assembler extends BaseEmitter {
 
   /// SHL reg, imm (left shift).
   void shlRI(X86Gp reg, int imm) {
-    _enc.shlR64Imm8(reg, imm);
+    if (reg.bits == 64) {
+      _enc.shlR64Imm8(reg, imm);
+    } else {
+      _enc.shlR32Imm8(reg.as32, imm);
+    }
   }
 
   /// SHL reg, CL (left shift by CL).
   void shlRCl(X86Gp reg) {
-    _enc.shlR64Cl(reg);
+    if (reg.bits == 64) {
+      _enc.shlR64Cl(reg);
+    } else {
+      _enc.shlR32Cl(reg.as32);
+    }
   }
 
   /// SHR reg, imm (logical right shift).
   void shrRI(X86Gp reg, int imm) {
-    _enc.shrR64Imm8(reg, imm);
+    if (reg.bits == 64) {
+      _enc.shrR64Imm8(reg, imm);
+    } else {
+      _enc.shrR32Imm8(reg.as32, imm);
+    }
   }
 
   /// SHR reg, CL (logical right shift by CL).
   void shrRCl(X86Gp reg) {
-    _enc.shrR64Cl(reg);
+    if (reg.bits == 64) {
+      _enc.shrR64Cl(reg);
+    } else {
+      _enc.shrR32Cl(reg.as32);
+    }
   }
 
   /// SAR reg, imm (arithmetic right shift).
   void sarRI(X86Gp reg, int imm) {
-    _enc.sarR64Imm8(reg, imm);
+    if (reg.bits == 64) {
+      _enc.sarR64Imm8(reg, imm);
+    } else {
+      _enc.sarR32Imm8(reg.as32, imm);
+    }
   }
 
   /// SAR reg, CL (arithmetic right shift by CL).
   void sarRCl(X86Gp reg) {
-    _enc.sarR64Cl(reg);
+    if (reg.bits == 64) {
+      _enc.sarR64Cl(reg);
+    } else {
+      _enc.sarR32Cl(reg.as32);
+    }
   }
 
   /// ROL reg, imm (rotate left).
   void rolRI(X86Gp reg, int imm) {
-    _enc.rolR64Imm8(reg, imm);
+    if (reg.bits == 64) {
+      _enc.rolR64Imm8(reg, imm);
+    } else {
+      _enc.rolR32Imm8(reg.as32, imm);
+    }
   }
 
   /// ROR reg, imm (rotate right).
   void rorRI(X86Gp reg, int imm) {
-    _enc.rorR64Imm8(reg, imm);
+    if (reg.bits == 64) {
+      _enc.rorR64Imm8(reg, imm);
+    } else {
+      _enc.rorR32Imm8(reg.as32, imm);
+    }
   }
 
   // ===========================================================================
@@ -34400,6 +34600,92 @@ class X86Encoder {
   /// ROR r64, imm8
   void rorR64Imm8(X86Gp reg, int imm8) {
     emitRexForReg(reg, w: true);
+    if (imm8 == 1) {
+      buffer.emit8(0xD1);
+      emitModRmReg(1, reg);
+    } else {
+      buffer.emit8(0xC1);
+      emitModRmReg(1, reg);
+      buffer.emit8(imm8);
+    }
+  }
+
+  /// SHL r32, imm8
+  void shlR32Imm8(X86Gp reg, int imm8) {
+    emitRexForReg(reg, w: false);
+    if (imm8 == 1) {
+      buffer.emit8(0xD1);
+      emitModRmReg(4, reg);
+    } else {
+      buffer.emit8(0xC1);
+      emitModRmReg(4, reg);
+      buffer.emit8(imm8);
+    }
+  }
+
+  /// SHL r32, CL
+  void shlR32Cl(X86Gp reg) {
+    emitRexForReg(reg, w: false);
+    buffer.emit8(0xD3);
+    emitModRmReg(4, reg);
+  }
+
+  /// SHR r32, imm8 (logical shift right)
+  void shrR32Imm8(X86Gp reg, int imm8) {
+    emitRexForReg(reg, w: false);
+    if (imm8 == 1) {
+      buffer.emit8(0xD1);
+      emitModRmReg(5, reg);
+    } else {
+      buffer.emit8(0xC1);
+      emitModRmReg(5, reg);
+      buffer.emit8(imm8);
+    }
+  }
+
+  /// SHR r32, CL
+  void shrR32Cl(X86Gp reg) {
+    emitRexForReg(reg, w: false);
+    buffer.emit8(0xD3);
+    emitModRmReg(5, reg);
+  }
+
+  /// SAR r32, imm8 (arithmetic shift right)
+  void sarR32Imm8(X86Gp reg, int imm8) {
+    emitRexForReg(reg, w: false);
+    if (imm8 == 1) {
+      buffer.emit8(0xD1);
+      emitModRmReg(7, reg);
+    } else {
+      buffer.emit8(0xC1);
+      emitModRmReg(7, reg);
+      buffer.emit8(imm8);
+    }
+  }
+
+  /// SAR r32, CL
+  void sarR32Cl(X86Gp reg) {
+    emitRexForReg(reg, w: false);
+    buffer.emit8(0xD3);
+    emitModRmReg(7, reg);
+  }
+
+  /// ROL r32, imm8
+  void rolR32Imm8(X86Gp reg, int imm8) {
+    emitRexForReg(reg, w: false);
+    if (imm8 == 1) {
+      buffer.emit8(0xD1);
+      emitModRmReg(0, reg);
+    } else {
+      buffer.emit8(0xC1);
+      emitModRmReg(0, reg);
+      buffer.emit8(imm8);
+    }
+  }
+
+  /// ROR r32, imm8
+  void rorR32Imm8(X86Gp reg, int imm8) {
+    emitRexForReg(reg, w: false);
     if (imm8 == 1) {
       buffer.emit8(0xD1);
       emitModRmReg(1, reg);
@@ -45276,6 +45562,7 @@ class X86RipMem extends BaseMem {
 
 
 # x86_serializer.dart
+//C:\MyDartProjects\asmjit\lib\src\asmjit\x86\x86_serializer.dart
 import '../core/builder.dart' as ir;
 import '../core/labels.dart';
 import 'x86_assembler.dart';
@@ -45296,10 +45583,10 @@ class X86Serializer implements ir.SerializerContext {
 
   @override
   void onAlign(ir.AlignMode mode, int alignment) {
-    if (mode == ir.AlignMode.code) {
+    // Honor both code and data alignment so embedded constants are safely accessed.
+    if (mode == ir.AlignMode.code || mode == ir.AlignMode.data) {
       asm.align(alignment);
     }
-    // TODO Data alignment not fully supported in text section mixed with code
   }
 
   @override

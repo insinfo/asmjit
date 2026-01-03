@@ -1323,8 +1323,16 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
   }
 
   BaseMem simdMemConst(VecConst c, Bcst bcstWidth, VecWidth constWidth) {
-    final m = _getMemConst(c);
-    return m;
+    //TODO verificar se é assim no c++
+    try {
+      return _getMemConst(c);
+    } catch (_) {
+      // Not found in local/global table.
+      // Allocate it (this will add it to _vecConsts and emit a load instruction at function start).
+      _newVecConst(c, bcstWidth == Bcst.kNA_Unique);
+      // Now try getting the memory operand again.
+      return _getMemConst(c);
+    }
   }
 
   void _embedConsts() {
@@ -1471,10 +1479,12 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
   }
 
   void emitMR(UniOpMR op, Operand dst, Operand src) {
+    Operand finalDst = dst;
+    if (finalDst is UniMem) finalDst = finalDst.mem;
     if (isX86Family) {
-      _emitMRX86(op, dst as X86Mem, src as BaseReg);
+      _emitMRX86(op, finalDst as X86Mem, src as BaseReg);
     } else if (isArm64) {
-      (this as UniCompilerA64)._emitMRA64(op, dst as A64Mem, src as BaseReg);
+      (this as UniCompilerA64)._emitMRA64(op, finalDst as A64Mem, src as BaseReg);
     } else {
       throw UnimplementedError('emitMR not implemented for $arch');
     }
@@ -1570,6 +1580,15 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
   // ============================================================================
 
   /// Emit 3-operand scalar instruction (RRR).
+  void emitCV(UniOpCV op, BaseReg dst, BaseReg src) {
+    if (isX86Family) {
+      (this as UniCompilerX86).emitCVX86(op, dst, src);
+    } else {
+      // (this as UniCompilerA64).emitCVA64(op, dst, src);
+      throw UnimplementedError('emitCV not implemented for AArch64');
+    }
+  }
+
   void emitRRR(UniOpRRR op, Operand dst, Operand src1, Operand src2) {
     if (isX86Family) {
       _emitRRRX86(op, dst as BaseReg, src1 as BaseReg, src2);

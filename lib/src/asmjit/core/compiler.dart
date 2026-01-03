@@ -281,11 +281,7 @@ class BaseCompiler extends BaseBuilder {
   /// Sets function argument pack.
   void setArg(int argIndex, BaseReg reg) {
     if (_func == null) throw AsmJitError.invalidState; // Must be in function
-    // For now simple implementation: just mapping.
-    // In full implementation, this updates FuncNode._argPacks.
-    // TODO: Implement full FuncValuePack logic
-    // We need to map argument index to virtual register.
-    // For now, ignoring or using rudimentary mapping if available.
+    _func!.setArg(argIndex, 0, reg);
   }
 
   /// Get jump annotations.
@@ -361,6 +357,9 @@ class BaseCompiler extends BaseBuilder {
     if (frameErr != AsmJitError.ok) {
       throw AsmJitException(frameErr, "Failed to initialize function frame");
     }
+
+    // Initialize arg packs
+    func._argPacks = List.generate(func.argCount, (_) => FuncValuePack());
 
     return func;
   }

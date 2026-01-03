@@ -1,6 +1,7 @@
+//C:\MyDartProjects\asmjit\benchmark\asmjit\chacha20_impl\chacha20_optimized.dart
 /// ChaCha20 - Implementação Dart otimizada
 /// RFC 7539 - Versão otimizada com Uint32List, ByteData e buffers pré-alocados
-library;
+
 
 import 'dart:math';
 import 'dart:typed_data';

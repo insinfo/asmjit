@@ -5,6 +5,7 @@
 import '../core/reg_type.dart';
 import '../core/reg_utils.dart';
 import '../core/compiler.dart';
+import '../core/operand.dart';
 
 /// Data alignment.
 enum Alignment {
@@ -48,6 +49,18 @@ enum FMinFMaxOpBehavior {
 
   /// Min and max is implemented like `if a <|> b ? a : b`.
   ternaryLogic;
+}
+
+/// Universal Memory Operand.
+class UniMem extends Operand {
+  final BaseMem _mem;
+
+  UniMem(this._mem);
+
+  @override
+  bool get isMem => true;
+
+  BaseMem get mem => _mem;
 }
 
 /// The behavior of floating point `madd` instructions.

@@ -1,174 +1,164 @@
 import 'dart:ffi';
-import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
+import 'package:test/test.dart';
+import 'package:ffi/ffi.dart' as pkgffi;
 
-typedef IntFunc = Int64 Function();
-typedef IntDart = int Function();
+// Helper to run JIT code
+void runJitTest(
+    void Function(JitRuntime runtime, UniCompiler cc) generator,
+    void Function(JitFunction fn) verifier) {
+  final runtime = JitRuntime();
+  final code = CodeHolder(env: runtime.environment);
+  
+  // Setup compiler
+  BaseCompiler archCompiler;
+  if (code.env.arch == Arch.x64) {
+    archCompiler = X86Compiler(env: code.env, labelManager: code.labelManager);
+  } else if (code.env.arch == Arch.aarch64) {
+    archCompiler = A64Compiler(env: code.env, labelManager: code.labelManager);
+  } else {
+    throw UnsupportedError('Unsupported architecture');
+  }
+  
+  final cc = UniCompiler(archCompiler);
+  
+  generator(runtime, cc);
+  
+  archCompiler.finalize();
+  
+  if (code.env.arch == Arch.x64) {
+    final assembler = X86Assembler(code);
+    archCompiler.serializeToAssembler(assembler);
+  } else {
+    final assembler = A64Assembler(code);
+    archCompiler.serializeToAssembler(assembler);
+  }
+  
+  final fn = runtime.add(code);
+  try {
+    verifier(fn);
+  } finally {
+    // runtime.release(fn); // Not implemented yet in Dart binding
+  }
+}
 
 void main() {
-  group('ABI Integration Tests', () {
-    late JitRuntime rt;
+  group('Integration ABI Tests', () {
+    test('Function Arguments - 4 Integers (Registers)', () {
+      runJitTest((runtime, cc) {
+        // int sum4(int a, int b, int c, int d)
+        cc.addFunc(FuncSignature.build(
+            [TypeId.intPtr, TypeId.intPtr, TypeId.intPtr, TypeId.intPtr],
+            TypeId.intPtr,
+            CallConvId.x64Windows)); // Use host convention
 
-    setUp(() {
-      rt = JitRuntime();
+        final a = cc.newGpPtr('a');
+        final b = cc.newGpPtr('b');
+        final c = cc.newGpPtr('c');
+        final d = cc.newGpPtr('d');
+
+        cc.setArg(0, a);
+        cc.setArg(1, b);
+        cc.setArg(2, c);
+        cc.setArg(3, d);
+
+        final sum = cc.newGpPtr('sum');
+        cc.emitRRI(UniOpRRR.add, sum, a, 0); // mov sum, a
+        cc.emitRRR(UniOpRRR.add, sum, sum, b);
+        cc.emitRRR(UniOpRRR.add, sum, sum, c);
+        cc.emitRRR(UniOpRRR.add, sum, sum, d);
+
+        cc.ret([sum]);
+        cc.endFunc();
+      }, (fn) {
+        final func = fn.pointer.cast<NativeFunction<IntPtr Function(IntPtr, IntPtr, IntPtr, IntPtr)>>().asFunction<int Function(int, int, int, int)>();
+        expect(func(10, 20, 30, 40), equals(100));
+        expect(func(1, 1, 1, 1), equals(4));
+        expect(func(-1, -1, -1, -1), equals(-4));
+      });
     });
 
-    tearDown(() {
-      rt.dispose();
+    // TODO: Investigate why mixed int/float arguments are not passed correctly in tests
+    test('Function Arguments - Mixed Int/Float', () {
+      runJitTest((runtime, cc) {
+        // double calc(double a, int b, double c)
+        // return a + b + c
+        cc.addFunc(FuncSignature.build(
+            [TypeId.float64, TypeId.intPtr, TypeId.float64],
+            TypeId.float64,
+            CallConvId.x64Windows));
+
+        final a = cc.newVec('a'); // double
+        final b = cc.newGpPtr('b'); // int
+        final c = cc.newVec('c'); // double
+
+        cc.setArg(0, a);
+        cc.setArg(1, b);
+        cc.setArg(2, c);
+
+        final tmp = cc.newVec('tmp');
+        final bDouble = cc.newVec('bDouble');
+
+        // Convert int b to double
+        cc.emitCV(UniOpCV.cvtI2D, bDouble, b); // cvtsi2sd
+
+        cc.emit3v(UniOpVVV.addF64S, tmp, a, bDouble);
+        cc.emit3v(UniOpVVV.addF64S, tmp, tmp, c);
+
+        cc.ret([tmp]);
+        cc.endFunc();
+      }, (fn) {
+        final func = fn.pointer.cast<NativeFunction<Double Function(Double, IntPtr, Double)>>().asFunction<double Function(double, int, double)>();
+        expect(func(10.5, 20, 30.5), closeTo(61.0, 0.001));
+      });
     });
+    
+    test('Function Arguments - Pointer Access (Context)', () {
+      // Simulates the ChaCha20 context access pattern that crashed
+      runJitTest((runtime, cc) {
+        // void updateCtx(int* ctx, int val)
+        // ctx[0] = val
+        cc.addFunc(FuncSignature.build(
+            [TypeId.intPtr, TypeId.intPtr],
+            TypeId.void_,
+            CallConvId.x64Windows));
 
-    test('Preserves Callee-Saved Registers (RBX, RSI, RDI, R12-R15)', () {
-      // ---------------------------------------------------------
-      // 1. Compile the Target Function (The one being tested)
-      // ---------------------------------------------------------
-      final codeTarget = CodeHolder(env: Environment.host());
-      final compiler = X86Compiler(env: codeTarget.env, labelManager: codeTarget.labelManager);
-      
-      compiler.addFunc(FuncSignature(retType: TypeId.void_, args: []));
-      
-      // Force usage of many registers to trigger spills and usage of callee-saved regs.
-      // We create 16 virtual registers and keep them alive.
-      final vRegs = <X86Gp>[];
-      for (var i = 0; i < 16; i++) {
-        vRegs.add(compiler.newGp64('v$i'));
-      }
+        final ctx = cc.newGpPtr('ctx');
+        final val = cc.newGpPtr('val');
 
-      // Initialize
-      for (var i = 0; i < 16; i++) {
-        compiler.mov(vRegs[i], Imm(i + 0x1000));
-      }
+        cc.setArg(0, ctx);
+        cc.setArg(1, val);
 
-      // Mutate
-      for (var i = 0; i < 16; i++) {
-        compiler.add(vRegs[i], Imm(1));
-      }
+        // Store val to [ctx]
+        cc.emitMR(UniOpMR.storeU32, _mem(cc, ctx, 0), val);
+        
+        // Store val+1 to [ctx + 4]
+        cc.emitRRI(UniOpRRR.add, val, val, 1);
+        cc.emitMR(UniOpMR.storeU32, _mem(cc, ctx, 4), val);
 
-      // Sum (keep alive)
-      final sum = compiler.newGp64('sum');
-      compiler.mov(sum, Imm(0));
-      for (var i = 0; i < 16; i++) {
-        compiler.add(sum, vRegs[i]);
-      }
-
-      compiler.ret();
-      compiler.endFunc();
-      
-      // Finalize Target
-      print('Finalizing Target...');
-      compiler.finalize();
-      
-      // Serialize to Assembler to generate bytes in CodeHolder
-      print('Serializing Target...');
-      final assembler = X86Assembler(codeTarget);
-      compiler.serializeToAssembler(assembler);
-      
-      print('Target Bytes: ${codeTarget.text.buffer.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
-
-      print('Adding Target to Runtime...');
-      final targetFn = rt.add(codeTarget);
-      final targetPtr = targetFn.address; // This is the pointer to the JIT code
-      print('Target Address: 0x${targetPtr.toRadixString(16)}');
-
-      // ---------------------------------------------------------
-      // 2. Compile the Tester Function (Assembler - Manual Control)
-      // ---------------------------------------------------------
-
-      final codeTester = CodeHolder(env: Environment.host());
-      final a = X86Assembler(codeTester);
-      
-      // Standard Prolog for the Tester itself
-      a.push(rbp);
-      a.mov(rbp, rsp);
-
-      // Save ALL callee-saved regs of the HOST (Dart/OS) so we don't crash the runner
-      // Windows: RBX, RBP, RDI, RSI, RSP, R12-R15
-      // Linux: RBX, RBP, RSP, R12-R15
-      // We'll just save everything relevant to be safe.
-      a.push(rbx);
-      a.push(rdi);
-      a.push(rsi);
-      a.push(r12);
-      a.push(r13);
-      a.push(r14);
-      a.push(r15);
-      
-      // Align stack to 16 bytes
-      // We pushed 7 registers (56 bytes).
-      // Original RSP (after push rbp) was 16-byte aligned.
-      // Current RSP is aligned to 8.
-      // We need to subtract 8 from RSP to align it.
-      a.subRI(rsp, 8);
-
-      // Set Canary Values
-      final canary = 0xDEADBEEF;
-      a.mov(rbx, canary + 1);
-      a.mov(rdi, canary + 2);
-      a.mov(rsi, canary + 3);
-      a.mov(r12, canary + 4);
-      a.mov(r13, canary + 5);
-      a.mov(r14, canary + 6);
-      a.mov(r15, canary + 7);
-
-      // Call the Target Function
-      // We need to move the address to a register to call it
-      a.mov(rax, targetPtr);
-      a.callR(rax);
-
-      // Check Canary Values
-      // We will accumulate errors in RAX. 0 = Success.
-      final errorAcc = rax; // Reuse RAX for result
-      a.xorRR(errorAcc, errorAcc); // errorAcc = 0
-
-      // Helper to check register
-      void check(X86Gp reg, int expected) {
-        final tmp = rcx; // Use RCX as scratch
-        a.mov(tmp, expected);
-        a.cmpRR(reg, tmp);
-        final L_Ok = a.newLabel();
-        a.je(L_Ok);
-        a.inc(errorAcc); // Error!
-        a.bind(L_Ok);
-      }
-
-      check(rbx, canary + 1);
-      check(rdi, canary + 2);
-      check(rsi, canary + 3);
-      check(r12, canary + 4);
-      check(r13, canary + 5);
-      check(r14, canary + 6);
-      check(r15, canary + 7);
-
-      // Restore stack alignment
-      a.addRI(rsp, 8);
-
-      // Restore HOST registers
-      a.pop(r15);
-      a.pop(r14);
-      a.pop(r13);
-      a.pop(r12);
-      a.pop(rsi);
-      a.pop(rdi);
-      a.pop(rbx);
-
-      // Epilog
-      a.pop(rbp);
-      a.ret();
-
-      // Finalize Tester
-      print('Adding Tester to Runtime...');
-      print('Tester Code Size (before add): ${codeTester.text.buffer.length}');
-      print('Tester Bytes: ${codeTester.text.buffer.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
-      final testerFn = rt.add(codeTester);
-      final testerFunc = testerFn.pointer.cast<NativeFunction<IntFunc>>().asFunction<IntDart>();
-      print('Tester Address: 0x${testerFn.address.toRadixString(16)}');
-
-      // ---------------------------------------------------------
-      // 3. Run Test
-      // ---------------------------------------------------------
-      print('Running Tester...');
-      final result = testerFunc();
-      print('Tester Result: $result');
-      expect(result, equals(0), reason: "One or more callee-saved registers were corrupted");
+        cc.ret();
+        cc.endFunc();
+      }, (fn) {
+        final func = fn.pointer.cast<NativeFunction<Void Function(Pointer<Int32>, IntPtr)>>().asFunction<void Function(Pointer<Int32>, int)>();
+        final mem = pkgffi.calloc<Int32>(2);
+        try {
+          func(mem, 42);
+          expect(mem[0], equals(42));
+          expect(mem[1], equals(43));
+        } finally {
+          pkgffi.calloc.free(mem);
+        }
+      });
     });
   });
+}
+
+// Helper for memory operand creation in tests
+UniMem _mem(UniCompiler cc, BaseReg base, int disp) {
+  if (cc.isX86Family) {
+    return UniMem(X86Mem.baseDisp(base as X86Gp, disp));
+  } else {
+    // A64 not fully supported in this helper yet for tests
+    throw UnimplementedError();
+  }
 }

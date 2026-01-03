@@ -98,6 +98,23 @@ mixin UniCompilerX86 on UniCompilerBase {
     }
   }
 
+  void emitCVX86(UniOpCV op, BaseReg dst, BaseReg src) {
+    switch (op) {
+      case UniOpCV.cvtI2F:
+        cc.addNode(InstNode(X86InstId.kCvtsi2ss, [dst, src]));
+        break;
+      case UniOpCV.cvtI2D:
+        cc.addNode(InstNode(X86InstId.kCvtsi2sd, [dst, src]));
+        break;
+      case UniOpCV.cvtF2I:
+        cc.addNode(InstNode(X86InstId.kCvttss2si, [dst, src]));
+        break;
+      case UniOpCV.cvtD2I:
+        cc.addNode(InstNode(X86InstId.kCvttsd2si, [dst, src]));
+        break;
+    }
+  }
+
   void _vMovX86(BaseReg dst, Operand src) {
     if (src is BaseReg && dst.id == src.id) return;
 
@@ -1257,6 +1274,114 @@ mixin UniCompilerX86 on UniCompilerBase {
         break;
       case UniOpVVV.swizzlevU8:
         _vShufBX86(dst, src1, src2);
+        break;
+      case UniOpVVV.addF32S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVaddss, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kAddss, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.addF64S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVaddsd, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kAddsd, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.subF32S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVsubss, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kSubss, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.subF64S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVsubsd, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kSubsd, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.mulF32S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVmulss, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kMulss, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.mulF64S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVmulsd, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kMulsd, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.divF32S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVdivss, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kDivss, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.divF64S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVdivsd, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kDivsd, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.minF32S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVminss, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kMinss, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.minF64S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVminsd, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kMinsd, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.maxF32S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVmaxss, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kMaxss, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.maxF64S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVmaxsd, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kMaxsd, [dst, src2]));
+        }
         break;
       case UniOpVVV.addF32:
         if (hasAvx) {

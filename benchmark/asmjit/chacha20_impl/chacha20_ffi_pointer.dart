@@ -1,6 +1,7 @@
+//C:\MyDartProjects\asmjit\benchmark\asmjit\chacha20_impl\chacha20_ffi_pointer.dart
 /// ChaCha20 - Implementação com ponteiros FFI (C-style)
 /// Usa apenas Pointer<T> para acesso a dados, minimizando overhead de Dart
-library;
+
 
 import 'dart:ffi' as ffi;
 import 'dart:math';

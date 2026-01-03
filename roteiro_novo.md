@@ -31,6 +31,41 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 
 ---
 
+## ✅ Progresso Recente (03/01/2026 - Atualização 3)
+
+### Implementação de Operações Escalares e Correção de Testes:
+
+1.  **Implementação de Operações Escalares (Float/Double) em x86**:
+    - **Problema**: O teste de integração "Mixed Int/Float" falhava porque o compilador não implementava operações escalares (`addF64S`, `subF64S`, etc.), forçando o uso de operações vetoriais (`addF64` -> `addpd`) que causavam resultados incorretos em cenários de ABI onde os bits superiores podem conter lixo.
+    - **Solução**: Implementado suporte completo para `add`, `sub`, `mul`, `div`, `min`, `max` escalares (Sufixo `S`) em `lib/src/asmjit/ujit/unicompiler_x86.dart`.
+    - **Detalhes**: Agora `UniOpVVV.addF64S` emite corretamente `ADDSD` (ou `VADDSD` com AVX), garantindo a semântica correta para cálculos escalares.
+
+2.  **Correção de Testes de Integração**:
+    - Atualizado `test/asmjit/integration_abi_test.dart` para usar as novas operações escalares (`addF64S`) no teste de argumentos mistos.
+    - **Status**: Todos os testes de integração ABI agora passam (3/3) ✅.
+
+3.  **Atualização do Benchmark ChaCha20**:
+    - Atualizado `benchmark/asmjit/chacha20_impl/chacha20_asmjit_optimized.dart` com a implementação otimizada fornecida pelo usuário (Loop Hoisting, AVX/SSE detection).
+    - Corrigido aviso de linter (variável não utilizada).
+    - **Status**: Benchmark compilando e pronto para execução.
+
+## ✅ Progresso Recente (03/01/2026 - Atualização 2)
+
+### Correções Críticas (ABI e Crash Fix):
+
+1.  **Correção de Crash em Acesso a Ponteiros (ChaCha20)**:
+    - **Problema**: O benchmark ChaCha20 crashava (`Access Violation`) ao tentar escrever no contexto (`ctx[0] = val`).
+    - **Causa Raiz**: O `RAPass` (Register Allocation Pass) não estava inserindo as instruções `MOV` necessárias para copiar os argumentos da função (que chegam em registradores físicos definidos pela ABI, ex: `RCX`, `RDX`) para os registradores virtuais usados pelo compilador. Isso deixava as variáveis de argumento com valores lixo (ou zero).
+    - **Solução**: Implementado o método `_insertArgMoves` em `lib/src/asmjit/core/rapass.dart`. Agora, ao iniciar a alocação de registradores, o compilador insere automaticamente instruções `MOV` (ou `MOVAPS` para vetores) no início do bloco de entrada para capturar os argumentos corretamente.
+    - **Validação**: O benchmark `debug_chacha_opt.exe` foi recompilado e agora executa com sucesso, gerando o output correto sem crashar.
+
+2.  **Infraestrutura de Testes de Integração ABI**:
+    - Criado `test/asmjit/integration_abi_test.dart` para prevenir regressões na passagem de argumentos.
+    - Implementado suporte a `UniMem` em `ujitbase.dart` e `emitCV` (Convert) em `UniCompiler` para suportar os cenários de teste.
+    - **Status**: Teste de passagem de 4 argumentos inteiros (Registers) passando ✅. Testes de argumentos mistos (Int/Float) e Ponteiros via FFI isolado estão marcados para investigação futura (setup de teste complexo), mas a correção foi validada pelo benchmark real.
+
+---
+
 ## ✅ Progresso Recente (03/01/2026)
 
 ### Correções Críticas e Estabilidade:

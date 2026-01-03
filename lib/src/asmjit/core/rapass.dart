@@ -16,10 +16,14 @@ import 'ralocal.dart';
 import 'bitvector.dart';
 import 'ranode_data.dart';
 import '../x86/x86.dart';
+import '../x86/x86_simd.dart';
 
 import '../x86/x86_operands.dart';
 import '../x86/x86_inst_db.g.dart';
 import 'raassignment.dart';
+import 'reg_type.dart';
+import 'type.dart';
+import 'operand.dart';
 
 class _RAConsecutiveReg {
   final RAWorkReg workReg;
@@ -104,7 +108,10 @@ class RAPass extends CompilerPass {
     // 2a. Map Virtual Registers (Pre-pass)
     _mapVirtuals(nodes);
 
-    // 2b. Global Allocation (RAGlobal)
+    // 2b. Assign Arguments to WorkRegs (Hints)
+    _assignArgIndexToWorkRegs(func);
+
+    // 2c. Global Allocation (RAGlobal)
     _buildGlobalLiveness(nodes);
     _buildBundles();
     _coalesce();
@@ -123,6 +130,7 @@ class RAPass extends CompilerPass {
     if (blocks.isNotEmpty) {
       // Initialize first block entry from global decisions/hints
       _initFirstBlockEntry(blocks.first);
+      _insertArgMoves(blocks.first);
 
       for (final block in blocks) {
         _processBlock(block);
@@ -132,6 +140,70 @@ class RAPass extends CompilerPass {
 
     // 4. Finalize
     _insertPrologEpilog();
+  }
+
+  void _assignArgIndexToWorkRegs(FuncNode func) {
+    final detail = func.detail;
+    final argCount = func.argCount;
+
+    for (int i = 0; i < argCount; i++) {
+      final pack = func.argPacks![i];
+      final argVal = pack[0];
+
+      if (argVal.isReg) {
+        final virtId = argVal.regId;
+        // Only process if the virtual register is actually used (mapped to a WorkReg)
+        if (_virtIdToWorkId.containsKey(virtId)) {
+          final workId = _virtIdToWorkId[virtId]!;
+          final workReg = _allocator.workRegById(workId);
+          final physArg = detail.args[i][0];
+
+          if (physArg.isReg) {
+            workReg.homeRegId = physArg.regId;
+          }
+          // TODO: Handle stack arguments
+        }
+      }
+    }
+  }
+
+  void _insertArgMoves(BlockNode block) {
+    if (_func == null) return;
+    final func = _func!;
+    final detail = func.detail;
+
+    // Insert at the beginning of the block
+    BaseNode? insertPoint = block;
+
+    for (int i = 0; i < func.argCount; i++) {
+      final pack = func.argPacks![i];
+      final argVal = pack[0];
+
+      if (argVal.isReg) {
+        final virtId = argVal.regId;
+        if (_virtIdToWorkId.containsKey(virtId)) {
+          final physArg = detail.args[i][0];
+          if (physArg.isReg) {
+            final workId = _virtIdToWorkId[virtId]!;
+            final workReg = _allocator.workRegById(workId);
+            final virtReg = workReg.virtReg;
+
+            int instId;
+            if (virtReg.group == RegGroup.gp) {
+              instId = X86InstId.kMov;
+            } else {
+              // Vector arguments
+              instId = X86InstId.kMovaps;
+            }
+
+            final physReg = virtReg.toPhys(physArg.regId);
+            final movNode = InstNode(instId, [virtReg, physReg]);
+            _insertNodeAfter(insertPoint!, movNode);
+            insertPoint = movNode;
+          }
+        }
+      }
+    }
   }
 
   void _initRegMasks(RARegMask avail, RARegMask preserved) {
@@ -1066,6 +1138,11 @@ class RAPass extends CompilerPass {
 
   void _analyzeInstruction(InstNode node, List<RATiedReg> tiedRegs,
       RARegMask used, RARegMask clobbered) {
+    if (node is FuncRetNode) {
+      _analyzeRet(node, tiedRegs);
+      return;
+    }
+
     if (node.hasNoOperands) return;
 
     final id = node.instId;
@@ -1259,6 +1336,43 @@ class RAPass extends CompilerPass {
     }
   }
 
+  void _analyzeRet(FuncRetNode node, List<RATiedReg> tiedRegs) {
+    final detail = _func!.detail;
+    for (int i = 0; i < node.opCount; i++) {
+      final op = node.operands[i];
+      if (op is BaseReg && !op.isPhysical && !op.isNone) {
+        // Assuming 1-to-1 mapping for now (simple scalar return)
+        final retVal = detail.rets[i];
+        if (retVal.isReg) {
+          final physId = retVal.regId;
+
+          RAWorkId workId;
+          if (_virtIdToWorkId.containsKey(op.id)) {
+            workId = _virtIdToWorkId[op.id]!;
+          } else {
+            final workReg = _allocator.addWorkReg(op.group, op);
+            workId = workReg.workId;
+            _virtIdToWorkId[op.id] = workId;
+          }
+
+          final workReg = _allocator.workRegById(workId);
+          final tied = RATiedReg();
+
+          // Use | Read | UseFixed
+          int flags =
+              RATiedFlags.kUse | RATiedFlags.kRead | RATiedFlags.kUseFixed;
+          if (_lastUsePos[op.id] == node.position) {
+            flags |= RATiedFlags.kKill;
+          }
+
+          tied.init(workReg, flags, (1 << physId), physId, 0, 0,
+              RAAssignment.kPhysNone, 0);
+          tiedRegs.add(tied);
+        }
+      }
+    }
+  }
+
   void _addImplicitUse(BaseReg reg, List<RATiedReg> tiedRegs, int pos) {
     RAWorkId workId;
     if (_virtIdToWorkId.containsKey(reg.id)) {
@@ -1348,21 +1462,45 @@ class RAPass extends CompilerPass {
   void _emitLoad(RAWorkReg workReg, int physId, InstNode ctx) {
     final reg = workReg.virtReg.toPhys(physId);
     final mem = _stackSlot(workReg);
-    final loadNode = InstNode(_archTraits.movId, [reg, mem]);
+    
+    int instId = _archTraits.movId;
+    if (workReg.group == RegGroup.vec) {
+      if (compiler.arch == Arch.x64 || compiler.arch == Arch.x86) {
+        instId = X86InstId.kMovaps;
+      }
+    }
+
+    final loadNode = InstNode(instId, [reg, mem]);
     _insertNodeBefore(ctx, loadNode);
   }
 
   void _emitSave(RAWorkReg workReg, int physId, InstNode ctx) {
     final reg = workReg.virtReg.toPhys(physId);
     final mem = _stackSlot(workReg);
-    final saveNode = InstNode(_archTraits.movId, [mem, reg]);
+    
+    int instId = _archTraits.movId;
+    if (workReg.group == RegGroup.vec) {
+      if (compiler.arch == Arch.x64 || compiler.arch == Arch.x86) {
+        instId = X86InstId.kMovaps;
+      }
+    }
+
+    final saveNode = InstNode(instId, [mem, reg]);
     _insertNodeBefore(ctx, saveNode);
   }
 
   void _emitMove(RAWorkReg workReg, int dst, int src, InstNode ctx) {
     final dstReg = workReg.virtReg.toPhys(dst);
     final srcReg = workReg.virtReg.toPhys(src);
-    final movNode = InstNode(_archTraits.movId, [dstReg, srcReg]);
+    
+    int instId = _archTraits.movId;
+    if (workReg.group == RegGroup.vec) {
+      if (compiler.arch == Arch.x64 || compiler.arch == Arch.x86) {
+        instId = X86InstId.kMovaps;
+      }
+    }
+
+    final movNode = InstNode(instId, [dstReg, srcReg]);
     _insertNodeBefore(ctx, movNode);
   }
 
@@ -1424,6 +1562,10 @@ class RAPass extends CompilerPass {
     final gpPreserved = _allocator.funcPreservedRegs[RegGroup.gp];
     final gpToSave = gpClobbered & gpPreserved;
 
+    final vecClobbered = _allocator.clobberedRegs[RegGroup.vec];
+    final vecPreserved = _allocator.funcPreservedRegs[RegGroup.vec];
+    final vecToSave = vecClobbered & vecPreserved;
+
     final savedRegs = <X86Gp>[];
     for (int i = 0; i < 16; i++) {
       if ((gpToSave & (1 << i)) != 0) {
@@ -1431,20 +1573,37 @@ class RAPass extends CompilerPass {
       }
     }
 
-    // Calculate sizes
-    // Align locals to 8 bytes to ensure saved regs are aligned
-    int localsSize = _spillStackSize;
-    if (localsSize % 8 != 0) {
-      localsSize += 8 - (localsSize % 8);
+    final savedVecRegs = <X86Xmm>[];
+    for (int i = 0; i < 32; i++) {
+      if ((vecToSave & (1 << i)) != 0) {
+        savedVecRegs.add(X86Xmm(i));
+      }
     }
 
-    int savedSize = savedRegs.length * 8;
+    // Calculate layout (locals -> aligned vec spills -> aligned gp spills)
+    int localsSize = _alignUp(_spillStackSize, 16);
+    final vecSlots = <MapEntry<X86Xmm, int>>[];
+    final gpSlots = <MapEntry<X86Gp, int>>[];
 
-    // Align total stack size to 16 bytes (ABI requirement)
-    int totalStackSize = localsSize + savedSize;
-    if (totalStackSize % 16 != 0) {
-      totalStackSize += 16 - (totalStackSize % 16);
+    int currentOffset = localsSize;
+
+    if (savedVecRegs.isNotEmpty) {
+      currentOffset = _alignUp(currentOffset, 16);
+      for (final reg in savedVecRegs) {
+        currentOffset += 16;
+        vecSlots.add(MapEntry(reg, currentOffset));
+      }
     }
+
+    if (savedRegs.isNotEmpty) {
+      currentOffset = _alignUp(currentOffset, 8);
+      for (final reg in savedRegs) {
+        currentOffset += 8;
+        gpSlots.add(MapEntry(reg, currentOffset));
+      }
+    }
+
+    int totalStackSize = _alignUp(currentOffset, 16);
 
     // Prolog
     if (is64Bit) {
@@ -1468,13 +1627,19 @@ class RAPass extends CompilerPass {
         lastNode = subRsp;
       }
 
-      // Save registers to [RBP - localsSize - 8*n]
-      // We place them *below* the locals to avoid collision with locals at [RBP - 4] etc.
-      int currentOffset = localsSize;
-      for (final reg in savedRegs) {
-        currentOffset += 8;
-        final mem = X86Mem.baseDisp(rbp, -currentOffset);
-        final save = InstNode(X86InstId.kMov, [mem, reg]);
+      // Spill preserved vector registers using aligned stores.
+      for (final slot in vecSlots) {
+        final mem =
+            X86Mem.baseDisp(rbp, -slot.value, size: 16);
+        final save = InstNode(X86InstId.kMovaps, [mem, slot.key]);
+        _insertNodeAfter(lastNode, save);
+        lastNode = save;
+      }
+
+      // Spill preserved GP registers just below the vector area.
+      for (final slot in gpSlots) {
+        final mem = X86Mem.baseDisp(rbp, -slot.value);
+        final save = InstNode(X86InstId.kMov, [mem, slot.key]);
         _insertNodeAfter(lastNode, save);
         lastNode = save;
       }
@@ -1493,13 +1658,17 @@ class RAPass extends CompilerPass {
         final rbp = X86Gp.r64(X86RegId.rbp.index);
         final rsp = X86Gp.r64(X86RegId.rsp.index);
 
-        // Restore registers
-        // Must match the save order/offsets
-        int currentOffset = localsSize;
-        for (final reg in savedRegs) {
-          currentOffset += 8;
-          final mem = X86Mem.baseDisp(rbp, -currentOffset);
-          final restore = InstNode(X86InstId.kMov, [reg, mem]);
+        // Restore registers (mirrors spill order)
+        for (final slot in gpSlots.reversed) {
+          final mem = X86Mem.baseDisp(rbp, -slot.value);
+          final restore = InstNode(X86InstId.kMov, [slot.key, mem]);
+          _insertNodeBefore(node, restore);
+        }
+
+        for (final slot in vecSlots.reversed) {
+          final mem =
+              X86Mem.baseDisp(rbp, -slot.value, size: 16);
+          final restore = InstNode(X86InstId.kMovaps, [slot.key, mem]);
           _insertNodeBefore(node, restore);
         }
 
@@ -1518,6 +1687,12 @@ class RAPass extends CompilerPass {
         compiler.nodes.remove(node);
       }
     }
+  }
+
+  int _alignUp(int value, int alignment) {
+    if (alignment <= 0) return value;
+    final mask = alignment - 1;
+    return (value + mask) & ~mask;
   }
 
   void _insertNodeAfter(BaseNode after, BaseNode newNode) {

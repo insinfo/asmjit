@@ -1,6 +1,7 @@
+//C:\MyDartProjects\asmjit\benchmark\asmjit\chacha20_impl\chacha20_c_ffi.dart
 /// ChaCha20 - Wrapper FFI para a DLL C
 /// Chama a implementação C pura via dart:ffi
-library;
+
 
 import 'dart:ffi' as ffi;
 import 'dart:io';
