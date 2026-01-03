@@ -227,6 +227,9 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
     case X86InstId.kMovd:
       _movd(asm, ops);
       break;
+    case X86InstId.kMovdqu:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.movdquXM(d, s) : asm.movdquXX(d, s as X86Xmm), memXmm: (m, s) => asm.movdquMX(m, s));
+      break;
     case X86InstId.kMovq:
       _movq(asm, ops);
       break;
@@ -263,8 +266,32 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
     case X86InstId.kOr:
       _binary(asm, ops, (a, b) => asm.orRR(a, b), (a, imm) => asm.orRI(a, imm));
       break;
+    case X86InstId.kPaddb:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.padddXM(d, s) : asm.padddXX(d, s as X86Xmm));
+      break;
+    case X86InstId.kPaddd:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.padddXM(d, s) : asm.padddXX(d, s as X86Xmm));
+      break;
+    case X86InstId.kPaddq:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.paddqXM(d, s) : asm.paddqXX(d, s as X86Xmm));
+      break;
+    case X86InstId.kPaddw:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.padddXM(d, s) : asm.padddXX(d, s as X86Xmm));
+      break;
     case X86InstId.kPop:
       _pop(asm, ops);
+      break;
+    case X86InstId.kPsubb:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.psubdXM(d, s) : asm.psubdXX(d, s as X86Xmm));
+      break;
+    case X86InstId.kPsubd:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.psubdXM(d, s) : asm.psubdXX(d, s as X86Xmm));
+      break;
+    case X86InstId.kPsubq:
+      // unsupported
+      break;
+    case X86InstId.kPsubw:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.psubdXM(d, s) : asm.psubdXX(d, s as X86Xmm));
       break;
     case X86InstId.kPush:
       _push(asm, ops);

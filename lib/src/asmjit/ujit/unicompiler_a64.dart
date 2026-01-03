@@ -541,7 +541,7 @@ mixin UniCompilerA64 on UniCompilerBase {
         break;
       case UniOpVVV.minI64:
         {
-          final mask = (cc as dynamic).newVec(128, "minMask");
+          final mask = newVecWithWidth(VecWidth.k128, "minMask");
           _vCmgtA64(mask, s2Reg, s1);
           if (d.id != s2Reg.id) _vMovA64(d, s2Reg);
           _vBitA64(d, s1, mask);
@@ -549,7 +549,7 @@ mixin UniCompilerA64 on UniCompilerBase {
         break;
       case UniOpVVV.maxU64:
         {
-          final mask = (cc as dynamic).newVec(128, "maxMask");
+          final mask = newVecWithWidth(VecWidth.k128, "maxMask");
           _vCmhiA64(mask, s1, s2Reg);
           if (d.id != s2Reg.id) _vMovA64(d, s2Reg);
           _vBitA64(d, s1, mask);
@@ -725,33 +725,75 @@ mixin UniCompilerA64 on UniCompilerBase {
       UniOpVVVI op, Operand dst, Operand src1, Operand src2, int imm) {
     final d = dst as BaseReg;
     final s1 = src1 as BaseReg;
-    final s2 = src2 as BaseReg; // Assumes src2 is reg for now
+    final s2 = src2 as BaseReg;
 
     switch (op) {
       case UniOpVVVI.alignrU128:
-        // A64 EXT: dst = (src1:src2) >> (imm * 8)
-        // src1 is low, src2 is high?
-        // x86 PALIGNR: dst = (src1:src2) >> (imm * 8) (src1 is DEST, src2 is SOURCE)
-        // Wait, AsmJit aligns with x86 PALIGNR src order?
-        // PALIGNR xmm1, xmm2, imm -> xmm1 = (xmm1:xmm2) >> items.
-        // It shifts in from xmm2 into xmm1.
-        // So xmm1 is HIGH part, xmm2 is LOW part in the concat?
-        // Intel: "Concatenates the destination operand (first operand) and the source operand (second operand) into a 256-bit... Dest is most significant."
-        // So (Dest:Source).
-        // A64 EXT: (Vm:Vn). Vm is second, Vn is first.
-        // "Extract from Vm:Vn".
-        // Vm (src2) is high, Vn (src1) is low.
-        // If UJIT alignr(d, s1, s2, imm) maps to (s1:s2) >> imm...
-        // We need to match behavior.
-        // Assuming s1 is "High" (Target/Dest in x86 sense) and s2 is "Low" (Source in x86 sense).
-        // Then we usually map EXT dst, s2, s1, imm. (Low, High).
-        // Wait, standard convention check needed.
-        // For now, mapping EXT dst, s1, s2, imm.
         _vExtA64(d, s1, s2, imm, A64Layout.b16);
         break;
+      case UniOpVVVI.interleaveShuffleU32x4:
+      case UniOpVVVI.interleaveShuffleF32x4:
+        final mask = Uint8List(16);
+        for (int i = 0; i < 4; i++) {
+          int sel = (imm >> (i * 2)) & 3;
+          int base = (i < 2) ? 0 : 16;
+          int byteIndex = base + sel * 4;
+          mask[i * 4 + 0] = byteIndex + 0;
+          mask[i * 4 + 1] = byteIndex + 1;
+          mask[i * 4 + 2] = byteIndex + 2;
+          mask[i * 4 + 3] = byteIndex + 3;
+        }
+        _emitTbl2(d, s1, s2, mask);
+        break;
+
+      case UniOpVVVI.interleaveShuffleU64x2:
+      case UniOpVVVI.interleaveShuffleF64x2:
+        final mask = Uint8List(16);
+        for (int i = 0; i < 2; i++) {
+          int sel = (imm >> i) & 1;
+          int base = (i == 0) ? 0 : 16;
+          int byteIndex = base + sel * 8;
+          for (int j = 0; j < 8; j++) {
+            mask[i * 8 + j] = byteIndex + j;
+          }
+        }
+        _emitTbl2(d, s1, s2, mask);
+        break;
+
       default:
         throw UnimplementedError('_emit3viA64: $op');
     }
+  }
+
+  void _emitTbl2(BaseReg d, BaseReg s1, BaseReg s2, Uint8List mask) {
+    final mask1Bytes = Uint8List(16);
+    final mask2Bytes = Uint8List(16);
+
+    for (int i = 0; i < 16; i++) {
+      int idx = mask[i];
+      if (idx < 16) {
+        mask1Bytes[i] = idx;
+        mask2Bytes[i] = 0xFF;
+      } else {
+        mask1Bytes[i] = 0xFF;
+        mask2Bytes[i] = idx - 16;
+      }
+    }
+
+    final vc1 = VecConst(16, mask1Bytes);
+    final vc2 = VecConst(16, mask2Bytes);
+
+    final m1 = _newVecConst(vc1, true);
+    final m2 = _newVecConst(vc2, true);
+
+    final tmp = newVecWithWidth(_vecWidth, "tmp_tbl");
+
+    // TBL d, {s1}, m1
+    cc.addNode(InstNode(A64InstId.kTbl, [d, s1, m1]));
+    // TBL tmp, {s2}, m2
+    cc.addNode(InstNode(A64InstId.kTbl, [tmp, s2, m2]));
+    // ORR d, d, tmp
+    _vOrA64(d, d, tmp);
   }
 
   void _emit4vA64(

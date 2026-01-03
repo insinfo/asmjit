@@ -8,6 +8,7 @@ import '../core/emitter.dart';
 import '../core/error.dart';
 import '../core/operand.dart';
 import '../core/reg_type.dart';
+import '../core/labels.dart';
 import 'x86.dart';
 import 'x86_operands.dart';
 import 'x86_simd.dart';
@@ -278,6 +279,29 @@ class X86Encoder {
 
   /// Emits ModR/M and optional SIB/displacement for memory operand.
   void emitModRmMem(int regOp, X86Mem mem) {
+    // Handle Label (RIP-relative or Absolute)
+    if (mem.label != null) {
+      if (mem.base != null || mem.index != null) {
+        throw ArgumentError(
+            'Label in memory operand cannot have base or index (not supported yet)');
+      }
+
+      // ModRM(0, reg, 5)
+      // - 32-bit: [disp32] (Absolute)
+      // - 64-bit: [RIP + disp32] (RIP-relative)
+      emitModRm(0, regOp, 5);
+
+      if (emitter != null) {
+        final is64 = emitter!.code.env.is64Bit;
+        final kind = is64 ? RelocKind.ripRel32 : RelocKind.abs32;
+        emitter!.code.labelManager
+            .addFixup(mem.label!, buffer.offset, kind, mem.displacement);
+      }
+
+      buffer.emit32(0); // Placeholder
+      return;
+    }
+
     final base = _memBase(mem);
     final index = _memIndex(mem);
     final disp = mem.displacement;
@@ -2242,6 +2266,15 @@ class X86Encoder {
     _emitRexForXmmXmm(dst, src);
     buffer.emit8(0x0F);
     buffer.emit8(0x10);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// MOVDQU xmm, xmm (move unaligned double quadword)
+  void movdquXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0xF3); // Mandatory prefix
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x6F);
     buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
   }
 
@@ -7292,6 +7325,24 @@ class X86Encoder {
     _emitRexForXmmMem(src, mem);
     buffer.emit8(0x0F);
     buffer.emit8(0x11);
+    emitModRmMem(src.encoding, mem);
+  }
+
+  /// MOVDQU xmm, [mem] (move unaligned double quadword)
+  void movdquXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0xF3); // Mandatory prefix
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x6F);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// MOVDQU [mem], xmm (move unaligned double quadword)
+  void movdquMemXmm(X86Mem mem, X86Xmm src) {
+    buffer.emit8(0xF3); // Mandatory prefix
+    _emitRexForXmmMem(src, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x7F);
     emitModRmMem(src.encoding, mem);
   }
 

@@ -2134,6 +2134,15 @@ class X86Assembler extends BaseEmitter {
   /// VCVTPD2PS ymm, zmm (AVX-512)
   void vcvtpd2psYmm(X86Ymm dst, X86Zmm src) => _enc.vcvtpd2psYmmZmm(dst, src);
 
+  /// MOVDQU xmm, xmm (SSE2)
+  void movdquXX(X86Xmm dst, X86Xmm src) => _enc.movdquXmmXmm(dst, src);
+
+  /// MOVDQU xmm, [mem] (SSE2)
+  void movdquXM(X86Xmm dst, X86Mem src) => _enc.movdquXmmMem(dst, src);
+
+  /// MOVDQU [mem], xmm (SSE2)
+  void movdquMX(X86Mem dst, X86Xmm src) => _enc.movdquMemXmm(dst, src);
+
   // ===========================================================================
   // SSE2 - Packed Integer Arithmetic
   // ===========================================================================

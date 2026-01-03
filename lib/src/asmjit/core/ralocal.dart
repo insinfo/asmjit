@@ -566,7 +566,7 @@ class RALocalAllocator {
               willFree |= assignedMask;
               liveRegs &= ~assignedMask;
 
-              if ((liveRegs & useMask) == 0) {
+              if ((_curAssignment.assignedGroup(group) & useMask) == 0) {
                 final err = onMoveReg(
                     group, workReg, workId, useId, assignedId, emitMove);
                 if (err != AsmJitError.ok) return err;
@@ -578,7 +578,7 @@ class RALocalAllocator {
                 usePendingCount--;
               }
             } else {
-              if ((liveRegs & useMask) == 0) {
+              if ((_curAssignment.assignedGroup(group) & useMask) == 0) {
                 final err = onLoadReg(group, workReg, workId, useId, emitLoad);
                 if (err != AsmJitError.ok) return err;
 

@@ -428,6 +428,17 @@ class X86DbGenerator {
       'cmovle',
       'cmovnle',
       // SIMD subset
+      'movd',
+      'movq',
+      'movdqu',
+      'paddd',
+      'paddq',
+      'paddb',
+      'paddw',
+      'psubd',
+      'psubq',
+      'psubb',
+      'psubw',
       'addss',
       'subss',
       'mulss',
@@ -456,8 +467,6 @@ class X86DbGenerator {
       'movsd',
       'movups',
       'movaps',
-      'movd',
-      'movq',
       'kmovw',
       'kmovd',
       'kmovq',
@@ -657,6 +666,8 @@ class X86DbGenerator {
         return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.movsdXM(d, s) : asm.movsdXX(d, s as X86Xmm), memXmm: (m, s) => asm.movsdMX(m, s));';
       case 'movd':
         return '_movd(asm, ops);';
+      case 'movdqu':
+        return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.movdquXM(d, s) : asm.movdquXX(d, s as X86Xmm), memXmm: (m, s) => asm.movdquMX(m, s));';
       case 'movq':
         return '_movq(asm, ops);';
       case 'kmovw':
@@ -739,6 +750,8 @@ class X86DbGenerator {
       case 'paddw':
       case 'paddd':
         return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.padddXM(d, s) : asm.padddXX(d, s as X86Xmm));';
+      case 'paddq':
+        return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.paddqXM(d, s) : asm.paddqXX(d, s as X86Xmm));';
       case 'psubb':
       case 'psubw':
       case 'psubd':

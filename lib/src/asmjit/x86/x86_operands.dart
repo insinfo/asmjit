@@ -31,6 +31,9 @@ class X86Mem extends BaseMem {
   /// Segment override, or null for default.
   final X86Seg? segment;
 
+  /// The label target (for RIP-relative or absolute addressing).
+  final Label? label;
+
   const X86Mem({
     this.base,
     this.index,
@@ -38,6 +41,7 @@ class X86Mem extends BaseMem {
     this.displacement = 0,
     this.size = 0,
     this.segment,
+    this.label,
   });
 
   /// Creates a memory operand from a pointer (base register + displacement).

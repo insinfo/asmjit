@@ -2,12 +2,12 @@
 ///
 /// Ported from asmjit/ujit/unicompiler.h
 
+import 'dart:typed_data';
 import '../core/compiler.dart';
 import '../core/code_holder.dart';
 import '../core/reg_type.dart';
 import '../core/type.dart';
 import '../core/arch.dart';
-import '../x86/x86_compiler.dart';
 import '../arm/a64_compiler.dart';
 import '../core/labels.dart';
 import '../core/error.dart';
@@ -101,7 +101,8 @@ abstract class X86Vec extends BaseReg {
 class VecConstData {
   final VecConst constant;
   final int virtRegId;
-  const VecConstData(this.constant, this.virtRegId);
+  final int offset;
+  const VecConstData(this.constant, this.virtRegId, this.offset);
 }
 
 // ============================================================================
@@ -138,6 +139,7 @@ abstract class UniCompilerBase {
   // Constant table
   VecConstTableRef? _ctRef;
   final List<VecConstData> _vecConsts = [];
+  int _localConstOffset = 0;
   final List<BaseReg?> _kReg = List.generate(kMaxKRegConstCount, (_) => null);
   final List<int> _kImm = List.generate(kMaxKRegConstCount, (_) => 0);
   BaseReg? _commonTablePtr;
@@ -258,6 +260,11 @@ abstract class UniCompilerBase {
   Label newLabel() => cc.newLabel();
 
   void bind(Label label) => cc.bind(label);
+
+  // Abstract methods implemented by UniCompiler
+  BaseReg newVec([String? name]);
+  BaseReg newVecWithWidth(VecWidth vw, [String? name]);
+  BaseReg _newVecConst(VecConst c, bool isUnique);
 }
 
 // ============================================================================
@@ -1200,10 +1207,12 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
   // ============================================================================
 
   void _initVecConstTablePtr() {
-    if (_commonTablePtr == null && _ctRef != null) {
-      final prev = cc.cursor;
-      cc.setCursor(_funcInitHook!);
+    if (_commonTablePtr != null) return;
 
+    final prev = cc.cursor;
+    cc.setCursor(_funcInitHook!);
+
+    if (_ctRef != null) {
       int addr = VecConstTable.getAddress();
 
       if (isX86Family) {
@@ -1211,14 +1220,26 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
         cc.addNode(InstNode(X86InstId.kMov, [_commonTablePtr!, Imm(addr)]));
       } else if (isArm64) {
         _commonTablePtr = (cc as dynamic).newGpPtr("common_table_ptr");
-        // Use pseudo instruction if supported or fallback to LDR literal if possible
-        // Ideally should support MOV reg, imm64
         cc.addNode(InstNode(A64InstId.kMov, [_commonTablePtr!, Imm(addr)]));
       }
+    } else {
+      // Local table
+      if (_commonTableLabel == null) _commonTableLabel = newLabel();
 
-      _funcInitHook = cc.cursor;
-      cc.setCursor(prev);
+      if (isX86Family) {
+        _commonTablePtr = (cc as X86Compiler).newGpPtr("local_table_ptr");
+        // LEA reg, [label] (RIP-relative)
+        final mem = X86Mem(label: _commonTableLabel!);
+        cc.addNode(InstNode(X86InstId.kLea, [_commonTablePtr!, mem]));
+      } else if (isArm64) {
+        _commonTablePtr = (cc as dynamic).newGpPtr("local_table_ptr");
+        cc.addNode(InstNode(
+            A64InstId.kAdr, [_commonTablePtr!, LabelOp(_commonTableLabel!)]));
+      }
     }
+
+    _funcInitHook = cc.cursor;
+    cc.setCursor(prev);
   }
 
   BaseReg kConst(int value) {
@@ -1310,42 +1331,60 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     if (_vecConsts.isEmpty || _commonTableLabel == null) return;
 
     // Bind label at end of function. Constants are data.
-    // Ensure we are in a text section or data?
-    // Usually inline in text for simple JIT.
     cc.bind(_commonTableLabel!);
     cc.align(AlignMode.data, 16);
 
-    for (final _ in _vecConsts) {
-      // 128-bit alignment
-      cc.align(AlignMode.data, 16);
-      // Emit data (placeholder for now, should use VecConstTable to get bytes)
-      // Use vc.constant to get actual data bytes?
-      // For now, assuming VecConst.width is bytes.
-      // VecConstTable doesn't expose raw bytes easily without lookup?
-      // Assuming placeholder 0s for now to fix compile.
-      cc.embedData(List.filled(16, 0));
+    for (final vc in _vecConsts) {
+      cc.embedData(vc.constant.data);
+      // Align to 16 bytes
+      int pad = 16 - (vc.constant.width % 16);
+      if (pad < 16) {
+        cc.embedData(Uint8List(pad));
+      }
     }
 
     _vecConsts.clear();
+    _localConstOffset = 0;
     _commonTablePtr = null;
     _commonTableLabel = null;
   }
 
   BaseMem _getMemConst(VecConst c) {
     _initVecConstTablePtr();
-    int offset = VecConstTable.getOffset(c);
-    if (_commonTablePtr != null) {
-      if (isX86Family) {
-        return X86Mem.base(_commonTablePtr! as X86Gp,
-            disp: offset, size: c.width);
-      } else if (isArm64) {
-        return A64Mem.baseOffset(_commonTablePtr! as A64Gp, offset);
+    try {
+      int offset = VecConstTable.getOffset(c);
+      if (_commonTablePtr != null) {
+        if (isX86Family) {
+          return X86Mem.base(_commonTablePtr! as X86Gp,
+              disp: offset, size: c.width);
+        } else if (isArm64) {
+          return A64Mem.baseOffset(_commonTablePtr! as A64Gp, offset);
+        }
+      }
+      // Fallback or error
+      if (isX86Family) return X86Mem.abs(offset, size: c.width);
+      if (isArm64) return A64Mem.baseOffset(A64Gp(0, 64), offset);
+    } catch (_) {
+      // Try local table
+      for (final vc in _vecConsts) {
+        if (vc.constant == c) {
+          if (_commonTableLabel == null) _commonTableLabel = newLabel();
+          // Ensure ptr is initialized for local table if not already
+          // _initVecConstTablePtr handles this if _ctRef is null.
+          // If _ctRef is not null but we are here, it means we have mixed constants.
+          // For now assume _ctRef is null or we reuse ptr if possible (but we can't reuse global ptr for local).
+          
+          if (isX86Family) {
+            return X86Mem.base(_commonTablePtr! as X86Gp,
+                disp: vc.offset, size: c.width);
+          }
+          if (isArm64) {
+            return A64Mem.baseOffset(_commonTablePtr! as A64Gp, vc.offset);
+          }
+        }
       }
     }
-    // Fallback or error
-    if (isX86Family) return X86Mem.abs(offset, size: c.width);
-    if (isArm64) return A64Mem.baseOffset(A64Gp(0, 64), offset);
-    throw UnimplementedError('Memory const not supported for $arch');
+    throw UnimplementedError('Const not found');
   }
 
   BaseReg _newVecConst(VecConst c, bool isUnique) {
@@ -1353,7 +1392,13 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     cc.setCursor(_funcInitHook!);
 
     final vec = newVecWithWidth(_vecWidth, "vec_const");
-    _vecConsts.add(VecConstData(c, vec.id));
+    
+    int offset = _localConstOffset;
+    _vecConsts.add(VecConstData(c, vec.id, offset));
+    _localConstOffset += c.width;
+    if (_localConstOffset % 16 != 0) {
+      _localConstOffset = (_localConstOffset + 15) & ~15;
+    }
 
     if (c == VecConstTable.p_0000000000000000) {
       vZero(vec);
