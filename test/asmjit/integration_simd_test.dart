@@ -70,9 +70,8 @@ void main() {
 
       final fn = rt.add(code);
       try {
-        final exec = fn.pointer
-            .cast<NativeFunction<SimdFunc>>()
-            .asFunction<SimdDart>();
+        final exec =
+            fn.pointer.cast<NativeFunction<SimdFunc>>().asFunction<SimdDart>();
 
         final dst = ffi.calloc<Int32>(4);
         final src1 = ffi.calloc<Int32>(4);
@@ -134,9 +133,8 @@ void main() {
 
       final fn = rt.add(code);
       try {
-        final exec = fn.pointer
-            .cast<NativeFunction<SimdFunc>>()
-            .asFunction<SimdDart>();
+        final exec =
+            fn.pointer.cast<NativeFunction<SimdFunc>>().asFunction<SimdDart>();
 
         final dst = ffi.calloc<Int16>(8);
         final src1 = ffi.calloc<Int16>(8);
@@ -185,15 +183,15 @@ void main() {
       compiler.inst(X86InstId.kMovdqu, [xmm0, X86Mem.ptr(src1Reg)]);
       // movdqu xmm1, [src2]
       compiler.inst(X86InstId.kMovdqu, [xmm1, X86Mem.ptr(src2Reg)]);
-      
+
       // pand xmm2, xmm0 (copy xmm0 to xmm2)
       compiler.inst(X86InstId.kMovdqu, [xmm2, xmm0]);
       // pand xmm2, xmm1 (xmm2 = xmm0 & xmm1)
       compiler.inst(X86InstId.kPand, [xmm2, xmm1]);
-      
+
       // por xmm0, xmm1 (xmm0 = xmm0 | xmm1)
       compiler.inst(X86InstId.kPor, [xmm0, xmm1]);
-      
+
       // pxor xmm1, xmm1 (xmm1 = 0)
       compiler.inst(X86InstId.kPxor, [xmm1, xmm1]);
 
@@ -214,9 +212,8 @@ void main() {
 
       final fn = rt.add(code);
       try {
-        final exec = fn.pointer
-            .cast<NativeFunction<SimdFunc>>()
-            .asFunction<SimdDart>();
+        final exec =
+            fn.pointer.cast<NativeFunction<SimdFunc>>().asFunction<SimdDart>();
 
         final dst = ffi.calloc<Uint32>(12); // 3 vectors of 4 ints
         final src1 = ffi.calloc<Uint32>(4);
@@ -326,9 +323,8 @@ void main() {
 
       final fn = rt.add(code);
       try {
-        final exec = fn.pointer
-            .cast<NativeFunction<SimdFunc>>()
-            .asFunction<SimdDart>();
+        final exec =
+            fn.pointer.cast<NativeFunction<SimdFunc>>().asFunction<SimdDart>();
 
         final dst = ffi.calloc<Uint32>(20); // 5 vectors of 4 ints
         final src1 = ffi.calloc<Uint32>(4);
@@ -349,27 +345,27 @@ void main() {
         exec(dst.cast(), src1.cast(), src2.cast());
 
         // 1. psubd (src1 - src2)
-        expect(dst[0], equals(5));  // 10 - 5
-        expect(dst[1], equals(0));  // 20 - 20
+        expect(dst[0], equals(5)); // 10 - 5
+        expect(dst[1], equals(0)); // 20 - 20
         expect(dst[2], equals(15)); // 30 - 15
-        expect(dst[3], equals(0));  // 40 - 40
+        expect(dst[3], equals(0)); // 40 - 40
 
         // 2. pslld (src1 << 2)
-        expect(dst[4], equals(40));  // 10 << 2
-        expect(dst[5], equals(80));  // 20 << 2
+        expect(dst[4], equals(40)); // 10 << 2
+        expect(dst[5], equals(80)); // 20 << 2
         expect(dst[6], equals(120)); // 30 << 2
         expect(dst[7], equals(160)); // 40 << 2
 
         // 3. psrld (src1 >> 2)
-        expect(dst[8], equals(2));   // 10 >> 2
-        expect(dst[9], equals(5));   // 20 >> 2
-        expect(dst[10], equals(7));  // 30 >> 2
+        expect(dst[8], equals(2)); // 10 >> 2
+        expect(dst[9], equals(5)); // 20 >> 2
+        expect(dst[10], equals(7)); // 30 >> 2
         expect(dst[11], equals(10)); // 40 >> 2
 
         // 4. pcmpeqd (src1 == src2)
-        expect(dst[12], equals(0));          // 10 != 5
+        expect(dst[12], equals(0)); // 10 != 5
         expect(dst[13], equals(0xFFFFFFFF)); // 20 == 20
-        expect(dst[14], equals(0));          // 30 != 15
+        expect(dst[14], equals(0)); // 30 != 15
         expect(dst[15], equals(0xFFFFFFFF)); // 40 == 40
 
         // 5. pshufd (reverse src1)
@@ -386,7 +382,8 @@ void main() {
       }
     });
 
-    test('SSE Packed Floating Point (minps, maxps, sqrtps, rsqrtps, rcpps)', () {
+    test('SSE Packed Floating Point (minps, maxps, sqrtps, rsqrtps, rcpps)',
+        () {
       final code = CodeHolder(env: Environment.host());
       final compiler =
           X86Compiler(env: code.env, labelManager: code.labelManager);
@@ -448,9 +445,8 @@ void main() {
 
       final fn = rt.add(code);
       try {
-        final exec = fn.pointer
-            .cast<NativeFunction<SimdFunc>>()
-            .asFunction<SimdDart>();
+        final exec =
+            fn.pointer.cast<NativeFunction<SimdFunc>>().asFunction<SimdDart>();
 
         final dst = ffi.calloc<Float>(20); // 5 vectors of 4 floats
         final src1 = ffi.calloc<Float>(4);
@@ -561,9 +557,8 @@ void main() {
 
       final fn = rt.add(code);
       try {
-        final exec = fn.pointer
-            .cast<NativeFunction<SimdFunc>>()
-            .asFunction<SimdDart>();
+        final exec =
+            fn.pointer.cast<NativeFunction<SimdFunc>>().asFunction<SimdDart>();
 
         final dst = ffi.calloc<Float>(12); // 3 vectors of 4 floats
         final src1 = ffi.calloc<Float>(4);
@@ -644,9 +639,8 @@ void main() {
 
       final fn = rt.add(code);
       try {
-        final exec = fn.pointer
-            .cast<NativeFunction<SimdFunc>>()
-            .asFunction<SimdDart>();
+        final exec =
+            fn.pointer.cast<NativeFunction<SimdFunc>>().asFunction<SimdDart>();
 
         final dst = ffi.calloc<Uint8>(32); // 16 bytes float + 16 bytes int
         final src1 = ffi.calloc<Int32>(4);
@@ -724,9 +718,8 @@ void main() {
 
       final fn = rt.add(code);
       try {
-        final exec = fn.pointer
-            .cast<NativeFunction<SimdFunc>>()
-            .asFunction<SimdDart>();
+        final exec =
+            fn.pointer.cast<NativeFunction<SimdFunc>>().asFunction<SimdDart>();
 
         final dst = ffi.calloc<Float>(4);
         final src1 = ffi.calloc<Float>(4);
@@ -760,8 +753,7 @@ void main() {
           X86Compiler(env: code.env, labelManager: code.labelManager);
 
       final signature = FuncSignature(
-          retType: TypeId.void_,
-          args: [TypeId.uintPtr, TypeId.uintPtr]);
+          retType: TypeId.void_, args: [TypeId.uintPtr, TypeId.uintPtr]);
 
       compiler.addFunc(signature);
 
@@ -786,7 +778,9 @@ void main() {
       final fn = rt.add(code);
       try {
         final exec = fn.pointer
-            .cast<NativeFunction<Void Function(Pointer<Uint32>, Pointer<Uint32>)>>()
+            .cast<
+                NativeFunction<
+                    Void Function(Pointer<Uint32>, Pointer<Uint32>)>>()
             .asFunction<void Function(Pointer<Uint32>, Pointer<Uint32>)>();
 
         final dst = ffi.calloc<Uint32>(4);

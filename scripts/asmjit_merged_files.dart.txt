@@ -17962,8 +17962,6 @@ class RAPass extends CompilerPass {
     _func = func;
     _spillStackSize = 0; // Reset for new function
 
-    _insertArgMoves(func);
-
     // 2. Initialize Allocator
     // We need availableRegs and preservedRegs.
     // Ideally these come from the Compiler/Arch.
@@ -17979,7 +17977,10 @@ class RAPass extends CompilerPass {
     // 2a. Map Virtual Registers (Pre-pass)
     _mapVirtuals(nodes);
 
-    // 2b. Global Allocation (RAGlobal)
+    // 2b. Assign Arguments to WorkRegs (Hints)
+    _assignArgIndexToWorkRegs(func);
+
+    // 2c. Global Allocation (RAGlobal)
     _buildGlobalLiveness(nodes);
     _buildBundles();
     _coalesce();
@@ -17998,6 +17999,7 @@ class RAPass extends CompilerPass {
     if (blocks.isNotEmpty) {
       // Initialize first block entry from global decisions/hints
       _initFirstBlockEntry(blocks.first);
+      _insertArgMoves(blocks.first);
 
       for (final block in blocks) {
         _processBlock(block);
@@ -18009,19 +18011,7 @@ class RAPass extends CompilerPass {
     _insertPrologEpilog();
   }
 
-  void _insertArgMoves(FuncNode func) {
-    if (func.argPacks == null) return;
-
-    // Find entry block
-    BaseNode? node = func.next;
-    while (node != null && node is! BlockNode) {
-      node = node.next;
-    }
-    if (node == null) return;
-
-    final block = node as BlockNode;
-    BaseNode insertPoint = block;
-
+  void _assignArgIndexToWorkRegs(FuncNode func) {
     final detail = func.detail;
     final argCount = func.argCount;
 
@@ -18031,58 +18021,58 @@ class RAPass extends CompilerPass {
 
       if (argVal.isReg) {
         final virtId = argVal.regId;
-        final physArg = detail.args[i][0];
+        // Only process if the virtual register is actually used (mapped to a WorkReg)
+        if (_virtIdToWorkId.containsKey(virtId)) {
+          final workId = _virtIdToWorkId[virtId]!;
+          final workReg = _allocator.workRegById(workId);
+          final physArg = detail.args[i][0];
 
-        if (physArg.isReg) {
-          final virtRegData = compiler.virtRegs[virtId - Globals.kMinVirtId];
-          final typeId = virtRegData.typeId;
-
-          BaseReg virtRegOperand;
-          if (typeId.isVec) {
-            if (virtRegData.size == 32) {
-              virtRegOperand = X86Ymm(virtId);
-            } else if (virtRegData.size == 64) {
-              virtRegOperand = X86Zmm(virtId);
-            } else {
-              virtRegOperand = X86Xmm(virtId);
-            }
-          } else {
-            if (virtRegData.size == 4) {
-              virtRegOperand = X86Gp.r32(virtId);
-            } else {
-              virtRegOperand = X86Gp.r64(virtId);
-            }
+          if (physArg.isReg) {
+            workReg.homeRegId = physArg.regId;
           }
-
-          final physReg = _makePhysReg(physArg.fullRegType, physArg.regId);
-
-          int opcode = X86InstId.kMov;
-          if (typeId.isVec) {
-            opcode = X86InstId.kMovaps;
-          }
-
-          final move = InstNode(opcode, [virtRegOperand, physReg]);
-          _insertNodeAfter(insertPoint, move);
-          insertPoint = move;
+          // TODO: Handle stack arguments
         }
       }
     }
   }
 
-  BaseReg _makePhysReg(RegType type, int id) {
-    switch (type) {
-      case RegType.gp32:
-        return X86Gp.r32(id);
-      case RegType.gp64:
-        return X86Gp.r64(id);
-      case RegType.vec128:
-        return X86Xmm(id);
-      case RegType.vec256:
-        return X86Ymm(id);
-      case RegType.vec512:
-        return X86Zmm(id);
-      default:
-        return X86Gp.r64(id);
+  void _insertArgMoves(BlockNode block) {
+    if (_func == null) return;
+    final func = _func!;
+    final detail = func.detail;
+
+    // Insert at the beginning of the block
+    BaseNode? insertPoint = block;
+
+    for (int i = 0; i < func.argCount; i++) {
+      final pack = func.argPacks![i];
+      final argVal = pack[0];
+
+      if (argVal.isReg) {
+        final virtId = argVal.regId;
+        if (_virtIdToWorkId.containsKey(virtId)) {
+          final physArg = detail.args[i][0];
+          if (physArg.isReg) {
+            final workId = _virtIdToWorkId[virtId]!;
+            final workReg = _allocator.workRegById(workId);
+            final virtReg = workReg.virtReg;
+
+            int instId;
+            if (virtReg.group == RegGroup.gp) {
+              instId = X86InstId.kMov;
+            } else {
+              // Vector arguments
+              instId = X86InstId.kMovaps;
+            }
+
+            final physReg = virtReg.toPhys(physArg.regId);
+            print('RAPass: Insert Arg Move Virt${virtReg.id} <- Phys${physArg.regId}');
+            final movNode = InstNode(instId, [virtReg, physReg]);
+            _insertNodeAfter(insertPoint!, movNode);
+            insertPoint = movNode;
+          }
+        }
+      }
     }
   }
 
@@ -18113,6 +18103,7 @@ class RAPass extends CompilerPass {
         // Fallback if env check fails for some reason
         isWindows = Platform.isWindows;
       }
+      print('RAPass: isWindows=$isWindows');
 
       final preservedGp =
           isWindows ? x64WindowsPreservedGp : x64SystemVPreservedGp;
@@ -18125,7 +18116,8 @@ class RAPass extends CompilerPass {
       gpMask &= ~(1 << 5); // Remove RBP (Frame Pointer)
 
       avail[RegGroup.gp] = gpMask;
-      avail[RegGroup.vec] = 0xFFFFFFFF; // All 32 vector regs available
+      // avail[RegGroup.vec] = 0xFFFFFFFF; // All 32 vector regs available
+      avail[RegGroup.vec] = 0xFFFF; // Limit to 16 vector regs (XMM0-XMM15) for safety until AVX-512 is fully supported
 
       // Set preserved mask
       int presGp = 0;
@@ -18291,11 +18283,33 @@ class RAPass extends CompilerPass {
             // DEF for Mov - simplified
             data.kill.setBit(workId);
           } else if (i == 0) {
-            // RW for destructive (non-mov)
-            if (!data.kill.testBit(workId)) {
-              data.gen.setBit(workId);
+            // Check for other Move instructions (SIMD, AVX)
+            bool isMov = (node.instId == X86InstId.kMovaps ||
+                node.instId == X86InstId.kMovups ||
+                node.instId == X86InstId.kMovdqa ||
+                node.instId == X86InstId.kMovdqu ||
+                node.instId == X86InstId.kMovss ||
+                node.instId == X86InstId.kMovsd ||
+                node.instId == X86InstId.kMovd ||
+                node.instId == X86InstId.kMovq ||
+                node.instId == X86InstId.kVmovaps ||
+                node.instId == X86InstId.kVmovups ||
+                node.instId == X86InstId.kVmovdqa ||
+                node.instId == X86InstId.kVmovdqu ||
+                node.instId == X86InstId.kVmovss ||
+                node.instId == X86InstId.kVmovsd ||
+                node.instId == X86InstId.kVmovd ||
+                node.instId == X86InstId.kVmovq);
+
+            if (isMov) {
+              data.kill.setBit(workId);
+            } else {
+              // RW for destructive (non-mov)
+              if (!data.kill.testBit(workId)) {
+                data.gen.setBit(workId);
+              }
+              data.kill.setBit(workId);
             }
-            data.kill.setBit(workId);
           } else {
             // USE
             if (!data.kill.testBit(workId)) {
@@ -19018,6 +19032,11 @@ class RAPass extends CompilerPass {
 
   void _analyzeInstruction(InstNode node, List<RATiedReg> tiedRegs,
       RARegMask used, RARegMask clobbered) {
+    if (node is FuncRetNode) {
+      _analyzeRet(node, tiedRegs);
+      return;
+    }
+
     if (node.hasNoOperands) return;
 
     final id = node.instId;
@@ -19044,7 +19063,15 @@ class RAPass extends CompilerPass {
         id == X86InstId.kMovdqu ||
         id == X86InstId.kMovzx ||
         id == X86InstId.kMovsx ||
-        id == X86InstId.kMovsxd);
+        id == X86InstId.kMovsxd ||
+        id == X86InstId.kVmovaps ||
+        id == X86InstId.kVmovups ||
+        id == X86InstId.kVmovss ||
+        id == X86InstId.kVmovsd ||
+        id == X86InstId.kVmovd ||
+        id == X86InstId.kVmovq ||
+        id == X86InstId.kVmovdqa ||
+        id == X86InstId.kVmovdqu);
 
     bool isXchg = (id == X86InstId.kXchg);
 
@@ -19211,6 +19238,43 @@ class RAPass extends CompilerPass {
     }
   }
 
+  void _analyzeRet(FuncRetNode node, List<RATiedReg> tiedRegs) {
+    final detail = _func!.detail;
+    for (int i = 0; i < node.opCount; i++) {
+      final op = node.operands[i];
+      if (op is BaseReg && !op.isPhysical && !op.isNone) {
+        // Assuming 1-to-1 mapping for now (simple scalar return)
+        final retVal = detail.rets[i];
+        if (retVal.isReg) {
+          final physId = retVal.regId;
+
+          RAWorkId workId;
+          if (_virtIdToWorkId.containsKey(op.id)) {
+            workId = _virtIdToWorkId[op.id]!;
+          } else {
+            final workReg = _allocator.addWorkReg(op.group, op);
+            workId = workReg.workId;
+            _virtIdToWorkId[op.id] = workId;
+          }
+
+          final workReg = _allocator.workRegById(workId);
+          final tied = RATiedReg();
+
+          // Use | Read | UseFixed
+          int flags =
+              RATiedFlags.kUse | RATiedFlags.kRead | RATiedFlags.kUseFixed;
+          if (_lastUsePos[op.id] == node.position) {
+            flags |= RATiedFlags.kKill;
+          }
+
+          tied.init(workReg, flags, (1 << physId), physId, 0, 0,
+              RAAssignment.kPhysNone, 0);
+          tiedRegs.add(tied);
+        }
+      }
+    }
+  }
+
   void _addImplicitUse(BaseReg reg, List<RATiedReg> tiedRegs, int pos) {
     RAWorkId workId;
     if (_virtIdToWorkId.containsKey(reg.id)) {
@@ -19300,21 +19364,45 @@ class RAPass extends CompilerPass {
   void _emitLoad(RAWorkReg workReg, int physId, InstNode ctx) {
     final reg = workReg.virtReg.toPhys(physId);
     final mem = _stackSlot(workReg);
-    final loadNode = InstNode(_archTraits.movId, [reg, mem]);
+    
+    int instId = _archTraits.movId;
+    if (workReg.group == RegGroup.vec) {
+      if (compiler.arch == Arch.x64 || compiler.arch == Arch.x86) {
+        instId = X86InstId.kMovaps;
+      }
+    }
+
+    final loadNode = InstNode(instId, [reg, mem]);
     _insertNodeBefore(ctx, loadNode);
   }
 
   void _emitSave(RAWorkReg workReg, int physId, InstNode ctx) {
     final reg = workReg.virtReg.toPhys(physId);
     final mem = _stackSlot(workReg);
-    final saveNode = InstNode(_archTraits.movId, [mem, reg]);
+    
+    int instId = _archTraits.movId;
+    if (workReg.group == RegGroup.vec) {
+      if (compiler.arch == Arch.x64 || compiler.arch == Arch.x86) {
+        instId = X86InstId.kMovaps;
+      }
+    }
+
+    final saveNode = InstNode(instId, [mem, reg]);
     _insertNodeBefore(ctx, saveNode);
   }
 
   void _emitMove(RAWorkReg workReg, int dst, int src, InstNode ctx) {
     final dstReg = workReg.virtReg.toPhys(dst);
     final srcReg = workReg.virtReg.toPhys(src);
-    final movNode = InstNode(_archTraits.movId, [dstReg, srcReg]);
+    
+    int instId = _archTraits.movId;
+    if (workReg.group == RegGroup.vec) {
+      if (compiler.arch == Arch.x64 || compiler.arch == Arch.x86) {
+        instId = X86InstId.kMovaps;
+      }
+    }
+
+    final movNode = InstNode(instId, [dstReg, srcReg]);
     _insertNodeBefore(ctx, movNode);
   }
 
@@ -24125,8 +24213,16 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
   }
 
   BaseMem simdMemConst(VecConst c, Bcst bcstWidth, VecWidth constWidth) {
-    final m = _getMemConst(c);
-    return m;
+    //TODO verificar se é assim no c++
+    try {
+      return _getMemConst(c);
+    } catch (_) {
+      // Not found in local/global table.
+      // Allocate it (this will add it to _vecConsts and emit a load instruction at function start).
+      _newVecConst(c, bcstWidth == Bcst.kNA_Unique);
+      // Now try getting the memory operand again.
+      return _getMemConst(c);
+    }
   }
 
   void _embedConsts() {
@@ -25589,7 +25685,9 @@ mixin UniCompilerX86 on UniCompilerBase {
 
     // Update vec reg count
     if (hasAvx512) {
-      _vecRegCount = 32;
+      // TODO: Enable 32 registers when EVEX encoding is fully verified
+      // _vecRegCount = 32;
+      _vecRegCount = 16; 
     }
   }
 
@@ -26812,6 +26910,114 @@ mixin UniCompilerX86 on UniCompilerBase {
         break;
       case UniOpVVV.swizzlevU8:
         _vShufBX86(dst, src1, src2);
+        break;
+      case UniOpVVV.addF32S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVaddss, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kAddss, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.addF64S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVaddsd, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kAddsd, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.subF32S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVsubss, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kSubss, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.subF64S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVsubsd, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kSubsd, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.mulF32S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVmulss, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kMulss, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.mulF64S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVmulsd, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kMulsd, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.divF32S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVdivss, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kDivss, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.divF64S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVdivsd, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kDivsd, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.minF32S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVminss, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kMinss, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.minF64S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVminsd, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kMinsd, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.maxF32S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVmaxss, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kMaxss, [dst, src2]));
+        }
+        break;
+      case UniOpVVV.maxF64S:
+        if (hasAvx) {
+          cc.addNode(InstNode(X86InstId.kVmaxsd, [dst, src1, src2]));
+        } else {
+          if (dst.id != src1.id)
+            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+          cc.addNode(InstNode(X86InstId.kMaxsd, [dst, src2]));
+        }
         break;
       case UniOpVVV.addF32:
         if (hasAvx) {

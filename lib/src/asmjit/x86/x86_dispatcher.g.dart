@@ -303,7 +303,7 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.porXM(d, s) : asm.porXX(d, s as X86Xmm));
       break;
     case X86InstId.kPshufd:
-      if (ops.length == 3 && ops[0] is X86Xmm && ops[1] is X86Xmm && (ops[2] is int || ops[2] is Imm)) asm.pshufdXXI(ops[0] as X86Xmm, ops[1] as X86Xmm, ops[2] is Imm ? (ops[2] as Imm).value : ops[2] as int);
+      // unsupported
       break;
     case X86InstId.kPslld:
       _simd2(asm, ops, xmm: (d, s) => (s is int || s is Imm) ? asm.pslldXI(d, s is Imm ? s.value : s as int) : asm.pslldXX(d, s as X86Xmm));
@@ -476,6 +476,18 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
     case X86InstId.kVmovaps:
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vmovapsXM(d, s) : asm.vmovaps(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vmovapsYM(d, s) : asm.vmovapsY(d, s as X86Ymm), memXmm: (m, s) => asm.vmovapsMX(m, s), memYmm: (m, s) => asm.vmovapsMY(m, s));
       break;
+    case X86InstId.kVmovd:
+      // unsupported
+      break;
+    case X86InstId.kVmovdqa:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vmovdqaXmmMem(d, s) : asm.vmovdqaXX(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vmovdqaYmmMem(d, s) : asm.vmovdqaYY(d, s as X86Ymm), memXmm: (m, s) => asm.vmovdqaMemXmm(m, s), memYmm: (m, s) => asm.vmovdqaMemYmm(m, s));
+      break;
+    case X86InstId.kVmovdqu:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vmovdquXmmMem(d, s) : asm.vmovdquXX(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vmovdquYmmMem(d, s) : asm.vmovdquYY(d, s as X86Ymm), memXmm: (m, s) => asm.vmovdquMemXmm(m, s), memYmm: (m, s) => asm.vmovdquMemYmm(m, s));
+      break;
+    case X86InstId.kVmovq:
+      // unsupported
+      break;
     case X86InstId.kVmovups:
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vmovupsXM(d, s) : asm.vmovups(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vmovupsYM(d, s) : asm.vmovupsY(d, s as X86Ymm), zmm: (d, s) => s is X86Mem ? asm.vmovupsZmmMem(d, s) : asm.vmovupsZmm(d, s as X86Zmm), memXmm: (m, s) => asm.vmovupsMX(m, s), memYmm: (m, s) => asm.vmovupsMY(m, s), memZmm: (m, s) => asm.vmovupsMemZmm(m, s));
       break;
@@ -487,6 +499,12 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       break;
     case X86InstId.kVmulsd:
       _simd3(asm, ops, xmm: (d, s1, s2) { if (s2 is X86Xmm) asm.vmulsdXXX(d, s1, s2); });
+      break;
+    case X86InstId.kVpaddd:
+      _simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vpadddXXM(d, s1, s2) : asm.vpadddXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vpadddYYM(d, s1, s2) : asm.vpadddYYY(d, s1, s2 as X86Ymm));
+      break;
+    case X86InstId.kVpand:
+      _simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vpandXXM(d, s1, s2) : asm.vpandXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vpandYYM(d, s1, s2) : asm.vpandYYY(d, s1, s2 as X86Ymm));
       break;
     case X86InstId.kVpandd:
       _simd3(asm, ops, zmm: (d, s1, s2) => asm.vpanddZmm(d, s1, s2 as X86Zmm));
@@ -506,11 +524,23 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
     case X86InstId.kVpbroadcastw:
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vpbroadcastwXM(d, s) : asm.vpbroadcastwXX(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vpbroadcastwYM(d, s) : asm.vpbroadcastwYX(d, s as X86Xmm));
       break;
+    case X86InstId.kVpor:
+      _simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vporXXM(d, s1, s2) : asm.vporXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vporYYM(d, s1, s2) : asm.vporYYY(d, s1, s2 as X86Ymm));
+      break;
     case X86InstId.kVpord:
       _simd3(asm, ops, zmm: (d, s1, s2) => asm.vpordZmm(d, s1, s2 as X86Zmm));
       break;
     case X86InstId.kVporq:
       _simd3(asm, ops, zmm: (d, s1, s2) => asm.vporqZmm(d, s1, s2 as X86Zmm));
+      break;
+    case X86InstId.kVpshufd:
+      if (ops.length == 3) { final dst = ops[0]; final src = ops[1]; final imm = ops[2] is Imm ? (ops[2] as Imm).value : ops[2] as int; if (dst is X86Xmm) { if (src is X86Xmm) asm.vpshufdXXX(dst, src, imm); else if (src is X86Mem) asm.vpshufdXXM(dst, src, imm); } else if (dst is X86Ymm) { if (src is X86Ymm) asm.vpshufdYYY(dst, src, imm); else if (src is X86Mem) asm.vpshufdYYM(dst, src, imm); } }
+      break;
+    case X86InstId.kVpslld:
+      // unsupported
+      break;
+    case X86InstId.kVpsrld:
+      // unsupported
       break;
     case X86InstId.kVpxor:
       _simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vpxorXXM(d, s1, s2) : asm.vpxorXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vpxorYYM(d, s1, s2) : asm.vpxorYYY(d, s1, s2 as X86Ymm));

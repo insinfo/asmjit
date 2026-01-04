@@ -197,6 +197,7 @@ class RAPass extends CompilerPass {
             }
 
             final physReg = virtReg.toPhys(physArg.regId);
+            print('RAPass: Insert Arg Move Virt${virtReg.id} <- Phys${physArg.regId}');
             final movNode = InstNode(instId, [virtReg, physReg]);
             _insertNodeAfter(insertPoint!, movNode);
             insertPoint = movNode;
@@ -233,6 +234,7 @@ class RAPass extends CompilerPass {
         // Fallback if env check fails for some reason
         isWindows = Platform.isWindows;
       }
+      print('RAPass: isWindows=$isWindows');
 
       final preservedGp =
           isWindows ? x64WindowsPreservedGp : x64SystemVPreservedGp;
@@ -245,7 +247,9 @@ class RAPass extends CompilerPass {
       gpMask &= ~(1 << 5); // Remove RBP (Frame Pointer)
 
       avail[RegGroup.gp] = gpMask;
-      avail[RegGroup.vec] = 0xFFFFFFFF; // All 32 vector regs available
+      // avail[RegGroup.vec] = 0xFFFFFFFF; // All 32 vector regs available
+      // avail[RegGroup.vec] = 0xFFFF; // Limit to 16 vector regs (XMM0-XMM15) for safety until AVX-512 is fully supported
+      avail[RegGroup.vec] = 0x3F; // DEBUG: Limit to XMM0-XMM5 to avoid callee-saved regs issues on Windows
 
       // Set preserved mask
       int presGp = 0;
@@ -393,6 +397,14 @@ class RAPass extends CompilerPass {
 
     // 4. Build LiveSpans
     _buildLiveSpans(nodes);
+    
+    // Debug: Print LiveSpans
+    print('RAPass: LiveSpans');
+    for (int i = 0; i < _numWorkRegs; i++) {
+      final workReg = _allocator.workRegById(i);
+      final spans = workReg.liveSpans.data.map((s) => '[${s.a}, ${s.b}]').join(', ');
+      print('  Virt${workReg.virtReg.id}: $spans');
+    }
   }
 
   void _analyzeInstLiveness(InstNode node, RABlockData data) {
@@ -411,11 +423,33 @@ class RAPass extends CompilerPass {
             // DEF for Mov - simplified
             data.kill.setBit(workId);
           } else if (i == 0) {
-            // RW for destructive (non-mov)
-            if (!data.kill.testBit(workId)) {
-              data.gen.setBit(workId);
+            // Check for other Move instructions (SIMD, AVX)
+            bool isMov = (node.instId == X86InstId.kMovaps ||
+                node.instId == X86InstId.kMovups ||
+                node.instId == X86InstId.kMovdqa ||
+                node.instId == X86InstId.kMovdqu ||
+                node.instId == X86InstId.kMovss ||
+                node.instId == X86InstId.kMovsd ||
+                node.instId == X86InstId.kMovd ||
+                node.instId == X86InstId.kMovq ||
+                node.instId == X86InstId.kVmovaps ||
+                node.instId == X86InstId.kVmovups ||
+                node.instId == X86InstId.kVmovdqa ||
+                node.instId == X86InstId.kVmovdqu ||
+                node.instId == X86InstId.kVmovss ||
+                node.instId == X86InstId.kVmovsd ||
+                node.instId == X86InstId.kVmovd ||
+                node.instId == X86InstId.kVmovq);
+
+            if (isMov) {
+              data.kill.setBit(workId);
+            } else {
+              // RW for destructive (non-mov)
+              if (!data.kill.testBit(workId)) {
+                data.gen.setBit(workId);
+              }
+              data.kill.setBit(workId);
             }
-            data.kill.setBit(workId);
           } else {
             // USE
             if (!data.kill.testBit(workId)) {
@@ -522,9 +556,21 @@ class RAPass extends CompilerPass {
 
   void _buildLiveSpans(NodeList nodes) {
     int position = 2;
+    BlockNode? currentBlock;
 
     for (final node in nodes.nodes) {
       if (node is BlockNode) {
+        // Close previous block
+        if (currentBlock != null) {
+           final data = _blockData[currentBlock.label.id]!;
+           for (final workId in data.liveOut.setBits) {
+              final workReg = _allocator.workRegById(workId);
+              // Extend to current position (end of block)
+              workReg.liveSpans.openAt(currentBlock.position, position);
+           }
+        }
+
+        currentBlock = node;
         final data = _blockData[node.label.id]!;
         node.position = position;
 
@@ -564,6 +610,15 @@ class RAPass extends CompilerPass {
         }
         position += 2;
       }
+    }
+
+    // Close last block
+    if (currentBlock != null) {
+       final data = _blockData[currentBlock.label.id]!;
+       for (final workId in data.liveOut.setBits) {
+          final workReg = _allocator.workRegById(workId);
+          workReg.liveSpans.openAt(currentBlock.position, position);
+       }
     }
   }
 
@@ -1169,7 +1224,15 @@ class RAPass extends CompilerPass {
         id == X86InstId.kMovdqu ||
         id == X86InstId.kMovzx ||
         id == X86InstId.kMovsx ||
-        id == X86InstId.kMovsxd);
+        id == X86InstId.kMovsxd ||
+        id == X86InstId.kVmovaps ||
+        id == X86InstId.kVmovups ||
+        id == X86InstId.kVmovss ||
+        id == X86InstId.kVmovsd ||
+        id == X86InstId.kVmovd ||
+        id == X86InstId.kVmovq ||
+        id == X86InstId.kVmovdqa ||
+        id == X86InstId.kVmovdqu);
 
     bool isXchg = (id == X86InstId.kXchg);
 
@@ -1466,7 +1529,11 @@ class RAPass extends CompilerPass {
     int instId = _archTraits.movId;
     if (workReg.group == RegGroup.vec) {
       if (compiler.arch == Arch.x64 || compiler.arch == Arch.x86) {
-        instId = X86InstId.kMovaps;
+        bool hasAvx = false;
+        try {
+          hasAvx = (compiler as dynamic).hasAvx;
+        } catch (_) {}
+        instId = hasAvx ? X86InstId.kVmovups : X86InstId.kMovups;
       }
     }
 
@@ -1481,7 +1548,11 @@ class RAPass extends CompilerPass {
     int instId = _archTraits.movId;
     if (workReg.group == RegGroup.vec) {
       if (compiler.arch == Arch.x64 || compiler.arch == Arch.x86) {
-        instId = X86InstId.kMovaps;
+        bool hasAvx = false;
+        try {
+          hasAvx = (compiler as dynamic).hasAvx;
+        } catch (_) {}
+        instId = hasAvx ? X86InstId.kVmovups : X86InstId.kMovups;
       }
     }
 
@@ -1496,7 +1567,11 @@ class RAPass extends CompilerPass {
     int instId = _archTraits.movId;
     if (workReg.group == RegGroup.vec) {
       if (compiler.arch == Arch.x64 || compiler.arch == Arch.x86) {
-        instId = X86InstId.kMovaps;
+        bool hasAvx = false;
+        try {
+          hasAvx = (compiler as dynamic).hasAvx;
+        } catch (_) {}
+        instId = hasAvx ? X86InstId.kVmovaps : X86InstId.kMovaps;
       }
     }
 
@@ -1508,6 +1583,31 @@ class RAPass extends CompilerPass {
       RAWorkReg aReg, int aPhys, RAWorkReg bReg, int bPhys, InstNode ctx) {
     final rA = aReg.virtReg.toPhys(aPhys);
     final rB = bReg.virtReg.toPhys(bPhys);
+
+    if (aReg.group == RegGroup.vec) {
+      bool hasAvx = false;
+      try {
+        hasAvx = (compiler as dynamic).hasAvx;
+      } catch (_) {}
+
+      if (hasAvx) {
+        // vpxor a, a, b
+        _insertNodeBefore(ctx, InstNode(X86InstId.kVpxor, [rA, rA, rB]));
+        // vpxor b, a, b
+        _insertNodeBefore(ctx, InstNode(X86InstId.kVpxor, [rB, rA, rB]));
+        // vpxor a, a, b
+        _insertNodeBefore(ctx, InstNode(X86InstId.kVpxor, [rA, rA, rB]));
+      } else {
+        // pxor a, b
+        _insertNodeBefore(ctx, InstNode(X86InstId.kPxor, [rA, rB]));
+        // pxor b, a
+        _insertNodeBefore(ctx, InstNode(X86InstId.kPxor, [rB, rA]));
+        // pxor a, b
+        _insertNodeBefore(ctx, InstNode(X86InstId.kPxor, [rA, rB]));
+      }
+      return;
+    }
+
     final swapNode = InstNode(_archTraits.xchgId, [rA, rB]);
     _insertNodeBefore(ctx, swapNode);
   }
@@ -1631,7 +1731,7 @@ class RAPass extends CompilerPass {
       for (final slot in vecSlots) {
         final mem =
             X86Mem.baseDisp(rbp, -slot.value, size: 16);
-        final save = InstNode(X86InstId.kMovaps, [mem, slot.key]);
+        final save = InstNode(X86InstId.kMovups, [mem, slot.key]); // Use unaligned save
         _insertNodeAfter(lastNode, save);
         lastNode = save;
       }
@@ -1668,7 +1768,7 @@ class RAPass extends CompilerPass {
         for (final slot in vecSlots.reversed) {
           final mem =
               X86Mem.baseDisp(rbp, -slot.value, size: 16);
-          final restore = InstNode(X86InstId.kMovaps, [slot.key, mem]);
+          final restore = InstNode(X86InstId.kMovups, [slot.key, mem]); // Use unaligned restore
           _insertNodeBefore(node, restore);
         }
 

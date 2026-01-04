@@ -2247,6 +2247,54 @@ class X86Assembler extends BaseEmitter {
   /// MOVDQU [mem], xmm (SSE2)
   void movdquMX(X86Mem dst, X86Xmm src) => _enc.movdquMemXmm(dst, src);
 
+  /// VMOVDQU xmm, [mem] (AVX)
+  void vmovdquXmmMem(X86Xmm dst, X86Mem mem) => _enc.vmovdquXmmMem(dst, mem);
+
+  /// VMOVDQU xmm, xmm (AVX)
+  void vmovdquXX(X86Xmm dst, X86Xmm src) => _enc.vmovdquXmmXmm(dst, src);
+
+  /// VMOVDQU [mem], xmm (AVX)
+  void vmovdquMemXmm(X86Mem mem, X86Xmm src) => _enc.vmovdquMemXmm(mem, src);
+
+  /// VMOVDQU ymm, [mem] (AVX)
+  void vmovdquYmmMem(X86Ymm dst, X86Mem mem) => _enc.vmovdquYmmMem(dst, mem);
+
+  /// VMOVDQU ymm, ymm (AVX)
+  void vmovdquYY(X86Ymm dst, X86Ymm src) => _enc.vmovdquYmmYmm(dst, src);
+
+  /// VMOVDQU [mem], ymm (AVX)
+  void vmovdquMemYmm(X86Mem mem, X86Ymm src) => _enc.vmovdquMemYmm(mem, src);
+
+  /// VMOVDQA xmm, [mem] (AVX)
+  void vmovdqaXmmMem(X86Xmm dst, X86Mem mem) => _enc.vmovdqaXmmMem(dst, mem);
+
+  /// VMOVDQA [mem], xmm (AVX)
+  void vmovdqaMemXmm(X86Mem mem, X86Xmm src) => _enc.vmovdqaMemXmm(mem, src);
+
+  /// VMOVDQA xmm, xmm (AVX)
+  void vmovdqaXX(X86Xmm dst, X86Xmm src) => _enc.vmovdqaXmmXmm(dst, src);
+
+  /// VMOVDQA ymm, [mem] (AVX)
+  void vmovdqaYmmMem(X86Ymm dst, X86Mem mem) => _enc.vmovdqaYmmMem(dst, mem);
+
+  /// VMOVDQA [mem], ymm (AVX)
+  void vmovdqaMemYmm(X86Mem mem, X86Ymm src) => _enc.vmovdqaMemYmm(mem, src);
+
+  /// VMOVDQA ymm, ymm (AVX)
+  void vmovdqaYY(X86Ymm dst, X86Ymm src) => _enc.vmovdqaYmmYmm(dst, src);
+
+  /// VPSHUFD xmm, xmm/m128, imm8
+  void vpshufdXXX(X86Xmm dst, X86Xmm src, int imm) =>
+      _enc.vpshufdXmmXmm(dst, src, imm);
+  void vpshufdXXM(X86Xmm dst, X86Mem src, int imm) =>
+      _enc.vpshufdXmmMem(dst, src, imm);
+
+  /// VPSHUFD ymm, ymm/m256, imm8
+  void vpshufdYYY(X86Ymm dst, X86Ymm src, int imm) =>
+      _enc.vpshufdYmmYmm(dst, src, imm);
+  void vpshufdYYM(X86Ymm dst, X86Mem src, int imm) =>
+      _enc.vpshufdYmmMem(dst, src, imm);
+
   // ===========================================================================
   // SSE2 - Packed Integer Arithmetic
   // ===========================================================================
@@ -2496,6 +2544,18 @@ class X86Assembler extends BaseEmitter {
 
   /// PSRLD xmm, imm8
   void psrldXI(X86Xmm dst, int imm8) => _enc.psrldXmmImm8(dst, imm8);
+
+  /// VPSLLD xmm, xmm, imm8 (AVX)
+  void vpslld(X86Xmm dst, X86Xmm src, int imm8) =>
+      _enc.vpslldXmmXmmImm8(dst, src, imm8);
+
+  /// VPSRLD xmm, xmm, imm8 (AVX)
+  void vpsrld(X86Xmm dst, X86Xmm src, int imm8) =>
+      _enc.vpsrldXmmXmmImm8(dst, src, imm8);
+
+  /// VPSHUFD xmm, xmm, imm8 (AVX)
+  void vpshufd(X86Xmm dst, X86Xmm src, int imm8) =>
+      _enc.vpshufdXmmXmmImm8(dst, src, imm8);
 
   /// PSRLQ xmm, xmm
   void psrlqXX(X86Xmm dst, X86Xmm src) => _enc.psrlqXmmXmm(dst, src);

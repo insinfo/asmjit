@@ -51,7 +51,9 @@ mixin UniCompilerX86 on UniCompilerBase {
 
     // Update vec reg count
     if (hasAvx512) {
-      _vecRegCount = 32;
+      // TODO: Enable 32 registers when EVEX encoding is fully verified
+      // _vecRegCount = 32;
+      _vecRegCount = 16;
     }
   }
 
@@ -530,10 +532,16 @@ mixin UniCompilerX86 on UniCompilerBase {
         case UniOpVM.load256F64:
           final mem = src.withSize(info.memSize);
           bool aligned = alignment.size != 0 && alignment.size >= info.memSize;
-          int instId = (op.name.contains('F'))
-              ? (aligned ? X86InstId.kVmovaps : X86InstId.kVmovups)
-              : (aligned ? X86InstId.kVmovdqa : X86InstId.kVmovdqu);
-          cc.addNode(InstNode(instId, [dst, mem]));
+          // Force floating point moves for AVX to avoid vmovdqu issues
+          int instId = (aligned ? X86InstId.kVmovaps : X86InstId.kVmovups);
+
+          // Fix: Ensure we use the correct register width for the operation
+          var target = dst;
+          if (info.memSize == 16 && dst is X86Vec) {
+            target = dst.xmm;
+          }
+
+          cc.addNode(InstNode(instId, [target, mem]));
           return;
         default:
           if (info.avxInstId != 0) {
@@ -612,10 +620,16 @@ mixin UniCompilerX86 on UniCompilerBase {
         case UniOpMV.store256F64:
           final mem = dst.withSize(info.memSize);
           bool aligned = alignment.size != 0 && alignment.size >= info.memSize;
-          int instId = (op.name.contains('F'))
-              ? (aligned ? X86InstId.kVmovaps : X86InstId.kVmovups)
-              : (aligned ? X86InstId.kVmovdqa : X86InstId.kVmovdqu);
-          cc.addNode(InstNode(instId, [mem, src]));
+          // Force floating point moves for AVX to avoid vmovdqu issues
+          int instId = (aligned ? X86InstId.kVmovaps : X86InstId.kVmovups);
+
+          // Fix: Ensure we use the correct register width for the operation
+          var source = src;
+          if (info.memSize == 16 && src is X86Vec) {
+            source = src.xmm;
+          }
+
+          cc.addNode(InstNode(instId, [mem, source]));
           return;
         default:
           break;
@@ -1659,14 +1673,8 @@ mixin UniCompilerX86 on UniCompilerBase {
         }
         break;
       case UniOpVVI.swizzleU32x4:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpshufd, [dst, src, Imm(imm)]));
-        } else {
-          if (dst.id != src.id) {
-            _vMovX86(dst, src);
-          }
-          cc.addNode(InstNode(X86InstId.kPshufd, [dst, Imm(imm)]));
-        }
+        cc.addNode(InstNode(hasAvx ? X86InstId.kVpshufd : X86InstId.kPshufd,
+            [dst, src, Imm(imm)]));
         break;
       default:
         throw UnimplementedError('_emit2viX86: $op not implemented');
