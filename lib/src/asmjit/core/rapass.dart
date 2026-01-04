@@ -1465,17 +1465,26 @@ class RAPass extends CompilerPass {
   }
 
   void _rewriteInstruction(InstNode node, List<RATiedReg> tiedRegs) {
+    // Prefer usar o mapeamento definitivo do curAssignment para garantir que
+    // todo virtual (incluindo bases/índices de memória) vire o registrador
+    // físico correto, evitando perda de base ou conversão incorreta para
+    // RIP-relative.
     int tiedIdx = 0;
     for (int i = 0; i < node.opCount; i++) {
       final op = node.operands[i];
       if (op is BaseReg && !op.isPhysical && !op.isNone) {
+        int physId = RAAssignment.kPhysNone;
         if (tiedIdx < tiedRegs.length) {
-          final tied = tiedRegs[tiedIdx++];
-          final physId = _resolvePhysId(tied);
-
-          if (physId != RAAssignment.kPhysNone) {
-            node.operands[i] = tied.workReg.virtReg.toPhys(physId);
+          physId = _resolvePhysId(tiedRegs[tiedIdx++]);
+        }
+        if (physId == RAAssignment.kPhysNone) {
+          final workId = _virtIdToWorkId[op.id];
+          if (workId != null) {
+            physId = _allocator.curAssignment.workToPhysId(op.group, workId);
           }
+        }
+        if (physId != RAAssignment.kPhysNone) {
+          node.operands[i] = op.toPhys(physId);
         }
       } else if (op is X86Mem) {
         // Caso especial: operandos de stack criados via newStack (base = VirtReg
@@ -1486,17 +1495,21 @@ class RAPass extends CompilerPass {
           if (workId != null) {
             final workReg = _allocator.workRegById(workId);
             if (workReg.isStackSlot) {
-              // Consumir a entrada de tied para manter o cursor alinhado.
-              if (tiedIdx < tiedRegs.length) tiedIdx++;
-
               BaseReg? newIndex = op.index;
               if (op.index != null && !op.index!.isPhysical) {
+                int physId = RAAssignment.kPhysNone;
                 if (tiedIdx < tiedRegs.length) {
-                  final tied = tiedRegs[tiedIdx++];
-                  final physId = _resolvePhysId(tied);
-                  if (physId != RAAssignment.kPhysNone) {
-                    newIndex = tied.workReg.virtReg.toPhys(physId);
+                  physId = _resolvePhysId(tiedRegs[tiedIdx++]);
+                }
+                if (physId == RAAssignment.kPhysNone) {
+                  final idxWorkId = _virtIdToWorkId[op.index!.id];
+                  if (idxWorkId != null) {
+                    physId = _allocator.curAssignment
+                        .workToPhysId(op.index!.group, idxWorkId);
                   }
+                }
+                if (physId != RAAssignment.kPhysNone) {
+                  newIndex = op.index!.toPhys(physId);
                 }
               }
 
@@ -1518,31 +1531,42 @@ class RAPass extends CompilerPass {
 
         BaseReg? newBase = op.base;
         BaseReg? newIndex = op.index;
-        bool changed = false;
 
         if (op.base != null && !op.base!.isPhysical) {
+          int physId = RAAssignment.kPhysNone;
           if (tiedIdx < tiedRegs.length) {
-            final tied = tiedRegs[tiedIdx++];
-            final physId = _resolvePhysId(tied);
-            if (physId != RAAssignment.kPhysNone) {
-              newBase = tied.workReg.virtReg.toPhys(physId);
-              changed = true;
+            physId = _resolvePhysId(tiedRegs[tiedIdx++]);
+          }
+          if (physId == RAAssignment.kPhysNone) {
+            final workId = _virtIdToWorkId[op.base!.id];
+            if (workId != null) {
+              physId =
+                  _allocator.curAssignment.workToPhysId(op.base!.group, workId);
             }
+          }
+          if (physId != RAAssignment.kPhysNone) {
+            newBase = op.base!.toPhys(physId);
           }
         }
 
         if (op.index != null && !op.index!.isPhysical) {
+          int physId = RAAssignment.kPhysNone;
           if (tiedIdx < tiedRegs.length) {
-            final tied = tiedRegs[tiedIdx++];
-            final physId = _resolvePhysId(tied);
-            if (physId != RAAssignment.kPhysNone) {
-              newIndex = tied.workReg.virtReg.toPhys(physId);
-              changed = true;
+            physId = _resolvePhysId(tiedRegs[tiedIdx++]);
+          }
+          if (physId == RAAssignment.kPhysNone) {
+            final workId = _virtIdToWorkId[op.index!.id];
+            if (workId != null) {
+              physId = _allocator.curAssignment
+                  .workToPhysId(op.index!.group, workId);
             }
+          }
+          if (physId != RAAssignment.kPhysNone) {
+            newIndex = op.index!.toPhys(physId);
           }
         }
 
-        if (changed) {
+        if (!identical(newBase, op.base) || !identical(newIndex, op.index)) {
           node.operands[i] = X86Mem(
               base: newBase,
               index: newIndex,

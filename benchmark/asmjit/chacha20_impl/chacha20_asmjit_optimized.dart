@@ -150,7 +150,6 @@ class ChaCha20AsmJitOptimized {
 
   static JitFunction _generateCode(JitRuntime runtime) {
     final code = CodeHolder(env: runtime.environment);
-    code.logger = FileLogger(stdout);
 
     final cc = UniCompiler.auto(
       code,
@@ -196,16 +195,8 @@ class ChaCha20AsmJitOptimized {
     // tmp = temp único para rotates / loads / counter update.
     final tmp = _asXmm(cc.newVecWithWidth(VecWidth.k128, 'tmp'));
 
-    // oneVec = [1,0,0,0] para incrementar counter lane0.
-    final oneVec = _asXmm(cc.newVecWithWidth(VecWidth.k128, 'oneVec'));
-    final oneData = ByteData(16);
-    oneData.setUint32(0, 1, Endian.little);
-    final oneConst = VecConst(16, oneData.buffer.asUint8List());
-    cc.emit2v(
-      UniOpVV.mov,
-      oneVec,
-      cc.simdConst(oneConst, Bcst.kNA, VecWidth.k128),
-    );
+    // GP temporário para atualizar counter no ctx (scalar, evita pressão em XMM).
+    final counterGp = cc.newGpPtr('counterGp');
 
     final loopStart = cc.newLabel();
     final loopEnd = cc.newLabel();
@@ -268,9 +259,9 @@ class ChaCha20AsmJitOptimized {
     cc.emitMV(UniOpMV.store128U32, _mem128(cc, output, 48), v3);
 
     // ---- Incrementa counter no ctx (lane0) por bloco ----
-    cc.emitVM(UniOpVM.load128U32, tmp, _mem128(cc, ctx, 48));
-    cc.emit3v(UniOpVVV.addU32, tmp, tmp, oneVec);
-    cc.emitMV(UniOpMV.store128U32, _mem128(cc, ctx, 48), tmp);
+    cc.emitRM(UniOpRM.loadU32, counterGp, _mem32(cc, ctx, 48));
+    cc.emitRRI(UniOpRRR.add, counterGp, counterGp, 1);
+    cc.emitMR(UniOpMR.storeU32, _mem32(cc, ctx, 48), counterGp);
 
     // ---- Avança pointers e len ----
     cc.emitRRI(UniOpRRR.add, input, input, 64);
@@ -301,6 +292,14 @@ class ChaCha20AsmJitOptimized {
   static dynamic _mem128(UniCompiler cc, BaseReg base, int offset) {
     if (cc.isX86Family) {
       return X86Mem.ptr(base as X86Gp, offset).withSize(16);
+    } else {
+      return A64Mem.baseOffset(base as A64Gp, offset);
+    }
+  }
+
+  static dynamic _mem32(UniCompiler cc, BaseReg base, int offset) {
+    if (cc.isX86Family) {
+      return X86Mem.ptr(base as X86Gp, offset).withSize(4);
     } else {
       return A64Mem.baseOffset(base as A64Gp, offset);
     }
