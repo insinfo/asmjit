@@ -824,7 +824,7 @@ mixin UniCompilerX86 on UniCompilerBase {
         if (hasAvx) {
           cc.addNode(InstNode(X86InstId.kVsqrtpd, [dst, src]));
         } else {
-          if (dst != src) cc.addNode(InstNode(X86InstId.kMovapd, [dst, src]));
+          if (dst != src) cc.addNode(InstNode(X86InstId.kMovaps, [dst, src]));
           cc.addNode(InstNode(X86InstId.kSqrtpd, [dst, dst]));
         }
         break;
@@ -1306,8 +1306,8 @@ mixin UniCompilerX86 on UniCompilerBase {
         if (hasAvx) {
           cc.addNode(InstNode(X86InstId.kVaddss, [dst, src1, src2]));
         } else {
-          if (dst.id != src1.id)
-            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
+          // Always copy src1 into dst to avoid losing the initial value after register allocation.
+          cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
           cc.addNode(InstNode(X86InstId.kAddss, [dst, src2]));
         }
         break;
@@ -1315,8 +1315,8 @@ mixin UniCompilerX86 on UniCompilerBase {
         if (hasAvx) {
           cc.addNode(InstNode(X86InstId.kVaddsd, [dst, src1, src2]));
         } else {
-          if (dst.id != src1.id)
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+          // Always copy src1 into dst to avoid losing the initial value after register allocation.
+          cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
           cc.addNode(InstNode(X86InstId.kAddsd, [dst, src2]));
         }
         break;
@@ -1334,7 +1334,7 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVsubsd, [dst, src1, src2]));
         } else {
           if (dst.id != src1.id)
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
           cc.addNode(InstNode(X86InstId.kSubsd, [dst, src2]));
         }
         break;
@@ -1352,7 +1352,7 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVmulsd, [dst, src1, src2]));
         } else {
           if (dst.id != src1.id)
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
           cc.addNode(InstNode(X86InstId.kMulsd, [dst, src2]));
         }
         break;
@@ -1370,7 +1370,7 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVdivsd, [dst, src1, src2]));
         } else {
           if (dst.id != src1.id)
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
           cc.addNode(InstNode(X86InstId.kDivsd, [dst, src2]));
         }
         break;
@@ -1388,7 +1388,7 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVminsd, [dst, src1, src2]));
         } else {
           if (dst.id != src1.id)
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
           cc.addNode(InstNode(X86InstId.kMinsd, [dst, src2]));
         }
         break;
@@ -1406,7 +1406,7 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVmaxsd, [dst, src1, src2]));
         } else {
           if (dst.id != src1.id)
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
           cc.addNode(InstNode(X86InstId.kMaxsd, [dst, src2]));
         }
         break;
@@ -1424,7 +1424,7 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVaddpd, [dst, src1, src2]));
         } else {
           if (dst.id != src1.id)
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
           cc.addNode(InstNode(X86InstId.kAddpd, [dst, src2]));
         }
         break;
@@ -1442,7 +1442,7 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVsubpd, [dst, src1, src2]));
         } else {
           if (dst.id != src1.id)
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
           cc.addNode(InstNode(X86InstId.kSubpd, [dst, src2]));
         }
         break;
@@ -1460,7 +1460,7 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVmulpd, [dst, src1, src2]));
         } else {
           if (dst.id != src1.id)
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
           cc.addNode(InstNode(X86InstId.kMulpd, [dst, src2]));
         }
         break;
@@ -1478,7 +1478,7 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVdivpd, [dst, src1, src2]));
         } else {
           if (dst.id != src1.id)
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
           cc.addNode(InstNode(X86InstId.kDivpd, [dst, src2]));
         }
         break;
@@ -1496,7 +1496,7 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVminpd, [dst, src1, src2]));
         } else {
           if (dst.id != src1.id)
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
           cc.addNode(InstNode(X86InstId.kMinpd, [dst, src2]));
         }
         break;
@@ -1514,7 +1514,7 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVmaxpd, [dst, src1, src2]));
         } else {
           if (dst.id != src1.id)
-            cc.addNode(InstNode(X86InstId.kMovapd, [dst, src1]));
+            cc.addNode(InstNode(X86InstId.kMovaps, [dst, src1]));
           cc.addNode(InstNode(X86InstId.kMaxpd, [dst, src2]));
         }
         break;

@@ -198,18 +198,10 @@ class ChaCha20AsmJitOptimized {
     cc.emit2v(UniOpVV.mov, input, inputArg);
     cc.emit2v(UniOpVV.mov, len, lenArg);
 
-    // Fix: Use explicit stack slot for ctx to bypass RAPass spill store bug
-    // We force the use of the physical register to ensure the store happens correctly.
-    final ctxStack = cc.newStack(8, 8, 'ctx_stack');
-    if (cc.isX86Family) {
-        final physId = Platform.isWindows ? 9 : 1; // R9 or RCX
-        cc.mov(ctxStack, X86Gp.r64(physId));
-    } else {
-        cc.mov(ctxStack, ctxArg);
-    }
-    
-    final ctx = cc.newGpPtr('ctx');
-    cc.mov(ctx, ctxStack);
+    // Use the physical ctx argument register directly to avoid allocator reload bugs.
+    final ctx = cc.isX86Family
+      ? (Platform.isWindows ? X86Gp.r9 : X86Gp.rcx)
+      : ctxArg;
 
     final v0 = _asXmm(cc.newVecWithWidth(VecWidth.k128, 'v0'));
     final v1 = _asXmm(cc.newVecWithWidth(VecWidth.k128, 'v1'));
@@ -230,9 +222,6 @@ class ChaCha20AsmJitOptimized {
       UniCondition(UniOpCond.compare, CondCode.kUnsignedLT, len, Imm(64)),
     );
     cc.bind(loopStart);
-
-    // Force reload ctx from stack to avoid spill issues
-    cc.mov(ctx, ctxStack);
 
     // ---- Carrega estado base do ctx (a cada bloco) ----
     cc.emitVM(UniOpVM.load128U32, v0, _mem128(cc, ctx, 0));
@@ -256,7 +245,6 @@ class ChaCha20AsmJitOptimized {
     }
 
     // ---- Add original state (recarrega do ctx para reduzir liveness) ----
-    cc.mov(ctx, ctxStack); // Reload ctx
     cc.emitVM(UniOpVM.load128U32, tmp, _mem128(cc, ctx, 0));
     cc.emit3v(UniOpVVV.addU32, v0, v0, tmp);
 
@@ -289,11 +277,8 @@ class ChaCha20AsmJitOptimized {
     // ---- Incrementa somente o counter (lane0) no ctx por bloco ----
     final ctrGp = cc.newGp32('ctrGp');
 
-    cc.mov(ctx, ctxStack); // Reload ctx for load
     cc.emitRM(UniOpRM.loadU32, ctrGp, _mem32(cc, ctx, 48));
     cc.emitRRI(UniOpRRR.add, ctrGp, ctrGp, 1); // counter++
-
-    cc.mov(ctx, ctxStack); // Reload ctx for store
     cc.emitMR(UniOpMR.storeU32, _mem32(cc, ctx, 48), ctrGp);
 
     // ---- Avança pointers e len ----

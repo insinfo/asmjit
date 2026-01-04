@@ -165,7 +165,6 @@ class RAPass extends CompilerPass {
         final virtId = argVal.regId;
         // Only process if the virtual register is actually used (mapped to a WorkReg)
         if (_virtIdToWorkId.containsKey(virtId)) {
-          final workId = _virtIdToWorkId[virtId]!;
           final physArg = detail.args[i][0];
 
           if (physArg.isReg) {
@@ -201,7 +200,7 @@ class RAPass extends CompilerPass {
             // registrador f�sico definido pela ABI. Isso garante que os
             // ponteiros de entrada/sa�da cheguem corretos mesmo antes de
             // qualquer instru��o de movimenta��o.
-            // workReg.homeRegId = physArg.regId; // REMOVED: Causes missing spill bug
+            workReg.homeRegId = physArg.regId;
             workReg.restrictPreferredMask(1 << physArg.regId);
 
             int instId;
@@ -210,28 +209,13 @@ class RAPass extends CompilerPass {
             final physReg = virtReg.toPhys(physArg.regId);
 
             if (virtReg.group == RegGroup.gp) {
-              // Use LEA reg, [reg] to avoid flags dependency/modification
-              instId = X86InstId.kLea;
-              op2 = X86Mem.ptr(physReg);
+              // Copy GP args directly from their physical register.
+              instId = X86InstId.kMov;
+              op2 = physReg;
             } else {
-                // Vector arguments
-                instId = X86InstId.kMovaps;
-                op2 = physReg;
-
-                // Win64 shadow space always stores the first 4 args on stack.
-                // For GP args, prefer shadow load to avoid garbage when mixed int/float
-                // order makes the chosen physical register empty.
-                final cc = func.detail.callConv;
-                if (virtReg.group == RegGroup.gp &&
-                    cc.strategy == CallConvStrategy.x64Windows) {
-                  // Ensure we keep a frame pointer so the shadow slots are addressable via RBP.
-                  func.frame.setPreservedFP();
-                  final base = X86Gp.rbp;
-                  final offset = 16 + (i * 8); // [rbp+16] = arg0 shadow
-                    op2 = X86Mem.ptr(base, offset)
-                      .withSize(virtReg.type == RegType.gp32 ? 4 : 8);
-                  instId = X86InstId.kMov;
-                }
+              // Vector arguments
+              instId = X86InstId.kMovaps;
+              op2 = physReg;
             }
 
             // print('RAPass: Insert Arg Move Virt${virtReg.id} <- Phys${physArg.regId}');

@@ -306,9 +306,8 @@ class X86FuncInternal {
         }
       }
     } else {
-      // Win64 strategy
-      var gpPos = 0;
-      var vecPos = 0;
+      // Win64 strategy uses shared argument slots; slot N maps to RCX/RDX/R8/R9 or XMM0-3.
+      var argIndex = 0;
 
       for (int i = 0; i < argCount; i++) {
         unpackValues(func, func.args[i]);
@@ -319,23 +318,22 @@ class X86FuncInternal {
 
           if (typeId.isInt) {
             var regId = Reg.kIdBad;
-            if (gpPos < CallConv.kMaxRegArgsPerGroup) {
-              regId = cc.passedOrder(RegGroup.gp)[gpPos];
+            if (argIndex < CallConv.kMaxRegArgsPerGroup) {
+              regId = cc.passedOrder(RegGroup.gp)[argIndex];
             }
 
             if (regId != Reg.kIdBad) {
               arg.assignRegData(
                   typeId.sizeInBytes <= 4 ? RegType.gp32 : RegType.gp64, regId);
               func.addUsedRegs(RegGroup.gp, support.bitMask(regId));
-              gpPos++;
             } else {
               arg.assignStackOffset(stackOffset);
               stackOffset += 8;
             }
           } else if (typeId.isFloat || typeId.isVec) {
             var regId = Reg.kIdBad;
-            if (vecPos < CallConv.kMaxRegArgsPerGroup) {
-              regId = cc.passedOrder(RegGroup.vec)[vecPos];
+            if (argIndex < CallConv.kMaxRegArgsPerGroup) {
+              regId = cc.passedOrder(RegGroup.vec)[argIndex];
             }
 
             if (regId != Reg.kIdBad &&
@@ -343,18 +341,16 @@ class X86FuncInternal {
                     cc.strategy == CallConvStrategy.x64VectorCall)) {
               arg.assignRegData(vecTypeIdToRegType(typeId), regId);
               func.addUsedRegs(RegGroup.vec, support.bitMask(regId));
-              vecPos++;
             } else {
               if (typeId.isFloat) {
                 arg.assignStackOffset(stackOffset);
               } else {
-                final gpId = gpPos < CallConv.kMaxRegArgsPerGroup
-                    ? cc.passedOrder(RegGroup.gp)[gpPos]
+                final gpId = argIndex < CallConv.kMaxRegArgsPerGroup
+                    ? cc.passedOrder(RegGroup.gp)[argIndex]
                     : Reg.kIdBad;
                 if (gpId != Reg.kIdBad) {
                   arg.assignRegData(RegType.gp64, gpId);
                   func.addUsedRegs(RegGroup.gp, support.bitMask(gpId));
-                  gpPos++;
                 } else {
                   arg.assignStackOffset(stackOffset);
                 }
@@ -364,6 +360,7 @@ class X86FuncInternal {
             }
           }
         }
+        argIndex++;
       }
     }
 

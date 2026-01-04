@@ -1096,7 +1096,7 @@ class FuncFrame {
 
     if (hasFp) {
       _dirtyRegs[RegGroup.gp.index] |= support.bitMask(kFp);
-      if (kLr != Reg.kIdBad) {
+      if (kLr >= 0 && kLr != Reg.kIdBad) {
         _dirtyRegs[RegGroup.gp.index] |= support.bitMask(kLr);
       }
     }
