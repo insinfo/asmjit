@@ -178,29 +178,30 @@ class RAPass extends CompilerPass {
 
       if (argVal.isReg) {
         final virtId = argVal.regId;
-          if (_virtIdToWorkId.containsKey(virtId)) {
-            final physArg = detail.args[i][0];
-            if (physArg.isReg) {
-              final workId = _virtIdToWorkId[virtId]!;
-              final workReg = _allocator.workRegById(workId);
-              final virtReg = workReg.virtReg;
-              // For argumentos, force o alocador a preferir (e manter) o
-              // registrador f�sico definido pela ABI. Isso garante que os
-              // ponteiros de entrada/sa�da cheguem corretos mesmo antes de
-              // qualquer instru��o de movimenta��o.
-              workReg.homeRegId = physArg.regId;
-              workReg.restrictPreferredMask(1 << physArg.regId);
+        if (_virtIdToWorkId.containsKey(virtId)) {
+          final physArg = detail.args[i][0];
+          if (physArg.isReg) {
+            final workId = _virtIdToWorkId[virtId]!;
+            final workReg = _allocator.workRegById(workId);
+            final virtReg = workReg.virtReg;
+            // For argumentos, force o alocador a preferir (e manter) o
+            // registrador f�sico definido pela ABI. Isso garante que os
+            // ponteiros de entrada/sa�da cheguem corretos mesmo antes de
+            // qualquer instru��o de movimenta��o.
+            workReg.homeRegId = physArg.regId;
+            workReg.restrictPreferredMask(1 << physArg.regId);
 
-              int instId;
-              if (virtReg.group == RegGroup.gp) {
-                instId = X86InstId.kMov;
-              } else {
-                // Vector arguments
-                instId = X86InstId.kMovaps;
-              }
+            int instId;
+            if (virtReg.group == RegGroup.gp) {
+              instId = X86InstId.kMov;
+            } else {
+              // Vector arguments
+              instId = X86InstId.kMovaps;
+            }
 
-              final physReg = virtReg.toPhys(physArg.regId);
-            print('RAPass: Insert Arg Move Virt${virtReg.id} <- Phys${physArg.regId}');
+            final physReg = virtReg.toPhys(physArg.regId);
+            print(
+                'RAPass: Insert Arg Move Virt${virtReg.id} <- Phys${physArg.regId}');
             final movNode = InstNode(instId, [virtReg, physReg]);
             _insertNodeAfter(insertPoint!, movNode);
             insertPoint = movNode;
@@ -403,12 +404,13 @@ class RAPass extends CompilerPass {
 
     // 4. Build LiveSpans
     _buildLiveSpans(nodes);
-    
+
     // Debug: Print LiveSpans
     print('RAPass: LiveSpans');
     for (int i = 0; i < _numWorkRegs; i++) {
       final workReg = _allocator.workRegById(i);
-      final spans = workReg.liveSpans.data.map((s) => '[${s.a}, ${s.b}]').join(', ');
+      final spans =
+          workReg.liveSpans.data.map((s) => '[${s.a}, ${s.b}]').join(', ');
       print('  Virt${workReg.virtReg.id}: $spans');
     }
   }
@@ -416,7 +418,7 @@ class RAPass extends CompilerPass {
   void _analyzeInstLiveness(InstNode node, RABlockData data) {
     for (int i = 0; i < node.opCount; i++) {
       final op = node.operands[i];
-      
+
       // Handle direct virtual registers
       if (op is BaseReg && !op.isPhysical && !op.isNone) {
         final workId = _virtIdToWorkId[op.id];
@@ -466,24 +468,24 @@ class RAPass extends CompilerPass {
       } else if (op is X86Mem) {
         // Handle memory operands (Base and Index are implicit USE)
         if (op.base != null && !op.base!.isPhysical) {
-           final workId = _virtIdToWorkId[op.base!.id];
-           if (workId != null) {
-              final workReg = _allocator.workRegById(workId);
-              workReg.liveStats.freq += data.weight;
-              if (!data.kill.testBit(workId)) {
-                 data.gen.setBit(workId);
-              }
-           }
+          final workId = _virtIdToWorkId[op.base!.id];
+          if (workId != null) {
+            final workReg = _allocator.workRegById(workId);
+            workReg.liveStats.freq += data.weight;
+            if (!data.kill.testBit(workId)) {
+              data.gen.setBit(workId);
+            }
+          }
         }
         if (op.index != null && !op.index!.isPhysical) {
-           final workId = _virtIdToWorkId[op.index!.id];
-           if (workId != null) {
-              final workReg = _allocator.workRegById(workId);
-              workReg.liveStats.freq += data.weight;
-              if (!data.kill.testBit(workId)) {
-                 data.gen.setBit(workId);
-              }
-           }
+          final workId = _virtIdToWorkId[op.index!.id];
+          if (workId != null) {
+            final workReg = _allocator.workRegById(workId);
+            workReg.liveStats.freq += data.weight;
+            if (!data.kill.testBit(workId)) {
+              data.gen.setBit(workId);
+            }
+          }
         }
       }
     }
@@ -562,69 +564,125 @@ class RAPass extends CompilerPass {
 
   void _buildLiveSpans(NodeList nodes) {
     int position = 2;
-    BlockNode? currentBlock;
-
+    // 1. Assign Positions
     for (final node in nodes.nodes) {
       if (node is BlockNode) {
-        // Close previous block
-        if (currentBlock != null) {
-           final data = _blockData[currentBlock.label.id]!;
-           for (final workId in data.liveOut.setBits) {
-              final workReg = _allocator.workRegById(workId);
-              // Extend to current position (end of block)
-              workReg.liveSpans.openAt(currentBlock.position, position);
-           }
-        }
-
-        currentBlock = node;
-        final data = _blockData[node.label.id]!;
         node.position = position;
-
-        for (final workId in data.liveIn.setBits) {
-          final workReg = _allocator.workRegById(workId);
-          workReg.liveSpans.openAt(position, position + 2);
-        }
-      }
-
-      if (node is InstNode) {
+        position += 2;
+      } else if (node is InstNode) {
         node.position = position;
-        for (final op in node.operands) {
-          if (op is BaseReg && !op.isPhysical && !op.isNone) {
-            final workId = _virtIdToWorkId[op.id];
-            if (workId != null) {
-              _lastUsePos[op.id] = position;
-              final workReg = _allocator.workRegById(workId);
-              workReg.liveSpans.openAt(position, position + 2);
-            }
-          } else if (op is X86Mem) {
-             // Handle Mem Liveness
-             if (op.base != null && !op.base!.isPhysical) {
-                final workId = _virtIdToWorkId[op.base!.id];
-                if (workId != null) {
-                   _lastUsePos[op.base!.id] = position;
-                   _allocator.workRegById(workId).liveSpans.openAt(position, position + 2);
-                }
-             }
-             if (op.index != null && !op.index!.isPhysical) {
-                final workId = _virtIdToWorkId[op.index!.id];
-                if (workId != null) {
-                   _lastUsePos[op.index!.id] = position;
-                   _allocator.workRegById(workId).liveSpans.openAt(position, position + 2);
-                }
-             }
-          }
-        }
         position += 2;
       }
     }
 
-    // Close last block
+    // 2. Process Blocks
+    final activeRegs = BitVector(_numWorkRegs);
+    final startPos = <int, int>{};
+
+    BlockNode? currentBlock;
+    for (final node in nodes.nodes) {
+      if (node is BlockNode) {
+        if (currentBlock != null) {
+          // Finish previous
+          final endPos = node.position;
+          for (final workId in activeRegs.setBits) {
+            final s = startPos[workId]!;
+            _allocator.workRegById(workId).liveSpans.openAt(s, endPos);
+          }
+        }
+        currentBlock = node;
+
+        // Start new
+        activeRegs.clearAll();
+        startPos.clear();
+        final data = _blockData[node.label.id]!;
+        for (final workId in data.liveIn.setBits) {
+          activeRegs.setBit(workId);
+          startPos[workId] = node.position;
+        }
+      } else if (node is InstNode && currentBlock != null) {
+        // Process Inst
+        bool isMov = (node.instId == X86InstId.kMov ||
+            node.instId == X86InstId.kMovaps ||
+            node.instId == X86InstId.kMovups ||
+            node.instId == X86InstId.kMovdqa ||
+            node.instId == X86InstId.kMovdqu ||
+            node.instId == X86InstId.kMovss ||
+            node.instId == X86InstId.kMovsd ||
+            node.instId == X86InstId.kMovd ||
+            node.instId == X86InstId.kMovq ||
+            node.instId == X86InstId.kVmovaps ||
+            node.instId == X86InstId.kVmovups ||
+            node.instId == X86InstId.kVmovdqa ||
+            node.instId == X86InstId.kVmovdqu ||
+            node.instId == X86InstId.kVmovss ||
+            node.instId == X86InstId.kVmovsd ||
+            node.instId == X86InstId.kVmovd ||
+            node.instId == X86InstId.kVmovq);
+
+        // 1. Handle Uses (Gen)
+        for (int i = 0; i < node.opCount; i++) {
+          bool isUse = true;
+          if (i == 0 && isMov) isUse = false;
+
+          if (isUse) {
+            final op = node.operands[i];
+            _activateUse(op, activeRegs, startPos, node.position);
+          }
+        }
+
+        // 2. Handle Defs (Kill)
+        if (node.opCount > 0) {
+          final op = node.operands[0];
+          _handleDef(op, activeRegs, startPos, node.position);
+        }
+      }
+    }
+
+    // Finish last block
     if (currentBlock != null) {
-       final data = _blockData[currentBlock.label.id]!;
-       for (final workId in data.liveOut.setBits) {
-          final workReg = _allocator.workRegById(workId);
-          workReg.liveSpans.openAt(currentBlock.position, position);
-       }
+      for (final workId in activeRegs.setBits) {
+        final s = startPos[workId]!;
+        _allocator.workRegById(workId).liveSpans.openAt(s, position);
+      }
+    }
+  }
+
+  void _activateUse(
+      dynamic op, BitVector activeRegs, Map<int, int> startPos, int pos) {
+    if (op is BaseReg && !op.isPhysical && !op.isNone) {
+      final workId = _virtIdToWorkId[op.id];
+      if (workId != null) {
+        if (!activeRegs.testBit(workId)) {
+          activeRegs.setBit(workId);
+          startPos[workId] = pos;
+        }
+        _lastUsePos[op.id] = pos;
+      }
+    } else if (op is X86Mem) {
+      if (op.base != null && !op.base!.isPhysical) {
+        _activateUse(op.base!, activeRegs, startPos, pos);
+      }
+      if (op.index != null && !op.index!.isPhysical) {
+        _activateUse(op.index!, activeRegs, startPos, pos);
+      }
+    }
+  }
+
+  void _handleDef(
+      dynamic op, BitVector activeRegs, Map<int, int> startPos, int pos) {
+    if (op is BaseReg && !op.isPhysical && !op.isNone) {
+      final workId = _virtIdToWorkId[op.id];
+      if (workId != null) {
+        if (activeRegs.testBit(workId)) {
+          // Close range
+          final s = startPos[workId]!;
+          _allocator.workRegById(workId).liveSpans.openAt(s, pos + 2);
+        }
+        // Start new range (output is live immediately)
+        activeRegs.setBit(workId);
+        startPos[workId] = pos;
+      }
     }
   }
 
@@ -784,8 +842,16 @@ class RAPass extends CompilerPass {
           // Simple check for availability
           if (consecutiveId < 32 &&
               ((availableRegs[group] >> consecutiveId) & 1) != 0) {
-            workReg.setHomeRegId(consecutiveId);
-            physRegsMask = (1 << consecutiveId);
+            final live = globalSpans[group.index][consecutiveId];
+            if (!live.intersects(workReg.liveSpans)) {
+              live.addFrom(workReg.liveSpans);
+              workReg.setHomeRegId(consecutiveId);
+              physRegsMask = (1 << consecutiveId);
+              workReg.markAllocated();
+            } else {
+              throw StateError(
+                  'Failed to allocate consecutive register: Interference at Phys$consecutiveId');
+            }
           } else {
             // Failed to allocate consecutive sequence
             // In C++ this returns an error kConsecutiveRegsAllocation
@@ -1593,7 +1659,7 @@ class RAPass extends CompilerPass {
   void _emitLoad(RAWorkReg workReg, int physId, InstNode ctx) {
     final reg = workReg.virtReg.toPhys(physId);
     final mem = _stackSlot(workReg);
-    
+
     int instId = _archTraits.movId;
     if (workReg.group == RegGroup.vec) {
       if (compiler.arch == Arch.x64 || compiler.arch == Arch.x86) {
@@ -1612,7 +1678,7 @@ class RAPass extends CompilerPass {
   void _emitSave(RAWorkReg workReg, int physId, InstNode ctx) {
     final reg = workReg.virtReg.toPhys(physId);
     final mem = _stackSlot(workReg);
-    
+
     int instId = _archTraits.movId;
     if (workReg.group == RegGroup.vec) {
       if (compiler.arch == Arch.x64 || compiler.arch == Arch.x86) {
@@ -1631,7 +1697,7 @@ class RAPass extends CompilerPass {
   void _emitMove(RAWorkReg workReg, int dst, int src, InstNode ctx) {
     final dstReg = workReg.virtReg.toPhys(dst);
     final srcReg = workReg.virtReg.toPhys(src);
-    
+
     int instId = _archTraits.movId;
     if (workReg.group == RegGroup.vec) {
       if (compiler.arch == Arch.x64 || compiler.arch == Arch.x86) {
@@ -1802,8 +1868,7 @@ class RAPass extends CompilerPass {
 
       // Spill preserved vector registers using aligned stores.
       for (final slot in vecSlots) {
-        final mem =
-            X86Mem.baseDisp(rbp, -slot.value, size: 16);
+        final mem = X86Mem.baseDisp(rbp, -slot.value, size: 16);
         final save =
             InstNode(X86InstId.kMovdqu, [mem, slot.key]); // unaligned OK
         _insertNodeAfter(lastNode, save);
@@ -1840,8 +1905,7 @@ class RAPass extends CompilerPass {
         }
 
         for (final slot in vecSlots.reversed) {
-          final mem =
-              X86Mem.baseDisp(rbp, -slot.value, size: 16);
+          final mem = X86Mem.baseDisp(rbp, -slot.value, size: 16);
           final restore =
               InstNode(X86InstId.kMovdqu, [slot.key, mem]); // unaligned OK
           _insertNodeBefore(node, restore);
