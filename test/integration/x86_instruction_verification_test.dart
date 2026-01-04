@@ -217,6 +217,80 @@ void main() {
     testRotate32('AVX Rotate 8', 8, useAvx: true);
     testRotate32('AVX Rotate 7', 7, useAvx: true);
 
+    void testRotateRight32(String name, int rot, {bool useAvx = false}) {
+      test('Rotate Right 32-bit by $rot ($name)', () {
+        if (useAvx && !CpuInfo.host().features.avx) return;
+
+        final code = CodeHolder(env: Environment.host());
+        final compiler =
+            X86Compiler(env: code.env, labelManager: code.labelManager);
+
+        final signature = FuncSignature(
+            retType: TypeId.void_, args: [TypeId.uintPtr, TypeId.uintPtr]);
+        compiler.addFunc(signature);
+
+        final isWindows = compiler.env.platform == TargetPlatform.windows;
+        final dstReg = isWindows ? rcx : rdi;
+        final srcReg = isWindows ? rdx : rsi;
+
+        final xmm0 = compiler.newXmm('xmm0');
+        final xmm1 = compiler.newXmm('xmm1');
+
+        if (useAvx) {
+          compiler.inst(X86InstId.kVmovdqu, [xmm0, X86Mem.ptr(srcReg)]);
+          compiler.inst(X86InstId.kVmovdqa, [xmm1, xmm0]);
+          compiler.inst(X86InstId.kVpsrld, [xmm0, xmm0, Imm(rot)]);
+          compiler.inst(X86InstId.kVpslld, [xmm1, xmm1, Imm(32 - rot)]);
+          compiler.inst(X86InstId.kVpor, [xmm0, xmm0, xmm1]);
+          compiler.inst(X86InstId.kVmovdqu, [X86Mem.ptr(dstReg), xmm0]);
+        } else {
+          compiler.inst(X86InstId.kMovdqu, [xmm0, X86Mem.ptr(srcReg)]);
+          compiler.inst(X86InstId.kMovdqa, [xmm1, xmm0]);
+          compiler.inst(X86InstId.kPsrld, [xmm0, Imm(rot)]);
+          compiler.inst(X86InstId.kPslld, [xmm1, Imm(32 - rot)]);
+          compiler.inst(X86InstId.kPor, [xmm0, xmm1]);
+          compiler.inst(X86InstId.kMovdqu, [X86Mem.ptr(dstReg), xmm0]);
+        }
+
+        compiler.ret();
+        compiler.endFunc();
+        compiler.finalize();
+
+        final assembler = X86Assembler(code);
+        compiler.serializeToAssembler(assembler);
+
+        final fn = rt.add(code);
+        final dst = ffi.calloc<Uint32>(4);
+        final src = ffi.calloc<Uint32>(4);
+
+        src[0] = 0x80000000;
+        src[1] = 0x00000001;
+        src[2] = 0xF0F0F0F0;
+        src[3] = 0xAABBCCDD;
+
+        final exec = fn.pointer
+            .cast<NativeFunction<Void Function(Pointer<Void>, Pointer<Void>)>>()
+            .asFunction<void Function(Pointer<Void>, Pointer<Void>)>();
+
+        exec(dst.cast(), src.cast());
+
+        for (int i = 0; i < 4; i++) {
+          final val = src[i];
+          final expected = ((val >>> rot) | (val << (32 - rot))) & 0xFFFFFFFF;
+          expect(dst[i], equals(expected),
+              reason: 'Rotate right $rot mismatch at $i');
+        }
+
+        ffi.calloc.free(dst);
+        ffi.calloc.free(src);
+      });
+    }
+
+    testRotateRight32('SSE Rotate Right 16', 16, useAvx: false);
+    testRotateRight32('SSE Rotate Right 8', 8, useAvx: false);
+    testRotateRight32('AVX Rotate Right 16', 16, useAvx: true);
+    testRotateRight32('AVX Rotate Right 8', 8, useAvx: true);
+
     // Test PSHUFD / VPSHUFD
     void testShuffle(String name, int imm, List<int> input, List<int> expected,
         {bool useAvx = false}) {

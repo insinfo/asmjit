@@ -15,8 +15,6 @@ import 'radefs.dart';
 import 'ralocal.dart';
 import 'bitvector.dart';
 import 'ranode_data.dart';
-import 'reg_type.dart';
-import 'func.dart';
 import '../x86/x86.dart';
 import '../x86/x86_simd.dart';
 

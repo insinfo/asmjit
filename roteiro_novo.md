@@ -1,6 +1,6 @@
 # Roteiro de Portação: AsmJit C++ → Dart
 //C:\MyDartProjects\asmjit\roteiro_novo.md
-**Última Atualização**: 2026-01-04 (00:00)
+**Última Atualização**: 2026-01-04 (Atual)
 continue lendo o codigo fonte c++ C:\MyDartProjects\asmjit\referencias\asmjit-master e portando
 
 foco em 64 bits, windows e linux e paridade com c++
@@ -26,27 +26,35 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 | RALocal | ✅ Implementado | Funcional |
 | RAGlobal | ✅ Parcial (Coalescing, Priority, Weighing) | Epilog/Ret Insertion Fixed |
 | **UJIT Layer** | ✅ ~90% | X86 ~92% / A64 ~90% |
-| **Benchmarks** | ✅ Operacionais | ChaCha20 Optimized (Fixed Console Flood) |
-| **Lint Status** | ✅ Clean | 0 erros, Warns Resolved |
+| **Benchmarks** | ✅ Operacionais | ChaCha20 Optimized estável |
+| **Lint Status** | ⚠️ Quase limpo | TODOs monitorados; lint sem erros críticos |
 
 ---
 
-## ✅ Progresso Recente (04/01/2026)
+## ✅ Progresso Recente (04/01/2026 - Atualização 5)
 
-### ChaCha20 JIT estável (loop multi-bloco)
-- Correção aplicada em `benchmark/asmjit/chacha20_impl/chacha20_asmjit_optimized.dart`: passamos a armazenar o `ctx` em slot de stack na prólogo (usando o registrador físico de argumento) e recarregar o `ctx` antes de cada uso. Atualização do contador agora é escalar (`loadU32/add/storeU32`), evitando dependência de constante vetorial não inicializada.
-- Resultado: `debug_chacha_opt.dart` passou para todos os tamanhos (1 bloco, multi-bloco, parcial, buffer grande) sem crash e sem divergência de saída. Assembly gerado mostra os `mov rcx,[rbp-0x8]` antes de cada acesso ao contexto.
+### ChaCha20 otimizado corrigido (ctx fixado em registrador físico)
+- Causa raiz: o ponteiro de contexto era recarregado a partir de um registrador virtual que podia ser renomeado/spillado, gerando endereço inválido e crash em buffers >1 bloco.
+- Correção: `benchmark/asmjit/chacha20_impl/chacha20_asmjit_optimized.dart` agora prende o `ctx` ao registrador físico de entrada (Win64 `r9`, SysV `rcx`) e usa esse registrador diretamente para todos os loads/stores do contador e estado. Sem cópia para stack ou reload virtual.
+- Validação: `dart run benchmark/debug_chacha_opt.dart` passou para 64/128/100/1024 bytes; `test/integration/chacha20_verify_test.dart` verde. `codigo.bin` gerado para inspeção.
 
-### Falhas atuais nos testes
-- `integration_abi_test.dart` → "Mixed Int/Float": resultado 41.0 vs esperado 61.0. Indica que ainda usamos instrução vetorial no caminho escalar ou há perda de alinhamento/preservação de registradores XMM na chamada.
-- `x86_instruction_verification_test.dart` → rotações AVX de 32 bits (rotr/rotl 16, 12, 8, 7) devolvendo 0x8000_0000 em vez do valor rotacionado esperado. Sugere codificação/uso de `pslld/psrld` ou máscara de 32 bits incorreta no caminho AVX.
+### Novos testes anti-regressão
+- `rapass_test`: caso de spill de argumento salvo em `newStack` executando JIT (garante `_insertArgMoves`).
+- `integration_abi_test`: mistura int/float com 12 temporários XMM para forçar spill/alinhamento Win64.
+- `x86_instruction_verification_test`: rotações right 32-bit SSE/AVX com checagem numérica (cobre VEX sem REX.W inadvertido).
+- `chacha20_verify_test`: teste de 2 blocos confirmando incremento apenas da lane0 (counter) na versão otimizada.
+- `ujit_const_test`: constante vetorial `FFFF` armazenada duas vezes após forte pressão de registradores, validando materialização/reload da tabela de constantes.
+
+### Estado de testes / lint
+- Todos os testes listados no último `dart test` passaram (incluindo ABI Mixed Int/Float e preservação de XMM6..XMM15).
+- Lint: removido import não usado em `core/rapass.dart`; TODOs seguem como lembretes (não bloqueiam build).
 
 ### Testes a implementar para prevenir regressões
-- **RAPass / preservação de argumentos**: teste unitário que cria função com `newStack` e força spill do registrador de argumento (RCX/R9). Verificar que o prólogo emite `mov [rbp-offset], reg` antes de qualquer reload e que o valor recarregado corresponde ao argumento original.
-- **RAPass / constantes vetoriais**: teste em `rapass_test` que injeta `VecConstTable` e força reload após um loop (live range longo) para garantir que `simdVecConst` gera materialização ou load válido (sem pegar lixo).
-- **ChaCha counter lane0**: teste de integração simples que roda 2 blocos e verifica que apenas `ctx[12]` é incrementado e que nonce não muda; captura regressão onde `paddd` somava o vetor inteiro.
-- **Rotates AVX 32-bit**: novo caso em `x86_instruction_verification_test.dart` cobrindo encode/exec de rol/rori pack 32-bit com VEX (vpslld/pslld+pxor). Deve validar saída numérica e não apenas hex dump.
-- **ABI Mixed Int/Float**: reforçar no teste que o compilador usa instruções escalares (`addF64S`) e que XMM preservado/stack alignment permanece correto. Incluir cenário com spill de XMM para a pilha.
+- **RAPass / preservação de argumentos**: unit test que força spill do registrador de argumento (RCX/R9) e verifica que o prólogo salva o valor correto antes de qualquer reload.
+- **RAPass / constantes vetoriais**: caso em `rapass_test` que injeta `VecConstTable` e valida materialização/reload após live range longo.
+- **ChaCha counter lane0**: integração com 2 blocos garantindo que só `ctx[12]` incrementa e nonce permanece intacto.
+- **Rotates AVX 32-bit**: caso em `x86_instruction_verification_test.dart` cobrindo rol/ror 32-bit VEX com checagem numérica.
+- **ABI Mixed Int/Float (spill)**: reforçar cenário com spill de XMM na pilha para checar alinhamento e preservação em Win64.
 
 ### Itens para corrigir no código
 - Revisar `unicompiler_x86` para o caminho escalar F64/F32 usado pelo teste Mixed Int/Float e garantir escolha de opcode escalar (ADDSD/VADDSD) com clean upper bits e sem contaminar registradores callee-saved.

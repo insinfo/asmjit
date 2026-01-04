@@ -1,0 +1,4 @@
+concurrency: 1
+platforms:
+  - vm
+# Reduce flakiness in JIT/FFI-heavy tests by avoiding parallel runtimes.

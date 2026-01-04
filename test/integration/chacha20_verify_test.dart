@@ -29,5 +29,28 @@ void main() {
         }
       }
     });
+
+    test('Counter increment apenas na lane0 (2 blocos)', () {
+      final key = Uint8List.fromList(List.generate(32, (i) => i ^ 0xAA));
+      final nonce = Uint8List.fromList(List.generate(12, (i) => (i * 7) & 0xFF));
+      final data = Uint8List(128); // dois blocos
+
+      final baseline =
+          ChaCha20Baseline(key, nonce, initialCounter: 1, rounds: 20);
+      final expected = Uint8List(data.length);
+      baseline.cryptInto(data, expected);
+
+      final optimized =
+          ChaCha20AsmJitOptimized(key, nonce, initialCounter: 1);
+      final actual = Uint8List(data.length);
+      optimized.cryptInto(data, actual);
+
+      for (var i = 0; i < data.length; i++) {
+        if (expected[i] != actual[i]) {
+          fail(
+              'Mismatch at index $i: expected 0x${expected[i].toRadixString(16)}, got 0x${actual[i].toRadixString(16)}');
+        }
+      }
+    });
   });
 }

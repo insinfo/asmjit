@@ -150,6 +150,60 @@ void main() {
         }
       });
     });
+
+    test('Function Arguments - Mixed Int/Float com spill de XMM', () {
+      runJitTest((runtime, cc) {
+        // double calc(double a, int b, double c) com muitos temporários em XMM
+        cc.addFunc(FuncSignature.build(
+            [TypeId.float64, TypeId.intPtr, TypeId.float64],
+            TypeId.float64,
+            CallConvId.x64Windows));
+
+        final a = cc.newVec('a');
+        final b = cc.newGpPtr('b');
+        final c = cc.newVec('c');
+
+        cc.setArg(0, a);
+        cc.setArg(1, b);
+        cc.setArg(2, c);
+
+        final bDouble = cc.newVec('bDouble');
+        cc.emitCV(UniOpCV.cvtI2D, bDouble, b);
+
+        final tmp = cc.newVec('tmp');
+        cc.emit3v(UniOpVVV.addF64S, tmp, a, c); // tmp = a+c
+
+        // Cria vários temporários para forçar spill de XMM em Win64
+        const tempCount = 12;
+        final temps = <BaseReg>[];
+        for (int i = 0; i < tempCount; i++) {
+          final t = cc.newVec('t$i');
+          temps.add(t);
+          cc.emit3v(UniOpVVV.addF64S, t, a, c); // t = a+c
+        }
+
+        for (final t in temps) {
+          cc.emit3v(UniOpVVV.addF64S, tmp, tmp, t);
+        }
+
+        cc.emit3v(UniOpVVV.addF64S, tmp, tmp, bDouble);
+
+        cc.ret([tmp]);
+        cc.endFunc();
+      }, (fn) {
+        final func = fn.pointer
+            .cast<NativeFunction<Double Function(Double, IntPtr, Double)>>()
+            .asFunction<double Function(double, int, double)>();
+
+        const a = 1.5;
+        const c = 2.5;
+        const b = 3;
+        const tempCount = 12;
+        final expected = (a + c) * (tempCount + 1) + b;
+
+        expect(func(a, b, c), closeTo(expected, 0.0001));
+      });
+    });
   });
 }
 
