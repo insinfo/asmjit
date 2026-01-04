@@ -452,6 +452,8 @@ class X86DbGenerator {
       'subss',
       'mulss',
       'divss',
+      'vpslld',
+      'vpsrld',
       'sqrtss',
       'addsd',
       'subsd',

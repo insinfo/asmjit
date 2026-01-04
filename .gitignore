@@ -51,3 +51,4 @@ coverage/
 pubspec.lock
 
 asmjit_merged_files.dart.txt
+codigo.bin

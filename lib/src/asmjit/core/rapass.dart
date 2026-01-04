@@ -15,6 +15,8 @@ import 'radefs.dart';
 import 'ralocal.dart';
 import 'bitvector.dart';
 import 'ranode_data.dart';
+import 'reg_type.dart';
+import 'func.dart';
 import '../x86/x86.dart';
 import '../x86/x86_simd.dart';
 
@@ -164,13 +166,12 @@ class RAPass extends CompilerPass {
         // Only process if the virtual register is actually used (mapped to a WorkReg)
         if (_virtIdToWorkId.containsKey(virtId)) {
           final workId = _virtIdToWorkId[virtId]!;
-          final workReg = _allocator.workRegById(workId);
           final physArg = detail.args[i][0];
 
           if (physArg.isReg) {
             // workReg.homeRegId = physArg.regId;
           }
-          // TODO: Handle stack arguments
+          // Stack arguments are handled later (only register arguments enter here).
         }
       }
     }
@@ -213,9 +214,24 @@ class RAPass extends CompilerPass {
               instId = X86InstId.kLea;
               op2 = X86Mem.ptr(physReg);
             } else {
-              // Vector arguments
-              instId = X86InstId.kMovaps;
-              op2 = physReg;
+                // Vector arguments
+                instId = X86InstId.kMovaps;
+                op2 = physReg;
+
+                // Win64 shadow space always stores the first 4 args on stack.
+                // For GP args, prefer shadow load to avoid garbage when mixed int/float
+                // order makes the chosen physical register empty.
+                final cc = func.detail.callConv;
+                if (virtReg.group == RegGroup.gp &&
+                    cc.strategy == CallConvStrategy.x64Windows) {
+                  // Ensure we keep a frame pointer so the shadow slots are addressable via RBP.
+                  func.frame.setPreservedFP();
+                  final base = X86Gp.rbp;
+                  final offset = 16 + (i * 8); // [rbp+16] = arg0 shadow
+                    op2 = X86Mem.ptr(base, offset)
+                      .withSize(virtReg.type == RegType.gp32 ? 4 : 8);
+                  instId = X86InstId.kMov;
+                }
             }
 
             // print('RAPass: Insert Arg Move Virt${virtReg.id} <- Phys${physArg.regId}');

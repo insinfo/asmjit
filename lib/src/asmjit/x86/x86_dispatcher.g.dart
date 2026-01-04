@@ -293,7 +293,10 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       _binary(asm, ops, (a, b) => asm.orRR(a, b), (a, imm) => asm.orRI(a, imm));
       break;
     case X86InstId.kPaddb:
-      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.paddbXM(d, s) : asm.paddbXX(d, s as X86Xmm));
+      _simd3(asm, ops, xmm: (d, s1, s2) {
+  final imm = s2 is Imm ? s2.value : s2 as int;
+  asm.vpslld(d, s1, imm);
+});
       break;
     case X86InstId.kPaddd:
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.padddXM(d, s) : asm.padddXX(d, s as X86Xmm));
@@ -610,6 +613,18 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
     }
   }
 }
+      break;
+    case X86InstId.kVpslld:
+      _simd3(asm, ops, xmm: (d, s1, s2) {
+  final imm = s2 is Imm ? s2.value : s2 as int;
+  asm.vpslld(d, s1, imm);
+});
+      break;
+    case X86InstId.kVpsrld:
+      _simd3(asm, ops, xmm: (d, s1, s2) {
+  final imm = s2 is Imm ? s2.value : s2 as int;
+  asm.vpsrld(d, s1, imm);
+});
       break;
     case X86InstId.kVpxor:
       _simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vpxorXXM(d, s1, s2) : asm.vpxorXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vpxorYYM(d, s1, s2) : asm.vpxorYYY(d, s1, s2 as X86Ymm));
