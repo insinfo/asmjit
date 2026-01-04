@@ -3,6 +3,8 @@
 /// Ported from asmjit/ujit/unicompiler.h
 
 import 'dart:typed_data';
+import 'package:asmjit/src/asmjit/core/environment.dart';
+
 import '../core/compiler.dart';
 import '../core/code_holder.dart';
 import '../core/reg_type.dart';
@@ -278,16 +280,21 @@ abstract class UniCompilerBase {
 class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
   /// Creates a UniCompiler automatically selecting X86Compiler or A64Compiler
   /// based on the [code] environment.
-  factory UniCompiler.auto(CodeHolder code,
-      {CpuFeatures? features, VecConstTableRef? ctRef}) {
+  factory UniCompiler.auto(
+      {CodeHolder? code, CpuFeatures? features, VecConstTableRef? ctRef}) {
     BaseCompiler compiler;
-    if (code.env.arch.isX86Family) {
-      compiler = X86Compiler(env: code.env, labelManager: code.labelManager);
-    } else if (code.env.arch.isArmFamily) {
-      compiler = A64Compiler(env: code.env, labelManager: code.labelManager);
+
+    final codeHolder = code ?? CodeHolder(env: Environment.host());
+
+    if (codeHolder.env.arch.isX86Family) {
+      compiler = X86Compiler(
+          env: codeHolder.env, labelManager: codeHolder.labelManager);
+    } else if (codeHolder.env.arch.isArmFamily) {
+      compiler = A64Compiler(
+          env: codeHolder.env, labelManager: codeHolder.labelManager);
     } else {
       throw UnsupportedError(
-          "Unsupported architecture for UniCompiler: ${code.env.arch}");
+          'Unsupported architecture for UniCompiler: ${codeHolder.env.arch}');
     }
     return UniCompiler(compiler, features: features, ctRef: ctRef);
   }

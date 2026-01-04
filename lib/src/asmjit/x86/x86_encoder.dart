@@ -7617,6 +7617,10 @@ class X86Encoder {
     buffer.emit8(imm8 & 0xFF);
   }
 
+  /// VPSHUFD xmm, xmm, imm8 (Alias)
+  void vpshufdXmmXmm(X86Xmm dst, X86Xmm src, int imm) =>
+      vpshufdXmmXmmImm8(dst, src, imm);
+
   /// VPSHUFD xmm, xmm, imm8 (VEX.128.66.0F.WIG 70 /r ib)
   void vpshufdXmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
     final needsVex3 = dst.isExtended || src.isExtended;
@@ -7767,14 +7771,6 @@ class X86Encoder {
     buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
   }
 
-  /// VPSHUFD xmm, xmm/m128, imm8
-  void vpshufdXmmXmm(X86Xmm dst, X86Xmm src, int imm) {
-    _emitVex2(dst.isExtended, 0, false, _vexPp66);
-    buffer.emit8(0x70);
-    emitModRmReg(dst.encoding, src);
-    buffer.emit8(imm);
-  }
-
   void vpshufdXmmMem(X86Xmm dst, X86Mem src, int imm) {
     _emitVexForXmmMem(dst, src, _vexPp66, _vexMmmmm0F);
     buffer.emit8(0x70);
@@ -7800,6 +7796,34 @@ class X86Encoder {
   /// MOVAPS xmm, [mem] (Already defined)
 
   /// MOVAPS [mem], xmm (Already defined)
+
+  /// VMOVD xmm, [mem] (AVX)
+  void vmovdXmmMem(X86Xmm dst, X86Mem mem) {
+    _emitVexForXmmMem(dst, mem, _vexPp66, _vexMmmmm0F);
+    buffer.emit8(0x6E);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VMOVD [mem], xmm (AVX)
+  void vmovdMemXmm(X86Mem mem, X86Xmm src) {
+    _emitVexForXmmMem(src, mem, _vexPp66, _vexMmmmm0F);
+    buffer.emit8(0x7E);
+    emitModRmMem(src.encoding, mem);
+  }
+
+  /// VMOVQ xmm, [mem] (AVX - 64-bit)
+  void vmovqXmmMem(X86Xmm dst, X86Mem mem) {
+    _emitVexForXmmMem(dst, mem, _vexPp66, _vexMmmmm0F, w: true);
+    buffer.emit8(0x6E);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VMOVQ [mem], xmm (AVX - 64-bit)
+  void vmovqMemXmm(X86Mem mem, X86Xmm src) {
+    _emitVexForXmmMem(src, mem, _vexPp66, _vexMmmmm0F, w: true);
+    buffer.emit8(0x7E);
+    emitModRmMem(src.encoding, mem);
+  }
 
   /// MOVD xmm, [mem] (move dword from mem to xmm)
   void movdXmmMem(X86Xmm dst, X86Mem mem) {

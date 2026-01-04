@@ -7,11 +7,11 @@ void main() {
   final runtime = JitRuntime();
   final code = CodeHolder(env: runtime.environment);
   code.logger = FileLogger(stdout);
-  final cc = UniCompiler.auto(code);
+  final cc = UniCompiler.auto(code: code);
 
   // void func(int* dst, int* src)
   // dst[0] = src[0] << 1;
-  
+
   cc.addFunc(
     FuncSignature.build(
       [TypeId.intPtr, TypeId.intPtr],
@@ -25,10 +25,10 @@ void main() {
 
   // vmovdqu xmm1, [src]
   cc.cc.addNode(InstNode(X86InstId.kVmovdqu, [xmm1, X86Mem.ptr(src)]));
-  
+
   // vpslld xmm0, xmm1, 1
   cc.cc.addNode(InstNode(X86InstId.kVpslld, [xmm0, xmm1, Imm(1)]));
-  
+
   // vmovdqu [dst], xmm0
   cc.cc.addNode(InstNode(X86InstId.kVmovdqu, [X86Mem.ptr(dst), xmm0]));
 
@@ -38,17 +38,21 @@ void main() {
   cc.endFunc();
 
   final asm = X86Assembler(code);
-  cc.cc.serializeToAssembler(asm); 
+  cc.cc.serializeToAssembler(asm);
 
   print('Code size before add: ${code.text.buffer.length}');
   print('Bytes: ${code.text.buffer.bytes.sublist(0, code.text.buffer.length)}');
   final fp = runtime.add(code);
-  final funcPtr = Pointer<NativeFunction<Void Function(Pointer<Int32>, Pointer<Int32>)>>.fromAddress(fp.address);
-  final funcDart = funcPtr.asFunction<void Function(Pointer<Int32>, Pointer<Int32>)>();
+  final funcPtr = Pointer<
+      NativeFunction<
+          Void Function(
+              Pointer<Int32>, Pointer<Int32>)>>.fromAddress(fp.address);
+  final funcDart =
+      funcPtr.asFunction<void Function(Pointer<Int32>, Pointer<Int32>)>();
 
   final dataIn = pkgffi.calloc<Int32>(4);
   final dataOut = pkgffi.calloc<Int32>(4);
-  
+
   dataIn[0] = 10;
   dataIn[1] = 20;
   dataIn[2] = 30;

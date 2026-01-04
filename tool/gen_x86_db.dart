@@ -560,7 +560,7 @@ class X86DbGenerator {
     buffer.writeln("import 'x86_encoder.dart' show X86Cond;");
     buffer.writeln("import 'x86_simd.dart';");
     buffer.writeln("import '../core/labels.dart';");
-    buffer.writeln("import '../core/operand.dart' show Imm, LabelOp;");
+    buffer.writeln("import '../core/operand.dart' show Imm, LabelOp, BaseReg;");
     buffer.writeln('');
     buffer.writeln(
         '/// Dispatches instruction ID to Assembler method for implemented ops.');
@@ -614,7 +614,10 @@ class X86DbGenerator {
       case 'test':
         return '_binary(asm, ops, (a, b) => asm.testRR(a, b), (a, imm) => asm.testRI(a, imm));';
       case 'lea':
-        return "if (ops.length == 2 && ops[0] is X86Gp && ops[1] is X86Mem) asm.lea(ops[0] as X86Gp, ops[1] as X86Mem);";
+        return '''
+if (ops.length == 2 && ops[0] is X86Gp && ops[1] is X86Mem) {
+  asm.lea(ops[0] as X86Gp, ops[1] as X86Mem);
+}''';
       case 'imul':
         return '_imul(asm, ops);';
       case 'inc':
@@ -745,17 +748,35 @@ class X86DbGenerator {
       case 'ucomisd':
         return '_simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.ucomisdXX(d, s); });';
       case 'cvtsi2sd':
-        return 'if (ops.length == 2 && ops[0] is X86Xmm && ops[1] is X86Gp) asm.cvtsi2sdXR(ops[0] as X86Xmm, ops[1] as X86Gp);';
+        return '''
+if (ops.length == 2 && ops[0] is X86Xmm && ops[1] is X86Gp) {
+  asm.cvtsi2sdXR(ops[0] as X86Xmm, ops[1] as X86Gp);
+}''';
       case 'cvttsd2si':
-        return 'if (ops.length == 2 && ops[0] is X86Gp && ops[1] is X86Xmm) asm.cvttsd2siRX(ops[0] as X86Gp, ops[1] as X86Xmm);';
+        return '''
+if (ops.length == 2 && ops[0] is X86Gp && ops[1] is X86Xmm) {
+  asm.cvttsd2siRX(ops[0] as X86Gp, ops[1] as X86Xmm);
+}''';
       case 'cvtsi2ss':
-        return 'if (ops.length == 2 && ops[0] is X86Xmm && ops[1] is X86Gp) asm.cvtsi2ssXR(ops[0] as X86Xmm, ops[1] as X86Gp);';
+        return '''
+if (ops.length == 2 && ops[0] is X86Xmm && ops[1] is X86Gp) {
+  asm.cvtsi2ssXR(ops[0] as X86Xmm, ops[1] as X86Gp);
+}''';
       case 'cvttss2si':
-        return 'if (ops.length == 2 && ops[0] is X86Gp && ops[1] is X86Xmm) asm.cvttss2siRX(ops[0] as X86Gp, ops[1] as X86Xmm);';
+        return '''
+if (ops.length == 2 && ops[0] is X86Gp && ops[1] is X86Xmm) {
+  asm.cvttss2siRX(ops[0] as X86Gp, ops[1] as X86Xmm);
+}''';
       case 'cvtsd2ss':
-        return 'if (ops.length == 2 && ops[0] is X86Xmm && ops[1] is X86Xmm) asm.cvtsd2ssXX(ops[0] as X86Xmm, ops[1] as X86Xmm);';
+        return '''
+if (ops.length == 2 && ops[0] is X86Xmm && ops[1] is X86Xmm) {
+  asm.cvtsd2ssXX(ops[0] as X86Xmm, ops[1] as X86Xmm);
+}''';
       case 'cvtss2sd':
-        return 'if (ops.length == 2 && ops[0] is X86Xmm && ops[1] is X86Xmm) asm.cvtss2sdXX(ops[0] as X86Xmm, ops[1] as X86Xmm);';
+        return '''
+if (ops.length == 2 && ops[0] is X86Xmm && ops[1] is X86Xmm) {
+  asm.cvtss2sdXX(ops[0] as X86Xmm, ops[1] as X86Xmm);
+}''';
       case 'addps':
         return '_simd3(asm, ops, xmm: (d, s1, s2) => asm.vaddpsXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => asm.vaddpsYYY(d, s1, s2 as X86Ymm), zmm: (d, s1, s2) => asm.vaddpsZmm(d, s1, s2 as X86Zmm));';
       case 'addpd':
@@ -792,8 +813,21 @@ class X86DbGenerator {
         return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.pmullwXM(d, s) : asm.pmullwXX(d, s as X86Xmm));';
       case 'paddq':
         return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.paddqXM(d, s) : asm.paddqXX(d, s as X86Xmm));';
+      case 'pshufd':
+        return '''
+      final dst = ops[0] as X86Xmm; 
+      final src = (ops.length == 3) ? ops[1] : dst; 
+      final immOp = (ops.length == 3) ? ops[2] : ops[1]; 
+      final imm = (immOp is Imm) ? immOp.value : immOp as int; 
+      if (src is X86Xmm) { 
+        asm.pshufdXXI(dst, src, imm); 
+      } else if (src is X86Mem) {
+        asm.pshufdXMI(dst, src, imm); 
+      }''';
       case 'psubb':
+        return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.psubbXM(d, s) : asm.psubbXX(d, s as X86Xmm));';
       case 'psubw':
+        return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.psubwXM(d, s) : asm.psubwXX(d, s as X86Xmm));';
       case 'psubd':
         return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.psubdXM(d, s) : asm.psubdXX(d, s as X86Xmm));';
       case 'pslld':
@@ -803,12 +837,23 @@ class X86DbGenerator {
       case 'pcmpeqd':
         return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.pcmpeqdXM(d, s) : asm.pcmpeqdXX(d, s as X86Xmm));';
       case 'vpaddd':
-        return '_simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vpadddXXM(d, s1, s2) : asm.vpadddXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vpadddYYM(d, s1, s2) : asm.vpadddYYY(d, s1, s2 as X86Ymm));';
+        return '''
+_simd3(asm, ops,
+  xmm: (d, s1, s2) => s2 is X86Mem ? asm.vpadddXXM(d, s1, s2) : asm.vpadddXXX(d, s1, s2 as X86Xmm),
+  ymm: (d, s1, s2) => s2 is X86Mem ? asm.vpadddYYM(d, s1, s2) : asm.vpadddYYY(d, s1, s2 as X86Ymm)
+);''';
       case 'vpand':
-        return '_simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vpandXXM(d, s1, s2) : asm.vpandXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vpandYYM(d, s1, s2) : asm.vpandYYY(d, s1, s2 as X86Ymm));';
+        return '''
+_simd3(asm, ops,
+  xmm: (d, s1, s2) => s2 is X86Mem ? asm.vpandXXM(d, s1, s2) : asm.vpandXXX(d, s1, s2 as X86Xmm),
+  ymm: (d, s1, s2) => s2 is X86Mem ? asm.vpandYYM(d, s1, s2) : asm.vpandYYY(d, s1, s2 as X86Ymm)
+);''';
       case 'vpor':
-        return '_simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vporXXM(d, s1, s2) : asm.vporXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vporYYM(d, s1, s2) : asm.vporYYY(d, s1, s2 as X86Ymm));';
-
+        return '''
+_simd3(asm, ops,
+  xmm: (d, s1, s2) => s2 is X86Mem ? asm.vporXXM(d, s1, s2) : asm.vporXXX(d, s1, s2 as X86Xmm),
+  ymm: (d, s1, s2) => s2 is X86Mem ? asm.vporYYM(d, s1, s2) : asm.vporYYY(d, s1, s2 as X86Ymm)
+);''';
       case 'vmovups':
         return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vmovupsXM(d, s) : asm.vmovups(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vmovupsYM(d, s) : asm.vmovupsY(d, s as X86Ymm), zmm: (d, s) => s is X86Mem ? asm.vmovupsZmmMem(d, s) : asm.vmovupsZmm(d, s as X86Zmm), memXmm: (m, s) => asm.vmovupsMX(m, s), memYmm: (m, s) => asm.vmovupsMY(m, s), memZmm: (m, s) => asm.vmovupsMemZmm(m, s));';
       case 'vmovdqu':
@@ -816,7 +861,25 @@ class X86DbGenerator {
       case 'vmovdqa':
         return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vmovdqaXmmMem(d, s) : asm.vmovdqaXX(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vmovdqaYmmMem(d, s) : asm.vmovdqaYY(d, s as X86Ymm), memXmm: (m, s) => asm.vmovdqaMemXmm(m, s), memYmm: (m, s) => asm.vmovdqaMemYmm(m, s));';
       case 'vpshufd':
-        return 'if (ops.length == 3) { final dst = ops[0]; final src = ops[1]; final imm = ops[2] is Imm ? (ops[2] as Imm).value : ops[2] as int; if (dst is X86Xmm) { if (src is X86Xmm) asm.vpshufdXXX(dst, src, imm); else if (src is X86Mem) asm.vpshufdXXM(dst, src, imm); } else if (dst is X86Ymm) { if (src is X86Ymm) asm.vpshufdYYY(dst, src, imm); else if (src is X86Mem) asm.vpshufdYYM(dst, src, imm); } }';
+        return '''
+if (ops.length == 3) {
+  final dst = ops[0];
+  final src = ops[1];
+  final imm = ops[2] is Imm ? (ops[2] as Imm).value : ops[2] as int;
+  if (dst is X86Xmm) {
+    if (src is X86Xmm) {
+      asm.vpshufdXXX(dst, src, imm);
+    } else if (src is X86Mem) {
+      asm.vpshufdXXM(dst, src, imm);
+    }
+  } else if (dst is X86Ymm) {
+    if (src is X86Ymm) {
+      asm.vpshufdYYY(dst, src, imm);
+    } else if (src is X86Mem) {
+      asm.vpshufdYYM(dst, src, imm);
+    }
+  }
+}''';
       case 'vmovaps':
         return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vmovapsXM(d, s) : asm.vmovaps(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vmovapsYM(d, s) : asm.vmovapsY(d, s as X86Ymm), memXmm: (m, s) => asm.vmovapsMX(m, s), memYmm: (m, s) => asm.vmovapsMY(m, s));';
       case 'vaddps':
@@ -849,6 +912,36 @@ class X86DbGenerator {
         return "_simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vdivpsXXM(d, s1, s2) : asm.vdivpsXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vdivpsYYM(d, s1, s2) : asm.vdivpsYYY(d, s1, s2 as X86Ymm));";
       case 'vdivpd':
         return "_simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vdivpdXXM(d, s1, s2) : asm.vdivpdXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vdivpdYYM(d, s1, s2) : asm.vdivpdYYY(d, s1, s2 as X86Ymm));";
+      case 'vmovd':
+        return '''
+if (ops.length == 2) {
+  final dst = ops[0];
+  final src = ops[1];
+  if (dst is X86Xmm && src is X86Gp) {
+    asm.vmovdXR(dst, src);
+  } else if (dst is X86Gp && src is X86Xmm) {
+    asm.vmovdRX(dst, src);
+  } else if (dst is X86Xmm && src is X86Mem) {
+    asm.vmovdXM(dst, src);
+  } else if (dst is X86Mem && src is X86Xmm) {
+    asm.vmovdMX(dst, src);
+  }
+}''';
+      case 'vmovq':
+        return '''
+if (ops.length == 2) {
+  final dst = ops[0];
+  final src = ops[1];
+  if (dst is X86Xmm && src is X86Gp) {
+    asm.vmovqXR(dst, src);
+  } else if (dst is X86Gp && src is X86Xmm) {
+    asm.vmovqRX(dst, src);
+  } else if (dst is X86Xmm && src is X86Mem) {
+    asm.vmovqXM(dst, src);
+  } else if (dst is X86Mem && src is X86Xmm) {
+    asm.vmovqMX(dst, src);
+  }
+}''';
       // Additional SSE packed logical operations
       case 'andps':
         return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.andpsXM(d, s) : asm.andps(d, s as X86Xmm));';
@@ -967,12 +1060,16 @@ void _mov(X86Assembler asm, List<Object> ops) {
     asm.movRR(dst, src);
   } else if (dst is X86Gp && src is int) {
     asm.movRI64(dst, src);
+  } else if (dst is X86Gp && src is Imm) {
+    asm.movRI64(dst, src.value);
   } else if (dst is X86Gp && src is X86Mem) {
     asm.movRM(dst, src);
   } else if (dst is X86Mem && src is X86Gp) {
     asm.movMR(dst, src);
   } else if (dst is X86Mem && src is int) {
     asm.movMI(dst, src);
+  } else if (dst is X86Mem && src is Imm) {
+    asm.movMI(dst, src.value);
   } else if (dst is X86Xmm && src is X86Xmm) {
     asm.movapsXX(dst, src);
   } else if (dst is X86Xmm && src is X86Mem) {
@@ -1263,9 +1360,28 @@ void _simd2(
   void Function(X86Mem, X86Ymm)? memYmm,
   void Function(X86Mem, X86Zmm)? memZmm,
 }) {
-  if (ops.length != 2) return;
-  final dst = ops[0];
-  final src = ops[1];
+  if (ops.length != 2 && ops.length != 3) return;
+  var dst = ops[0];
+  var src = ops[1];
+
+  if (ops.length == 3) {
+    // Handle 3-operand form for 2-operand instructions (dst, src1, src2)
+    // Legacy SSE instructions often come as (dst, dst, src2) from UniCompiler.
+    // We only support this if dst == src1.
+    final src1 = src;
+    final src2 = ops[2];
+    if (dst is BaseReg && src1 is BaseReg && dst.id == src1.id && dst.type == src1.type) {
+      src = src2;
+    } else {
+      // If we are here, it means we have 3 distinct operands for a 2-operand instruction.
+      // This is either an AVX instruction misclassified as _simd2 or an error.
+      // Ideally we should emit a move if possible, but the dispatcher is simple.
+      // For now, let's assume the user/compiler knows what they are doing and ignore or let it fail?
+      // Better to return to avoid emitting bad code, or try to use src2 if applicable.
+      // But for now, let's stick to the dst==src1 check.
+      return; 
+    }
+  }
 
   if (memZmm != null && dst is X86Mem && src is X86Zmm) {
     memZmm(dst, src);

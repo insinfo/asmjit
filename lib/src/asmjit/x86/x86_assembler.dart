@@ -1554,11 +1554,23 @@ class X86Assembler extends BaseEmitter {
   /// VMOVD r32, xmm
   void vmovdRX(X86Gp dst, X86Xmm src) => _enc.vmovdR32Xmm(dst, src);
 
+  /// VMOVD xmm, [mem]
+  void vmovdXM(X86Xmm dst, X86Mem src) => _enc.vmovdXmmMem(dst, src);
+
+  /// VMOVD [mem], xmm
+  void vmovdMX(X86Mem dst, X86Xmm src) => _enc.vmovdMemXmm(dst, src);
+
   /// VMOVQ xmm, r64
   void vmovqXR(X86Xmm dst, X86Gp src) => _enc.vmovqXmmR64(dst, src);
 
   /// VMOVQ r64, xmm
   void vmovqRX(X86Gp dst, X86Xmm src) => _enc.vmovqR64Xmm(dst, src);
+
+  /// VMOVQ xmm, [mem]
+  void vmovqXM(X86Xmm dst, X86Mem src) => _enc.vmovqXmmMem(dst, src);
+
+  /// VMOVQ [mem], xmm
+  void vmovqMX(X86Mem dst, X86Xmm src) => _enc.vmovqMemXmm(dst, src);
 
   /// VBROADCASTSS xmm, mem32
   void vbroadcastssXM(X86Xmm dst, X86Mem mem) =>

@@ -152,7 +152,7 @@ class ChaCha20AsmJitOptimized {
     final code = CodeHolder(env: runtime.environment);
 
     final cc = UniCompiler.auto(
-      code,
+      code: code,
       // Mantém tabela global para evitar RIP-rel/local-table quebrado.
       ctRef: const VecConstTableRef(null, VecConstTable.kSize),
     );
@@ -278,6 +278,7 @@ class ChaCha20AsmJitOptimized {
     cc.endFunc();
 
     cc.cc.finalize();
+
     if (code.env.arch == Arch.x64 || code.env.arch == Arch.x86) {
       final assembler = X86Assembler(code);
       cc.cc.serializeToAssembler(assembler);

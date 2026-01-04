@@ -17,11 +17,12 @@ void main() {
     // Callee que clobbera vetores.
     final calleeCode = CodeHolder(env: rt.environment);
     final calleeCc = UniCompiler.auto(
-      calleeCode,
+      code: calleeCode,
       ctRef: const VecConstTableRef(null, VecConstTable.kSize),
     );
     calleeCc.initVecWidth(VecWidth.k128);
-    calleeCc.addFunc(FuncSignature.build([], TypeId.void_, CallConvId.x64Windows));
+    calleeCc
+        .addFunc(FuncSignature.build([], TypeId.void_, CallConvId.x64Windows));
     final cVecs = List<BaseReg>.generate(
         12, (i) => calleeCc.newVecWithWidth(VecWidth.k128, 'c$i'));
     final cTmp = calleeCc.newVecWithWidth(VecWidth.k128, 'ctmp');
@@ -40,7 +41,8 @@ void main() {
 
     // Caller: recebe outBefore, outAfter, canaryPtr.
     final callerCode = CodeHolder(env: rt.environment);
-    final caller = X86Compiler(env: callerCode.env, labelManager: callerCode.labelManager);
+    final caller =
+        X86Compiler(env: callerCode.env, labelManager: callerCode.labelManager);
     caller.addFunc(FuncSignature.build(
         [TypeId.intPtr, TypeId.intPtr, TypeId.intPtr],
         TypeId.void_,
@@ -61,8 +63,8 @@ void main() {
       final reg = X86Xmm(6 + i);
       caller.addNode(InstNode(
           X86InstId.kMovdqu, [reg, X86Mem.baseDisp(tmpPtr, i * 16, size: 16)]));
-      caller.addNode(InstNode(
-          X86InstId.kMovdqu, [X86Mem.baseDisp(outBefore, i * 16, size: 16), reg]));
+      caller.addNode(InstNode(X86InstId.kMovdqu,
+          [X86Mem.baseDisp(outBefore, i * 16, size: 16), reg]));
     }
 
     // shadow space Win64
@@ -77,8 +79,8 @@ void main() {
     // Após retorno, grava XMM6..XMM15 em outAfter.
     for (int i = 0; i < 10; i++) {
       final reg = X86Xmm(6 + i);
-      caller.addNode(InstNode(
-          X86InstId.kMovdqu, [X86Mem.baseDisp(outAfter, i * 16, size: 16), reg]));
+      caller.addNode(InstNode(X86InstId.kMovdqu,
+          [X86Mem.baseDisp(outAfter, i * 16, size: 16), reg]));
     }
 
     caller.ret();
