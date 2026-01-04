@@ -2259,6 +2259,15 @@ class X86Assembler extends BaseEmitter {
   /// MOVDQU [mem], xmm (SSE2)
   void movdquMX(X86Mem dst, X86Xmm src) => _enc.movdquMemXmm(dst, src);
 
+  /// MOVDQA xmm, xmm (SSE2)
+  void movdqaXX(X86Xmm dst, X86Xmm src) => _enc.movdqaXmmXmm(dst, src);
+
+  /// MOVDQA xmm, [mem] (SSE2)
+  void movdqaXM(X86Xmm dst, X86Mem src) => _enc.movdqaXmmMem(dst, src);
+
+  /// MOVDQA [mem], xmm (SSE2)
+  void movdqaMX(X86Mem dst, X86Xmm src) => _enc.movdqaMemXmm(dst, src);
+
   /// VMOVDQU xmm, [mem] (AVX)
   void vmovdquXmmMem(X86Xmm dst, X86Mem mem) => _enc.vmovdquXmmMem(dst, mem);
 

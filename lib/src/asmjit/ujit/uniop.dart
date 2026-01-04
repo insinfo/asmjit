@@ -25,6 +25,30 @@ enum UniOpM {
   storeZeroU64;
 }
 
+/// Instruction with `[mem, imm]` operands.
+enum UniOpMI {
+  addU8,
+  addU16,
+  addU32,
+  addU64,
+  subU8,
+  subU16,
+  subU32,
+  subU64,
+  andU8,
+  andU16,
+  andU32,
+  andU64,
+  orU8,
+  orU16,
+  orU32,
+  orU64,
+  xorU8,
+  xorU16,
+  xorU32,
+  xorU64;
+}
+
 /// Instruction with `[reg, mem]` operands.
 enum UniOpRM {
   loadReg,

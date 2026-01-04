@@ -108,6 +108,18 @@ class RAPass extends CompilerPass {
     // 2b. Assign Arguments to WorkRegs (Hints)
     _assignArgIndexToWorkRegs(func);
 
+    // [FIX] Insert Arg Moves BEFORE Liveness Analysis
+    BlockNode? firstBlock;
+    for (final node in nodes.nodes) {
+      if (node is BlockNode) {
+        firstBlock = node;
+        break;
+      }
+    }
+    if (firstBlock != null) {
+      _insertArgMoves(firstBlock);
+    }
+
     // 2c. Global Allocation (RAGlobal)
     _buildGlobalLiveness(nodes);
     _buildBundles();
@@ -127,7 +139,7 @@ class RAPass extends CompilerPass {
     if (blocks.isNotEmpty) {
       // Initialize first block entry from global decisions/hints
       _initFirstBlockEntry(blocks.first);
-      _insertArgMoves(blocks.first);
+      // _insertArgMoves(blocks.first); // Moved up
 
       for (final block in blocks) {
         _processBlock(block);
@@ -156,7 +168,7 @@ class RAPass extends CompilerPass {
           final physArg = detail.args[i][0];
 
           if (physArg.isReg) {
-            workReg.homeRegId = physArg.regId;
+            // workReg.homeRegId = physArg.regId;
           }
           // TODO: Handle stack arguments
         }
@@ -188,21 +200,26 @@ class RAPass extends CompilerPass {
             // registrador f�sico definido pela ABI. Isso garante que os
             // ponteiros de entrada/sa�da cheguem corretos mesmo antes de
             // qualquer instru��o de movimenta��o.
-            workReg.homeRegId = physArg.regId;
+            // workReg.homeRegId = physArg.regId; // REMOVED: Causes missing spill bug
             workReg.restrictPreferredMask(1 << physArg.regId);
 
             int instId;
+            Operand op2;
+
+            final physReg = virtReg.toPhys(physArg.regId);
+
             if (virtReg.group == RegGroup.gp) {
-              instId = X86InstId.kMov;
+              // Use LEA reg, [reg] to avoid flags dependency/modification
+              instId = X86InstId.kLea;
+              op2 = X86Mem.ptr(physReg);
             } else {
               // Vector arguments
               instId = X86InstId.kMovaps;
+              op2 = physReg;
             }
 
-            final physReg = virtReg.toPhys(physArg.regId);
-            print(
-                'RAPass: Insert Arg Move Virt${virtReg.id} <- Phys${physArg.regId}');
-            final movNode = InstNode(instId, [virtReg, physReg]);
+            // print('RAPass: Insert Arg Move Virt${virtReg.id} <- Phys${physArg.regId}');
+            final movNode = InstNode(instId, [virtReg, op2]);
             _insertNodeAfter(insertPoint!, movNode);
             insertPoint = movNode;
           }
@@ -447,7 +464,8 @@ class RAPass extends CompilerPass {
                 node.instId == X86InstId.kVmovss ||
                 node.instId == X86InstId.kVmovsd ||
                 node.instId == X86InstId.kVmovd ||
-                node.instId == X86InstId.kVmovq);
+                node.instId == X86InstId.kVmovq ||
+                node.instId == X86InstId.kLea);
 
             if (isMov) {
               data.kill.setBit(workId);
@@ -1304,7 +1322,8 @@ class RAPass extends CompilerPass {
         id == X86InstId.kVmovd ||
         id == X86InstId.kVmovq ||
         id == X86InstId.kVmovdqa ||
-        id == X86InstId.kVmovdqu);
+        id == X86InstId.kVmovdqu ||
+        id == X86InstId.kLea);
 
     bool isXchg = (id == X86InstId.kXchg);
 

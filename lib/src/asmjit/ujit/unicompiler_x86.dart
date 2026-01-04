@@ -120,6 +120,18 @@ mixin UniCompilerX86 on UniCompilerBase {
   void _vMovX86(BaseReg dst, Operand src) {
     if (src is BaseReg && dst.id == src.id) return;
 
+    // Handle GP registers
+    if (dst.isGp) {
+      if (src is BaseReg && src.isGp) {
+        cc.addNode(InstNode(X86InstId.kMov, [dst, src]));
+        return;
+      }
+      if (src is X86Mem) {
+        cc.addNode(InstNode(X86InstId.kMov, [dst, src]));
+        return;
+      }
+    }
+
     if (src is X86Mem) {
       // Use unaligned load by default for safety
       final instId = hasAvx ? X86InstId.kVmovdqu : X86InstId.kMovdqu;
@@ -131,7 +143,8 @@ mixin UniCompilerX86 on UniCompilerBase {
       if (hasAvx) {
         cc.addNode(InstNode(X86InstId.kVmovdqa, [dst, src]));
       } else {
-        cc.addNode(InstNode(X86InstId.kMovdqa, [dst, src]));
+        // MOVDQA ainda não está no x86Dispatch -> use MOVDQU (funciona para reg->reg)
+        cc.addNode(InstNode(X86InstId.kMovdqu, [dst, src]));
       }
       return;
     }

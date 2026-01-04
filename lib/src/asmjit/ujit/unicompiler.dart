@@ -1450,6 +1450,40 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
   // [Load/Store Dispatchers]
   // ============================================================================
 
+  void emitMI(UniOpMI op, Operand dst, int imm) {
+    if (isX86Family) {
+      _emitMIX86(op, dst as X86Mem, imm);
+    } else {
+      throw UnimplementedError('emitMI not implemented for $arch');
+    }
+  }
+
+  void _emitMIX86(UniOpMI op, X86Mem dst, int imm) {
+    int instId;
+    int size;
+    switch (op) {
+      case UniOpMI.addU8:
+        instId = X86InstId.kAdd;
+        size = 1;
+        break;
+      case UniOpMI.addU16:
+        instId = X86InstId.kAdd;
+        size = 2;
+        break;
+      case UniOpMI.addU32:
+        instId = X86InstId.kAdd;
+        size = 4;
+        break;
+      case UniOpMI.addU64:
+        instId = X86InstId.kAdd;
+        size = 8;
+        break;
+      default:
+        throw UnimplementedError('UniOpMI $op not implemented for X86');
+    }
+    cc.addNode(InstNode(instId, [dst.withSize(size), Imm(imm)]));
+  }
+
   void emitRM(UniOpRM op, Operand dst, Operand src) {
     if (isX86Family) {
       _emitRMX86(op, dst as BaseReg, src as X86Mem);

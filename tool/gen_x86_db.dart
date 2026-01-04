@@ -431,6 +431,7 @@ class X86DbGenerator {
       'movd',
       'movq',
       'movdqu',
+      'movdqa',
       'paddd',
       'paddq',
       'paddb',
@@ -543,8 +544,6 @@ class X86DbGenerator {
       'vpaddd',
       'vpand',
       'vpor',
-      'vpslld',
-      'vpsrld',
       'vmovd',
       'vmovq',
     };
@@ -707,6 +706,8 @@ if (ops.length == 2 && ops[0] is X86Gp && ops[1] is X86Mem) {
         return '_movd(asm, ops);';
       case 'movdqu':
         return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.movdquXM(d, s) : asm.movdquXX(d, s as X86Xmm), memXmm: (m, s) => asm.movdquMX(m, s));';
+      case 'movdqa':
+        return '_simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.movdqaXM(d, s) : asm.movdqaXX(d, s as X86Xmm), memXmm: (m, s) => asm.movdqaMX(m, s));';
       case 'movq':
         return '_movq(asm, ops);';
       case 'kmovw':
@@ -1031,6 +1032,11 @@ if (ops.length == 2) {
         return "_simd3(asm, ops, zmm: (d, s1, s2) => asm.vpxordZmm(d, s1, s2 as X86Zmm));";
       case 'vpxorq':
         return "_simd3(asm, ops, zmm: (d, s1, s2) => asm.vpxorqZmm(d, s1, s2 as X86Zmm));";
+      case 'vpslld':
+        // vpslld xmm, xmm, imm8 (and avx512 variants if any)
+        return "_shift(asm, ops, null, null, xmmI: (d, s, imm) => asm.vpslldXmmXmm(d, s, imm), ymmI: (d, s, imm) => asm.vpslldYmmYmm(d, s, imm));";
+      case 'vpsrld':
+        return "_shift(asm, ops, null, null, xmmI: (d, s, imm) => asm.vpsrldXmmXmm(d, s, imm), ymmI: (d, s, imm) => asm.vpsrldYmmYmm(d, s, imm));";
       case 'vpandd':
         return "_simd3(asm, ops, zmm: (d, s1, s2) => asm.vpanddZmm(d, s1, s2 as X86Zmm));";
       case 'vpandq':

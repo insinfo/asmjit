@@ -7586,34 +7586,47 @@ class X86Encoder {
 
   /// VPSLLD xmm, xmm, imm8 (VEX.NDS.128.66.0F.WIG 72 /6 ib)
   void vpslldXmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
-    // Note: For VEX shifts with immediate, vvvv encodes the SOURCE,
-    // and rm encodes the DESTINATION. (NDS: vvvv=src, rm=dst)
-    // BUT asmjit C++ seems to use vvvv=dst, rm=src for [VM] encoding?
-    // Let's try swapping.
-    final needsVex3 = src.isExtended;
+    // DEST is encoded in ModRM:r/m (rm).
+    // SRC1 is encoded in VEX.vvvv (vvvv).
+    // Extension: op /6.
+
+    // We must pass SRC to _emitVex (vvvv).
+    // We must pass DST to buffer.emit8 (rm).
+
+    final needsVex3 = dst.isExtended || src.isExtended;
     if (needsVex3) {
-      _emitVex3(false, false, src.isExtended, _vexMmmmm0F, false, dst.id, false,
+      // dst is rm. src is vvvv.
+      // _emitVex3(r, x, b, m, w, vvvv, l, pp)
+      // r=0 (opcode ext fixed). x=0. b=dst.isExtended.
+      // vvvv=src.id.
+      _emitVex3(false, false, dst.isExtended, _vexMmmmm0F, false, src.id, false,
           _vexPp66);
     } else {
-      _emitVex2(false, dst.id, false, _vexPp66);
+      // _emitVex2(r, vvvv, l, pp). vvvv=src.id.
+      _emitVex2(false, src.id, false, _vexPp66);
     }
     buffer.emit8(0x72);
-    buffer.emit8(0xF0 | src.encoding); // /6 (ModRM reg=6, rm=src)
+    // ModRM: mod=11, reg=6, rm=dst.
+    buffer.emit8(0xF0 | dst.encoding);
     buffer.emit8(imm8 & 0xFF);
   }
 
   /// VPSRLD xmm, xmm, imm8 (VEX.NDS.128.66.0F.WIG 72 /2 ib)
   void vpsrldXmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
-    // Note: vvvv=src, rm=dst (See VPSLLD)
-    final needsVex3 = src.isExtended;
+    // DEST is encoded in ModRM:r/m (rm).
+    // SRC1 is encoded in VEX.vvvv (vvvv).
+
+    final needsVex3 = dst.isExtended || src.isExtended;
     if (needsVex3) {
-      _emitVex3(false, false, src.isExtended, _vexMmmmm0F, false, dst.id, false,
+      _emitVex3(false, false, dst.isExtended, _vexMmmmm0F, false, src.id, false,
           _vexPp66);
     } else {
-      _emitVex2(false, dst.id, false, _vexPp66);
+      _emitVex2(false, src.id, false, _vexPp66);
     }
     buffer.emit8(0x72);
-    buffer.emit8(0xD0 | src.encoding); // /2 (ModRM reg=2, rm=src)
+    // ModRM: mod=11, reg=2 (010), rm=dst.
+    // 0xD0 = 11 010 000.
+    buffer.emit8(0xD0 | dst.encoding);
     buffer.emit8(imm8 & 0xFF);
   }
 
@@ -7675,6 +7688,33 @@ class X86Encoder {
   /// MOVDQU [mem], xmm (move unaligned double quadword)
   void movdquMemXmm(X86Mem mem, X86Xmm src) {
     buffer.emit8(0xF3); // Mandatory prefix
+    _emitRexForXmmMem(src, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x7F);
+    emitModRmMem(src.encoding, mem);
+  }
+
+  /// MOVDQA xmm, xmm (move aligned double quadword)
+  void movdqaXmmXmm(X86Xmm dst, X86Xmm src) {
+    buffer.emit8(0x66); // Mandatory prefix
+    _emitRexForXmmXmm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x6F);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// MOVDQA xmm, [mem] (move aligned double quadword)
+  void movdqaXmmMem(X86Xmm dst, X86Mem mem) {
+    buffer.emit8(0x66); // Mandatory prefix
+    _emitRexForXmmMem(dst, mem);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x6F);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// MOVDQA [mem], xmm (move aligned double quadword)
+  void movdqaMemXmm(X86Mem mem, X86Xmm src) {
+    buffer.emit8(0x66); // Mandatory prefix
     _emitRexForXmmMem(src, mem);
     buffer.emit8(0x0F);
     buffer.emit8(0x7F);

@@ -71,7 +71,7 @@ BenchResult runBench(
   int bytesPerIter,
   void Function() fn,
 ) {
-  //try {
+  try {
     // Warmup
     for (var i = 0; i < min(100, iterations ~/ 10); i++) {
       fn();
@@ -97,7 +97,9 @@ BenchResult runBench(
       nsPerOp: nsPerOp,
       mibPerSec: mibPerSec,
     );
-  // } catch (e) {
+  } catch (e, s) {
+    return BenchResult.failed(name, category, '$e\n$s');
+  }
   //   return BenchResult.failed(name, category, e.toString());
   // }
   //return BenchResult.failed(name, category, 'e.toString()');

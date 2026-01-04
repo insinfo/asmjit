@@ -177,15 +177,39 @@ class ChaCha20AsmJitOptimized {
       ),
     );
 
+    final outputArg = cc.newGpPtr('outputArg');
+    final inputArg = cc.newGpPtr('inputArg');
+    final lenArg = cc.newGpPtr('lenArg');
+    final ctxArg = cc.newGpPtr('ctxArg');
+
+    cc.setArg(0, outputArg);
+    cc.setArg(1, inputArg);
+    cc.setArg(2, lenArg);
+    cc.setArg(3, ctxArg);
+
+
+
+    // --- CORREÇÃO: Copia argumentos para registradores locais ---
     final output = cc.newGpPtr('output');
     final input = cc.newGpPtr('input');
     final len = cc.newGpPtr('len');
-    final ctx = cc.newGpPtr('ctx');
+    
+    cc.emit2v(UniOpVV.mov, output, outputArg);
+    cc.emit2v(UniOpVV.mov, input, inputArg);
+    cc.emit2v(UniOpVV.mov, len, lenArg);
 
-    cc.setArg(0, output);
-    cc.setArg(1, input);
-    cc.setArg(2, len);
-    cc.setArg(3, ctx);
+    // Fix: Use explicit stack slot for ctx to bypass RAPass spill store bug
+    // We force the use of the physical register to ensure the store happens correctly.
+    final ctxStack = cc.newStack(8, 8, 'ctx_stack');
+    if (cc.isX86Family) {
+        final physId = Platform.isWindows ? 9 : 1; // R9 or RCX
+        cc.mov(ctxStack, X86Gp.r64(physId));
+    } else {
+        cc.mov(ctxStack, ctxArg);
+    }
+    
+    final ctx = cc.newGpPtr('ctx');
+    cc.mov(ctx, ctxStack);
 
     final v0 = _asXmm(cc.newVecWithWidth(VecWidth.k128, 'v0'));
     final v1 = _asXmm(cc.newVecWithWidth(VecWidth.k128, 'v1'));
@@ -196,7 +220,7 @@ class ChaCha20AsmJitOptimized {
     final tmp = _asXmm(cc.newVecWithWidth(VecWidth.k128, 'tmp'));
 
     // GP temporário para atualizar counter no ctx (scalar, evita pressão em XMM).
-    final counterGp = cc.newGpPtr('counterGp');
+    // final counterGp = cc.newGp32('counterGp');
 
     final loopStart = cc.newLabel();
     final loopEnd = cc.newLabel();
@@ -206,6 +230,9 @@ class ChaCha20AsmJitOptimized {
       UniCondition(UniOpCond.compare, CondCode.kUnsignedLT, len, Imm(64)),
     );
     cc.bind(loopStart);
+
+    // Force reload ctx from stack to avoid spill issues
+    cc.mov(ctx, ctxStack);
 
     // ---- Carrega estado base do ctx (a cada bloco) ----
     cc.emitVM(UniOpVM.load128U32, v0, _mem128(cc, ctx, 0));
@@ -229,6 +256,7 @@ class ChaCha20AsmJitOptimized {
     }
 
     // ---- Add original state (recarrega do ctx para reduzir liveness) ----
+    cc.mov(ctx, ctxStack); // Reload ctx
     cc.emitVM(UniOpVM.load128U32, tmp, _mem128(cc, ctx, 0));
     cc.emit3v(UniOpVVV.addU32, v0, v0, tmp);
 
@@ -258,10 +286,15 @@ class ChaCha20AsmJitOptimized {
     cc.emit3v(UniOpVVV.xorU32, v3, v3, tmp);
     cc.emitMV(UniOpMV.store128U32, _mem128(cc, output, 48), v3);
 
-    // ---- Incrementa counter no ctx (lane0) por bloco ----
-    cc.emitRM(UniOpRM.loadU32, counterGp, _mem32(cc, ctx, 48));
-    cc.emitRRI(UniOpRRR.add, counterGp, counterGp, 1);
-    cc.emitMR(UniOpMR.storeU32, _mem32(cc, ctx, 48), counterGp);
+    // ---- Incrementa somente o counter (lane0) no ctx por bloco ----
+    final ctrGp = cc.newGp32('ctrGp');
+
+    cc.mov(ctx, ctxStack); // Reload ctx for load
+    cc.emitRM(UniOpRM.loadU32, ctrGp, _mem32(cc, ctx, 48));
+    cc.emitRRI(UniOpRRR.add, ctrGp, ctrGp, 1); // counter++
+
+    cc.mov(ctx, ctxStack); // Reload ctx for store
+    cc.emitMR(UniOpMR.storeU32, _mem32(cc, ctx, 48), ctrGp);
 
     // ---- Avança pointers e len ----
     cc.emitRRI(UniOpRRR.add, input, input, 64);
@@ -286,6 +319,16 @@ class ChaCha20AsmJitOptimized {
       final assembler = A64Assembler(code);
       cc.cc.serializeToAssembler(assembler);
     }
+    //printa o codido
+    final codigo =
+        code.sections.map((c) => c.buffer.bytes).expand((bytes) => bytes);
+
+    final Uint8List codigoFinal = Uint8List.fromList(codigo.toList());
+      // NUNCA remova esta parte que gera o codigo no arquivo codigo.bin
+    // print('codigo: ${codigoFinal}');
+    File('codigo.bin').writeAsBytesSync(codigoFinal);
+    print("gerou o codigo em codigo.bin");
+    //C:\gcc\bin\objdump.exe -D -b binary -m i386:x86-64 -Mintel .\codigo.bin > .\codigo.asm
 
     return runtime.add(code);
   }

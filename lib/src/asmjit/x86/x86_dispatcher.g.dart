@@ -250,6 +250,9 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
     case X86InstId.kMovd:
       _movd(asm, ops);
       break;
+    case X86InstId.kMovdqa:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.movdqaXM(d, s) : asm.movdqaXX(d, s as X86Xmm), memXmm: (m, s) => asm.movdqaMX(m, s));
+      break;
     case X86InstId.kMovdqu:
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.movdquXM(d, s) : asm.movdquXX(d, s as X86Xmm), memXmm: (m, s) => asm.movdquMX(m, s));
       break;
@@ -317,15 +320,15 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.porXM(d, s) : asm.porXX(d, s as X86Xmm));
       break;
     case X86InstId.kPshufd:
-      final dst = ops[0] as X86Xmm; 
-final src = (ops.length == 3) ? ops[1] : dst; 
-final immOp = (ops.length == 3) ? ops[2] : ops[1]; 
-final imm = (immOp is Imm) ? immOp.value : immOp as int; 
-if (src is X86Xmm) { 
-  asm.pshufdXXI(dst, src, imm); 
-} else if (src is X86Mem) {
-  asm.pshufdXMI(dst, src, imm); 
-}
+            final dst = ops[0] as X86Xmm; 
+      final src = (ops.length == 3) ? ops[1] : dst; 
+      final immOp = (ops.length == 3) ? ops[2] : ops[1]; 
+      final imm = (immOp is Imm) ? immOp.value : immOp as int; 
+      if (src is X86Xmm) { 
+        asm.pshufdXXI(dst, src, imm); 
+      } else if (src is X86Mem) {
+        asm.pshufdXMI(dst, src, imm); 
+      }
       break;
     case X86InstId.kPslld:
       _simd2(asm, ops, xmm: (d, s) => (s is int || s is Imm) ? asm.pslldXI(d, s is Imm ? s.value : s as int) : asm.pslldXX(d, s as X86Xmm));
@@ -607,12 +610,6 @@ if (src is X86Xmm) {
     }
   }
 }
-      break;
-    case X86InstId.kVpslld:
-      // unsupported
-      break;
-    case X86InstId.kVpsrld:
-      // unsupported
       break;
     case X86InstId.kVpxor:
       _simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vpxorXXM(d, s1, s2) : asm.vpxorXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vpxorYYM(d, s1, s2) : asm.vpxorYYY(d, s1, s2 as X86Ymm));

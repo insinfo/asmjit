@@ -1,6 +1,6 @@
 # Roteiro de Portação: AsmJit C++ → Dart
 //C:\MyDartProjects\asmjit\roteiro_novo.md
-**Última Atualização**: 2026-01-03 (00:15)
+**Última Atualização**: 2026-01-04 (00:00)
 continue lendo o codigo fonte c++ C:\MyDartProjects\asmjit\referencias\asmjit-master e portando
 
 foco em 64 bits, windows e linux e paridade com c++
@@ -30,6 +30,28 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 | **Lint Status** | ✅ Clean | 0 erros, Warns Resolved |
 
 ---
+
+## ✅ Progresso Recente (04/01/2026)
+
+### ChaCha20 JIT estável (loop multi-bloco)
+- Correção aplicada em `benchmark/asmjit/chacha20_impl/chacha20_asmjit_optimized.dart`: passamos a armazenar o `ctx` em slot de stack na prólogo (usando o registrador físico de argumento) e recarregar o `ctx` antes de cada uso. Atualização do contador agora é escalar (`loadU32/add/storeU32`), evitando dependência de constante vetorial não inicializada.
+- Resultado: `debug_chacha_opt.dart` passou para todos os tamanhos (1 bloco, multi-bloco, parcial, buffer grande) sem crash e sem divergência de saída. Assembly gerado mostra os `mov rcx,[rbp-0x8]` antes de cada acesso ao contexto.
+
+### Falhas atuais nos testes
+- `integration_abi_test.dart` → "Mixed Int/Float": resultado 41.0 vs esperado 61.0. Indica que ainda usamos instrução vetorial no caminho escalar ou há perda de alinhamento/preservação de registradores XMM na chamada.
+- `x86_instruction_verification_test.dart` → rotações AVX de 32 bits (rotr/rotl 16, 12, 8, 7) devolvendo 0x8000_0000 em vez do valor rotacionado esperado. Sugere codificação/uso de `pslld/psrld` ou máscara de 32 bits incorreta no caminho AVX.
+
+### Testes a implementar para prevenir regressões
+- **RAPass / preservação de argumentos**: teste unitário que cria função com `newStack` e força spill do registrador de argumento (RCX/R9). Verificar que o prólogo emite `mov [rbp-offset], reg` antes de qualquer reload e que o valor recarregado corresponde ao argumento original.
+- **RAPass / constantes vetoriais**: teste em `rapass_test` que injeta `VecConstTable` e força reload após um loop (live range longo) para garantir que `simdVecConst` gera materialização ou load válido (sem pegar lixo).
+- **ChaCha counter lane0**: teste de integração simples que roda 2 blocos e verifica que apenas `ctx[12]` é incrementado e que nonce não muda; captura regressão onde `paddd` somava o vetor inteiro.
+- **Rotates AVX 32-bit**: novo caso em `x86_instruction_verification_test.dart` cobrindo encode/exec de rol/rori pack 32-bit com VEX (vpslld/pslld+pxor). Deve validar saída numérica e não apenas hex dump.
+- **ABI Mixed Int/Float**: reforçar no teste que o compilador usa instruções escalares (`addF64S`) e que XMM preservado/stack alignment permanece correto. Incluir cenário com spill de XMM para a pilha.
+
+### Itens para corrigir no código
+- Revisar `unicompiler_x86` para o caminho escalar F64/F32 usado pelo teste Mixed Int/Float e garantir escolha de opcode escalar (ADDSD/VADDSD) com clean upper bits e sem contaminar registradores callee-saved.
+- Verificar encode de rotações AVX 32-bit: checar se estamos emitindo shift de 32 bits com/sem REX.W e se o shuffle/pslld/psrld está mascarando 0x1F; ajustar dispatcher no `x86_encoder`/`x86_assembler` para versões R32.
+- Incluir no RAPass uma validação de que qualquer `newStack` usado para salvar argumento realmente recebe o `mov` inicial (coverage via teste acima).
 
 ## ✅ Progresso Recente (03/01/2026 - Atualização 4)
 
