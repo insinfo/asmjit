@@ -21,9 +21,6 @@ import '../x86/x86_simd.dart';
 import '../x86/x86_operands.dart';
 import '../x86/x86_inst_db.g.dart';
 import 'raassignment.dart';
-import 'reg_type.dart';
-import 'type.dart';
-import 'operand.dart';
 
 class _RAConsecutiveReg {
   final RAWorkReg workReg;
@@ -181,22 +178,28 @@ class RAPass extends CompilerPass {
 
       if (argVal.isReg) {
         final virtId = argVal.regId;
-        if (_virtIdToWorkId.containsKey(virtId)) {
-          final physArg = detail.args[i][0];
-          if (physArg.isReg) {
-            final workId = _virtIdToWorkId[virtId]!;
-            final workReg = _allocator.workRegById(workId);
-            final virtReg = workReg.virtReg;
+          if (_virtIdToWorkId.containsKey(virtId)) {
+            final physArg = detail.args[i][0];
+            if (physArg.isReg) {
+              final workId = _virtIdToWorkId[virtId]!;
+              final workReg = _allocator.workRegById(workId);
+              final virtReg = workReg.virtReg;
+              // For argumentos, force o alocador a preferir (e manter) o
+              // registrador f�sico definido pela ABI. Isso garante que os
+              // ponteiros de entrada/sa�da cheguem corretos mesmo antes de
+              // qualquer instru��o de movimenta��o.
+              workReg.homeRegId = physArg.regId;
+              workReg.restrictPreferredMask(1 << physArg.regId);
 
-            int instId;
-            if (virtReg.group == RegGroup.gp) {
-              instId = X86InstId.kMov;
-            } else {
-              // Vector arguments
-              instId = X86InstId.kMovaps;
-            }
+              int instId;
+              if (virtReg.group == RegGroup.gp) {
+                instId = X86InstId.kMov;
+              } else {
+                // Vector arguments
+                instId = X86InstId.kMovaps;
+              }
 
-            final physReg = virtReg.toPhys(physArg.regId);
+              final physReg = virtReg.toPhys(physArg.regId);
             print('RAPass: Insert Arg Move Virt${virtReg.id} <- Phys${physArg.regId}');
             final movNode = InstNode(instId, [virtReg, physReg]);
             _insertNodeAfter(insertPoint!, movNode);
@@ -247,9 +250,8 @@ class RAPass extends CompilerPass {
       gpMask &= ~(1 << 5); // Remove RBP (Frame Pointer)
 
       avail[RegGroup.gp] = gpMask;
-      // avail[RegGroup.vec] = 0xFFFFFFFF; // All 32 vector regs available
-      // avail[RegGroup.vec] = 0xFFFF; // Limit to 16 vector regs (XMM0-XMM15) for safety until AVX-512 is fully supported
-      avail[RegGroup.vec] = 0x3F; // DEBUG: Limit to XMM0-XMM5 to avoid callee-saved regs issues on Windows
+      // Disponibiliza XMM0-XMM15 (Win64 tem 16 regs; AVX512 n�o est� habilitado aqui)
+      avail[RegGroup.vec] = 0xFFFF;
 
       // Set preserved mask
       int presGp = 0;
@@ -263,12 +265,16 @@ class RAPass extends CompilerPass {
       // SysV: All XMM volatile? No, check ABI.
       // Win64: XMM6-XMM15 must be preserved.
 
-      // Let's hardcode Win64 vector preservation for now
-      int presVec = 0;
-      for (int i = 6; i <= 15; i++) {
-        presVec |= (1 << i);
+      // Win64: XMM6-XMM15 s�o preservados (callee-saved).
+      if (isWindows) {
+        int presVec = 0;
+        for (int i = 6; i <= 15; i++) {
+          presVec |= (1 << i);
+        }
+        preserved[RegGroup.vec] = presVec;
+      } else {
+        preserved[RegGroup.vec] = 0;
       }
-      preserved[RegGroup.vec] = presVec;
     } else {
       // x86 (32-bit) defaults
       avail[RegGroup.gp] = 0xFF & ~(1 << 4); // Remove ESP
@@ -1472,6 +1478,44 @@ class RAPass extends CompilerPass {
           }
         }
       } else if (op is X86Mem) {
+        // Caso especial: operandos de stack criados via newStack (base = VirtReg
+        // marcado como stack slot). Convertemos para [RBP+offset] imediatamente,
+        // evitando que o registrador virtual seja tratado como ponteiro lixo.
+        if (op.base != null && !op.base!.isPhysical) {
+          final workId = _virtIdToWorkId[op.base!.id];
+          if (workId != null) {
+            final workReg = _allocator.workRegById(workId);
+            if (workReg.isStackSlot) {
+              // Consumir a entrada de tied para manter o cursor alinhado.
+              if (tiedIdx < tiedRegs.length) tiedIdx++;
+
+              BaseReg? newIndex = op.index;
+              if (op.index != null && !op.index!.isPhysical) {
+                if (tiedIdx < tiedRegs.length) {
+                  final tied = tiedRegs[tiedIdx++];
+                  final physId = _resolvePhysId(tied);
+                  if (physId != RAAssignment.kPhysNone) {
+                    newIndex = tied.workReg.virtReg.toPhys(physId);
+                  }
+                }
+              }
+
+              final stackMem = _stackSlot(workReg) as X86Mem;
+              final disp = stackMem.displacement + op.displacement;
+              final size = op.size != 0 ? op.size : stackMem.size;
+
+              node.operands[i] = X86Mem(
+                  base: stackMem.base,
+                  index: newIndex,
+                  scale: op.scale,
+                  displacement: disp,
+                  size: size,
+                  segment: op.segment);
+              continue;
+            }
+          }
+        }
+
         BaseReg? newBase = op.base;
         BaseReg? newIndex = op.index;
         bool changed = false;
@@ -1705,6 +1749,11 @@ class RAPass extends CompilerPass {
 
     int totalStackSize = _alignUp(currentOffset, 16);
 
+    // Garanta que o frame conhe�a o tamanho real (locals + saves).
+    if (func.frame.localStackSize < totalStackSize) {
+      func.frame.setLocalStackSize(totalStackSize);
+    }
+
     // Prolog
     if (is64Bit) {
       // push rbp; mov rbp, rsp
@@ -1731,7 +1780,8 @@ class RAPass extends CompilerPass {
       for (final slot in vecSlots) {
         final mem =
             X86Mem.baseDisp(rbp, -slot.value, size: 16);
-        final save = InstNode(X86InstId.kMovups, [mem, slot.key]); // Use unaligned save
+        final save =
+            InstNode(X86InstId.kMovdqu, [mem, slot.key]); // unaligned OK
         _insertNodeAfter(lastNode, save);
         lastNode = save;
       }
@@ -1768,7 +1818,8 @@ class RAPass extends CompilerPass {
         for (final slot in vecSlots.reversed) {
           final mem =
               X86Mem.baseDisp(rbp, -slot.value, size: 16);
-          final restore = InstNode(X86InstId.kMovups, [slot.key, mem]); // Use unaligned restore
+          final restore =
+              InstNode(X86InstId.kMovdqu, [slot.key, mem]); // unaligned OK
           _insertNodeBefore(node, restore);
         }
 

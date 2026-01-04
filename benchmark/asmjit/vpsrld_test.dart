@@ -1,8 +1,6 @@
 import 'dart:ffi';
-import 'dart:typed_data';
 import '../../lib/asmjit.dart';
 import 'package:ffi/ffi.dart' as ffi;
-import '../../lib/src/asmjit/runtime/virtmem.dart';
 
 void main() {
   // Manually create the instruction stream

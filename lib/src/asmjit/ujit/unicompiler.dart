@@ -410,6 +410,17 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     }
   }
 
+  /// Creates a stack slot with specified size and alignment.
+  X86Mem newStack(int size, int alignment, [String? name]) {
+    if (isX86Family) {
+      final vReg = cc.createStackVirtReg(size, alignment, name);
+      // Use X86Gp as a handle for the virtual register ID.
+      // The RA will look up the VirtReg by ID and see it's a stack slot.
+      return X86Mem.base(X86Gp.r64(vReg.id), size: size);
+    }
+    throw UnimplementedError('newStack not implemented for this arch');
+  }
+
   // ============================================================================
   // [Function Management]
   // ============================================================================
@@ -1210,6 +1221,7 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     if (_commonTablePtr != null) return;
 
     final prev = cc.cursor;
+    final isAtHook = prev == _funcInitHook;
     cc.setCursor(_funcInitHook!);
 
     if (_ctRef != null) {
@@ -1239,7 +1251,7 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     }
 
     _funcInitHook = cc.cursor;
-    cc.setCursor(prev);
+    cc.setCursor(isAtHook ? _funcInitHook : prev);
   }
 
   BaseReg kConst(int value) {
@@ -1258,6 +1270,7 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     }
 
     final prev = cc.cursor;
+    final isAtHook = prev == _funcInitHook;
     cc.setCursor(_funcInitHook!);
 
     if (isX86Family) {
@@ -1279,7 +1292,7 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
         _kImm[slot] = value;
       }
       _funcInitHook = cc.cursor;
-      cc.setCursor(prev);
+      cc.setCursor(isAtHook ? _funcInitHook : prev);
       return kReg;
     } else {
       // TODO: Implement kConst for A64 if needed (Predicate Registers)
@@ -1381,7 +1394,7 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
           // _initVecConstTablePtr handles this if _ctRef is null.
           // If _ctRef is not null but we are here, it means we have mixed constants.
           // For now assume _ctRef is null or we reuse ptr if possible (but we can't reuse global ptr for local).
-          
+
           if (isX86Family) {
             return X86Mem.base(_commonTablePtr! as X86Gp,
                 disp: vc.offset, size: c.width);
@@ -1397,10 +1410,11 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
 
   BaseReg _newVecConst(VecConst c, bool isUnique) {
     final prev = cc.cursor;
+    final isAtHook = prev == _funcInitHook;
     cc.setCursor(_funcInitHook!);
 
     final vec = newVecWithWidth(_vecWidth, "vec_const");
-    
+
     int offset = _localConstOffset;
     _vecConsts.add(VecConstData(c, vec.id, offset));
     _localConstOffset += c.width;
@@ -1420,7 +1434,7 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     }
 
     _funcInitHook = cc.cursor;
-    cc.setCursor(prev);
+    cc.setCursor(isAtHook ? _funcInitHook : prev);
 
     return vec;
   }
@@ -1484,7 +1498,8 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     if (isX86Family) {
       _emitMRX86(op, finalDst as X86Mem, src as BaseReg);
     } else if (isArm64) {
-      (this as UniCompilerA64)._emitMRA64(op, finalDst as A64Mem, src as BaseReg);
+      (this as UniCompilerA64)
+          ._emitMRA64(op, finalDst as A64Mem, src as BaseReg);
     } else {
       throw UnimplementedError('emitMR not implemented for $arch');
     }

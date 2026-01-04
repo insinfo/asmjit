@@ -5,7 +5,6 @@
 import '../core/reg_type.dart';
 import '../core/reg_utils.dart';
 import '../core/compiler.dart';
-import '../core/operand.dart';
 
 /// Data alignment.
 enum Alignment {

@@ -18117,7 +18117,8 @@ class RAPass extends CompilerPass {
 
       avail[RegGroup.gp] = gpMask;
       // avail[RegGroup.vec] = 0xFFFFFFFF; // All 32 vector regs available
-      avail[RegGroup.vec] = 0xFFFF; // Limit to 16 vector regs (XMM0-XMM15) for safety until AVX-512 is fully supported
+      // avail[RegGroup.vec] = 0xFFFF; // Limit to 16 vector regs (XMM0-XMM15) for safety until AVX-512 is fully supported
+      avail[RegGroup.vec] = 0x3F; // DEBUG: Limit to XMM0-XMM5 to avoid callee-saved regs issues on Windows
 
       // Set preserved mask
       int presGp = 0;
@@ -18265,6 +18266,14 @@ class RAPass extends CompilerPass {
 
     // 4. Build LiveSpans
     _buildLiveSpans(nodes);
+    
+    // Debug: Print LiveSpans
+    print('RAPass: LiveSpans');
+    for (int i = 0; i < _numWorkRegs; i++) {
+      final workReg = _allocator.workRegById(i);
+      final spans = workReg.liveSpans.data.map((s) => '[${s.a}, ${s.b}]').join(', ');
+      print('  Virt${workReg.virtReg.id}: $spans');
+    }
   }
 
   void _analyzeInstLiveness(InstNode node, RABlockData data) {
@@ -18416,9 +18425,21 @@ class RAPass extends CompilerPass {
 
   void _buildLiveSpans(NodeList nodes) {
     int position = 2;
+    BlockNode? currentBlock;
 
     for (final node in nodes.nodes) {
       if (node is BlockNode) {
+        // Close previous block
+        if (currentBlock != null) {
+           final data = _blockData[currentBlock.label.id]!;
+           for (final workId in data.liveOut.setBits) {
+              final workReg = _allocator.workRegById(workId);
+              // Extend to current position (end of block)
+              workReg.liveSpans.openAt(currentBlock.position, position);
+           }
+        }
+
+        currentBlock = node;
         final data = _blockData[node.label.id]!;
         node.position = position;
 
@@ -18458,6 +18479,15 @@ class RAPass extends CompilerPass {
         }
         position += 2;
       }
+    }
+
+    // Close last block
+    if (currentBlock != null) {
+       final data = _blockData[currentBlock.label.id]!;
+       for (final workId in data.liveOut.setBits) {
+          final workReg = _allocator.workRegById(workId);
+          workReg.liveSpans.openAt(currentBlock.position, position);
+       }
     }
   }
 
@@ -19368,7 +19398,11 @@ class RAPass extends CompilerPass {
     int instId = _archTraits.movId;
     if (workReg.group == RegGroup.vec) {
       if (compiler.arch == Arch.x64 || compiler.arch == Arch.x86) {
-        instId = X86InstId.kMovaps;
+        bool hasAvx = false;
+        try {
+          hasAvx = (compiler as dynamic).hasAvx;
+        } catch (_) {}
+        instId = hasAvx ? X86InstId.kVmovups : X86InstId.kMovups;
       }
     }
 
@@ -19383,7 +19417,11 @@ class RAPass extends CompilerPass {
     int instId = _archTraits.movId;
     if (workReg.group == RegGroup.vec) {
       if (compiler.arch == Arch.x64 || compiler.arch == Arch.x86) {
-        instId = X86InstId.kMovaps;
+        bool hasAvx = false;
+        try {
+          hasAvx = (compiler as dynamic).hasAvx;
+        } catch (_) {}
+        instId = hasAvx ? X86InstId.kVmovups : X86InstId.kMovups;
       }
     }
 
@@ -19398,7 +19436,11 @@ class RAPass extends CompilerPass {
     int instId = _archTraits.movId;
     if (workReg.group == RegGroup.vec) {
       if (compiler.arch == Arch.x64 || compiler.arch == Arch.x86) {
-        instId = X86InstId.kMovaps;
+        bool hasAvx = false;
+        try {
+          hasAvx = (compiler as dynamic).hasAvx;
+        } catch (_) {}
+        instId = hasAvx ? X86InstId.kVmovaps : X86InstId.kMovaps;
       }
     }
 
@@ -19410,6 +19452,31 @@ class RAPass extends CompilerPass {
       RAWorkReg aReg, int aPhys, RAWorkReg bReg, int bPhys, InstNode ctx) {
     final rA = aReg.virtReg.toPhys(aPhys);
     final rB = bReg.virtReg.toPhys(bPhys);
+
+    if (aReg.group == RegGroup.vec) {
+      bool hasAvx = false;
+      try {
+        hasAvx = (compiler as dynamic).hasAvx;
+      } catch (_) {}
+
+      if (hasAvx) {
+        // vpxor a, a, b
+        _insertNodeBefore(ctx, InstNode(X86InstId.kVpxor, [rA, rA, rB]));
+        // vpxor b, a, b
+        _insertNodeBefore(ctx, InstNode(X86InstId.kVpxor, [rB, rA, rB]));
+        // vpxor a, a, b
+        _insertNodeBefore(ctx, InstNode(X86InstId.kVpxor, [rA, rA, rB]));
+      } else {
+        // pxor a, b
+        _insertNodeBefore(ctx, InstNode(X86InstId.kPxor, [rA, rB]));
+        // pxor b, a
+        _insertNodeBefore(ctx, InstNode(X86InstId.kPxor, [rB, rA]));
+        // pxor a, b
+        _insertNodeBefore(ctx, InstNode(X86InstId.kPxor, [rA, rB]));
+      }
+      return;
+    }
+
     final swapNode = InstNode(_archTraits.xchgId, [rA, rB]);
     _insertNodeBefore(ctx, swapNode);
   }
@@ -19533,7 +19600,7 @@ class RAPass extends CompilerPass {
       for (final slot in vecSlots) {
         final mem =
             X86Mem.baseDisp(rbp, -slot.value, size: 16);
-        final save = InstNode(X86InstId.kMovaps, [mem, slot.key]);
+        final save = InstNode(X86InstId.kMovups, [mem, slot.key]); // Use unaligned save
         _insertNodeAfter(lastNode, save);
         lastNode = save;
       }
@@ -19570,7 +19637,7 @@ class RAPass extends CompilerPass {
         for (final slot in vecSlots.reversed) {
           final mem =
               X86Mem.baseDisp(rbp, -slot.value, size: 16);
-          final restore = InstNode(X86InstId.kMovaps, [slot.key, mem]);
+          final restore = InstNode(X86InstId.kMovups, [slot.key, mem]); // Use unaligned restore
           _insertNodeBefore(node, restore);
         }
 
@@ -23300,6 +23367,17 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     }
   }
 
+  /// Creates a stack slot with specified size and alignment.
+  X86Mem newStack(int size, int alignment, [String? name]) {
+    if (isX86Family) {
+      final vReg = cc.createStackVirtReg(size, alignment, name);
+      // Use X86Gp as a handle for the virtual register ID.
+      // The RA will look up the VirtReg by ID and see it's a stack slot.
+      return X86Mem.base(X86Gp.r64(vReg.id), size: size);
+    }
+    throw UnimplementedError('newStack not implemented for this arch');
+  }
+
   // ============================================================================
   // [Function Management]
   // ============================================================================
@@ -24100,6 +24178,7 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     if (_commonTablePtr != null) return;
 
     final prev = cc.cursor;
+    final isAtHook = prev == _funcInitHook;
     cc.setCursor(_funcInitHook!);
 
     if (_ctRef != null) {
@@ -24129,7 +24208,7 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     }
 
     _funcInitHook = cc.cursor;
-    cc.setCursor(prev);
+    cc.setCursor(isAtHook ? _funcInitHook : prev);
   }
 
   BaseReg kConst(int value) {
@@ -24148,6 +24227,7 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     }
 
     final prev = cc.cursor;
+    final isAtHook = prev == _funcInitHook;
     cc.setCursor(_funcInitHook!);
 
     if (isX86Family) {
@@ -24169,7 +24249,7 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
         _kImm[slot] = value;
       }
       _funcInitHook = cc.cursor;
-      cc.setCursor(prev);
+      cc.setCursor(isAtHook ? _funcInitHook : prev);
       return kReg;
     } else {
       // TODO: Implement kConst for A64 if needed (Predicate Registers)
@@ -24271,7 +24351,7 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
           // _initVecConstTablePtr handles this if _ctRef is null.
           // If _ctRef is not null but we are here, it means we have mixed constants.
           // For now assume _ctRef is null or we reuse ptr if possible (but we can't reuse global ptr for local).
-          
+
           if (isX86Family) {
             return X86Mem.base(_commonTablePtr! as X86Gp,
                 disp: vc.offset, size: c.width);
@@ -24287,10 +24367,11 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
 
   BaseReg _newVecConst(VecConst c, bool isUnique) {
     final prev = cc.cursor;
+    final isAtHook = prev == _funcInitHook;
     cc.setCursor(_funcInitHook!);
 
     final vec = newVecWithWidth(_vecWidth, "vec_const");
-    
+
     int offset = _localConstOffset;
     _vecConsts.add(VecConstData(c, vec.id, offset));
     _localConstOffset += c.width;
@@ -24310,7 +24391,7 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     }
 
     _funcInitHook = cc.cursor;
-    cc.setCursor(prev);
+    cc.setCursor(isAtHook ? _funcInitHook : prev);
 
     return vec;
   }
@@ -24374,7 +24455,8 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     if (isX86Family) {
       _emitMRX86(op, finalDst as X86Mem, src as BaseReg);
     } else if (isArm64) {
-      (this as UniCompilerA64)._emitMRA64(op, finalDst as A64Mem, src as BaseReg);
+      (this as UniCompilerA64)
+          ._emitMRA64(op, finalDst as A64Mem, src as BaseReg);
     } else {
       throw UnimplementedError('emitMR not implemented for $arch');
     }
@@ -25687,7 +25769,7 @@ mixin UniCompilerX86 on UniCompilerBase {
     if (hasAvx512) {
       // TODO: Enable 32 registers when EVEX encoding is fully verified
       // _vecRegCount = 32;
-      _vecRegCount = 16; 
+      _vecRegCount = 16;
     }
   }
 
@@ -26166,10 +26248,16 @@ mixin UniCompilerX86 on UniCompilerBase {
         case UniOpVM.load256F64:
           final mem = src.withSize(info.memSize);
           bool aligned = alignment.size != 0 && alignment.size >= info.memSize;
-          int instId = (op.name.contains('F'))
-              ? (aligned ? X86InstId.kVmovaps : X86InstId.kVmovups)
-              : (aligned ? X86InstId.kVmovdqa : X86InstId.kVmovdqu);
-          cc.addNode(InstNode(instId, [dst, mem]));
+          // Force floating point moves for AVX to avoid vmovdqu issues
+          int instId = (aligned ? X86InstId.kVmovaps : X86InstId.kVmovups);
+
+          // Fix: Ensure we use the correct register width for the operation
+          var target = dst;
+          if (info.memSize == 16 && dst is X86Vec) {
+            target = dst.xmm;
+          }
+
+          cc.addNode(InstNode(instId, [target, mem]));
           return;
         default:
           if (info.avxInstId != 0) {
@@ -26248,10 +26336,16 @@ mixin UniCompilerX86 on UniCompilerBase {
         case UniOpMV.store256F64:
           final mem = dst.withSize(info.memSize);
           bool aligned = alignment.size != 0 && alignment.size >= info.memSize;
-          int instId = (op.name.contains('F'))
-              ? (aligned ? X86InstId.kVmovaps : X86InstId.kVmovups)
-              : (aligned ? X86InstId.kVmovdqa : X86InstId.kVmovdqu);
-          cc.addNode(InstNode(instId, [mem, src]));
+          // Force floating point moves for AVX to avoid vmovdqu issues
+          int instId = (aligned ? X86InstId.kVmovaps : X86InstId.kVmovups);
+
+          // Fix: Ensure we use the correct register width for the operation
+          var source = src;
+          if (info.memSize == 16 && src is X86Vec) {
+            source = src.xmm;
+          }
+
+          cc.addNode(InstNode(instId, [mem, source]));
           return;
         default:
           break;
@@ -27295,14 +27389,8 @@ mixin UniCompilerX86 on UniCompilerBase {
         }
         break;
       case UniOpVVI.swizzleU32x4:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpshufd, [dst, src, Imm(imm)]));
-        } else {
-          if (dst.id != src.id) {
-            _vMovX86(dst, src);
-          }
-          cc.addNode(InstNode(X86InstId.kPshufd, [dst, Imm(imm)]));
-        }
+        cc.addNode(InstNode(hasAvx ? X86InstId.kVpshufd : X86InstId.kPshufd,
+            [dst, src, Imm(imm)]));
         break;
       default:
         throw UnimplementedError('_emit2viX86: $op not implemented');
@@ -31129,6 +31217,54 @@ class X86Assembler extends BaseEmitter {
   /// MOVDQU [mem], xmm (SSE2)
   void movdquMX(X86Mem dst, X86Xmm src) => _enc.movdquMemXmm(dst, src);
 
+  /// VMOVDQU xmm, [mem] (AVX)
+  void vmovdquXmmMem(X86Xmm dst, X86Mem mem) => _enc.vmovdquXmmMem(dst, mem);
+
+  /// VMOVDQU xmm, xmm (AVX)
+  void vmovdquXX(X86Xmm dst, X86Xmm src) => _enc.vmovdquXmmXmm(dst, src);
+
+  /// VMOVDQU [mem], xmm (AVX)
+  void vmovdquMemXmm(X86Mem mem, X86Xmm src) => _enc.vmovdquMemXmm(mem, src);
+
+  /// VMOVDQU ymm, [mem] (AVX)
+  void vmovdquYmmMem(X86Ymm dst, X86Mem mem) => _enc.vmovdquYmmMem(dst, mem);
+
+  /// VMOVDQU ymm, ymm (AVX)
+  void vmovdquYY(X86Ymm dst, X86Ymm src) => _enc.vmovdquYmmYmm(dst, src);
+
+  /// VMOVDQU [mem], ymm (AVX)
+  void vmovdquMemYmm(X86Mem mem, X86Ymm src) => _enc.vmovdquMemYmm(mem, src);
+
+  /// VMOVDQA xmm, [mem] (AVX)
+  void vmovdqaXmmMem(X86Xmm dst, X86Mem mem) => _enc.vmovdqaXmmMem(dst, mem);
+
+  /// VMOVDQA [mem], xmm (AVX)
+  void vmovdqaMemXmm(X86Mem mem, X86Xmm src) => _enc.vmovdqaMemXmm(mem, src);
+
+  /// VMOVDQA xmm, xmm (AVX)
+  void vmovdqaXX(X86Xmm dst, X86Xmm src) => _enc.vmovdqaXmmXmm(dst, src);
+
+  /// VMOVDQA ymm, [mem] (AVX)
+  void vmovdqaYmmMem(X86Ymm dst, X86Mem mem) => _enc.vmovdqaYmmMem(dst, mem);
+
+  /// VMOVDQA [mem], ymm (AVX)
+  void vmovdqaMemYmm(X86Mem mem, X86Ymm src) => _enc.vmovdqaMemYmm(mem, src);
+
+  /// VMOVDQA ymm, ymm (AVX)
+  void vmovdqaYY(X86Ymm dst, X86Ymm src) => _enc.vmovdqaYmmYmm(dst, src);
+
+  /// VPSHUFD xmm, xmm/m128, imm8
+  void vpshufdXXX(X86Xmm dst, X86Xmm src, int imm) =>
+      _enc.vpshufdXmmXmm(dst, src, imm);
+  void vpshufdXXM(X86Xmm dst, X86Mem src, int imm) =>
+      _enc.vpshufdXmmMem(dst, src, imm);
+
+  /// VPSHUFD ymm, ymm/m256, imm8
+  void vpshufdYYY(X86Ymm dst, X86Ymm src, int imm) =>
+      _enc.vpshufdYmmYmm(dst, src, imm);
+  void vpshufdYYM(X86Ymm dst, X86Mem src, int imm) =>
+      _enc.vpshufdYmmMem(dst, src, imm);
+
   // ===========================================================================
   // SSE2 - Packed Integer Arithmetic
   // ===========================================================================
@@ -31378,6 +31514,18 @@ class X86Assembler extends BaseEmitter {
 
   /// PSRLD xmm, imm8
   void psrldXI(X86Xmm dst, int imm8) => _enc.psrldXmmImm8(dst, imm8);
+
+  /// VPSLLD xmm, xmm, imm8 (AVX)
+  void vpslld(X86Xmm dst, X86Xmm src, int imm8) =>
+      _enc.vpslldXmmXmmImm8(dst, src, imm8);
+
+  /// VPSRLD xmm, xmm, imm8 (AVX)
+  void vpsrld(X86Xmm dst, X86Xmm src, int imm8) =>
+      _enc.vpsrldXmmXmmImm8(dst, src, imm8);
+
+  /// VPSHUFD xmm, xmm, imm8 (AVX)
+  void vpshufd(X86Xmm dst, X86Xmm src, int imm8) =>
+      _enc.vpshufdXmmXmmImm8(dst, src, imm8);
 
   /// PSRLQ xmm, xmm
   void psrlqXX(X86Xmm dst, X86Xmm src) => _enc.psrlqXmmXmm(dst, src);
@@ -32617,7 +32765,7 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.porXM(d, s) : asm.porXX(d, s as X86Xmm));
       break;
     case X86InstId.kPshufd:
-      if (ops.length == 3 && ops[0] is X86Xmm && ops[1] is X86Xmm && (ops[2] is int || ops[2] is Imm)) asm.pshufdXXI(ops[0] as X86Xmm, ops[1] as X86Xmm, ops[2] is Imm ? (ops[2] as Imm).value : ops[2] as int);
+      // unsupported
       break;
     case X86InstId.kPslld:
       _simd2(asm, ops, xmm: (d, s) => (s is int || s is Imm) ? asm.pslldXI(d, s is Imm ? s.value : s as int) : asm.pslldXX(d, s as X86Xmm));
@@ -32790,6 +32938,18 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
     case X86InstId.kVmovaps:
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vmovapsXM(d, s) : asm.vmovaps(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vmovapsYM(d, s) : asm.vmovapsY(d, s as X86Ymm), memXmm: (m, s) => asm.vmovapsMX(m, s), memYmm: (m, s) => asm.vmovapsMY(m, s));
       break;
+    case X86InstId.kVmovd:
+      // unsupported
+      break;
+    case X86InstId.kVmovdqa:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vmovdqaXmmMem(d, s) : asm.vmovdqaXX(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vmovdqaYmmMem(d, s) : asm.vmovdqaYY(d, s as X86Ymm), memXmm: (m, s) => asm.vmovdqaMemXmm(m, s), memYmm: (m, s) => asm.vmovdqaMemYmm(m, s));
+      break;
+    case X86InstId.kVmovdqu:
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vmovdquXmmMem(d, s) : asm.vmovdquXX(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vmovdquYmmMem(d, s) : asm.vmovdquYY(d, s as X86Ymm), memXmm: (m, s) => asm.vmovdquMemXmm(m, s), memYmm: (m, s) => asm.vmovdquMemYmm(m, s));
+      break;
+    case X86InstId.kVmovq:
+      // unsupported
+      break;
     case X86InstId.kVmovups:
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vmovupsXM(d, s) : asm.vmovups(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vmovupsYM(d, s) : asm.vmovupsY(d, s as X86Ymm), zmm: (d, s) => s is X86Mem ? asm.vmovupsZmmMem(d, s) : asm.vmovupsZmm(d, s as X86Zmm), memXmm: (m, s) => asm.vmovupsMX(m, s), memYmm: (m, s) => asm.vmovupsMY(m, s), memZmm: (m, s) => asm.vmovupsMemZmm(m, s));
       break;
@@ -32801,6 +32961,12 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       break;
     case X86InstId.kVmulsd:
       _simd3(asm, ops, xmm: (d, s1, s2) { if (s2 is X86Xmm) asm.vmulsdXXX(d, s1, s2); });
+      break;
+    case X86InstId.kVpaddd:
+      _simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vpadddXXM(d, s1, s2) : asm.vpadddXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vpadddYYM(d, s1, s2) : asm.vpadddYYY(d, s1, s2 as X86Ymm));
+      break;
+    case X86InstId.kVpand:
+      _simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vpandXXM(d, s1, s2) : asm.vpandXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vpandYYM(d, s1, s2) : asm.vpandYYY(d, s1, s2 as X86Ymm));
       break;
     case X86InstId.kVpandd:
       _simd3(asm, ops, zmm: (d, s1, s2) => asm.vpanddZmm(d, s1, s2 as X86Zmm));
@@ -32820,11 +32986,23 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
     case X86InstId.kVpbroadcastw:
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.vpbroadcastwXM(d, s) : asm.vpbroadcastwXX(d, s as X86Xmm), ymm: (d, s) => s is X86Mem ? asm.vpbroadcastwYM(d, s) : asm.vpbroadcastwYX(d, s as X86Xmm));
       break;
+    case X86InstId.kVpor:
+      _simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vporXXM(d, s1, s2) : asm.vporXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vporYYM(d, s1, s2) : asm.vporYYY(d, s1, s2 as X86Ymm));
+      break;
     case X86InstId.kVpord:
       _simd3(asm, ops, zmm: (d, s1, s2) => asm.vpordZmm(d, s1, s2 as X86Zmm));
       break;
     case X86InstId.kVporq:
       _simd3(asm, ops, zmm: (d, s1, s2) => asm.vporqZmm(d, s1, s2 as X86Zmm));
+      break;
+    case X86InstId.kVpshufd:
+      if (ops.length == 3) { final dst = ops[0]; final src = ops[1]; final imm = ops[2] is Imm ? (ops[2] as Imm).value : ops[2] as int; if (dst is X86Xmm) { if (src is X86Xmm) asm.vpshufdXXX(dst, src, imm); else if (src is X86Mem) asm.vpshufdXXM(dst, src, imm); } else if (dst is X86Ymm) { if (src is X86Ymm) asm.vpshufdYYY(dst, src, imm); else if (src is X86Mem) asm.vpshufdYYM(dst, src, imm); } }
+      break;
+    case X86InstId.kVpslld:
+      // unsupported
+      break;
+    case X86InstId.kVpsrld:
+      // unsupported
       break;
     case X86InstId.kVpxor:
       _simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vpxorXXM(d, s1, s2) : asm.vpxorXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vpxorYYM(d, s1, s2) : asm.vpxorYYY(d, s1, s2 as X86Ymm));
@@ -37066,6 +37244,7 @@ class X86Encoder {
 
   /// VMOVD xmm, r32 (VEX.128.66.0F.W0 6E /r)
   void vmovdXmmR32(X86Xmm dst, X86Gp src) {
+    print('DEBUG: Emitting vmovd');
     final needsVex3 = src.isExtended;
     if (needsVex3) {
       _emitVex3(dst.isExtended, false, src.isExtended, _vexMmmmm0F, false, 0,
@@ -38361,6 +38540,7 @@ class X86Encoder {
   }
 
   /// VSQRTPD xmm, [mem]
+  /// VSQRTPD xmm, [mem]
   void vsqrtpdXmmMem(X86Xmm dst, X86Mem mem) {
     _emitVex2(dst.isExtended, 0, false, _vexPp66);
     buffer.emit8(0x51);
@@ -38939,23 +39119,6 @@ class X86Encoder {
         false, _vexPp66);
     buffer.emit8(0x8E);
     emitModRmMem(src.encoding, mem);
-  }
-
-  /// VPSLLD xmm, xmm, imm8 (VEX.128.66.0F 72 /6 ib) - shift left dwords
-  /// Note: Uses SSE legacy encoding path for imm8
-  void vpslldXmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
-    _emitVex2(false, dst.id, false, _vexPp66);
-    buffer.emit8(0x72);
-    buffer.emit8(0xF0 | src.encoding); // ModRM with /6
-    buffer.emit8(imm8 & 0xFF);
-  }
-
-  /// VPSRLD xmm, xmm, imm8 (VEX.128.66.0F 72 /2 ib) - shift right dwords
-  void vpsrldXmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
-    _emitVex2(false, dst.id, false, _vexPp66);
-    buffer.emit8(0x72);
-    buffer.emit8(0xD0 | src.encoding); // ModRM with /2
-    buffer.emit8(imm8 & 0xFF);
   }
 
   // ===========================================================================
@@ -41034,6 +41197,53 @@ class X86Encoder {
     buffer.emit8(imm8);
   }
 
+  /// VPSLLD xmm, xmm, imm8 (VEX.NDS.128.66.0F.WIG 72 /6 ib)
+  void vpslldXmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
+    // Note: For VEX shifts with immediate, vvvv encodes the SOURCE,
+    // and rm encodes the DESTINATION. (NDS: vvvv=src, rm=dst)
+    // BUT asmjit C++ seems to use vvvv=dst, rm=src for [VM] encoding?
+    // Let's try swapping.
+    final needsVex3 = src.isExtended;
+    if (needsVex3) {
+      _emitVex3(false, false, src.isExtended, _vexMmmmm0F, false, dst.id, false,
+          _vexPp66);
+    } else {
+      _emitVex2(false, dst.id, false, _vexPp66);
+    }
+    buffer.emit8(0x72);
+    buffer.emit8(0xF0 | src.encoding); // /6 (ModRM reg=6, rm=src)
+    buffer.emit8(imm8 & 0xFF);
+  }
+
+  /// VPSRLD xmm, xmm, imm8 (VEX.NDS.128.66.0F.WIG 72 /2 ib)
+  void vpsrldXmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
+    // Note: vvvv=src, rm=dst (See VPSLLD)
+    final needsVex3 = src.isExtended;
+    if (needsVex3) {
+      _emitVex3(false, false, src.isExtended, _vexMmmmm0F, false, dst.id, false,
+          _vexPp66);
+    } else {
+      _emitVex2(false, dst.id, false, _vexPp66);
+    }
+    buffer.emit8(0x72);
+    buffer.emit8(0xD0 | src.encoding); // /2 (ModRM reg=2, rm=src)
+    buffer.emit8(imm8 & 0xFF);
+  }
+
+  /// VPSHUFD xmm, xmm, imm8 (VEX.128.66.0F.WIG 70 /r ib)
+  void vpshufdXmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
+    final needsVex3 = dst.isExtended || src.isExtended;
+    if (needsVex3) {
+      _emitVex3(dst.isExtended, false, src.isExtended, _vexMmmmm0F, false, 0,
+          false, _vexPp66);
+    } else {
+      _emitVex2(dst.isExtended, 0, false, _vexPp66);
+    }
+    buffer.emit8(0x70);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+    buffer.emit8(imm8 & 0xFF);
+  }
+
   /// PSHUFD xmm, xmm, imm8 (shuffle packed dwords)
   void pshufdXmmXmmImm8(X86Xmm dst, X86Xmm src, int imm8) {
     buffer.emit8(0x66);
@@ -41078,6 +41288,126 @@ class X86Encoder {
     buffer.emit8(0x0F);
     buffer.emit8(0x7F);
     emitModRmMem(src.encoding, mem);
+  }
+
+  /// VMOVDQU xmm, [mem] (AVX version - VEX encoded)
+  void vmovdquXmmMem(X86Xmm dst, X86Mem mem) {
+    // VEX.128.F3.0F.WIG 6F /r
+    _emitVexForXmmMem(dst, mem, _vexPpF3, _vexMmmmm0F);
+    buffer.emit8(0x6F);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VMOVDQU xmm, xmm (AVX version - VEX encoded)
+  void vmovdquXmmXmm(X86Xmm dst, X86Xmm src) {
+    // VEX.128.F3.0F.WIG 6F /r
+    _emitVex2(dst.isExtended, 0, false, _vexPpF3);
+    buffer.emit8(0x6F);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// VMOVDQU [mem], xmm (AVX version - VEX encoded)
+  void vmovdquMemXmm(X86Mem mem, X86Xmm src) {
+    // VEX.128.F3.0F.WIG 7F /r
+    _emitVexForXmmMem(src, mem, _vexPpF3, _vexMmmmm0F);
+    buffer.emit8(0x7F);
+    emitModRmMem(src.encoding, mem);
+  }
+
+  /// VMOVDQU ymm, [mem] (AVX version - VEX encoded)
+  void vmovdquYmmMem(X86Ymm dst, X86Mem mem) {
+    // VEX.256.F3.0F.WIG 6F /r
+    _emitVexForXmmMem(dst, mem, _vexPpF3, _vexMmmmm0F, l: true);
+    buffer.emit8(0x6F);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VMOVDQU ymm, ymm (AVX version - VEX encoded)
+  void vmovdquYmmYmm(X86Ymm dst, X86Ymm src) {
+    // VEX.256.F3.0F.WIG 6F /r
+    _emitVex2(dst.isExtended, 0, true, _vexPpF3);
+    buffer.emit8(0x6F);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// VMOVDQU [mem], ymm (AVX version - VEX encoded)
+  void vmovdquMemYmm(X86Mem mem, X86Ymm src) {
+    // VEX.256.F3.0F.WIG 7F /r
+    _emitVexForXmmMem(src, mem, _vexPpF3, _vexMmmmm0F, l: true);
+    buffer.emit8(0x7F);
+    emitModRmMem(src.encoding, mem);
+  }
+
+  /// VMOVDQA xmm, [mem] (AVX)
+  void vmovdqaXmmMem(X86Xmm dst, X86Mem mem) {
+    _emitVexForXmmMem(dst, mem, _vexPp66, _vexMmmmm0F);
+    buffer.emit8(0x6F);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VMOVDQA [mem], xmm (AVX)
+  void vmovdqaMemXmm(X86Mem mem, X86Xmm src) {
+    _emitVexForXmmMem(src, mem, _vexPp66, _vexMmmmm0F);
+    buffer.emit8(0x7F);
+    emitModRmMem(src.encoding, mem);
+  }
+
+  /// VMOVDQA xmm, xmm (AVX)
+  void vmovdqaXmmXmm(X86Xmm dst, X86Xmm src) {
+    _emitVex2(dst.isExtended, 0, false, _vexPp66);
+    buffer.emit8(0x6F);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// VMOVDQA ymm, [mem] (AVX)
+  void vmovdqaYmmMem(X86Ymm dst, X86Mem mem) {
+    _emitVexForXmmMem(dst, mem, _vexPp66, _vexMmmmm0F, l: true);
+    buffer.emit8(0x6F);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// VMOVDQA [mem], ymm (AVX)
+  void vmovdqaMemYmm(X86Mem mem, X86Ymm src) {
+    _emitVexForXmmMem(src, mem, _vexPp66, _vexMmmmm0F, l: true);
+    buffer.emit8(0x7F);
+    emitModRmMem(src.encoding, mem);
+  }
+
+  /// VMOVDQA ymm, ymm (AVX)
+  void vmovdqaYmmYmm(X86Ymm dst, X86Ymm src) {
+    _emitVex2(dst.isExtended, 0, true, _vexPp66);
+    buffer.emit8(0x6F);
+    buffer.emit8(0xC0 | (dst.encoding << 3) | src.encoding);
+  }
+
+  /// VPSHUFD xmm, xmm/m128, imm8
+  void vpshufdXmmXmm(X86Xmm dst, X86Xmm src, int imm) {
+    _emitVex2(dst.isExtended, 0, false, _vexPp66);
+    buffer.emit8(0x70);
+    emitModRmReg(dst.encoding, src);
+    buffer.emit8(imm);
+  }
+
+  void vpshufdXmmMem(X86Xmm dst, X86Mem src, int imm) {
+    _emitVexForXmmMem(dst, src, _vexPp66, _vexMmmmm0F);
+    buffer.emit8(0x70);
+    emitModRmMem(dst.encoding, src);
+    buffer.emit8(imm);
+  }
+
+  /// VPSHUFD ymm, ymm/m256, imm8
+  void vpshufdYmmYmm(X86Ymm dst, X86Ymm src, int imm) {
+    _emitVex2(dst.isExtended, 0, true, _vexPp66);
+    buffer.emit8(0x70);
+    emitModRmReg(dst.encoding, src);
+    buffer.emit8(imm);
+  }
+
+  void vpshufdYmmMem(X86Ymm dst, X86Mem src, int imm) {
+    _emitVexForXmmMem(dst, src, _vexPp66, _vexMmmmm0F, l: true);
+    buffer.emit8(0x70);
+    emitModRmMem(dst.encoding, src);
+    buffer.emit8(imm);
   }
 
   /// MOVAPS xmm, [mem] (Already defined)

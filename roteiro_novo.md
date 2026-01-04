@@ -1,5 +1,5 @@
 # Roteiro de Portação: AsmJit C++ → Dart
-
+//C:\MyDartProjects\asmjit\roteiro_novo.md
 **Última Atualização**: 2026-01-03 (00:15)
 continue lendo o codigo fonte c++ C:\MyDartProjects\asmjit\referencias\asmjit-master e portando
 
@@ -28,6 +28,18 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 | **UJIT Layer** | ✅ ~90% | X86 ~92% / A64 ~90% |
 | **Benchmarks** | ✅ Operacionais | ChaCha20 Optimized (Fixed Console Flood) |
 | **Lint Status** | ✅ Clean | 0 erros, Warns Resolved |
+
+---
+
+## ✅ Progresso Recente (03/01/2026 - Atualização 4)
+
+### Correção de ABI (Win64) e Stack Slots:
+1. **Preservação de XMM6–XMM15 (Win64)**: `RAPass` agora calcula `vecToSave = clobbered & preserved` e salva/restaura XMM6–XMM15 com `movdqu` quando usados. Novo teste `test/asmjit/integration_abi_xmm_test.dart` garante preservação dos vetores callee-saved no Windows.
+2. **Stack Slots de `newStack` corrigidos**: Detectamos `X86Mem` cujo `base` é um `VirtReg` marcado como stack e reescrevemos para `[RBP+offset]` no rewrite, evitando que o alocador trate o stack slot como ponteiro lixo (causa de AV em `newStack`/ChaCha).
+3. **Ajustes de prólogo/epílogo**: Frame agora computa o tamanho real (locals + saves) alinhado a 16 bytes; salvamento/restore de GP callee-saved continua via MOV (sem PUSH).
+
+### Estado do ChaCha20
+- O crash sumiu, mas o JIT ainda gera saída incorreta no teste `chacha20_verify_test`/`debug_chacha_opt.dart` (byte 0 difere). Precisamos seguir depurando o pipeline do RAPass/JIT para restaurar paridade de saída.
 
 ---
 
@@ -296,4 +308,3 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
         - Chama a função "Target".
         - Verifica se os valores "canary" foram preservados.
 - **Resultado**: Confirma que o `RAPass` gera prólogo/epílogo corretos e que a pilha é alinhada e restaurada adequadamente.
-

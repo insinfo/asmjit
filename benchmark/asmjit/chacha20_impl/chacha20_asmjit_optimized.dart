@@ -8,9 +8,10 @@ import 'package:ffi/ffi.dart' as pkgffi;
 
 /// ChaCha20 optimized implementation using AsmJit.
 ///
-/// IMPORTANTE (CORREÇÃO):
-/// - Forçamos VecWidth.k128 (XMM) para não “subir” para YMM em máquinas com AVX,
-///   o que quebrava o layout e os loads/stores.
+/// MITIGAÇÃO DE CRASH:
+/// - Reduz pressão no alocador de registradores (menos spans longos).
+/// - Recarrega estado base do ctx a cada bloco e atualiza contador no ctx por bloco.
+/// - Mantém tudo em XMM 128-bit (VecWidth.k128).
 class ChaCha20AsmJitOptimized {
   final Uint8List _key;
   final Uint8List _nonce;
@@ -42,7 +43,6 @@ class ChaCha20AsmJitOptimized {
       // 13-15: Nonce
       final ctxData = ctxPtr.asTypedList(16);
 
-      // Obs: para x86/x64 (little-endian) isso bate com a baseline.
       final keyData = _key.buffer.asUint32List(
         _key.offsetInBytes,
         _key.lengthInBytes ~/ 4,
@@ -93,6 +93,7 @@ class ChaCha20AsmJitOptimized {
         try {
           tailInPtr.asTypedList(64).setAll(0, tailInput);
 
+          // O ctx já está com counter atualizado pelo bloco anterior (se existiu).
           _implFunc!(tailOutPtr.address, tailInPtr.address, 64, ctxPtr.address);
 
           final tailResult = tailOutPtr.asTypedList(64);
@@ -140,22 +141,26 @@ class ChaCha20AsmJitOptimized {
 
     final fp = ffi.Pointer<
         ffi.NativeFunction<
-            ffi.Void Function(ffi.IntPtr, ffi.IntPtr, ffi.IntPtr,
-                ffi.IntPtr)>>.fromAddress(_jitFunction!.address);
+            ffi.Void Function(
+                ffi.IntPtr, ffi.IntPtr, ffi.IntPtr, ffi.IntPtr)>>.fromAddress(
+      _jitFunction!.address,
+    );
     _implFunc = fp.asFunction<void Function(int, int, int, int)>();
   }
 
   static JitFunction _generateCode(JitRuntime runtime) {
     final code = CodeHolder(env: runtime.environment);
     code.logger = FileLogger(stdout);
-    // Enable detailed logging
-    // code.formatOptions = ... (Not available in Dart port?)
-    final cc = UniCompiler.auto(code);
 
-    // Force XMM (128-bit) for compatibility across SSE/AVX.
+    final cc = UniCompiler.auto(
+      code,
+      // Mantém tabela global para evitar RIP-rel/local-table quebrado.
+      ctRef: const VecConstTableRef(null, VecConstTable.kSize),
+    );
+
+    // Sempre XMM (128-bit).
     cc.initVecWidth(VecWidth.k128);
 
-    // Helper: garante XMM no x86 mesmo se newVecWithWidth devolver X86Vec.
     BaseReg _asXmm(BaseReg r) {
       if (cc.isX86Family && r is X86Vec) return r.xmm;
       return r;
@@ -183,92 +188,100 @@ class ChaCha20AsmJitOptimized {
     cc.setArg(2, len);
     cc.setArg(3, ctx);
 
-    // ✅ Vetores explicitamente 128-bit (XMM).
     final v0 = _asXmm(cc.newVecWithWidth(VecWidth.k128, 'v0'));
     final v1 = _asXmm(cc.newVecWithWidth(VecWidth.k128, 'v1'));
     final v2 = _asXmm(cc.newVecWithWidth(VecWidth.k128, 'v2'));
     final v3 = _asXmm(cc.newVecWithWidth(VecWidth.k128, 'v3'));
 
-    final t0 = _asXmm(cc.newVecWithWidth(VecWidth.k128, 't0'));
-    final t1 = _asXmm(cc.newVecWithWidth(VecWidth.k128, 't1'));
+    // tmp = temp único para rotates / loads / counter update.
+    final tmp = _asXmm(cc.newVecWithWidth(VecWidth.k128, 'tmp'));
 
-    final saved0 = _asXmm(cc.newVecWithWidth(VecWidth.k128, 'saved0'));
-    final saved1 = _asXmm(cc.newVecWithWidth(VecWidth.k128, 'saved1'));
-    final saved2 = _asXmm(cc.newVecWithWidth(VecWidth.k128, 'saved2'));
-    final saved3 = _asXmm(cc.newVecWithWidth(VecWidth.k128, 'saved3'));
-
+    // oneVec = [1,0,0,0] para incrementar counter lane0.
     final oneVec = _asXmm(cc.newVecWithWidth(VecWidth.k128, 'oneVec'));
-
-    final loopStart = cc.newLabel();
-    final loopEnd = cc.newLabel();
-
-    // oneVec = [1,0,0,0]
     final oneData = ByteData(16);
     oneData.setUint32(0, 1, Endian.little);
     final oneConst = VecConst(16, oneData.buffer.asUint8List());
     cc.emit2v(
-        UniOpVV.mov, oneVec, cc.simdConst(oneConst, Bcst.kNA, VecWidth.k128));
+      UniOpVV.mov,
+      oneVec,
+      cc.simdConst(oneConst, Bcst.kNA, VecWidth.k128),
+    );
 
-    // Load initial state (64 bytes ctx)
-    cc.emitVM(UniOpVM.load128U32, saved0, _mem128(cc, ctx, 0));
-    cc.emitVM(UniOpVM.load128U32, saved1, _mem128(cc, ctx, 16));
-    cc.emitVM(UniOpVM.load128U32, saved2, _mem128(cc, ctx, 32));
-    cc.emitVM(UniOpVM.load128U32, saved3, _mem128(cc, ctx, 48));
+    final loopStart = cc.newLabel();
+    final loopEnd = cc.newLabel();
 
-    cc.emitJIf(loopEnd,
-        UniCondition(UniOpCond.compare, CondCode.kUnsignedLT, len, Imm(64)));
+    cc.emitJIf(
+      loopEnd,
+      UniCondition(UniOpCond.compare, CondCode.kUnsignedLT, len, Imm(64)),
+    );
     cc.bind(loopStart);
 
-    cc.emit2v(UniOpVV.mov, v0, saved0);
-    cc.emit2v(UniOpVV.mov, v1, saved1);
-    cc.emit2v(UniOpVV.mov, v2, saved2);
-    cc.emit2v(UniOpVV.mov, v3, saved3);
+    // ---- Carrega estado base do ctx (a cada bloco) ----
+    cc.emitVM(UniOpVM.load128U32, v0, _mem128(cc, ctx, 0));
+    cc.emitVM(UniOpVM.load128U32, v1, _mem128(cc, ctx, 16));
+    cc.emitVM(UniOpVM.load128U32, v2, _mem128(cc, ctx, 32));
+    cc.emitVM(UniOpVM.load128U32, v3, _mem128(cc, ctx, 48));
 
+    // ---- 20 rounds (10 double-rounds) ----
     for (int i = 0; i < 10; i++) {
-      _quarterRoundSIMD(cc, v0, v1, v2, v3, t0);
+      _quarterRoundSIMD(cc, v0, v1, v2, v3, tmp);
 
-      _rotateVectorWords(cc, v1, v1, 1, t0);
-      _rotateVectorWords(cc, v2, v2, 2, t0);
-      _rotateVectorWords(cc, v3, v3, 3, t0);
+      _rotateVectorWords(cc, v1, v1, 1, tmp);
+      _rotateVectorWords(cc, v2, v2, 2, tmp);
+      _rotateVectorWords(cc, v3, v3, 3, tmp);
 
-      _quarterRoundSIMD(cc, v0, v1, v2, v3, t0);
+      _quarterRoundSIMD(cc, v0, v1, v2, v3, tmp);
 
-      _rotateVectorWords(cc, v1, v1, 3, t0);
-      _rotateVectorWords(cc, v2, v2, 2, t0);
-      _rotateVectorWords(cc, v3, v3, 1, t0);
+      _rotateVectorWords(cc, v1, v1, 3, tmp);
+      _rotateVectorWords(cc, v2, v2, 2, tmp);
+      _rotateVectorWords(cc, v3, v3, 1, tmp);
     }
 
-    cc.emit3v(UniOpVVV.addU32, v0, v0, saved0);
-    cc.emit3v(UniOpVVV.addU32, v1, v1, saved1);
-    cc.emit3v(UniOpVVV.addU32, v2, v2, saved2);
-    cc.emit3v(UniOpVVV.addU32, v3, v3, saved3);
+    // ---- Add original state (recarrega do ctx para reduzir liveness) ----
+    cc.emitVM(UniOpVM.load128U32, tmp, _mem128(cc, ctx, 0));
+    cc.emit3v(UniOpVVV.addU32, v0, v0, tmp);
 
-    cc.emitVM(UniOpVM.load128U32, t0, _mem128(cc, input, 0));
-    cc.emitVM(UniOpVM.load128U32, t1, _mem128(cc, input, 16));
-    cc.emit3v(UniOpVVV.xorU32, v0, v0, t0);
-    cc.emit3v(UniOpVVV.xorU32, v1, v1, t1);
+    cc.emitVM(UniOpVM.load128U32, tmp, _mem128(cc, ctx, 16));
+    cc.emit3v(UniOpVVV.addU32, v1, v1, tmp);
 
-    cc.emitVM(UniOpVM.load128U32, t0, _mem128(cc, input, 32));
-    cc.emitVM(UniOpVM.load128U32, t1, _mem128(cc, input, 48));
-    cc.emit3v(UniOpVVV.xorU32, v2, v2, t0);
-    cc.emit3v(UniOpVVV.xorU32, v3, v3, t1);
+    cc.emitVM(UniOpVM.load128U32, tmp, _mem128(cc, ctx, 32));
+    cc.emit3v(UniOpVVV.addU32, v2, v2, tmp);
 
+    cc.emitVM(UniOpVM.load128U32, tmp, _mem128(cc, ctx, 48));
+    cc.emit3v(UniOpVVV.addU32, v3, v3, tmp);
+
+    // ---- XOR com input e store em output ----
+    cc.emitVM(UniOpVM.load128U32, tmp, _mem128(cc, input, 0));
+    cc.emit3v(UniOpVVV.xorU32, v0, v0, tmp);
     cc.emitMV(UniOpMV.store128U32, _mem128(cc, output, 0), v0);
+
+    cc.emitVM(UniOpVM.load128U32, tmp, _mem128(cc, input, 16));
+    cc.emit3v(UniOpVVV.xorU32, v1, v1, tmp);
     cc.emitMV(UniOpMV.store128U32, _mem128(cc, output, 16), v1);
+
+    cc.emitVM(UniOpVM.load128U32, tmp, _mem128(cc, input, 32));
+    cc.emit3v(UniOpVVV.xorU32, v2, v2, tmp);
     cc.emitMV(UniOpMV.store128U32, _mem128(cc, output, 32), v2);
+
+    cc.emitVM(UniOpVM.load128U32, tmp, _mem128(cc, input, 48));
+    cc.emit3v(UniOpVVV.xorU32, v3, v3, tmp);
     cc.emitMV(UniOpMV.store128U32, _mem128(cc, output, 48), v3);
 
-    cc.emit3v(UniOpVVV.addU32, saved3, saved3, oneVec);
+    // ---- Incrementa counter no ctx (lane0) por bloco ----
+    cc.emitVM(UniOpVM.load128U32, tmp, _mem128(cc, ctx, 48));
+    cc.emit3v(UniOpVVV.addU32, tmp, tmp, oneVec);
+    cc.emitMV(UniOpMV.store128U32, _mem128(cc, ctx, 48), tmp);
 
+    // ---- Avança pointers e len ----
     cc.emitRRI(UniOpRRR.add, input, input, 64);
     cc.emitRRI(UniOpRRR.add, output, output, 64);
     cc.emitRRI(UniOpRRR.add, len, len, -64);
 
-    cc.emitJIf(loopStart,
-        UniCondition(UniOpCond.compare, CondCode.kUnsignedGE, len, Imm(64)));
+    cc.emitJIf(
+      loopStart,
+      UniCondition(UniOpCond.compare, CondCode.kUnsignedGE, len, Imm(64)),
+    );
     cc.bind(loopEnd);
-
-    cc.emitMV(UniOpMV.store128U32, _mem128(cc, ctx, 48), saved3);
 
     cc.ret();
     cc.endFunc();
@@ -282,15 +295,11 @@ class ChaCha20AsmJitOptimized {
       cc.cc.serializeToAssembler(assembler);
     }
 
-    final bytes = code.finalize().textBytes;
-    print('Code Bytes: $bytes');
-
     return runtime.add(code);
   }
 
   static dynamic _mem128(UniCompiler cc, BaseReg base, int offset) {
     if (cc.isX86Family) {
-      // ✅ força size=16 (xmmword) para os loads/stores 128
       return X86Mem.ptr(base as X86Gp, offset).withSize(16);
     } else {
       return A64Mem.baseOffset(base as A64Gp, offset);
