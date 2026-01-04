@@ -39,64 +39,54 @@ void main() {
     calleeCc.cc.serializeToAssembler(calleeAsm);
     final calleeFn = rt.add(calleeCode);
 
-    // Caller: recebe outBefore, outAfter, canaryPtr.
+    // Caller em assembler puro para controlar alinhamento/stack shadow.
     final callerCode = CodeHolder(env: rt.environment);
-    final caller =
-        X86Compiler(env: callerCode.env, labelManager: callerCode.labelManager);
-    caller.addFunc(FuncSignature.build(
-        [TypeId.intPtr, TypeId.intPtr, TypeId.intPtr],
-        TypeId.void_,
-        CallConvId.x64Windows));
+    final a = X86Assembler(callerCode);
 
-    final outBefore = caller.newGpPtr('outBefore');
-    final outAfter = caller.newGpPtr('outAfter');
-    final canaryPtr = caller.newGpPtr('canaryPtr');
-    caller.setArg(0, outBefore);
-    caller.setArg(1, outAfter);
-    caller.setArg(2, canaryPtr);
+    // Prologue: push rbp; mov rbp, rsp; sub rsp, 32 (Win64 shadow, keeps rsp 8 mod 16 before call).
+    a.emit(X86InstId.kPush, [rbp]);
+    a.emit(X86InstId.kMov, [rbp, rsp]);
+    a.emit(X86InstId.kSub, [rsp, Imm(32)]);
 
-    final tmpPtr = caller.newGpPtr('tmpPtr');
-    caller.addNode(InstNode(X86InstId.kMov, [tmpPtr, canaryPtr]));
+    // Args (Win64): rcx=outBefore, rdx=outAfter, r8=canaryPtr
+    final outBefore = rcx;
+    final outAfter = rdx;
+    final canaryPtr = r8;
 
     // Carrega canários em XMM6..XMM15 e grava outBefore.
     for (int i = 0; i < 10; i++) {
       final reg = X86Xmm(6 + i);
-      caller.addNode(InstNode(
-          X86InstId.kMovdqu, [reg, X86Mem.baseDisp(tmpPtr, i * 16, size: 16)]));
-      caller.addNode(InstNode(X86InstId.kMovdqu,
-          [X86Mem.baseDisp(outBefore, i * 16, size: 16), reg]));
+      a.emit(X86InstId.kMovdqu,
+          [reg, X86Mem.baseDisp(canaryPtr, i * 16, size: 16)]);
+      a.emit(X86InstId.kMovdqu,
+          [X86Mem.baseDisp(outBefore, i * 16, size: 16), reg]);
     }
 
-    // shadow space Win64
-    caller.addNode(
-        InstNode(X86InstId.kSub, [X86Gp.r64(X86RegId.rsp.index), Imm(32)]));
-    final callReg = caller.newGpPtr('callReg');
-    caller.addNode(InstNode(X86InstId.kMov, [callReg, Imm(calleeFn.address)]));
-    caller.addNode(InstNode(X86InstId.kCall, [callReg]));
-    caller.addNode(
-        InstNode(X86InstId.kAdd, [X86Gp.r64(X86RegId.rsp.index), Imm(32)]));
+    // Call callee (shadow space já reservado)
+    a.emit(X86InstId.kMov, [rax, Imm(calleeFn.address)]);
+    a.emit(X86InstId.kCall, [rax]);
 
     // Após retorno, grava XMM6..XMM15 em outAfter.
     for (int i = 0; i < 10; i++) {
       final reg = X86Xmm(6 + i);
-      caller.addNode(InstNode(X86InstId.kMovdqu,
-          [X86Mem.baseDisp(outAfter, i * 16, size: 16), reg]));
+      a.emit(X86InstId.kMovdqu,
+          [X86Mem.baseDisp(outAfter, i * 16, size: 16), reg]);
     }
 
-    caller.ret();
-    caller.endFunc();
-    caller.finalize();
-    final callerAsm = X86Assembler(callerCode);
-    caller.serializeToAssembler(callerAsm);
+    // Epilogue
+    a.emit(X86InstId.kAdd, [rsp, Imm(32)]);
+    a.emit(X86InstId.kPop, [rbp]);
+    a.emit(X86InstId.kRet, []);
+
     final callerFn = rt.add(callerCode);
 
     final callerPtr = ffi.Pointer<
-        ffi.NativeFunction<
-            ffi.Void Function(ffi.Pointer<ffi.Uint8>, ffi.Pointer<ffi.Uint8>,
-                ffi.Pointer<ffi.Uint8>)>>.fromAddress(callerFn.address);
+      ffi.NativeFunction<
+        ffi.Void Function(ffi.Pointer<ffi.Uint8>, ffi.Pointer<ffi.Uint8>,
+          ffi.Pointer<ffi.Uint8>)>>.fromAddress(callerFn.address);
     final callerFnDart = callerPtr.asFunction<
-        void Function(ffi.Pointer<ffi.Uint8>, ffi.Pointer<ffi.Uint8>,
-            ffi.Pointer<ffi.Uint8>)>();
+      void Function(ffi.Pointer<ffi.Uint8>, ffi.Pointer<ffi.Uint8>,
+        ffi.Pointer<ffi.Uint8>)>();
 
     final outBeforeBuf = pkgffi.calloc<ffi.Uint8>(160);
     final outAfterBuf = pkgffi.calloc<ffi.Uint8>(160);
