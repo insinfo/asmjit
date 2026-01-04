@@ -49,3 +49,5 @@ coverage/
 
 # Dependencies
 pubspec.lock
+
+asmjit_merged_files.dart.txt
