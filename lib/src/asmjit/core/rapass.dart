@@ -39,7 +39,13 @@ class _RACoalesceCandidate {
 /// This pass performs register allocation on the function. It currently
 /// supports local register allocation (RAPass::kLocal).
 class RAPass extends CompilerPass {
+  /// Enables verbose register-allocation logging (`ASMJIT_RA_DEBUG=1`).
+  static final bool debugLog = Platform.environment['ASMJIT_RA_DEBUG'] == '1';
+
   final RALocalAllocator _allocator = RALocalAllocator();
+
+  // Cached target OS for ABI decisions (important on x64).
+  bool _isWindowsTarget = false;
 
   // Map from Virtual Register ID to RAWorkId
   final Map<int, RAWorkId> _virtIdToWorkId = {};
@@ -253,7 +259,8 @@ class RAPass extends CompilerPass {
         // Fallback if env check fails for some reason
         isWindows = Platform.isWindows;
       }
-      print('RAPass: isWindows=$isWindows');
+      _isWindowsTarget = isWindows;
+      if (debugLog) print('RAPass: isWindows=$isWindows');
 
       final preservedGp =
           isWindows ? x64WindowsPreservedGp : x64SystemVPreservedGp;
@@ -421,12 +428,14 @@ class RAPass extends CompilerPass {
     _buildLiveSpans(nodes);
 
     // Debug: Print LiveSpans
-    print('RAPass: LiveSpans');
-    for (int i = 0; i < _numWorkRegs; i++) {
-      final workReg = _allocator.workRegById(i);
-      final spans =
-          workReg.liveSpans.data.map((s) => '[${s.a}, ${s.b}]').join(', ');
-      print('  Virt${workReg.virtReg.id}: $spans');
+    if (debugLog) {
+      print('RAPass: LiveSpans');
+      for (int i = 0; i < _numWorkRegs; i++) {
+        final workReg = _allocator.workRegById(i);
+        final spans =
+            workReg.liveSpans.data.map((s) => '[${s.a}, ${s.b}]').join(', ');
+        print('  Virt${workReg.virtReg.id}: $spans');
+      }
     }
   }
 
@@ -639,7 +648,10 @@ class RAPass extends CompilerPass {
         // 1. Handle Uses (Gen)
         for (int i = 0; i < node.opCount; i++) {
           bool isUse = true;
-          if (i == 0 && isMov) isUse = false;
+          // A MOV register destination is a pure definition. A memory
+          // destination still reads its virtual base/index registers to form
+          // the address, so it must participate in last-use tracking.
+          if (i == 0 && isMov && node.operands[i] is BaseReg) isUse = false;
 
           if (isUse) {
             final op = node.operands[i];
@@ -1206,10 +1218,7 @@ class RAPass extends CompilerPass {
         last = last!.next;
       }
       if (last != null) {
-        newNode.prev = last;
-        newNode.next = last.next;
-        if (last.next != null) last.next!.prev = newNode;
-        last.next = newNode;
+        compiler.nodes.insertAfter(newNode, last);
       }
     }
   }
@@ -1273,10 +1282,7 @@ class RAPass extends CompilerPass {
   }
 
   void _removeNode(BaseNode node) {
-    if (node.prev != null) node.prev!.next = node.next;
-    if (node.next != null) node.next!.prev = node.prev;
-    // Note: NodeList doesn't know about this removal unless we use its methods.
-    // However, NodeList.nodes uses the links, so it works.
+    compiler.nodes.remove(node);
   }
 
   void _analyzeInstruction(InstNode node, List<RATiedReg> tiedRegs,
@@ -1808,14 +1814,47 @@ class RAPass extends CompilerPass {
     final arch = compiler.arch;
     final is64Bit = arch == Arch.x64;
 
+    // Detect VEX-prefixed (AVX) instructions by name in the instruction DB.
+    // This matters on Win64: VEX-encoded scalar ops on XMM6..XMM15 will also
+    // modify the upper 128 bits of the corresponding YMM register, which are
+    // required to be preserved when AVX is in use.
+    bool usesVex = false;
+    if (is64Bit) {
+      for (final n in compiler.nodes.nodes) {
+        if (n is InstNode) {
+          final id = n.instId;
+          if (id >= 0 && id < kX86InstDb.length) {
+            final name = kX86InstDb[id].name;
+            if (name.isNotEmpty && name.codeUnitAt(0) == 0x76 /* 'v' */) {
+              usesVex = true;
+              break;
+            }
+          }
+        }
+      }
+    }
+
     // Calculate registers to save
     final gpClobbered = _allocator.clobberedRegs[RegGroup.gp];
     final gpPreserved = _allocator.funcPreservedRegs[RegGroup.gp];
-    final gpToSave = gpClobbered & gpPreserved;
+
+    // Same rationale as vecToSave below: on Win64 it's safer to conservatively
+    // save all allocatable preserved GP registers (RBX, RSI, RDI, R12-R15...).
+    final gpToSave = (is64Bit && _isWindowsTarget)
+        ? (gpPreserved & _allocator.availableRegs[RegGroup.gp])
+        : (gpClobbered & gpPreserved);
 
     final vecClobbered = _allocator.clobberedRegs[RegGroup.vec];
     final vecPreserved = _allocator.funcPreservedRegs[RegGroup.vec];
-    final vecToSave = vecClobbered & vecPreserved;
+
+    // IMPORTANT (Win64): XMM6..XMM15 are callee-saved.
+    // If clobber tracking misses a vector reg in some corner case, we can
+    // corrupt the caller (Dart VM) and get intermittent crashes. To keep the
+    // JIT safe, conservatively save/restore all preserved vector registers on
+    // Win64.
+    final vecToSave = (is64Bit && _isWindowsTarget)
+        ? (vecPreserved & _allocator.availableRegs[RegGroup.vec])
+        : (vecClobbered & vecPreserved);
 
     final savedRegs = <X86Gp>[];
     for (int i = 0; i < 16; i++) {
@@ -1824,10 +1863,14 @@ class RAPass extends CompilerPass {
       }
     }
 
-    final savedVecRegs = <X86Xmm>[];
+    // On Win64 + AVX, preserve YMM6..YMM15 (full 256-bit) when non-volatile
+    // vector regs are saved/restored.
+    final vecSaveBytes = (is64Bit && _isWindowsTarget && usesVex) ? 32 : 16;
+
+    final savedVecIds = <int>[];
     for (int i = 0; i < 32; i++) {
       if ((vecToSave & (1 << i)) != 0) {
-        savedVecRegs.add(X86Xmm(i));
+        savedVecIds.add(i);
       }
     }
 
@@ -1838,11 +1881,11 @@ class RAPass extends CompilerPass {
 
     int currentOffset = localsSize;
 
-    if (savedVecRegs.isNotEmpty) {
+    if (savedVecIds.isNotEmpty) {
       currentOffset = _alignUp(currentOffset, 16);
-      for (final reg in savedVecRegs) {
-        currentOffset += 16;
-        vecSlots.add(MapEntry(reg, currentOffset));
+      for (final id in savedVecIds) {
+        currentOffset += vecSaveBytes;
+        vecSlots.add(MapEntry(X86Xmm(id), currentOffset));
       }
     }
 
@@ -1883,11 +1926,14 @@ class RAPass extends CompilerPass {
         lastNode = subRsp;
       }
 
-      // Spill preserved vector registers using aligned stores.
+      // Spill preserved vector registers.
       for (final slot in vecSlots) {
-        final mem = X86Mem.baseDisp(rbp, -slot.value, size: 16);
-        final save =
-            InstNode(X86InstId.kMovdqu, [mem, slot.key]); // unaligned OK
+        final mem = X86Mem.baseDisp(rbp, -slot.value, size: vecSaveBytes);
+
+        final reg = (vecSaveBytes == 32) ? X86Ymm(slot.key.id) : slot.key;
+        final instId =
+            (vecSaveBytes == 32) ? X86InstId.kVmovdqu : X86InstId.kMovdqu;
+        final save = InstNode(instId, [mem, reg]);
         _insertNodeAfter(lastNode, save);
         lastNode = save;
       }
@@ -1922,9 +1968,11 @@ class RAPass extends CompilerPass {
         }
 
         for (final slot in vecSlots.reversed) {
-          final mem = X86Mem.baseDisp(rbp, -slot.value, size: 16);
-          final restore =
-              InstNode(X86InstId.kMovdqu, [slot.key, mem]); // unaligned OK
+          final mem = X86Mem.baseDisp(rbp, -slot.value, size: vecSaveBytes);
+          final reg = (vecSaveBytes == 32) ? X86Ymm(slot.key.id) : slot.key;
+          final instId =
+              (vecSaveBytes == 32) ? X86InstId.kVmovdqu : X86InstId.kMovdqu;
+          final restore = InstNode(instId, [reg, mem]);
           _insertNodeBefore(node, restore);
         }
 
@@ -1952,17 +2000,11 @@ class RAPass extends CompilerPass {
   }
 
   void _insertNodeAfter(BaseNode after, BaseNode newNode) {
-    newNode.prev = after;
-    newNode.next = after.next;
-    if (after.next != null) after.next!.prev = newNode;
-    after.next = newNode;
+    compiler.nodes.insertAfter(newNode, after);
   }
 
   void _insertNodeBefore(BaseNode before, BaseNode newNode) {
-    newNode.next = before;
-    newNode.prev = before.prev;
-    if (before.prev != null) before.prev!.next = newNode;
-    before.prev = newNode;
+    compiler.nodes.insertBefore(newNode, before);
   }
 }
 

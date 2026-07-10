@@ -122,6 +122,8 @@ void main() {
       for (int i = 0; i < 6; i++) {
         final g = cc.newGpPtr('g$i');
         gpTemps.add(g);
+        // Initialize g to avoid using uninitialized register
+        compiler.mov(g, Imm(i));
         cc.emitRRI(UniOpRRR.add, g, g, i); // depende de valor inicial dos args (0), apenas para manter vivo
       }
 

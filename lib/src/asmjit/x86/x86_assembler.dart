@@ -193,21 +193,46 @@ class X86Assembler extends BaseEmitter {
     }
   }
 
-  /// MOV r64, [mem].
+  /// MOV reg, [mem] — operand size follows the register size.
   void movRM(X86Gp dst, X86Mem mem) {
-    if (dst.bits == 64) {
-      _enc.movR64Mem(dst, mem);
-    } else {
-      _enc.movR32Mem(dst.as32, mem);
+    switch (dst.bits) {
+      case 64:
+        _enc.movR64Mem(dst, mem);
+        break;
+      case 32:
+        _enc.movR32Mem(dst, mem);
+        break;
+      case 16:
+        _enc.movR16Mem(dst, mem);
+        break;
+      case 8:
+        _enc.movR8Mem(dst, mem);
+        break;
+      default:
+        throw UnsupportedError('movRM: invalid register size ${dst.bits}');
     }
   }
 
-  /// MOV [mem], r64.
+  /// MOV [mem], reg — operand size follows the register size.
+  ///
+  /// The register size decides how many bytes are written; collapsing 8/16
+  /// bit registers to 32 bits would write past narrow store targets.
   void movMR(X86Mem mem, X86Gp src) {
-    if (src.bits == 64) {
-      _enc.movMemR64(mem, src);
-    } else {
-      _enc.movMemR32(mem, src.as32);
+    switch (src.bits) {
+      case 64:
+        _enc.movMemR64(mem, src);
+        break;
+      case 32:
+        _enc.movMemR32(mem, src);
+        break;
+      case 16:
+        _enc.movMemR16(mem, src);
+        break;
+      case 8:
+        _enc.movMemR8(mem, src);
+        break;
+      default:
+        throw UnsupportedError('movMR: invalid register size ${src.bits}');
     }
   }
 
@@ -366,6 +391,69 @@ class X86Assembler extends BaseEmitter {
   /// MOVSX r64, r16 (sign-extend word).
   void movsxW(X86Gp dst, X86Gp src) {
     _enc.movsxR64R16(dst, src);
+  }
+
+  /// MOVZX reg, reg — source register size selects the byte/word form.
+  void movzxRR(X86Gp dst, X86Gp src) {
+    switch (src.bits) {
+      case 8:
+        _enc.movzxR64R8(dst, src);
+        break;
+      case 16:
+        _enc.movzxR64R16(dst, src);
+        break;
+      default:
+        throw UnsupportedError('movzxRR: invalid source size ${src.bits}');
+    }
+  }
+
+  /// MOVSX reg, reg — source register size selects the byte/word form.
+  void movsxRR(X86Gp dst, X86Gp src) {
+    switch (src.bits) {
+      case 8:
+        _enc.movsxR64R8(dst, src);
+        break;
+      case 16:
+        _enc.movsxR64R16(dst, src);
+        break;
+      default:
+        throw UnsupportedError('movsxRR: invalid source size ${src.bits}');
+    }
+  }
+
+  /// MOVZX reg, [mem] — memory operand size selects the byte/word form.
+  void movzxRM(X86Gp dst, X86Mem mem) {
+    switch (mem.size) {
+      case 1:
+        _enc.movzxRegMem8(dst, mem);
+        break;
+      case 2:
+        _enc.movzxRegMem16(dst, mem);
+        break;
+      default:
+        throw UnsupportedError(
+            'movzxRM requires a 1 or 2 byte memory operand, got ${mem.size}');
+    }
+  }
+
+  /// MOVSX reg, [mem] — memory operand size selects the byte/word form.
+  void movsxRM(X86Gp dst, X86Mem mem) {
+    switch (mem.size) {
+      case 1:
+        _enc.movsxRegMem8(dst, mem);
+        break;
+      case 2:
+        _enc.movsxRegMem16(dst, mem);
+        break;
+      default:
+        throw UnsupportedError(
+            'movsxRM requires a 1 or 2 byte memory operand, got ${mem.size}');
+    }
+  }
+
+  /// MOVSXD r64, dword ptr [mem].
+  void movsxdRM(X86Gp dst, X86Mem mem) {
+    _enc.movsxdR64Mem(dst, mem);
   }
 
   // ===========================================================================
@@ -1507,6 +1595,12 @@ class X86Assembler extends BaseEmitter {
 
   /// MOVQ r64, xmm (move quadword from XMM to GP)
   void movqRX(X86Gp dst, X86Xmm src) => _enc.movqR64Xmm(dst, src);
+
+  /// MOVQ xmm, m64
+  void movqXM(X86Xmm dst, X86Mem src) => _enc.movqXmmMem(dst, src);
+
+  /// MOVQ m64, xmm
+  void movqMX(X86Mem dst, X86Xmm src) => _enc.movqMemXmm(dst, src);
 
   /// MOVD xmm, r32 (move doubleword from GP to XMM)
   void movdXR(X86Xmm dst, X86Gp src) => _enc.movdXmmR32(dst, src);

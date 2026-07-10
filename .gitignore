@@ -52,3 +52,7 @@ pubspec.lock
 
 asmjit_merged_files.dart.txt
 codigo.bin
+
+# Native crash dumps are local diagnostics and exceed GitHub's file limit.
+core.dump
+*.dmp

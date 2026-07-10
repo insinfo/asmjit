@@ -355,6 +355,13 @@ class X86DbGenerator {
   void generateDispatcher(String outputPath) {
     final supported = <String>{
       'mov',
+      'movzx',
+      'movsx',
+      'movsxd',
+      'pextrb',
+      'pextrw',
+      'pinsrb',
+      'pinsrw',
       'add',
       'sub',
       'and',
@@ -566,7 +573,9 @@ class X86DbGenerator {
     buffer.writeln(
         '/// Dispatches instruction ID to Assembler method for implemented ops.');
     buffer.writeln(
-        '/// Unsupported IDs are ignored (no-op), keeping behavior compatible with older stubs.');
+        '/// Unsupported IDs throw [UnsupportedError]: silently dropping an');
+    buffer.writeln(
+        '/// instruction produces corrupt machine code that crashes at runtime.');
     buffer.writeln(
         'void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {');
     buffer.writeln('  switch (instId) {');
@@ -584,7 +593,13 @@ class X86DbGenerator {
     }
 
     buffer.writeln('    default:');
-    buffer.writeln('      break;');
+    buffer.writeln(
+        '      final name = instId >= 0 && instId < kX86InstDb.length');
+    buffer.writeln('          ? kX86InstDb[instId].name');
+    buffer.writeln('          : \'#\$instId\';');
+    buffer.writeln(
+        '      throw UnsupportedError(\'x86Dispatch: instruction "\$name" \'');
+    buffer.writeln('          \'is not implemented by the dispatcher\');');
     buffer.writeln('  }');
     buffer.writeln('}');
     buffer.writeln('');
@@ -600,20 +615,34 @@ class X86DbGenerator {
     switch (name) {
       case 'mov':
         return '_mov(asm, ops);';
+      case 'movzx':
+        return '_movx(asm, ops, \'movzx\', (d, s) => asm.movzxRR(d, s), (d, m) => asm.movzxRM(d, m));';
+      case 'movsx':
+        return '_movx(asm, ops, \'movsx\', (d, s) => asm.movsxRR(d, s), (d, m) => asm.movsxRM(d, m));';
+      case 'movsxd':
+        return '_movx(asm, ops, \'movsxd\', (d, s) => asm.movsxd(d, s), (d, m) => asm.movsxdRM(d, m));';
+      case 'pextrb':
+        return "_pextr(asm, ops, 'pextrb', (d, s, i) => asm.pextrbR(d, s, i), (m, s, i) => asm.pextrbM(m, s, i));";
+      case 'pextrw':
+        return "_pextr(asm, ops, 'pextrw', (d, s, i) => asm.pextrwRX(d, s, i), (m, s, i) => asm.pextrwMX(m, s, i));";
+      case 'pinsrb':
+        return "_pinsr(asm, ops, 'pinsrb', (d, s, i) => asm.pinsrbR(d, s, i), (d, m, i) => asm.pinsrbM(d, m, i));";
+      case 'pinsrw':
+        return "_pinsr(asm, ops, 'pinsrw', (d, s, i) => asm.pinsrwXR(d, s, i), (d, m, i) => asm.pinsrwXM(d, m, i));";
       case 'add':
-        return '_binary(asm, ops, (a, b) => asm.addRR(a, b), (a, imm) => asm.addRI(a, imm));';
+        return '_binary(asm, ops, \'add\', (a, b) => asm.addRR(a, b), (a, imm) => asm.addRI(a, imm), rm: (a, m) => asm.addRM(a, m), mr: (m, b) => asm.addMR(m, b), mi: (m, imm) => asm.addMI(m, imm));';
       case 'sub':
-        return '_binary(asm, ops, (a, b) => asm.subRR(a, b), (a, imm) => asm.subRI(a, imm));';
+        return '_binary(asm, ops, \'sub\', (a, b) => asm.subRR(a, b), (a, imm) => asm.subRI(a, imm), rm: (a, m) => asm.subRM(a, m));';
       case 'and':
-        return '_binary(asm, ops, (a, b) => asm.andRR(a, b), (a, imm) => asm.andRI(a, imm));';
+        return '_binary(asm, ops, \'and\', (a, b) => asm.andRR(a, b), (a, imm) => asm.andRI(a, imm), rm: (a, m) => asm.andRM(a, m), mr: (m, b) => asm.andMR(m, b), mi: (m, imm) => asm.andMI(m, imm));';
       case 'or':
-        return '_binary(asm, ops, (a, b) => asm.orRR(a, b), (a, imm) => asm.orRI(a, imm));';
+        return '_binary(asm, ops, \'or\', (a, b) => asm.orRR(a, b), (a, imm) => asm.orRI(a, imm), rm: (a, m) => asm.orRM(a, m));';
       case 'xor':
-        return '_binary(asm, ops, (a, b) => asm.xorRR(a, b), (a, imm) => asm.xorRI(a, imm));';
+        return '_binary(asm, ops, \'xor\', (a, b) => asm.xorRR(a, b), (a, imm) => asm.xorRI(a, imm), rm: (a, m) => asm.xorRM(a, m));';
       case 'cmp':
-        return '_binary(asm, ops, (a, b) => asm.cmpRR(a, b), (a, imm) => asm.cmpRI(a, imm));';
+        return '_binary(asm, ops, \'cmp\', (a, b) => asm.cmpRR(a, b), (a, imm) => asm.cmpRI(a, imm), rm: (a, m) => asm.cmpRM(a, m));';
       case 'test':
-        return '_binary(asm, ops, (a, b) => asm.testRR(a, b), (a, imm) => asm.testRI(a, imm));';
+        return '_binary(asm, ops, \'test\', (a, b) => asm.testRR(a, b), (a, imm) => asm.testRI(a, imm), rm: (a, m) => asm.testRM(a, m));';
       case 'lea':
         return '''
 if (ops.length == 2 && ops[0] is X86Gp && ops[1] is X86Mem) {
@@ -1035,10 +1064,16 @@ if (ops.length == 2) {
       case 'vpxorq':
         return "_simd3(asm, ops, zmm: (d, s1, s2) => asm.vpxorqZmm(d, s1, s2 as X86Zmm));";
       case 'vpslld':
-        // vpslld xmm, xmm, imm8 (and avx512 variants if any)
-        return "_shift(asm, ops, null, null, xmmI: (d, s, imm) => asm.vpslldXmmXmm(d, s, imm), ymmI: (d, s, imm) => asm.vpslldYmmYmm(d, s, imm));";
+        // vpslld xmm, xmm, imm8
+        return '''_simd3(asm, ops, xmm: (d, s1, s2) {
+    final imm = s2 is Imm ? s2.value : s2 as int;
+    asm.vpslld(d, s1, imm);
+  });''';
       case 'vpsrld':
-        return "_shift(asm, ops, null, null, xmmI: (d, s, imm) => asm.vpsrldXmmXmm(d, s, imm), ymmI: (d, s, imm) => asm.vpsrldYmmYmm(d, s, imm));";
+        return '''_simd3(asm, ops, xmm: (d, s1, s2) {
+    final imm = s2 is Imm ? s2.value : s2 as int;
+    asm.vpsrld(d, s1, imm);
+  });''';
       case 'vpandd':
         return "_simd3(asm, ops, zmm: (d, s1, s2) => asm.vpanddZmm(d, s1, s2 as X86Zmm));";
       case 'vpandq':
@@ -1084,6 +1119,76 @@ void _mov(X86Assembler asm, List<Object> ops) {
     asm.movapsXM(dst, src);
   } else if (dst is X86Mem && src is X86Xmm) {
     asm.movapsMX(dst, src);
+  } else {
+    throw UnsupportedError(
+        'x86Dispatch: unsupported mov operand combination: \$dst, \$src');
+  }
+}
+
+void _pextr(
+    X86Assembler asm,
+    List<Object> ops,
+    String name,
+    void Function(X86Gp, X86Xmm, int) rx,
+    void Function(X86Mem, X86Xmm, int) mx) {
+  if (ops.length != 3) {
+    throw UnsupportedError('x86Dispatch: \$name expects 3 operands');
+  }
+  final dst = ops[0];
+  final src = ops[1];
+  final immOp = ops[2];
+  final imm = immOp is Imm ? immOp.value : immOp as int;
+  if (dst is X86Gp && src is X86Xmm) {
+    rx(dst, src, imm);
+  } else if (dst is X86Mem && src is X86Xmm) {
+    mx(dst, src, imm);
+  } else {
+    throw UnsupportedError(
+        'x86Dispatch: unsupported \$name operand combination: \$dst, \$src');
+  }
+}
+
+void _pinsr(
+    X86Assembler asm,
+    List<Object> ops,
+    String name,
+    void Function(X86Xmm, X86Gp, int) xr,
+    void Function(X86Xmm, X86Mem, int) xm) {
+  if (ops.length != 3) {
+    throw UnsupportedError('x86Dispatch: \$name expects 3 operands');
+  }
+  final dst = ops[0];
+  final src = ops[1];
+  final immOp = ops[2];
+  final imm = immOp is Imm ? immOp.value : immOp as int;
+  if (dst is X86Xmm && src is X86Gp) {
+    xr(dst, src, imm);
+  } else if (dst is X86Xmm && src is X86Mem) {
+    xm(dst, src, imm);
+  } else {
+    throw UnsupportedError(
+        'x86Dispatch: unsupported \$name operand combination: \$dst, \$src');
+  }
+}
+
+void _movx(
+    X86Assembler asm,
+    List<Object> ops,
+    String name,
+    void Function(X86Gp, X86Gp) rr,
+    void Function(X86Gp, X86Mem) rm) {
+  if (ops.length != 2) {
+    throw UnsupportedError('x86Dispatch: \$name expects 2 operands');
+  }
+  final dst = ops[0];
+  final src = ops[1];
+  if (dst is X86Gp && src is X86Gp) {
+    rr(dst, src);
+  } else if (dst is X86Gp && src is X86Mem) {
+    rm(dst, src);
+  } else {
+    throw UnsupportedError(
+        'x86Dispatch: unsupported \$name operand combination: \$dst, \$src');
   }
 }
 
@@ -1103,13 +1208,22 @@ void _movd(X86Assembler asm, List<Object> ops) {
 }
 
 void _movq(X86Assembler asm, List<Object> ops) {
-  if (ops.length != 2) return;
+  if (ops.length != 2) {
+    throw UnsupportedError('movq expects 2 operands, got \${ops.length}');
+  }
   final dst = ops[0];
   final src = ops[1];
   if (dst is X86Xmm && src is X86Gp) {
     asm.movqXR(dst, src);
   } else if (dst is X86Gp && src is X86Xmm) {
     asm.movqRX(dst, src);
+  } else if (dst is X86Xmm && src is X86Mem) {
+    asm.movqXM(dst, src);
+  } else if (dst is X86Mem && src is X86Xmm) {
+    asm.movqMX(dst, src);
+  } else {
+    throw UnsupportedError('Unsupported movq operands: '
+        '\${dst.runtimeType}, \${src.runtimeType}');
   }
 }
 
@@ -1146,9 +1260,14 @@ void _kmovq(X86Assembler asm, List<Object> ops) {
   }
 }
 
-void _binary(X86Assembler asm, List<Object> ops,
-    void Function(X86Gp, X86Gp) rr, void Function(X86Gp, int) ri) {
-  if (ops.length != 2) return;
+void _binary(X86Assembler asm, List<Object> ops, String name,
+    void Function(X86Gp, X86Gp) rr, void Function(X86Gp, int) ri,
+    {void Function(X86Gp, X86Mem)? rm,
+    void Function(X86Mem, X86Gp)? mr,
+    void Function(X86Mem, int)? mi}) {
+  if (ops.length != 2) {
+    throw UnsupportedError('x86Dispatch: \$name expects 2 operands');
+  }
   final dst = ops[0];
   final src = ops[1];
   if (dst is X86Gp && src is X86Gp) {
@@ -1157,6 +1276,17 @@ void _binary(X86Assembler asm, List<Object> ops,
     ri(dst, src);
   } else if (dst is X86Gp && src is Imm) {
     ri(dst, src.value);
+  } else if (dst is X86Gp && src is X86Mem && rm != null) {
+    rm(dst, src);
+  } else if (dst is X86Mem && src is X86Gp && mr != null) {
+    mr(dst, src);
+  } else if (dst is X86Mem && src is int && mi != null) {
+    mi(dst, src);
+  } else if (dst is X86Mem && src is Imm && mi != null) {
+    mi(dst, src.value);
+  } else {
+    throw UnsupportedError(
+        'x86Dispatch: unsupported \$name operand combination: \$dst, \$src');
   }
 }
 

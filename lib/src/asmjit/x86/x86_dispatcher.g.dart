@@ -11,11 +11,12 @@ import '../core/labels.dart';
 import '../core/operand.dart' show Imm, LabelOp, BaseReg;
 
 /// Dispatches instruction ID to Assembler method for implemented ops.
-/// Unsupported IDs are ignored (no-op), keeping behavior compatible with older stubs.
+/// Unsupported IDs throw [UnsupportedError]: silently dropping an
+/// instruction produces corrupt machine code that crashes at runtime.
 void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
   switch (instId) {
     case X86InstId.kAdd:
-      _binary(asm, ops, (a, b) => asm.addRR(a, b), (a, imm) => asm.addRI(a, imm));
+      _binary(asm, ops, 'add', (a, b) => asm.addRR(a, b), (a, imm) => asm.addRI(a, imm), rm: (a, m) => asm.addRM(a, m), mr: (m, b) => asm.addMR(m, b), mi: (m, imm) => asm.addMI(m, imm));
       break;
     case X86InstId.kAddpd:
       _simd3(asm, ops, xmm: (d, s1, s2) => asm.vaddpdXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => asm.vaddpdYYY(d, s1, s2 as X86Ymm), zmm: (d, s1, s2) => asm.vaddpdZmm(d, s1, s2 as X86Zmm));
@@ -30,7 +31,7 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       _simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.addssXX(d, s); });
       break;
     case X86InstId.kAnd:
-      _binary(asm, ops, (a, b) => asm.andRR(a, b), (a, imm) => asm.andRI(a, imm));
+      _binary(asm, ops, 'and', (a, b) => asm.andRR(a, b), (a, imm) => asm.andRI(a, imm), rm: (a, m) => asm.andRM(a, m), mr: (m, b) => asm.andMR(m, b), mi: (m, imm) => asm.andMI(m, imm));
       break;
     case X86InstId.kCall:
       _call(asm, ops);
@@ -87,7 +88,7 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       _cmovcc(asm, instId, ops);
       break;
     case X86InstId.kCmp:
-      _binary(asm, ops, (a, b) => asm.cmpRR(a, b), (a, imm) => asm.cmpRI(a, imm));
+      _binary(asm, ops, 'cmp', (a, b) => asm.cmpRR(a, b), (a, imm) => asm.cmpRI(a, imm), rm: (a, m) => asm.cmpRM(a, m));
       break;
     case X86InstId.kComisd:
       _simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.comisdXX(d, s); });
@@ -265,8 +266,17 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
     case X86InstId.kMovss:
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.movssXM(d, s) : asm.movssXX(d, s as X86Xmm), memXmm: (m, s) => asm.movssMX(m, s));
       break;
+    case X86InstId.kMovsx:
+      _movx(asm, ops, 'movsx', (d, s) => asm.movsxRR(d, s), (d, m) => asm.movsxRM(d, m));
+      break;
+    case X86InstId.kMovsxd:
+      _movx(asm, ops, 'movsxd', (d, s) => asm.movsxd(d, s), (d, m) => asm.movsxdRM(d, m));
+      break;
     case X86InstId.kMovups:
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.movupsXM(d, s) : asm.movupsXX(d, s as X86Xmm), memXmm: (m, s) => asm.movupsMX(m, s));
+      break;
+    case X86InstId.kMovzx:
+      _movx(asm, ops, 'movzx', (d, s) => asm.movzxRR(d, s), (d, m) => asm.movzxRM(d, m));
       break;
     case X86InstId.kMul:
       _unary(asm, ops, (r) => asm.mul(r));
@@ -290,13 +300,10 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       _unary(asm, ops, (r) => asm.not(r));
       break;
     case X86InstId.kOr:
-      _binary(asm, ops, (a, b) => asm.orRR(a, b), (a, imm) => asm.orRI(a, imm));
+      _binary(asm, ops, 'or', (a, b) => asm.orRR(a, b), (a, imm) => asm.orRI(a, imm), rm: (a, m) => asm.orRM(a, m));
       break;
     case X86InstId.kPaddb:
-      _simd3(asm, ops, xmm: (d, s1, s2) {
-  final imm = s2 is Imm ? s2.value : s2 as int;
-  asm.vpslld(d, s1, imm);
-});
+      _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.paddbXM(d, s) : asm.paddbXX(d, s as X86Xmm));
       break;
     case X86InstId.kPaddd:
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.padddXM(d, s) : asm.padddXX(d, s as X86Xmm));
@@ -312,6 +319,18 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       break;
     case X86InstId.kPcmpeqd:
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.pcmpeqdXM(d, s) : asm.pcmpeqdXX(d, s as X86Xmm));
+      break;
+    case X86InstId.kPextrb:
+      _pextr(asm, ops, 'pextrb', (d, s, i) => asm.pextrbR(d, s, i), (m, s, i) => asm.pextrbM(m, s, i));
+      break;
+    case X86InstId.kPextrw:
+      _pextr(asm, ops, 'pextrw', (d, s, i) => asm.pextrwRX(d, s, i), (m, s, i) => asm.pextrwMX(m, s, i));
+      break;
+    case X86InstId.kPinsrb:
+      _pinsr(asm, ops, 'pinsrb', (d, s, i) => asm.pinsrbR(d, s, i), (d, m, i) => asm.pinsrbM(d, m, i));
+      break;
+    case X86InstId.kPinsrw:
+      _pinsr(asm, ops, 'pinsrw', (d, s, i) => asm.pinsrwXR(d, s, i), (d, m, i) => asm.pinsrwXM(d, m, i));
       break;
     case X86InstId.kPmullw:
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.pmullwXM(d, s) : asm.pmullwXX(d, s as X86Xmm));
@@ -442,7 +461,7 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       _simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.sqrtssXX(d, s); });
       break;
     case X86InstId.kSub:
-      _binary(asm, ops, (a, b) => asm.subRR(a, b), (a, imm) => asm.subRI(a, imm));
+      _binary(asm, ops, 'sub', (a, b) => asm.subRR(a, b), (a, imm) => asm.subRI(a, imm), rm: (a, m) => asm.subRM(a, m));
       break;
     case X86InstId.kSubpd:
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.subpdXM(d, s) : asm.subpd(d, s as X86Xmm));
@@ -457,7 +476,7 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       _simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.subssXX(d, s); });
       break;
     case X86InstId.kTest:
-      _binary(asm, ops, (a, b) => asm.testRR(a, b), (a, imm) => asm.testRI(a, imm));
+      _binary(asm, ops, 'test', (a, b) => asm.testRR(a, b), (a, imm) => asm.testRI(a, imm), rm: (a, m) => asm.testRM(a, m));
       break;
     case X86InstId.kUcomisd:
       _simd2(asm, ops, xmm: (d, s) { if (s is X86Xmm) asm.ucomisdXX(d, s); });
@@ -616,15 +635,15 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       break;
     case X86InstId.kVpslld:
       _simd3(asm, ops, xmm: (d, s1, s2) {
-  final imm = s2 is Imm ? s2.value : s2 as int;
-  asm.vpslld(d, s1, imm);
-});
+    final imm = s2 is Imm ? s2.value : s2 as int;
+    asm.vpslld(d, s1, imm);
+  });
       break;
     case X86InstId.kVpsrld:
       _simd3(asm, ops, xmm: (d, s1, s2) {
-  final imm = s2 is Imm ? s2.value : s2 as int;
-  asm.vpsrld(d, s1, imm);
-});
+    final imm = s2 is Imm ? s2.value : s2 as int;
+    asm.vpsrld(d, s1, imm);
+  });
       break;
     case X86InstId.kVpxor:
       _simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vpxorXXM(d, s1, s2) : asm.vpxorXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vpxorYYM(d, s1, s2) : asm.vpxorYYY(d, s1, s2 as X86Ymm));
@@ -663,7 +682,7 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       _simd3(asm, ops, xmm: (d, s1, s2) => s2 is X86Mem ? asm.vxorpsXXM(d, s1, s2) : asm.vxorpsXXX(d, s1, s2 as X86Xmm), ymm: (d, s1, s2) => s2 is X86Mem ? asm.vxorpsYYM(d, s1, s2) : asm.vxorpsYYY(d, s1, s2 as X86Ymm));
       break;
     case X86InstId.kXor:
-      _binary(asm, ops, (a, b) => asm.xorRR(a, b), (a, imm) => asm.xorRI(a, imm));
+      _binary(asm, ops, 'xor', (a, b) => asm.xorRR(a, b), (a, imm) => asm.xorRI(a, imm), rm: (a, m) => asm.xorRM(a, m));
       break;
     case X86InstId.kXorpd:
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.xorpdXM(d, s) : asm.xorpd(d, s as X86Xmm));
@@ -672,7 +691,11 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       _simd2(asm, ops, xmm: (d, s) => s is X86Mem ? asm.xorpsXM(d, s) : asm.xorps(d, s as X86Xmm));
       break;
     default:
-      break;
+      final name = instId >= 0 && instId < kX86InstDb.length
+          ? kX86InstDb[instId].name
+          : '#$instId';
+      throw UnsupportedError('x86Dispatch: instruction "$name" '
+          'is not implemented by the dispatcher');
   }
 }
 
@@ -701,6 +724,76 @@ void _mov(X86Assembler asm, List<Object> ops) {
     asm.movapsXM(dst, src);
   } else if (dst is X86Mem && src is X86Xmm) {
     asm.movapsMX(dst, src);
+  } else {
+    throw UnsupportedError(
+        'x86Dispatch: unsupported mov operand combination: $dst, $src');
+  }
+}
+
+void _pextr(
+    X86Assembler asm,
+    List<Object> ops,
+    String name,
+    void Function(X86Gp, X86Xmm, int) rx,
+    void Function(X86Mem, X86Xmm, int) mx) {
+  if (ops.length != 3) {
+    throw UnsupportedError('x86Dispatch: $name expects 3 operands');
+  }
+  final dst = ops[0];
+  final src = ops[1];
+  final immOp = ops[2];
+  final imm = immOp is Imm ? immOp.value : immOp as int;
+  if (dst is X86Gp && src is X86Xmm) {
+    rx(dst, src, imm);
+  } else if (dst is X86Mem && src is X86Xmm) {
+    mx(dst, src, imm);
+  } else {
+    throw UnsupportedError(
+        'x86Dispatch: unsupported $name operand combination: $dst, $src');
+  }
+}
+
+void _pinsr(
+    X86Assembler asm,
+    List<Object> ops,
+    String name,
+    void Function(X86Xmm, X86Gp, int) xr,
+    void Function(X86Xmm, X86Mem, int) xm) {
+  if (ops.length != 3) {
+    throw UnsupportedError('x86Dispatch: $name expects 3 operands');
+  }
+  final dst = ops[0];
+  final src = ops[1];
+  final immOp = ops[2];
+  final imm = immOp is Imm ? immOp.value : immOp as int;
+  if (dst is X86Xmm && src is X86Gp) {
+    xr(dst, src, imm);
+  } else if (dst is X86Xmm && src is X86Mem) {
+    xm(dst, src, imm);
+  } else {
+    throw UnsupportedError(
+        'x86Dispatch: unsupported $name operand combination: $dst, $src');
+  }
+}
+
+void _movx(
+    X86Assembler asm,
+    List<Object> ops,
+    String name,
+    void Function(X86Gp, X86Gp) rr,
+    void Function(X86Gp, X86Mem) rm) {
+  if (ops.length != 2) {
+    throw UnsupportedError('x86Dispatch: $name expects 2 operands');
+  }
+  final dst = ops[0];
+  final src = ops[1];
+  if (dst is X86Gp && src is X86Gp) {
+    rr(dst, src);
+  } else if (dst is X86Gp && src is X86Mem) {
+    rm(dst, src);
+  } else {
+    throw UnsupportedError(
+        'x86Dispatch: unsupported $name operand combination: $dst, $src');
   }
 }
 
@@ -720,13 +813,22 @@ void _movd(X86Assembler asm, List<Object> ops) {
 }
 
 void _movq(X86Assembler asm, List<Object> ops) {
-  if (ops.length != 2) return;
+  if (ops.length != 2) {
+    throw UnsupportedError('movq expects 2 operands, got ${ops.length}');
+  }
   final dst = ops[0];
   final src = ops[1];
   if (dst is X86Xmm && src is X86Gp) {
     asm.movqXR(dst, src);
   } else if (dst is X86Gp && src is X86Xmm) {
     asm.movqRX(dst, src);
+  } else if (dst is X86Xmm && src is X86Mem) {
+    asm.movqXM(dst, src);
+  } else if (dst is X86Mem && src is X86Xmm) {
+    asm.movqMX(dst, src);
+  } else {
+    throw UnsupportedError('Unsupported movq operands: '
+        '${dst.runtimeType}, ${src.runtimeType}');
   }
 }
 
@@ -763,9 +865,14 @@ void _kmovq(X86Assembler asm, List<Object> ops) {
   }
 }
 
-void _binary(X86Assembler asm, List<Object> ops,
-    void Function(X86Gp, X86Gp) rr, void Function(X86Gp, int) ri) {
-  if (ops.length != 2) return;
+void _binary(X86Assembler asm, List<Object> ops, String name,
+    void Function(X86Gp, X86Gp) rr, void Function(X86Gp, int) ri,
+    {void Function(X86Gp, X86Mem)? rm,
+    void Function(X86Mem, X86Gp)? mr,
+    void Function(X86Mem, int)? mi}) {
+  if (ops.length != 2) {
+    throw UnsupportedError('x86Dispatch: $name expects 2 operands');
+  }
   final dst = ops[0];
   final src = ops[1];
   if (dst is X86Gp && src is X86Gp) {
@@ -774,6 +881,17 @@ void _binary(X86Assembler asm, List<Object> ops,
     ri(dst, src);
   } else if (dst is X86Gp && src is Imm) {
     ri(dst, src.value);
+  } else if (dst is X86Gp && src is X86Mem && rm != null) {
+    rm(dst, src);
+  } else if (dst is X86Mem && src is X86Gp && mr != null) {
+    mr(dst, src);
+  } else if (dst is X86Mem && src is int && mi != null) {
+    mi(dst, src);
+  } else if (dst is X86Mem && src is Imm && mi != null) {
+    mi(dst, src.value);
+  } else {
+    throw UnsupportedError(
+        'x86Dispatch: unsupported $name operand combination: $dst, $src');
   }
 }
 

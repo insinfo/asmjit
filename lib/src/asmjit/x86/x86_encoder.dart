@@ -516,6 +516,36 @@ class X86Encoder {
     emitModRmMem(src.encoding, mem);
   }
 
+  /// MOV [mem], r16
+  void movMemR16(X86Mem mem, X86Gp src) {
+    buffer.emit8(0x66);
+    emitRexForRegMem(src, mem);
+    buffer.emit8(0x89);
+    emitModRmMem(src.encoding, mem);
+  }
+
+  /// MOV [mem], r8
+  void movMemR8(X86Mem mem, X86Gp src) {
+    emitRexForRegMem(src, mem);
+    buffer.emit8(0x88);
+    emitModRmMem(src.encoding, mem);
+  }
+
+  /// MOV r16, [mem]
+  void movR16Mem(X86Gp dst, X86Mem mem) {
+    buffer.emit8(0x66);
+    emitRexForRegMem(dst, mem);
+    buffer.emit8(0x8B);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// MOV r8, [mem]
+  void movR8Mem(X86Gp dst, X86Mem mem) {
+    emitRexForRegMem(dst, mem);
+    buffer.emit8(0x8A);
+    emitModRmMem(dst.encoding, mem);
+  }
+
   // ===========================================================================
   // Arithmetic instructions
   // ===========================================================================
@@ -1114,6 +1144,45 @@ class X86Encoder {
     buffer.emit8(0x0F);
     buffer.emit8(0xBF);
     emitModRmReg(dst.encoding, src);
+  }
+
+  /// MOVZX r32/r64, byte ptr [mem] (0F B6 /r)
+  void movzxRegMem8(X86Gp dst, X86Mem mem) {
+    emitRexForRegMem(dst, mem, w: dst.bits == 64);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xB6);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// MOVZX r32/r64, word ptr [mem] (0F B7 /r)
+  void movzxRegMem16(X86Gp dst, X86Mem mem) {
+    emitRexForRegMem(dst, mem, w: dst.bits == 64);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xB7);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// MOVSX r32/r64, byte ptr [mem] (0F BE /r)
+  void movsxRegMem8(X86Gp dst, X86Mem mem) {
+    emitRexForRegMem(dst, mem, w: dst.bits == 64);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xBE);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// MOVSX r32/r64, word ptr [mem] (0F BF /r)
+  void movsxRegMem16(X86Gp dst, X86Mem mem) {
+    emitRexForRegMem(dst, mem, w: dst.bits == 64);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xBF);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// MOVSXD r64, dword ptr [mem] (REX.W 63 /r)
+  void movsxdR64Mem(X86Gp dst, X86Mem mem) {
+    emitRexForRegMem(dst, mem, w: true);
+    buffer.emit8(0x63);
+    emitModRmMem(dst.encoding, mem);
   }
 
   // ===========================================================================
@@ -3399,6 +3468,24 @@ class X86Encoder {
     buffer.emit8(0x0F);
     buffer.emit8(0x7E);
     buffer.emit8(0xC0 | (src.encoding << 3) | dst.encoding);
+  }
+
+  /// MOVQ xmm, m64 (F3 0F 7E /r)
+  void movqXmmMem(X86Xmm dst, X86Mem src) {
+    buffer.emit8(0xF3);
+    _emitRexForXmmMem(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0x7E);
+    emitModRmMem(dst.encoding, src);
+  }
+
+  /// MOVQ m64, xmm (66 0F D6 /r)
+  void movqMemXmm(X86Mem dst, X86Xmm src) {
+    buffer.emit8(0x66);
+    _emitRexForXmmMem(src, dst);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xD6);
+    emitModRmMem(src.encoding, dst);
   }
 
   /// MOVD xmm, r32 (move doubleword from GP to XMM)

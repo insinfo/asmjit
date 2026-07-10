@@ -516,15 +516,18 @@ mixin UniCompilerX86 on UniCompilerBase {
 
     if (hasAvx) {
       switch (op) {
+        // NOTE: uses the SSE forms — the encoder has no VEX pinsrb/pinsrw
+        // yet. The destination was just zeroed, so this is functionally
+        // equivalent (only a potential SSE/AVX transition penalty).
         case UniOpVM.load8:
           _vZeroX86(dst);
-          cc.addNode(InstNode(
-              X86InstId.kVpinsrb, [dst, dst, src.withSize(1), Imm(0)]));
+          cc.addNode(
+              InstNode(X86InstId.kPinsrb, [dst, src.withSize(1), Imm(0)]));
           return;
         case UniOpVM.load16U16:
           _vZeroX86(dst);
-          cc.addNode(InstNode(
-              X86InstId.kVpinsrw, [dst, dst, src.withSize(2), Imm(0)]));
+          cc.addNode(
+              InstNode(X86InstId.kPinsrw, [dst, src.withSize(2), Imm(0)]));
           return;
         case UniOpVM.load32U32:
         case UniOpVM.load32F32:
@@ -603,10 +606,24 @@ mixin UniCompilerX86 on UniCompilerBase {
           }
       }
     }
+
+    // Falling through would silently drop the load and execute garbage.
+    throw UnimplementedError(
+        '_emitVMX86: $op not implemented (hasAvx=$hasAvx)');
   }
 
   void _emitMVX86(
       UniOpMV op, X86Mem dst, BaseReg src, Alignment alignment, int idx) {
+    // Narrow scalar stores extract the low element (mirrors C++ emit_mv).
+    // Uses the SSE forms; correct under AVX as well.
+    if (op == UniOpMV.store8 || op == UniOpMV.store16U16) {
+      final s = src is X86Vec ? src.xmm : src;
+      final isByte = op == UniOpMV.store8;
+      cc.addNode(InstNode(isByte ? X86InstId.kPextrb : X86InstId.kPextrw,
+          [dst.withSize(isByte ? 1 : 2), s, Imm(0)]));
+      return;
+    }
+
     final info = _getUniOpMVInfo(op);
     if (info == null) {
       throw UnimplementedError('UniOpMV $op not implemented for X86');
@@ -673,6 +690,10 @@ mixin UniCompilerX86 on UniCompilerBase {
           break;
       }
     }
+
+    // Falling through would silently drop the store (data never written).
+    throw UnimplementedError(
+        '_emitMVX86: $op not implemented (hasAvx=$hasAvx)');
   }
 
   void _emit2vX86(UniOpVV op, Operand dst, Operand src) {
@@ -1927,6 +1948,14 @@ mixin UniCompilerX86 on UniCompilerBase {
             asimdInstId: 0,
             narrowingOp: 0,
             memSize: 1,
+            memSizeShift: 0);
+      case UniOpVM.load16U16:
+        return const UniOpVMInfo(
+            sseInstId: X86InstId.kPmovzxwd,
+            avxInstId: X86InstId.kVpmovzxwd,
+            asimdInstId: 0,
+            narrowingOp: 0,
+            memSize: 2,
             memSizeShift: 0);
       default:
         return null;

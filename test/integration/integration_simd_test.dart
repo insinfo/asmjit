@@ -1,3 +1,4 @@
+
 import 'dart:ffi';
 import 'package:ffi/ffi.dart' as ffi;
 import 'package:test/test.dart';
@@ -29,10 +30,12 @@ void main() {
 
       compiler.addFunc(signature);
 
-      final isWindows = compiler.env.platform == TargetPlatform.windows;
-      final dstReg = isWindows ? rcx : rdi;
-      final src1Reg = isWindows ? rdx : rsi;
-      final src2Reg = isWindows ? r8 : rdx;
+      final dstReg = compiler.newGpPtr('dst');
+      final src1Reg = compiler.newGpPtr('src1');
+      final src2Reg = compiler.newGpPtr('src2');
+      compiler.setArg(0, dstReg);
+      compiler.setArg(1, src1Reg);
+      compiler.setArg(2, src2Reg);
 
       final xmm0 = compiler.newXmm('xmm0');
       final xmm1 = compiler.newXmm('xmm1');
@@ -107,10 +110,12 @@ void main() {
 
       compiler.addFunc(signature);
 
-      final isWindows = compiler.env.platform == TargetPlatform.windows;
-      final dstReg = isWindows ? rcx : rdi;
-      final src1Reg = isWindows ? rdx : rsi;
-      final src2Reg = isWindows ? r8 : rdx;
+      final dstReg = compiler.newGpPtr('dst');
+      final src1Reg = compiler.newGpPtr('src1');
+      final src2Reg = compiler.newGpPtr('src2');
+      compiler.setArg(0, dstReg);
+      compiler.setArg(1, src1Reg);
+      compiler.setArg(2, src2Reg);
 
       final xmm0 = compiler.newXmm('xmm0');
       final xmm1 = compiler.newXmm('xmm1');
@@ -170,10 +175,12 @@ void main() {
 
       compiler.addFunc(signature);
 
-      final isWindows = compiler.env.platform == TargetPlatform.windows;
-      final dstReg = isWindows ? rcx : rdi;
-      final src1Reg = isWindows ? rdx : rsi;
-      final src2Reg = isWindows ? r8 : rdx;
+      final dstReg = compiler.newGpPtr('dst');
+      final src1Reg = compiler.newGpPtr('src1');
+      final src2Reg = compiler.newGpPtr('src2');
+      compiler.setArg(0, dstReg);
+      compiler.setArg(1, src1Reg);
+      compiler.setArg(2, src2Reg);
 
       final xmm0 = compiler.newXmm('xmm0');
       final xmm1 = compiler.newXmm('xmm1');
@@ -271,10 +278,12 @@ void main() {
 
       compiler.addFunc(signature);
 
-      final isWindows = compiler.env.platform == TargetPlatform.windows;
-      final dstReg = isWindows ? rcx : rdi;
-      final src1Reg = isWindows ? rdx : rsi;
-      final src2Reg = isWindows ? r8 : rdx;
+      final dstReg = compiler.newGpPtr('dst');
+      final src1Reg = compiler.newGpPtr('src1');
+      final src2Reg = compiler.newGpPtr('src2');
+      compiler.setArg(0, dstReg);
+      compiler.setArg(1, src1Reg);
+      compiler.setArg(2, src2Reg);
 
       final xmm0 = compiler.newXmm('xmm0');
       final xmm1 = compiler.newXmm('xmm1');
@@ -394,10 +403,12 @@ void main() {
 
       compiler.addFunc(signature);
 
-      final isWindows = compiler.env.platform == TargetPlatform.windows;
-      final dstReg = isWindows ? rcx : rdi;
-      final src1Reg = isWindows ? rdx : rsi;
-      final src2Reg = isWindows ? r8 : rdx;
+      final dstReg = compiler.newGpPtr('dst');
+      final src1Reg = compiler.newGpPtr('src1');
+      final src2Reg = compiler.newGpPtr('src2');
+      compiler.setArg(0, dstReg);
+      compiler.setArg(1, src1Reg);
+      compiler.setArg(2, src2Reg);
 
       final xmm0 = compiler.newXmm('xmm0');
       final xmm1 = compiler.newXmm('xmm1');
@@ -520,10 +531,12 @@ void main() {
 
       compiler.addFunc(signature);
 
-      final isWindows = compiler.env.platform == TargetPlatform.windows;
-      final dstReg = isWindows ? rcx : rdi;
-      final src1Reg = isWindows ? rdx : rsi;
-      final src2Reg = isWindows ? r8 : rdx;
+      final dstReg = compiler.newGpPtr('dst');
+      final src1Reg = compiler.newGpPtr('src1');
+      final src2Reg = compiler.newGpPtr('src2');
+      compiler.setArg(0, dstReg);
+      compiler.setArg(1, src1Reg);
+      compiler.setArg(2, src2Reg);
 
       final xmm0 = compiler.newXmm('xmm0');
       final xmm1 = compiler.newXmm('xmm1');
@@ -615,9 +628,10 @@ void main() {
 
       compiler.addFunc(signature);
 
-      final isWindows = compiler.env.platform == TargetPlatform.windows;
-      final dstReg = isWindows ? rcx : rdi;
-      final src1Reg = isWindows ? rdx : rsi;
+      final dstReg = compiler.newGpPtr('dst');
+      final src1Reg = compiler.newGpPtr('src1');
+      compiler.setArg(0, dstReg);
+      compiler.setArg(1, src1Reg);
 
       final xmm0 = compiler.newXmm('xmm0');
       final xmm1 = compiler.newXmm('xmm1');
@@ -691,10 +705,12 @@ void main() {
 
       compiler.addFunc(signature);
 
-      final isWindows = compiler.env.platform == TargetPlatform.windows;
-      final dstReg = isWindows ? rcx : rdi;
-      final src1Reg = isWindows ? rdx : rsi;
-      final src2Reg = isWindows ? r8 : rdx;
+      final dstReg = compiler.newGpPtr('dst');
+      final src1Reg = compiler.newGpPtr('src1');
+      final src2Reg = compiler.newGpPtr('src2');
+      compiler.setArg(0, dstReg);
+      compiler.setArg(1, src1Reg);
+      compiler.setArg(2, src2Reg);
 
       final xmm0 = compiler.newXmm('xmm0');
       final xmm1 = compiler.newXmm('xmm1');
@@ -757,9 +773,10 @@ void main() {
 
       compiler.addFunc(signature);
 
-      final isWindows = compiler.env.platform == TargetPlatform.windows;
-      final dstReg = isWindows ? rcx : rdi;
-      final srcReg = isWindows ? rdx : rsi;
+      final dstReg = compiler.newGpPtr('dst');
+      final srcReg = compiler.newGpPtr('src');
+      compiler.setArg(0, dstReg);
+      compiler.setArg(1, srcReg);
 
       final xmm0 = compiler.newXmm('xmm0');
 

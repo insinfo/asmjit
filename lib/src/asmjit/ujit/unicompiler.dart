@@ -1485,20 +1485,30 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
   }
 
   void emitRM(UniOpRM op, Operand dst, Operand src) {
+    Operand finalSrc = src;
+    if (finalSrc is UniMem) finalSrc = finalSrc.mem;
     if (isX86Family) {
-      _emitRMX86(op, dst as BaseReg, src as X86Mem);
+      _emitRMX86(op, dst as BaseReg, finalSrc as X86Mem);
     } else if (isArm64) {
-      (this as UniCompilerA64)._emitRMA64(op, dst as BaseReg, src as A64Mem);
+      (this as UniCompilerA64)
+          ._emitRMA64(op, dst as BaseReg, finalSrc as A64Mem);
     } else {
       throw UnimplementedError('emitRM not implemented for $arch');
     }
   }
 
+  // Mirrors asmjit C++ `UniCompiler::emit_rm` (unicompiler_x86.cpp).
+  //
+  // The destination register size selects the operand size (REX.W), so
+  // narrow loads MUST use a 32-bit destination, otherwise `mov r64, [mem]`
+  // reads 8 bytes and can read past the end of user buffers.
   void _emitRMX86(UniOpRM op, BaseReg dst, X86Mem src) {
+    final gp = dst is X86Gp ? dst : null;
     int instId;
     switch (op) {
       case UniOpRM.loadU8:
         instId = X86InstId.kMovzx;
+        if (gp != null) dst = gp.as32;
         src = src.withSize(1);
         break;
       case UniOpRM.loadI8:
@@ -1507,6 +1517,7 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
         break;
       case UniOpRM.loadU16:
         instId = X86InstId.kMovzx;
+        if (gp != null) dst = gp.as32;
         src = src.withSize(2);
         break;
       case UniOpRM.loadI16:
@@ -1514,11 +1525,17 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
         src = src.withSize(2);
         break;
       case UniOpRM.loadU32:
+        // 32-bit MOV implicitly zero-extends to 64 bits.
         instId = X86InstId.kMov;
+        if (gp != null) dst = gp.as32;
         src = src.withSize(4);
         break;
       case UniOpRM.loadI32:
-        instId = X86InstId.kMov;
+        if (gp != null && gp.bits == 64) {
+          instId = X86InstId.kMovsxd;
+        } else {
+          instId = X86InstId.kMov;
+        }
         src = src.withSize(4);
         break;
       case UniOpRM.loadU64:
@@ -1526,8 +1543,35 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
         instId = X86InstId.kMov;
         src = src.withSize(8);
         break;
-      default:
+      case UniOpRM.loadMergeU8:
         instId = X86InstId.kMov;
+        if (gp != null) dst = gp.as8;
+        src = src.withSize(1);
+        break;
+      case UniOpRM.loadShiftU8:
+        if (gp != null) {
+          cc.addNode(InstNode(X86InstId.kShl, [gp, Imm(8)]));
+          dst = gp.as8;
+        }
+        instId = X86InstId.kMov;
+        src = src.withSize(1);
+        break;
+      case UniOpRM.loadMergeU16:
+        instId = X86InstId.kMov;
+        if (gp != null) dst = gp.as16;
+        src = src.withSize(2);
+        break;
+      case UniOpRM.loadShiftU16:
+        if (gp != null) {
+          cc.addNode(InstNode(X86InstId.kShl, [gp, Imm(16)]));
+          dst = gp.as16;
+        }
+        instId = X86InstId.kMov;
+        src = src.withSize(2);
+        break;
+      case UniOpRM.loadReg:
+        instId = X86InstId.kMov;
+        if (src.size == 0) src = src.withSize(dst.size);
         break;
     }
     cc.addNode(InstNode(instId, [dst, src]));
@@ -1546,24 +1590,77 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     }
   }
 
+  // Mirrors asmjit C++ `UniCompiler::emit_mr` (unicompiler_x86.cpp).
+  //
+  // The source register size selects the operand size (REX.W), so narrow
+  // stores MUST shrink the source register too. `mov [mem], r64` writes
+  // 8 bytes regardless of the memory operand size annotation — storing a
+  // 64-bit register for storeU32 overflows user buffers (heap corruption).
   void _emitMRX86(UniOpMR op, X86Mem dst, BaseReg src) {
+    int instId;
+    int size;
     switch (op) {
+      case UniOpMR.storeReg:
+        instId = X86InstId.kMov;
+        size = src.size;
+        break;
       case UniOpMR.storeU8:
-        dst = dst.withSize(1);
+        instId = X86InstId.kMov;
+        size = 1;
         break;
       case UniOpMR.storeU16:
-        dst = dst.withSize(2);
+        instId = X86InstId.kMov;
+        size = 2;
         break;
       case UniOpMR.storeU32:
-        dst = dst.withSize(4);
+        instId = X86InstId.kMov;
+        size = 4;
         break;
       case UniOpMR.storeU64:
-        dst = dst.withSize(8);
+        instId = X86InstId.kMov;
+        size = 8;
         break;
-      default:
+      case UniOpMR.addReg:
+        instId = X86InstId.kAdd;
+        size = src.size;
+        break;
+      case UniOpMR.addU8:
+        instId = X86InstId.kAdd;
+        size = 1;
+        break;
+      case UniOpMR.addU16:
+        instId = X86InstId.kAdd;
+        size = 2;
+        break;
+      case UniOpMR.addU32:
+        instId = X86InstId.kAdd;
+        size = 4;
+        break;
+      case UniOpMR.addU64:
+        instId = X86InstId.kAdd;
+        size = 8;
         break;
     }
-    cc.addNode(InstNode(X86InstId.kMov, [dst, src]));
+
+    BaseReg r = src;
+    if (src is X86Gp) {
+      switch (size) {
+        case 1:
+          r = src.as8;
+          break;
+        case 2:
+          r = src.as16;
+          break;
+        case 4:
+          r = src.as32;
+          break;
+        case 8:
+          r = src.as64;
+          break;
+      }
+    }
+
+    cc.addNode(InstNode(instId, [dst.withSize(size), r]));
   }
 
   void emitM(UniOpM op, Operand dst) {

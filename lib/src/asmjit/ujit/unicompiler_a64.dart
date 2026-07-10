@@ -143,6 +143,9 @@ mixin UniCompilerA64 on UniCompilerBase {
         case UniOpRM.loadI64:
           cc.addNode(InstNode(A64InstId.kLdr, [dst.x, src]));
           break;
+        case UniOpRM.loadReg:
+          cc.addNode(InstNode(A64InstId.kLdr, [dst, src]));
+          break;
         default:
           throw UnimplementedError('_emitRMA64: GP load $op not implemented');
       }
@@ -169,6 +172,9 @@ mixin UniCompilerA64 on UniCompilerBase {
           break;
         case UniOpMR.storeU64:
           cc.addNode(InstNode(A64InstId.kStr, [dst, src.x]));
+          break;
+        case UniOpMR.storeReg:
+          cc.addNode(InstNode(A64InstId.kStr, [dst, src]));
           break;
         default:
           throw UnimplementedError('_emitMRA64: GP store $op not implemented');
