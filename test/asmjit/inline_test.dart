@@ -7,6 +7,8 @@ import 'dart:io' show Platform;
 import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
 
+import '../support/host.dart';
+
 // Native function signatures
 typedef NativeNoArgs = Int64 Function();
 typedef DartNoArgs = int Function();
@@ -18,7 +20,8 @@ typedef NativeTwoArgs = Int64 Function(Int64, Int64);
 typedef DartTwoArgs = int Function(int, int);
 
 void main() {
-  if (!Environment.host().isX86Family) {
+  // Executes (or assumes) x86-64 code: skipped on ia32 and non-x86 hosts.
+  if (!hostIsX64) {
     return;
   }
   group('InlineBytes', () {

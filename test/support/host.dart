@@ -27,6 +27,12 @@ Environment x64TestEnv() {
       : Environment.x64SysV();
 }
 
+/// Environment for portable (UniCompiler) IR tests that build code without
+/// executing it: the host environment on AArch64 hosts, otherwise
+/// [x64TestEnv] (so the tests also run on ia32, arm32, riscv64, ... hosts,
+/// which UniCompiler does not target).
+Environment ujitTestEnv() => hostIsA64 ? Environment.host() : x64TestEnv();
+
 /// `skip:` value for tests that execute JIT code through the portable
 /// UniCompiler path (x86-64 or AArch64 hosts).
 final Object skipUnlessJitHost =

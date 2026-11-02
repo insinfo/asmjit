@@ -6,12 +6,15 @@ import 'dart:ffi';
 import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
 
+import '../support/host.dart';
+
 // Native function signatures
 typedef NativeOneArg = Int64 Function(Int64);
 typedef DartOneArg = int Function(int);
 
 void main() {
-  if (!Environment.host().isX86Family) {
+  // Executes (or assumes) x86-64 code: skipped on ia32 and non-x86 hosts.
+  if (!hostIsX64) {
     return;
   }
   group('Short Jump - Backward Jump Encoding', () {

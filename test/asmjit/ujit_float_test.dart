@@ -1,22 +1,17 @@
 import 'package:asmjit/asmjit.dart';
 import 'package:test/test.dart';
 
+import '../support/host.dart';
+
 void main() {
   group('UJIT Float Arithmetic Ops', () {
-    late JitRuntime rt;
-
-    setUp(() {
-      rt = JitRuntime();
-    });
-
-    tearDown(() {
-      rt.dispose();
-    });
+    // Inspects the generated IR only; nothing is executed.
+    final env = ujitTestEnv();
 
     test('Float Add (F32)', () {
-      final code = CodeHolder(env: rt.environment);
+      final code = CodeHolder(env: env);
       BaseCompiler compiler;
-      if (rt.environment.arch == Arch.x64) {
+      if (env.arch == Arch.x64) {
         compiler = X86Compiler(env: code.env, labelManager: code.labelManager);
       } else {
         compiler = A64Compiler(env: code.env, labelManager: code.labelManager);
@@ -34,7 +29,7 @@ void main() {
       final v2 = cc.newVec("v2");
       final dst = cc.newVec("dst");
 
-      if (rt.environment.arch == Arch.x64) {
+      if (env.arch == Arch.x64) {
         // X86: addps dst, v1, v2
         cc.emit3v(UniOpVVV.addF32, dst, v1, v2);
       } else {
@@ -48,7 +43,7 @@ void main() {
       bool foundAdd = false;
       for (var node in compiler.nodes.nodes) {
         if (node is InstNode) {
-          if (rt.environment.arch == Arch.x64) {
+          if (env.arch == Arch.x64) {
             // addps = kAddps
             if (node.instId == X86InstId.kAddps) foundAdd = true;
           } else {
@@ -62,9 +57,9 @@ void main() {
     });
 
     test('Float Mul (F64)', () {
-      final code = CodeHolder(env: rt.environment);
+      final code = CodeHolder(env: env);
       BaseCompiler compiler;
-      if (rt.environment.arch == Arch.x64) {
+      if (env.arch == Arch.x64) {
         compiler = X86Compiler(env: code.env, labelManager: code.labelManager);
       } else {
         compiler = A64Compiler(env: code.env, labelManager: code.labelManager);
@@ -84,7 +79,7 @@ void main() {
       bool foundMul = false;
       for (var node in compiler.nodes.nodes) {
         if (node is InstNode) {
-          if (rt.environment.arch == Arch.x64) {
+          if (env.arch == Arch.x64) {
             if (node.instId == X86InstId.kMulpd) foundMul = true;
           } else {
             if (node.instId == A64InstId.kFmul) foundMul = true;

@@ -1,22 +1,17 @@
 import 'package:asmjit/asmjit.dart';
 import 'package:test/test.dart';
 
+import '../support/host.dart';
+
 void main() {
   group('UJIT Memory Ops (M/RM/MR)', () {
-    late JitRuntime rt;
-
-    setUp(() {
-      rt = JitRuntime();
-    });
-
-    tearDown(() {
-      rt.dispose();
-    });
+    // Inspects the generated IR only; nothing is executed.
+    final env = ujitTestEnv();
 
     test('M Ops (StoreZero)', () {
-      final code = CodeHolder(env: rt.environment);
+      final code = CodeHolder(env: env);
       BaseCompiler compiler;
-      if (rt.environment.arch == Arch.x64) {
+      if (env.arch == Arch.x64) {
         compiler = X86Compiler(env: code.env, labelManager: code.labelManager);
       } else {
         compiler = A64Compiler(env: code.env, labelManager: code.labelManager);
@@ -29,7 +24,7 @@ void main() {
       cc.setArg(0, ptr);
 
       // Store zero to memory
-      if (rt.environment.arch == Arch.x64) {
+      if (env.arch == Arch.x64) {
         cc.emitM(UniOpM.storeZeroU8, X86Mem.ptr(ptr));
       } else {
         cc.emitM(UniOpM.storeZeroU8, A64Mem.baseOffset(ptr as A64Gp, 0));
@@ -43,7 +38,7 @@ void main() {
       bool foundStore = false;
       for (var node in compiler.nodes.nodes) {
         if (node is InstNode) {
-          if (rt.environment.arch == Arch.x64) {
+          if (env.arch == Arch.x64) {
             if (node.instId == X86InstId.kMov)
               foundStore = true; // Store zero usually MOV [mem], 0
           } else {
@@ -60,9 +55,9 @@ void main() {
     });
 
     test('RM Ops (Load Extensions)', () {
-      final code = CodeHolder(env: rt.environment);
+      final code = CodeHolder(env: env);
       BaseCompiler compiler;
-      if (rt.environment.arch == Arch.x64) {
+      if (env.arch == Arch.x64) {
         compiler = X86Compiler(env: code.env, labelManager: code.labelManager);
       } else {
         compiler = A64Compiler(env: code.env, labelManager: code.labelManager);
@@ -77,7 +72,7 @@ void main() {
 
       // Load with extension
       // Use architecture-specific memory creation or simple check
-      if (rt.environment.arch == Arch.x64) {
+      if (env.arch == Arch.x64) {
         cc.emitRM(UniOpRM.loadU8, val, X86Mem.ptr(ptr));
       } else {
         cc.emitRM(UniOpRM.loadU8, val, A64Mem.baseOffset(ptr as A64Gp, 0));
@@ -89,7 +84,7 @@ void main() {
       bool foundLoad = false;
       for (var node in compiler.nodes.nodes) {
         if (node is InstNode) {
-          if (rt.environment.arch == Arch.x64) {
+          if (env.arch == Arch.x64) {
             if (node.instId == X86InstId.kMovzx) foundLoad = true;
           } else {
             if (node.instId == A64InstId.kLdrb) foundLoad = true;
@@ -100,10 +95,10 @@ void main() {
     });
 
     test('MR Ops (Store)', () {
-      final code = CodeHolder(env: rt.environment);
+      final code = CodeHolder(env: env);
       BaseCompiler compiler;
 
-      if (rt.environment.arch == Arch.x64) {
+      if (env.arch == Arch.x64) {
         compiler = X86Compiler(env: code.env, labelManager: code.labelManager);
       } else {
         compiler = A64Compiler(env: code.env, labelManager: code.labelManager);
@@ -118,7 +113,7 @@ void main() {
       final val = cc.newGp32("val");
       cc.mov(val, Imm(0xFF));
 
-      if (rt.environment.arch == Arch.x64) {
+      if (env.arch == Arch.x64) {
         cc.emitMR(UniOpMR.storeU8, X86Mem.ptr(ptr), val);
       } else {
         cc.emitMR(UniOpMR.storeU8, A64Mem.baseOffset(ptr as A64Gp, 0), val);
@@ -130,7 +125,7 @@ void main() {
       bool foundStore = false;
       for (var node in compiler.nodes.nodes) {
         if (node is InstNode) {
-          if (rt.environment.arch == Arch.x64) {
+          if (env.arch == Arch.x64) {
             if (node.instId == X86InstId.kMov)
               foundStore = true; // x86 mov handles stores
           } else {

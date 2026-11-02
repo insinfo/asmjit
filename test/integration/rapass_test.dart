@@ -1,10 +1,12 @@
 import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
 
+import '../support/host.dart';
+
 void main() {
   group('RAPass', () {
     test('Allocates registers for simple move', () {
-      final compiler = X86Compiler();
+      final compiler = X86Compiler(env: x64TestEnv());
 
       final func = compiler.newFunc(FuncSignature.noArgs());
       compiler.addFuncNode(func);

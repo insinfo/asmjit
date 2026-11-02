@@ -2,6 +2,8 @@ import 'dart:typed_data';
 import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
 
+import '../support/host.dart';
+
 void main() {
   if (!Environment.host().isX86Family) {
     return;
@@ -243,7 +245,7 @@ void main() {
 
   group('IMUL 3-operand form', () {
     test('IMUL r64, r64, imm8 encoding', () {
-      final code = CodeHolder();
+      final code = CodeHolder(env: x64TestEnv());
       final asm = X86Assembler(code);
 
       asm.imulRRI(rax, rbx, 10);
@@ -253,7 +255,7 @@ void main() {
     });
 
     test('IMUL r64, r64, imm32 encoding', () {
-      final code = CodeHolder();
+      final code = CodeHolder(env: x64TestEnv());
       final asm = X86Assembler(code);
 
       asm.imulRRI(rax, rbx, 1000);

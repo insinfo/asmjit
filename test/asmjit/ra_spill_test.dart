@@ -1,10 +1,12 @@
 import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
 
+import '../support/host.dart';
+
 void main() {
   group('RAPass Spilling Tests', () {
     test('Spill registers when pressure exceeds available registers', () {
-      final compiler = X86Compiler();
+      final compiler = X86Compiler(env: x64TestEnv());
 
       // Define a function returning int
       final funcNode = compiler.addFunc(FuncSignature.i64());

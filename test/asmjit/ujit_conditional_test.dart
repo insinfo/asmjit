@@ -1,23 +1,18 @@
 import 'package:asmjit/asmjit.dart';
 import 'package:test/test.dart';
 
+import '../support/host.dart';
+
 // Test Conditional operations (UniOpCond / emitJIf)
 void main() {
   group('UJIT Conditional Ops', () {
-    late JitRuntime rt;
-
-    setUp(() {
-      rt = JitRuntime();
-    });
-
-    tearDown(() {
-      rt.dispose();
-    });
+    // Inspects the generated IR only; nothing is executed.
+    final env = ujitTestEnv();
 
     test('Compare and Branch (Reg-Reg)', () {
-      final code = CodeHolder(env: rt.environment);
+      final code = CodeHolder(env: env);
       BaseCompiler compiler;
-      if (rt.environment.arch == Arch.x64) {
+      if (env.arch == Arch.x64) {
         compiler = X86Compiler(env: code.env, labelManager: code.labelManager);
       } else {
         compiler = A64Compiler(env: code.env, labelManager: code.labelManager);
@@ -59,7 +54,7 @@ void main() {
       bool foundBranch = false;
       for (var node in compiler.nodes.nodes) {
         if (node is InstNode) {
-          if (rt.environment.arch == Arch.x64) {
+          if (env.arch == Arch.x64) {
             if (node.instId == X86InstId.kCmp) foundCmp = true;
             if (node.instId == X86InstId.kJz ||
                 node.instId == X86InstId.kJnz ||
@@ -80,9 +75,9 @@ void main() {
     });
 
     test('Test and Branch (Reg-Reg)', () {
-      final code = CodeHolder(env: rt.environment);
+      final code = CodeHolder(env: env);
       BaseCompiler compiler;
-      if (rt.environment.arch == Arch.x64) {
+      if (env.arch == Arch.x64) {
         compiler = X86Compiler(env: code.env, labelManager: code.labelManager);
       } else {
         compiler = A64Compiler(env: code.env, labelManager: code.labelManager);
@@ -110,10 +105,10 @@ void main() {
       bool foundTest = false;
       for (var node in compiler.nodes.nodes) {
         if (node is InstNode) {
-          if (rt.environment.arch == Arch.x64 && node.instId == X86InstId.kTest)
+          if (env.arch == Arch.x64 && node.instId == X86InstId.kTest)
             foundTest = true;
-          if (rt.environment.arch == Arch.aarch64 &&
-              node.instId == A64InstId.kTst) foundTest = true;
+          if (env.arch == Arch.aarch64 && node.instId == A64InstId.kTst)
+            foundTest = true;
         }
       }
       expect(foundTest, isTrue,
@@ -121,9 +116,9 @@ void main() {
     });
 
     test('Bit Test and Branch (Reg-Imm)', () {
-      final code = CodeHolder(env: rt.environment);
+      final code = CodeHolder(env: env);
       BaseCompiler compiler;
-      if (rt.environment.arch == Arch.x64) {
+      if (env.arch == Arch.x64) {
         compiler = X86Compiler(env: code.env, labelManager: code.labelManager);
       } else {
         compiler = A64Compiler(env: code.env, labelManager: code.labelManager);
@@ -151,7 +146,7 @@ void main() {
       bool foundBitTest = false;
       for (var node in compiler.nodes.nodes) {
         if (node is InstNode) {
-          final isTest = rt.environment.arch == Arch.x64
+          final isTest = env.arch == Arch.x64
               ? node.instId == X86InstId.kTest
               : node.instId == A64InstId.kTst;
           if (isTest &&

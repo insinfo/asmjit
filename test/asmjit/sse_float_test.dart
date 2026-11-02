@@ -1,6 +1,8 @@
 import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
 
+import '../support/host.dart';
+
 void main() {
   if (!Environment.host().isX86Family) {
     return;
@@ -8,7 +10,7 @@ void main() {
 
   group('SSE Floating-Point Instructions', () {
     test('addps/addpd/addss/addsd', () {
-      final code = CodeHolder();
+      final code = CodeHolder(env: x64TestEnv());
       final asm = X86Assembler(code);
 
       asm.addps(xmm0, xmm1);
@@ -36,7 +38,7 @@ void main() {
     });
 
     test('subps/subpd/subss/subsd', () {
-      final code = CodeHolder();
+      final code = CodeHolder(env: x64TestEnv());
       final asm = X86Assembler(code);
 
       asm.subps(xmm0, xmm1);
@@ -64,7 +66,7 @@ void main() {
     });
 
     test('mulps/mulpd/mulss/mulsd', () {
-      final code = CodeHolder();
+      final code = CodeHolder(env: x64TestEnv());
       final asm = X86Assembler(code);
 
       asm.mulps(xmm0, xmm1);
@@ -92,7 +94,7 @@ void main() {
     });
 
     test('divps/divpd/divss/divsd', () {
-      final code = CodeHolder();
+      final code = CodeHolder(env: x64TestEnv());
       final asm = X86Assembler(code);
 
       asm.divps(xmm0, xmm1);
@@ -120,7 +122,7 @@ void main() {
     });
 
     test('min/max ps/pd/ss/sd', () {
-      final code = CodeHolder();
+      final code = CodeHolder(env: x64TestEnv());
       final asm = X86Assembler(code);
 
       asm.minps(xmm0, xmm1);
@@ -148,7 +150,7 @@ void main() {
     });
 
     test('sqrt ps/pd/ss/sd', () {
-      final code = CodeHolder();
+      final code = CodeHolder(env: x64TestEnv());
       final asm = X86Assembler(code);
 
       asm.sqrtps(xmm0, xmm1);
@@ -168,7 +170,7 @@ void main() {
     });
 
     test('rcp/rsqrt ps/ss', () {
-      final code = CodeHolder();
+      final code = CodeHolder(env: x64TestEnv());
       final asm = X86Assembler(code);
 
       asm.rcpps(xmm0, xmm1);
@@ -188,7 +190,7 @@ void main() {
     });
 
     test('cmp/comi', () {
-      final code = CodeHolder();
+      final code = CodeHolder(env: x64TestEnv());
       final asm = X86Assembler(code);
 
       asm.cmppsXXI(xmm0, xmm1, 0);
@@ -216,7 +218,7 @@ void main() {
     });
 
     test('conversions', () {
-      final code = CodeHolder();
+      final code = CodeHolder(env: x64TestEnv());
       final asm = X86Assembler(code);
 
       asm.cvtsi2ssXR(xmm0, rax);

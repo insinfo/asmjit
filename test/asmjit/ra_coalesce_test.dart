@@ -1,10 +1,12 @@
 import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
 
+import '../support/host.dart';
+
 void main() {
   group('RAPass Coalescing Tests', () {
     test('Coalesce simple move', () {
-      final compiler = X86Compiler();
+      final compiler = X86Compiler(env: x64TestEnv());
       compiler.addFunc(FuncSignature.i64());
 
       final v0 = compiler.newGp64('v0');
@@ -24,7 +26,7 @@ void main() {
     });
 
     test('Coalesce chain', () {
-      final compiler = X86Compiler();
+      final compiler = X86Compiler(env: x64TestEnv());
       compiler.addFunc(FuncSignature.i64());
 
       final v0 = compiler.newGp64('v0');

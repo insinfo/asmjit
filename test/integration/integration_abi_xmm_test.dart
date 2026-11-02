@@ -5,10 +5,12 @@ import 'package:asmjit/asmjit.dart';
 import 'package:ffi/ffi.dart' as pkgffi;
 import 'package:test/test.dart';
 
+import '../support/host.dart';
+
 void main() {
   test('ABI Win64 preserva XMM6..XMM15', () {
     final abi = ffi.Abi.current();
-    if (!abi.toString().toLowerCase().contains('windows')) {
+    if (!abi.toString().toLowerCase().contains('windows') || !hostIsX64) {
       return;
     }
 

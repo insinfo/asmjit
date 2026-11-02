@@ -251,12 +251,20 @@ class CpuInfo {
     }
   }
 
+  /// True only when the current process is a 64-bit x86 process.
+  ///
+  /// The CPUID helper below is x86-64 machine code, so it must never run in
+  /// a 32-bit x86 (ia32) process or on a non-x86 host (arm32, arm64,
+  /// riscv64, ...); those hosts get the baseline feature set instead.
   static bool _isX86_64() {
-    // Check if we're on x86-64 based on platform
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      return true;
+    switch (Abi.current()) {
+      case Abi.windowsX64:
+      case Abi.linuxX64:
+      case Abi.macosX64:
+        return true;
+      default:
+        return false;
     }
-    return false;
   }
 
   /// Detects CPU features using CPUID instruction.

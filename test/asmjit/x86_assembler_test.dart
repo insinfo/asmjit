@@ -6,8 +6,11 @@ import 'dart:io' show Platform;
 import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
 
+import '../support/host.dart';
+
 void main() {
-  if (!Environment.host().isX86Family) {
+  // Executes (or assumes) x86-64 code: skipped on ia32 and non-x86 hosts.
+  if (!hostIsX64) {
     return;
   }
   group('X86Assembler', () {

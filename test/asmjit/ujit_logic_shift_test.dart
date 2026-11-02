@@ -1,23 +1,18 @@
 import 'package:asmjit/asmjit.dart';
 import 'package:test/test.dart';
 
+import '../support/host.dart';
+
 // Test Logic and Shift operations (UniOpRRR)
 void main() {
   group('UJIT Logic & Shift Ops', () {
-    late JitRuntime rt;
-
-    setUp(() {
-      rt = JitRuntime();
-    });
-
-    tearDown(() {
-      rt.dispose();
-    });
+    // Inspects the generated IR only; nothing is executed.
+    final env = ujitTestEnv();
 
     test('AND Operation (RRR)', () {
-      final code = CodeHolder(env: rt.environment);
+      final code = CodeHolder(env: env);
       BaseCompiler compiler;
-      if (rt.environment.arch == Arch.x64) {
+      if (env.arch == Arch.x64) {
         compiler = X86Compiler(env: code.env, labelManager: code.labelManager);
       } else {
         compiler = A64Compiler(env: code.env, labelManager: code.labelManager);
@@ -45,7 +40,7 @@ void main() {
       for (var node in compiler.nodes.nodes) {
         if (node is InstNode) {
           // Basic check for AND instruction ID
-          if (rt.environment.arch == Arch.x64) {
+          if (env.arch == Arch.x64) {
             if (node.instId == X86InstId.kAnd) foundAnd = true;
           } else {
             if (node.instId == A64InstId.kAnd) foundAnd = true;
@@ -60,9 +55,9 @@ void main() {
     });
 
     test('Shift Operation (RRI)', () {
-      final code = CodeHolder(env: rt.environment);
+      final code = CodeHolder(env: env);
       BaseCompiler compiler;
-      if (rt.environment.arch == Arch.x64) {
+      if (env.arch == Arch.x64) {
         compiler = X86Compiler(env: code.env, labelManager: code.labelManager);
       } else {
         compiler = A64Compiler(env: code.env, labelManager: code.labelManager);
@@ -86,7 +81,7 @@ void main() {
       bool foundShift = false;
       for (var node in compiler.nodes.nodes) {
         if (node is InstNode) {
-          if (rt.environment.arch == Arch.x64) {
+          if (env.arch == Arch.x64) {
             if (node.instId == X86InstId.kShl) foundShift = true;
           } else {
             if (node.instId == A64InstId.kLsl) foundShift = true;

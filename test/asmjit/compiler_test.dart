@@ -1,10 +1,12 @@
 import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
 
+import '../support/host.dart';
+
 void main() {
   group('X86Compiler Tests', () {
     test('JumpMerge - builds CFG and allocates registers correctly', () {
-      final compiler = X86Compiler(env: Environment.host());
+      final compiler = X86Compiler(env: x64TestEnv());
 
       final L0 = compiler.newLabel();
       final L1 = compiler.newLabel();
@@ -52,7 +54,7 @@ void main() {
     });
 
     test('JumpCross - complex CFG connectivity', () {
-      final compiler = X86Compiler(env: Environment.host());
+      final compiler = X86Compiler(env: x64TestEnv());
 
       final signature = FuncSignature.noArgs();
       compiler.addFunc(signature);
@@ -77,7 +79,7 @@ void main() {
     });
 
     test('Stack Allocation - explicitly allocates stack slots', () {
-      final compiler = X86Compiler(env: Environment.host());
+      final compiler = X86Compiler(env: x64TestEnv());
       compiler.addFunc(FuncSignature.noArgs());
 
       final stackVar = compiler.newStack(8, 8);
