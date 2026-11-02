@@ -138,7 +138,7 @@ void main() {
       final labelTarget = cc.newLabel();
       // Test bit 5, branch if Zero (Not Set)
       cc.emitJIf(labelTarget,
-          UniCondition(UniOpCond.bitTest, CondCode.kEqual, a, Imm(5)));
+          UniCondition(UniOpCond.bitTest, CondCode.kBTZero, a, Imm(5)));
 
       cc.ret();
       cc.bind(labelTarget);
@@ -146,17 +146,22 @@ void main() {
       cc.endFunc();
       cc.finalize();
 
+      // ConditionApplier::optimize() turns a bit test with an immediate
+      // index into a test of `1 << index` (x86 only below 8 bits).
       bool foundBitTest = false;
       for (var node in compiler.nodes.nodes) {
         if (node is InstNode) {
-          if (rt.environment.arch == Arch.x64 && node.instId == X86InstId.kBt)
+          final isTest = rt.environment.arch == Arch.x64
+              ? node.instId == X86InstId.kTest
+              : node.instId == A64InstId.kTst;
+          if (isTest &&
+              node.operands.any((op) => op is Imm && op.value == 32)) {
             foundBitTest = true;
-          if (rt.environment.arch == Arch.aarch64 &&
-              node.instId == A64InstId.kTbz) foundBitTest = true;
+          }
         }
       }
       expect(foundBitTest, isTrue,
-          reason: 'BT/TBZ instruction should be generated');
+          reason: 'TEST/TST with the bit mask should be generated');
     });
   });
 }

@@ -4226,70 +4226,908 @@ mixin UniCompilerX86 on UniCompilerBase {
     throw UnimplementedError('_emit9vX86: $op not implemented');
   }
 
-  void _emitCmovX86(UniCondition cond, BaseReg dst, Operand src) {
-    // Generate condition test (CMP/TEST/etc.)
-    (this as UniCompiler)._emitConditionTestX86(cond);
+  // ---------------------------------------------------------------------------
+  // General purpose instructions: port of emit_mov/emit_m/emit_rm/emit_mr/
+  // emit_cmov/emit_select/emit_2i/emit_3i/emit_j_if and ConditionApplier
+  // (ujit/unicompiler_x86.cpp).
+  // ---------------------------------------------------------------------------
 
-    // X86 CMOVcc only works with 16/32/64-bit GP registers
-    if (dst is! X86Gp) {
-      throw ArgumentError('emitCmov only supports GP registers on X86');
-    }
+  static X86Gp _gpX86(BaseReg r, int bits) => switch (bits) {
+        8 => X86Gp.r8(r.id),
+        16 => X86Gp.r16(r.id),
+        32 => X86Gp.r32(r.id),
+        _ => X86Gp.r64(r.id),
+      };
 
-    final cmovId = _condCodeToCmov(cond.cond);
-    cc.addNode(InstNode(cmovId, [dst, src]));
+  static int _gpBitsX86(BaseReg r) => (r as X86Gp).bits;
+
+  BaseReg _newSimilarGpX86(BaseReg r, [String? name]) {
+    final uc = this as UniCompiler;
+    return _gpBitsX86(r) == 64 ? uc.newGp64(name) : uc.newGp32(name);
   }
 
-  void _emitSelectX86(
-      UniCondition cond, BaseReg dst, Operand src1, Operand src2) {
-    if (dst is! X86Gp) {
-      throw ArgumentError('emitSelect only supports GP registers on X86');
+  /// `UniCompiler::lea()`: a 32-bit destination in 64-bit mode uses 64-bit
+  /// base/index registers (no address-size prefix).
+  void _leaX86(BaseReg dst, X86Mem m) {
+    if (is64Bit && _gpBitsX86(dst) == 32) {
+      m = X86Mem(
+          base: m.base == null ? null : X86Gp.r64(m.base!.id),
+          index: m.index == null ? null : X86Gp.r64(m.index!.id),
+          scale: m.scale,
+          displacement: m.displacement,
+          size: m.size,
+          segment: m.segment);
     }
-
-    // Typical pattern: mov dst, src2; cmovcc dst, src1
-    if (src2 is! X86Gp || dst.id != src2.id) {
-      (this as UniCompiler).emitMov(dst, src2);
-    }
-    _emitCmovX86(cond, dst, src1);
+    _emitX86(X86InstId.kLea, [dst, m]);
   }
 
-  int _condCodeToCmov(int cond) {
-    switch (cond) {
-      case CondCode.kEqual:
-        return X86InstId.kCmovz;
-      case CondCode.kNotEqual:
-        return X86InstId.kCmovnz;
-      case CondCode.kSignedLT:
-        return X86InstId.kCmovl;
-      case CondCode.kSignedGE:
-        return X86InstId.kCmovnl;
-      case CondCode.kSignedLE:
-        return X86InstId.kCmovle;
-      case CondCode.kSignedGT:
-        return X86InstId.kCmovnle;
-      case CondCode.kUnsignedLT:
-        return X86InstId.kCmovb;
-      case CondCode.kUnsignedGE:
-        return X86InstId.kCmovnb;
-      case CondCode.kUnsignedLE:
-        return X86InstId.kCmovbe;
-      case CondCode.kUnsignedGT:
-        return X86InstId.kCmovnbe;
-      case CondCode.kOverflow:
-        return X86InstId.kCmovo;
-      case CondCode.kNotOverflow:
-        return X86InstId.kCmovno;
-      case CondCode.kSign:
-        return X86InstId.kCmovs;
-      case CondCode.kNotSign:
-        return X86InstId.kCmovns;
-      case CondCode.kParityEven:
-        return X86InstId.kCmovp;
-      case CondCode.kParityOdd:
-        return X86InstId.kCmovnp;
+  /// `emit_mov()`.
+  void _emitMovX86(BaseReg dst, Operand src) {
+    if (src is Imm && src.value == 0) {
+      final r = _gpBitsX86(dst) == 64 ? X86Gp.r32(dst.id) : dst;
+      _emitX86(X86InstId.kXor, [r, r]);
+    } else {
+      _emitX86(X86InstId.kMov, [dst, src]);
+    }
+  }
+
+  /// `emit_m()`.
+  void _emitMX86(UniOpM op, X86Mem m) {
+    const sizeTable = [1, 0, 1, 2, 4, 8];
+    if (op == UniOpM.prefetch) {
+      _emitX86(X86InstId.kPrefetcht0, [m.withSize(1)]);
+      return;
+    }
+    var size = sizeTable[op.index];
+    if (size == 0) size = registerSize;
+    _emitX86(X86InstId.kMov, [m.withSize(size), Imm(0)]);
+  }
+
+  /// `emit_rm()`.
+  void _emitRMX86(UniOpRM op, BaseReg dst, X86Mem src) {
+    const sizeTable = [0, 1, 1, 2, 2, 4, 4, 8, 8, 1, 1, 2, 2];
+    var r = dst;
+    var instId = X86InstId.kMov;
+    var size = sizeTable[op.index];
+
+    switch (op) {
+      case UniOpRM.loadReg:
+        size = _gpBitsX86(dst) ~/ 8;
+      case UniOpRM.loadU8:
+      case UniOpRM.loadU16:
+      case UniOpRM.loadU32:
+        r = _gpX86(dst, 32);
+        if (size < 4) instId = X86InstId.kMovzx;
+      case UniOpRM.loadI8:
+      case UniOpRM.loadI16:
+        instId = X86InstId.kMovsx;
+      case UniOpRM.loadI32:
+        instId = _gpBitsX86(dst) == 64 ? X86InstId.kMovsxd : X86InstId.kMov;
+      case UniOpRM.loadI64:
+      case UniOpRM.loadU64:
+        break;
+      case UniOpRM.loadShiftU8:
+        _emitX86(X86InstId.kShl, [r, Imm(8)]);
+        r = _gpX86(dst, 8);
+      case UniOpRM.loadMergeU8:
+        r = _gpX86(dst, 8);
+      case UniOpRM.loadShiftU16:
+        _emitX86(X86InstId.kShl, [r, Imm(16)]);
+        r = _gpX86(dst, 16);
+      case UniOpRM.loadMergeU16:
+        r = _gpX86(dst, 16);
+    }
+
+    _emitX86(instId, [r, src.withSize(size)]);
+  }
+
+  /// `emit_mr()`.
+  void _emitMRX86(UniOpMR op, X86Mem dst, BaseReg src) {
+    const infoTable = [
+      (X86InstId.kMov, 0), // storeReg
+      (X86InstId.kMov, 1), // storeU8
+      (X86InstId.kMov, 2), // storeU16
+      (X86InstId.kMov, 4), // storeU32
+      (X86InstId.kMov, 8), // storeU64
+      (X86InstId.kAdd, 0), // addReg
+      (X86InstId.kAdd, 1), // addU8
+      (X86InstId.kAdd, 2), // addU16
+      (X86InstId.kAdd, 4), // addU32
+      (X86InstId.kAdd, 8), // addU64
+    ];
+    final (instId, infoSize) = infoTable[op.index];
+    final size = infoSize == 0 ? _gpBitsX86(src) ~/ 8 : infoSize;
+    _emitX86(instId, [dst.withSize(size), _gpX86(src, size * 8)]);
+  }
+
+  /// x86 condition of a [CondCode] value.
+  static X86Cond _x86Cond(int cond) => switch (cond) {
+        CondCode.kEqual => X86Cond.e,
+        CondCode.kNotEqual => X86Cond.ne,
+        CondCode.kSignedLT => X86Cond.l,
+        CondCode.kSignedGE => X86Cond.ge,
+        CondCode.kSignedLE => X86Cond.le,
+        CondCode.kSignedGT => X86Cond.g,
+        CondCode.kUnsignedLT => X86Cond.b,
+        CondCode.kUnsignedGE => X86Cond.ae,
+        CondCode.kUnsignedLE => X86Cond.be,
+        CondCode.kUnsignedGT => X86Cond.a,
+        CondCode.kOverflow => X86Cond.o,
+        CondCode.kNotOverflow => X86Cond.no,
+        CondCode.kSign => X86Cond.s,
+        CondCode.kNotSign => X86Cond.ns,
+        CondCode.kParityEven => X86Cond.p,
+        _ => X86Cond.np,
+      };
+
+  /// `x86::reverse_cond()`: the condition with swapped operands.
+  static int _reverseCond(int cond) => switch (cond) {
+        CondCode.kSignedLT => CondCode.kSignedGT,
+        CondCode.kSignedGT => CondCode.kSignedLT,
+        CondCode.kSignedGE => CondCode.kSignedLE,
+        CondCode.kSignedLE => CondCode.kSignedGE,
+        CondCode.kUnsignedLT => CondCode.kUnsignedGT,
+        CondCode.kUnsignedGT => CondCode.kUnsignedLT,
+        CondCode.kUnsignedGE => CondCode.kUnsignedLE,
+        CondCode.kUnsignedLE => CondCode.kUnsignedGE,
+        _ => cond,
+      };
+
+  static const _cmovIds = [
+    X86InstId.kCmovo, X86InstId.kCmovno, X86InstId.kCmovb, //
+    X86InstId.kCmovnb, X86InstId.kCmovz, X86InstId.kCmovnz,
+    X86InstId.kCmovbe, X86InstId.kCmovnbe, X86InstId.kCmovs,
+    X86InstId.kCmovns, X86InstId.kCmovp, X86InstId.kCmovnp,
+    X86InstId.kCmovl, X86InstId.kCmovnl, X86InstId.kCmovle,
+    X86InstId.kCmovnle,
+  ];
+
+  static const _jccIds = [
+    X86InstId.kJo, X86InstId.kJno, X86InstId.kJb, X86InstId.kJnb, //
+    X86InstId.kJz, X86InstId.kJnz, X86InstId.kJbe, X86InstId.kJnbe,
+    X86InstId.kJs, X86InstId.kJns, X86InstId.kJp, X86InstId.kJnp,
+    X86InstId.kJl, X86InstId.kJnl, X86InstId.kJle, X86InstId.kJnle,
+  ];
+
+  /// `ConditionApplier::optimize()` + `emit()`: emits the instruction that
+  /// sets the flags and returns the condition to test.
+  int _applyConditionX86(UniCondition condition) {
+    var op = condition.op;
+    var cond = condition.cond;
+    final a = condition.a as BaseReg;
+    var b = condition.b;
+
+    switch (op) {
+      case UniOpCond.assignShr:
+        if (b is Imm && b.value == 0) {
+          // Shifting by 0 would not set the flags...
+          op = _gpBitsX86(a) == 32 ? UniOpCond.assignAnd : UniOpCond.test;
+          b = a;
+        }
+      case UniOpCond.compare:
+        if (b is Imm &&
+            b.value == 0 &&
+            (cond == CondCode.kEqual || cond == CondCode.kNotEqual)) {
+          op = UniOpCond.test;
+          b = a;
+          cond = _reverseCond(cond);
+        }
+      case UniOpCond.bitTest:
+        if (b is Imm && is64Bit && b.value >= 0 && b.value < 8) {
+          op = UniOpCond.test;
+          b = Imm(1 << b.value);
+          cond = cond == CondCode.kCarry ? CondCode.kNotZero : CondCode.kZero;
+        }
       default:
-        throw ArgumentError('Unsupported condition for CMOV: $cond');
+        break;
     }
+
+    const instIds = [
+      X86InstId.kAnd, X86InstId.kOr, X86InstId.kXor, X86InstId.kAdd, //
+      X86InstId.kSub, X86InstId.kShr, X86InstId.kTest, X86InstId.kBt,
+      X86InstId.kCmp,
+    ];
+    final instId = instIds[op.index];
+
+    if (instId == X86InstId.kTest && is64Bit && b is Imm) {
+      final v = b.value;
+      if (v >= 0 && v <= 255) {
+        // Emit 8-bit operation if the immediate fits 8 bits.
+        _emitX86(X86InstId.kTest, [_gpX86(a, 8), b]);
+        return cond;
+      } else if (_gpBitsX86(a) > 32 && v >= 0 && v <= 0xFFFFFFFF) {
+        // A 32-bit operation saves the REX prefix.
+        _emitX86(X86InstId.kTest, [_gpX86(a, 32), b]);
+        return cond;
+      }
+    }
+
+    if (instId == X86InstId.kShr && b is BaseReg) {
+      // Deviation from upstream, which emits only `shr a, cl`: a count of 0
+      // (mod the operand size) leaves the flags unchanged. Running upstream
+      // with ZF set before j_if(shr_nz(a = 7, b = 0)) does not jump.
+      _emitX86(instId, [a, _gpX86(b, 8)]);
+      _emitX86(X86InstId.kTest, [a, a]);
+      return cond;
+    }
+
+    _emitX86(instId, [a, b]);
+    return cond;
   }
+
+  /// `emit_j_if()`.
+  void _emitJIfX86(Label target, UniCondition condition) {
+    final cond = _applyConditionX86(condition);
+    _emitX86(_jccIds[_x86Cond(cond).code], [LabelOp(target)]);
+  }
+
+  /// `emit_cmov()`.
+  void _emitCmovX86(UniCondition condition, BaseReg dst, Operand sel) {
+    final cond = _applyConditionX86(condition);
+    _emitX86(_cmovIds[_x86Cond(cond).code], [dst, sel]);
+  }
+
+  /// `emit_select()`.
+  void _emitSelectX86(
+      UniCondition condition, BaseReg dst, Operand sel1, Operand sel2) {
+    var cond = condition.cond;
+    // ConditionApplier::optimize() may change the operands; it is applied
+    // inside _applyConditionX86, so only the destination aliasing of the
+    // original operands matters here (as in upstream, where `a` stays the
+    // same register and `b` either stays or becomes `a`).
+    final a = condition.a;
+    final b = condition.b;
+    final dstIsA = a is BaseReg && dst.id == a.id;
+    final dstIsB = b is BaseReg && dst.id == b.id;
+
+    // Reverse the condition if the immediate can go first or if
+    // `dst == sel2`.
+    var reversed = false;
+    if ((sel1 is! Imm && sel2 is Imm) ||
+        (sel2 is BaseReg && dst.id == sel2.id)) {
+      reversed = true;
+      final t = sel1;
+      sel1 = sel2;
+      sel2 = t;
+    }
+
+    final dstIsSel = sel1 is BaseReg && dst.id == sel1.id;
+    if (_sameOperand(sel1, sel2)) {
+      if (!dstIsSel) _emitX86(X86InstId.kMov, [dst, sel1]);
+      return;
+    }
+
+    if (sel1 is Imm && sel1.value == 0 && !dstIsA && !dstIsB && !dstIsSel) {
+      _emitX86(X86InstId.kXor, [dst, dst]);
+      cond = _applyConditionX86(condition);
+    } else {
+      cond = _applyConditionX86(condition);
+      if (!dstIsSel) _emitX86(X86InstId.kMov, [dst, sel1]);
+    }
+    // Deviation from upstream, which applies `reverse_cond()` (the
+    // condition with swapped operands) when it swaps the selections; the
+    // selections need the negated condition. Running upstream with
+    // select(d, t = 111, Imm(222), a == b) returns 222 for a == b and 111
+    // for a != b.
+    if (reversed) cond = CondCode.negate(cond);
+
+    if (sel2 is Imm) {
+      // Upstream places the value in the function's constant pool
+      // (`new_const(kLocal)`); the port uses its local constant table.
+      sel2 = (this as UniCompiler)
+          .simdMemConst(VecConst.u64x2(sel2.value, 0), Bcst.kNA, VecWidth.k128);
+    }
+    if (sel2 is X86Mem) sel2 = sel2.withSize(_gpBitsX86(dst) ~/ 8);
+    _emitX86(_cmovIds[_x86Cond(CondCode.negate(cond)).code], [dst, sel2]);
+  }
+
+  static bool _sameOperand(Operand a, Operand b) {
+    if (a is BaseReg && b is BaseReg) return a.id == b.id;
+    if (a is Imm && b is Imm) return a.value == b.value;
+    return false;
+  }
+
+  /// `emit_2i()`.
+  void _emit2iX86(UniOpRR op, BaseReg dst, Operand src) {
+    if (op == UniOpRR.mov) {
+      // Dart convenience (not an upstream op).
+      _emitMovX86(dst, src);
+      return;
+    }
+    final bits = _gpBitsX86(dst);
+
+    // ArithOp Reg, Any
+    if (src is BaseReg || src is X86Mem) {
+      switch (op) {
+        case UniOpRR.clz:
+          if (hasLzcnt) {
+            _emitX86(X86InstId.kLzcnt, [dst, _sized(src, bits)]);
+          } else {
+            _emitX86(X86InstId.kBsr, [dst, _sized(src, bits)]);
+            _emitX86(X86InstId.kXor, [dst, Imm(bits - 1)]);
+          }
+          return;
+        case UniOpRR.ctz:
+          _emitX86(hasBmi ? X86InstId.kTzcnt : X86InstId.kBsf,
+              [dst, _sized(src, bits)]);
+          return;
+        case UniOpRR.reflect:
+          if (src is BaseReg && dst.id == src.id) {
+            final copy = _newSimilarGpX86(dst, '@copy');
+            _emitX86(X86InstId.kMov, [copy, dst]);
+            _emitX86(X86InstId.kSar, [copy, Imm(bits - 1)]);
+            _emitX86(X86InstId.kXor, [dst, copy]);
+          } else {
+            _emitX86(X86InstId.kMov, [dst, _sized(src, bits)]);
+            _emitX86(X86InstId.kSar, [dst, Imm(bits - 1)]);
+            _emitX86(X86InstId.kXor, [dst, _sized(src, bits)]);
+          }
+          return;
+        default:
+          break;
+      }
+    }
+
+    // ArithOp Reg, Mem
+    if (src is X86Mem) {
+      if (op == UniOpRR.bSwap) {
+        if (hasMovbe) {
+          _emitX86(X86InstId.kMovbe, [dst, src.withSize(bits ~/ 8)]);
+        } else {
+          _emitX86(X86InstId.kMov, [dst, src.withSize(bits ~/ 8)]);
+          _emitX86(X86InstId.kBswap, [dst]);
+        }
+        return;
+      }
+      final srcGp = _newSimilarGpX86(dst, '@src');
+      _emitX86(X86InstId.kMov, [srcGp, src.withSize(bits ~/ 8)]);
+      src = srcGp;
+    }
+
+    // ArithOp Reg, Reg
+    if (src is BaseReg) {
+      final dstIsSrc = dst.id == src.id;
+      switch (op) {
+        case UniOpRR.abs:
+          if (dstIsSrc) {
+            final tmp = _newSimilarGpX86(dst, '@tmp');
+            _emitX86(X86InstId.kMov, [tmp, dst]);
+            _emitX86(X86InstId.kNeg, [dst]);
+            _emitX86(X86InstId.kCmovs, [dst, tmp]);
+          } else {
+            _emitX86(X86InstId.kMov, [dst, src]);
+            _emitX86(X86InstId.kNeg, [dst]);
+            _emitX86(X86InstId.kCmovs, [dst, src]);
+          }
+          return;
+        case UniOpRR.bSwap:
+          if (!dstIsSrc) _emitX86(X86InstId.kMov, [dst, src]);
+          _emitX86(X86InstId.kBswap, [dst]);
+          return;
+        case UniOpRR.neg:
+        case UniOpRR.not:
+          if (!dstIsSrc) _emitX86(X86InstId.kMov, [dst, src]);
+          _emitX86(op == UniOpRR.neg ? X86InstId.kNeg : X86InstId.kNot, [dst]);
+          return;
+        default:
+          break;
+      }
+    }
+
+    throw ArgumentError('emit_2i: $op with $src');
+  }
+
+  static Operand _sized(Operand o, int bits) =>
+      o is X86Mem ? o.withSize(bits ~/ 8) : o;
+
+  static bool _isOp3iCommutative(UniOpRRR op) =>
+      op == UniOpRRR.and ||
+      op == UniOpRRR.or ||
+      op == UniOpRRR.xor ||
+      op == UniOpRRR.add ||
+      op == UniOpRRR.mul ||
+      op == UniOpRRR.sMin ||
+      op == UniOpRRR.sMax ||
+      op == UniOpRRR.uMin ||
+      op == UniOpRRR.uMax;
+
+  /// (a, b) CMOV forms of min/max: MinI, MaxI, MinU, MaxU.
+  static const _minMaxCmov = [
+    (X86InstId.kCmovl, X86InstId.kCmovnle),
+    (X86InstId.kCmovnle, X86InstId.kCmovl),
+    (X86InstId.kCmovb, X86InstId.kCmovnbe),
+    (X86InstId.kCmovnbe, X86InstId.kCmovb),
+  ];
+
+  static const _legacyShift = [
+    X86InstId.kShl,
+    X86InstId.kShr,
+    X86InstId.kSar,
+    X86InstId.kRol,
+    X86InstId.kRor,
+  ];
+
+  static const _legacyLogical = [X86InstId.kAnd, X86InstId.kOr, X86InstId.kXor];
+
+  static const _bmi2Shift = [X86InstId.kShlx, X86InstId.kShrx, X86InstId.kSarx];
+
+  /// `emit_3i()`.
+  void _emit3iX86(UniOpRRR op, BaseReg dst, Operand src1, Operand src2) {
+    final bits = _gpBitsX86(dst);
+    final size = bits ~/ 8;
+
+    // ArithOp Reg, Mem, Imm
+    if (src1 is X86Mem && src2 is Imm) {
+      if (op == UniOpRRR.mul) {
+        _emitX86(X86InstId.kImul, [dst, src1.withSize(size), src2]);
+        return;
+      }
+      _emitX86(X86InstId.kMov, [dst, src1.withSize(size)]);
+      src1 = dst;
+    }
+
+    if (src1 is! BaseReg && _isOp3iCommutative(op)) {
+      final t = src1;
+      src1 = src2;
+      src2 = t;
+    }
+
+    // ArithOp Reg, Reg, Imm
+    if (src1 is BaseReg && src2 is Imm) {
+      final a = src1;
+      final b = src2;
+      final dstIsA = dst.id == a.id;
+
+      switch (op) {
+        case UniOpRRR.and:
+        case UniOpRRR.or:
+        case UniOpRRR.xor:
+          if (!dstIsA) _emitX86(X86InstId.kMov, [dst, a]);
+          _emitX86(_legacyLogical[op.index - UniOpRRR.and.index], [dst, b]);
+          return;
+
+        case UniOpRRR.bic:
+          if (!dstIsA) _emitX86(X86InstId.kMov, [dst, a]);
+          var n = ~b.value;
+          if (size <= 4) n = n.toSigned(32);
+          _emitX86(X86InstId.kAnd, [dst, Imm(n)]);
+          return;
+
+        case UniOpRRR.add:
+          if (!dstIsA && _isInt32(b.value)) {
+            _leaX86(dst, X86Mem.baseDisp(a as X86Gp, b.value));
+          } else {
+            if (!dstIsA) _emitX86(X86InstId.kMov, [dst, a]);
+            if (b.value == 128) {
+              _emitX86(X86InstId.kSub, [dst, Imm(-128)]);
+            } else {
+              _emitX86(X86InstId.kAdd, [dst, b]);
+            }
+          }
+          return;
+
+        case UniOpRRR.sub:
+          if (!dstIsA) {
+            _leaX86(
+                dst,
+                X86Mem.baseDisp(
+                    a as X86Gp, (0 - b.value).toUnsigned(32).toSigned(32)));
+          } else {
+            _emitX86(X86InstId.kSub, [dst, b]);
+          }
+          return;
+
+        case UniOpRRR.mul:
+          final val = b.value;
+          if (dstIsA && val > 0 && (val & (val - 1)) == 0) {
+            _emitX86(X86InstId.kShl, [dst, Imm(val.bitLength - 1)]);
+            return;
+          }
+          final a64 = a as X86Gp;
+          switch (val) {
+            case 0:
+              _emitX86(X86InstId.kXor, [dst, dst]);
+              return;
+            case 1:
+              if (!dstIsA) _emitX86(X86InstId.kMov, [dst, a]);
+              return;
+            case 2:
+              _leaX86(dst, X86Mem.baseIndexScale(a64, a64, 1));
+              return;
+            case 3:
+              _leaX86(dst, X86Mem.baseIndexScale(a64, a64, 2));
+              return;
+            case 5:
+              _leaX86(dst, X86Mem.baseIndexScale(a64, a64, 4));
+              return;
+            case 9:
+              _leaX86(dst, X86Mem.baseIndexScale(a64, a64, 8));
+              return;
+          }
+          _emitX86(X86InstId.kImul, [dst, a, b]);
+          return;
+
+        case UniOpRRR.sMin:
+        case UniOpRRR.sMax:
+        case UniOpRRR.uMin:
+        case UniOpRRR.uMax:
+          final cmov = _minMaxCmov[op.index - UniOpRRR.sMin.index];
+          if (dstIsA) {
+            final tmp = _newSimilarGpX86(dst, '@tmp');
+            _emitX86(X86InstId.kMov, [tmp, b]);
+            _emitX86(X86InstId.kCmp, [dst, tmp]);
+            _emitX86(cmov.$2, [dst, tmp]);
+          } else {
+            _emitX86(X86InstId.kMov, [dst, b]);
+            _emitX86(X86InstId.kCmp, [dst, a]);
+            // cmov.$2 is correct, the comparison is reversed in this case.
+            _emitX86(cmov.$2, [dst, a]);
+          }
+          return;
+
+        case UniOpRRR.sll:
+          // Optimize `dst = dst << 1`.
+          if (b.value == 1) {
+            if (dstIsA) {
+              _emitX86(X86InstId.kAdd, [dst, dst]);
+            } else {
+              // `dst = a + a` (a 64-bit address saves the address-size
+              // prefix).
+              final r = X86Gp.r64(a.id);
+              _emitX86(X86InstId.kLea, [dst, X86Mem.baseIndexScale(r, r, 1)]);
+            }
+            return;
+          }
+          if (!dstIsA) _emitX86(X86InstId.kMov, [dst, a]);
+          _emitX86(X86InstId.kShl, [dst, b]);
+          return;
+
+        case UniOpRRR.srl:
+        case UniOpRRR.sra:
+          if (!dstIsA) _emitX86(X86InstId.kMov, [dst, a]);
+          _emitX86(_legacyShift[op.index - UniOpRRR.sll.index], [dst, b]);
+          return;
+
+        case UniOpRRR.rol:
+          if (hasBmi2) {
+            _emitX86(
+                X86InstId.kRorx, [dst, a, Imm((bits - b.value) & (bits - 1))]);
+          } else {
+            if (!dstIsA) _emitX86(X86InstId.kMov, [dst, a]);
+            _emitX86(X86InstId.kRol, [dst, b]);
+          }
+          return;
+
+        case UniOpRRR.ror:
+          if (hasBmi2) {
+            _emitX86(X86InstId.kRorx, [dst, a, b]);
+          } else {
+            if (!dstIsA) _emitX86(X86InstId.kMov, [dst, a]);
+            _emitX86(X86InstId.kRor, [dst, b]);
+          }
+          return;
+
+        default:
+          break;
+      }
+
+      final bTmp = _newSimilarGpX86(dst, '@bImm');
+      _emitX86(X86InstId.kMov, [bTmp, b]);
+      src2 = bTmp;
+    }
+
+    // ArithOp Reg, Mem, Reg
+    if (src1 is X86Mem && src2 is BaseReg) {
+      final a = src1.withSize(size);
+      final b = src2;
+      final dstIsB = dst.id == b.id;
+
+      switch (op) {
+        case UniOpRRR.sub:
+          if (dstIsB) {
+            _emitX86(X86InstId.kNeg, [dst]);
+            _emitX86(X86InstId.kAdd, [dst, a]);
+            return;
+          }
+        case UniOpRRR.sll:
+        case UniOpRRR.srl:
+        case UniOpRRR.sra:
+          // Prefer BMI2 variants: SHLX, SHRX, SARX.
+          if (hasBmi2) {
+            _emitX86(_bmi2Shift[op.index - UniOpRRR.sll.index],
+                [dst, a, _gpX86(b, bits)]);
+            return;
+          }
+        default:
+          break;
+      }
+      if (!dstIsB) {
+        _emitX86(X86InstId.kMov, [dst, a]);
+        src1 = dst;
+      } else {
+        final aTmp = _newSimilarGpX86(dst, '@aTmp');
+        _emitX86(X86InstId.kMov, [aTmp, a]);
+        src1 = aTmp;
+      }
+    }
+
+    // ArithOp Reg, Reg, Mem
+    if (src1 is BaseReg && src2 is X86Mem) {
+      final a = src1;
+      final b = src2.withSize(size);
+      final dstIsA = dst.id == a.id;
+
+      switch (op) {
+        case UniOpRRR.and:
+        case UniOpRRR.or:
+        case UniOpRRR.xor:
+          if (!dstIsA) _emitX86(X86InstId.kMov, [dst, a]);
+          _emitX86(_legacyLogical[op.index - UniOpRRR.and.index], [dst, b]);
+          return;
+
+        case UniOpRRR.bic:
+          final tmp = _newSimilarGpX86(dst);
+          _emitX86(X86InstId.kMov, [tmp, b]);
+          _emitX86(X86InstId.kNot, [tmp]);
+          if (!dstIsA) _emitX86(X86InstId.kMov, [dst, a]);
+          _emitX86(X86InstId.kAnd, [dst, tmp]);
+          return;
+
+        case UniOpRRR.add:
+        case UniOpRRR.sub:
+        case UniOpRRR.mul:
+          if (!dstIsA) _emitX86(X86InstId.kMov, [dst, a]);
+          _emitX86(
+              op == UniOpRRR.add
+                  ? X86InstId.kAdd
+                  : op == UniOpRRR.sub
+                      ? X86InstId.kSub
+                      : X86InstId.kImul,
+              [dst, b]);
+          return;
+
+        case UniOpRRR.uDiv:
+          final tmp1 = _newSimilarGpX86(dst, '@tmp1');
+          _emitX86(X86InstId.kXor, [tmp1, tmp1]);
+          if (!dstIsA) _emitX86(X86InstId.kMov, [dst, a]);
+          _emitX86(X86InstId.kDiv, [tmp1, dst, b]);
+          return;
+
+        case UniOpRRR.uMod:
+          final tmp1 = _newSimilarGpX86(dst, '@tmp1');
+          _emitX86(X86InstId.kXor, [tmp1, tmp1]);
+          if (dstIsA) {
+            _emitX86(X86InstId.kDiv, [tmp1, dst, b]);
+          } else {
+            final tmp2 = _newSimilarGpX86(dst, '@tmp2');
+            _emitX86(X86InstId.kMov, [tmp2, a]);
+            _emitX86(X86InstId.kDiv, [tmp1, tmp2, b]);
+          }
+          _emitX86(X86InstId.kMov, [dst, tmp1]);
+          return;
+
+        case UniOpRRR.sMin:
+        case UniOpRRR.sMax:
+        case UniOpRRR.uMin:
+        case UniOpRRR.uMax:
+          final cmov = _minMaxCmov[op.index - UniOpRRR.sMin.index];
+          if (dstIsA) {
+            _emitX86(X86InstId.kCmp, [dst, b]);
+            _emitX86(cmov.$2, [dst, b]);
+          } else {
+            _emitX86(X86InstId.kMov, [dst, b]);
+            _emitX86(X86InstId.kCmp, [dst, a]);
+            // cmov.$2 is correct, the comparison is reversed in this case.
+            _emitX86(cmov.$2, [dst, a]);
+          }
+          return;
+
+        case UniOpRRR.sBound:
+          if (dstIsA) {
+            // Deviation from upstream, which zeroes `dst` (== a) before
+            // comparing it; running upstream, sbound(3, [5]) with dst == a
+            // returns 0. The `dst == a` form of `Reg, Reg, Reg` is used.
+            final zero = _newSimilarGpX86(dst, '@zero');
+            _emitX86(X86InstId.kXor, [zero, zero]);
+            _emitX86(X86InstId.kCmp, [dst, b]);
+            _emitX86(X86InstId.kCmovnbe, [dst, zero]);
+            _emitX86(X86InstId.kCmovnle, [dst, b]);
+            return;
+          }
+          _emitX86(X86InstId.kXor, [dst, dst]);
+          _emitX86(X86InstId.kCmp, [a, b]);
+          _emitX86(X86InstId.kCmovbe, [dst, a]);
+          _emitX86(X86InstId.kCmovnle, [dst, b]);
+          return;
+
+        default:
+          break;
+      }
+
+      final bTmp = _newSimilarGpX86(dst, '@bTmp');
+      _emitX86(X86InstId.kMov, [bTmp, b]);
+      src2 = bTmp;
+    }
+
+    // ArithOp Reg, Reg, Reg
+    if (src1 is BaseReg && src2 is BaseReg) {
+      final a = src1;
+      final b = src2;
+      final aIsB = a.id == b.id;
+      final dstIsA = dst.id == a.id;
+      final dstIsB = dst.id == b.id;
+
+      switch (op) {
+        case UniOpRRR.and:
+        case UniOpRRR.or:
+        case UniOpRRR.xor:
+          // Deviation from upstream, which emits `mov dst, a; op dst, b`
+          // also when `dst == b`; running upstream, and(7, 3) with dst == b
+          // returns 7 (`mov rax, rdi; and rax, rax`). The operations are
+          // commutative, so `op dst, a` is used then.
+          final instId = _legacyLogical[op.index - UniOpRRR.and.index];
+          if (dstIsB && !dstIsA) {
+            _emitX86(instId, [dst, a]);
+            return;
+          }
+          if (!dstIsA) _emitX86(X86InstId.kMov, [dst, a]);
+          _emitX86(instId, [dst, b]);
+          return;
+
+        case UniOpRRR.bic:
+          if (hasBmi) {
+            _emitX86(X86InstId.kAndn, [dst, b, a]);
+          } else if (dstIsB) {
+            if (dstIsA) {
+              _emitX86(X86InstId.kMov, [dst, Imm(0)]);
+              return;
+            }
+            _emitX86(X86InstId.kNot, [dst]);
+            _emitX86(X86InstId.kAnd, [dst, a]);
+          } else {
+            final tmp = _newSimilarGpX86(dst, '@tmp');
+            _emitX86(X86InstId.kMov, [tmp, b]);
+            _emitX86(X86InstId.kNot, [tmp]);
+            if (!dstIsA) _emitX86(X86InstId.kMov, [dst, a]);
+            _emitX86(X86InstId.kAnd, [dst, tmp]);
+          }
+          return;
+
+        case UniOpRRR.add:
+          if (dstIsA || dstIsB) {
+            _emitX86(X86InstId.kAdd, [dst, dstIsB ? a : b]);
+          } else if (size >= 4) {
+            _emitX86(X86InstId.kLea, [
+              dst,
+              X86Mem.baseIndexScale(X86Gp.r64(a.id), X86Gp.r64(b.id), 1)
+            ]);
+          } else {
+            _emitX86(X86InstId.kMov, [dst, a]);
+            _emitX86(X86InstId.kAdd, [dst, b]);
+          }
+          return;
+
+        case UniOpRRR.sub:
+          if (aIsB) {
+            _emitX86(X86InstId.kXor, [dst, dst]);
+          } else if (dstIsA) {
+            _emitX86(X86InstId.kSub, [dst, b]);
+          } else if (dstIsB) {
+            _emitX86(X86InstId.kNeg, [dst]);
+            _emitX86(X86InstId.kAdd, [dst, a]);
+          } else {
+            _emitX86(X86InstId.kMov, [dst, a]);
+            _emitX86(X86InstId.kSub, [dst, b]);
+          }
+          return;
+
+        case UniOpRRR.mul:
+          if (!dstIsA && !dstIsB) _emitX86(X86InstId.kMov, [dst, a]);
+          _emitX86(X86InstId.kImul, [dst, dstIsB ? a : b]);
+          return;
+
+        case UniOpRRR.uDiv:
+          final tmp1 = _newSimilarGpX86(dst, '@tmp1');
+          _emitX86(X86InstId.kXor, [tmp1, tmp1]);
+          if (dstIsA) {
+            _emitX86(X86InstId.kDiv, [tmp1, dst, b]);
+          } else if (dstIsB) {
+            final tmp2 = _newSimilarGpX86(dst, '@tmp2');
+            _emitX86(X86InstId.kMov, [tmp2, a]);
+            _emitX86(X86InstId.kDiv, [tmp1, tmp2, b]);
+            _emitX86(X86InstId.kMov, [dst, tmp2]);
+          } else {
+            _emitX86(X86InstId.kMov, [dst, a]);
+            _emitX86(X86InstId.kDiv, [tmp1, dst, b]);
+          }
+          return;
+
+        case UniOpRRR.uMod:
+          final tmp1 = _newSimilarGpX86(dst, '@tmp1');
+          _emitX86(X86InstId.kXor, [tmp1, tmp1]);
+          if (dstIsA) {
+            _emitX86(X86InstId.kDiv, [tmp1, dst, b]);
+          } else {
+            final tmp2 = _newSimilarGpX86(dst, '@tmp2');
+            _emitX86(X86InstId.kMov, [tmp2, a]);
+            _emitX86(X86InstId.kDiv, [tmp1, tmp2, b]);
+          }
+          _emitX86(X86InstId.kMov, [dst, tmp1]);
+          return;
+
+        case UniOpRRR.sMin:
+        case UniOpRRR.sMax:
+        case UniOpRRR.uMin:
+        case UniOpRRR.uMax:
+          final cmov = _minMaxCmov[op.index - UniOpRRR.sMin.index];
+          _emitX86(X86InstId.kCmp, [a, b]);
+          if (dstIsB) {
+            _emitX86(cmov.$1, [dst, a]);
+          } else {
+            if (!dstIsA) _emitX86(X86InstId.kMov, [dst, a]);
+            _emitX86(cmov.$2, [dst, b]);
+          }
+          return;
+
+        case UniOpRRR.sll:
+        case UniOpRRR.srl:
+        case UniOpRRR.sra:
+        case UniOpRRR.rol:
+        case UniOpRRR.ror:
+          // Prefer BMI2 variants: SHLX, SHRX, SARX.
+          final si = op.index - UniOpRRR.sll.index;
+          if (hasBmi2 && si < 3) {
+            _emitX86(_bmi2Shift[si], [dst, a, _gpX86(b, bits)]);
+            return;
+          }
+          final legacy = _legacyShift[si];
+          if (dstIsA) {
+            _emitX86(legacy, [dst, _gpX86(b, 8)]);
+          } else if (dstIsB) {
+            // Deviation from upstream, which moves `a` into dst (== b) before
+            // copying the count: running it, sll(1, 4) with dst == b returns
+            // 2 (`mov rax, rdi; mov ecx, eax; shl rax, cl`).
+            final tmp = (this as UniCompiler).newGp32('@tmp');
+            _emitX86(X86InstId.kMov, [tmp, _gpX86(b, 32)]);
+            _emitX86(X86InstId.kMov, [dst, a]);
+            _emitX86(legacy, [dst, _gpX86(tmp, 8)]);
+          } else {
+            _emitX86(X86InstId.kMov, [dst, a]);
+            _emitX86(legacy, [dst, _gpX86(b, 8)]);
+          }
+          return;
+
+        case UniOpRRR.sBound:
+          if (dstIsA) {
+            final zero = _newSimilarGpX86(dst, '@zero');
+            _emitX86(X86InstId.kXor, [zero, zero]);
+            _emitX86(X86InstId.kCmp, [dst, b]);
+            _emitX86(X86InstId.kCmovnbe, [dst, zero]);
+            _emitX86(X86InstId.kCmovnle, [dst, b]);
+          } else if (dstIsB) {
+            // Deviation from upstream, which zeroes `dst` (== b) before
+            // comparing with it; running upstream, sbound(7, 3) with
+            // dst == b returns 0. The result is computed in a temporary.
+            final tmp = _newSimilarGpX86(dst, '@tmp');
+            _emitX86(X86InstId.kXor, [tmp, tmp]);
+            _emitX86(X86InstId.kCmp, [a, b]);
+            _emitX86(X86InstId.kCmovbe, [tmp, a]);
+            _emitX86(X86InstId.kCmovnle, [tmp, b]);
+            _emitX86(X86InstId.kMov, [dst, tmp]);
+          } else {
+            _emitX86(X86InstId.kXor, [dst, dst]);
+            _emitX86(X86InstId.kCmp, [a, b]);
+            _emitX86(X86InstId.kCmovbe, [dst, a]);
+            _emitX86(X86InstId.kCmovnle, [dst, b]);
+          }
+          return;
+      }
+    }
+
+    throw ArgumentError('emit_3i: $op with $src1, $src2');
+  }
+
+  static bool _isInt32(int v) => v >= -0x80000000 && v <= 0x7FFFFFFF;
 }
 
 /// Row of `sse_float_inst` (unicompiler_x86.cpp) used by the SSE rounding

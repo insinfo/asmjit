@@ -306,6 +306,66 @@ class A64Encoder {
     emit32(inst);
   }
 
+  /// Encodes [value] as a logical (bitmask) immediate of a [width]-bit
+  /// operation: returns `N:immr:imms` (13 bits), or null when the value is
+  /// not a rotated run of ones repeated in 2/4/8/16/32/64-bit elements.
+  static int? encodeLogicalImm(int value, int width) {
+    if (width == 32) value &= 0xFFFFFFFF;
+    final mask = width == 64 ? -1 : 0xFFFFFFFF;
+    if (value == 0 || value == mask) return null;
+    // Smallest element size the value repeats with.
+    var size = width;
+    while (size > 2) {
+      final half = size ~/ 2;
+      final m = (1 << half) - 1;
+      if ((value & m) != ((value >>> half) & m)) break;
+      size = half;
+    }
+    final emask = size == 64 ? -1 : (1 << size) - 1;
+    final elt = value & emask;
+    // Rotate right until the run of ones starts at bit 0.
+    var rot = 0;
+    var e = elt;
+    int rotr(int v, int n) =>
+        n == 0 ? v : (((v >>> n) | (v << (size - n))) & emask);
+    while (rot < size) {
+      e = rotr(elt, rot);
+      // A contiguous run from bit 0: e + 1 is a power of two (no wrap).
+      if ((e & 1) == 1 && ((e + 1) & e) == 0) break;
+      rot++;
+    }
+    if (rot == size) return null;
+    final ones = e.bitLength;
+    if (ones >= size) return null;
+    final immr = (size - rot) % size;
+    final n = size == 64 ? 1 : 0;
+    final imms = ((~(size * 2 - 1)) & 0x3F) | (ones - 1);
+    return (n << 12) | (immr << 6) | (imms & 0x3F);
+  }
+
+  /// AND/ORR/EOR/ANDS (immediate): `sf|opc|100100|N|immr|imms|Rn|Rd`.
+  void logicalImm(int opc, A64Gp rd, A64Gp rn, int value) {
+    final sf = _encSf(rd);
+    final enc = encodeLogicalImm(value, sf == 1 ? 64 : 32);
+    if (enc == null) {
+      throw ArgumentError('0x${value.toRadixString(16)} is not a logical '
+          'immediate');
+    }
+    emit32((sf << 31) |
+        (opc << 29) |
+        (0x24 << 23) |
+        (enc << 10) |
+        (_encReg(rn) << 5) |
+        _encReg(rd));
+  }
+
+  /// REV (reverse bytes of a 32/64-bit register).
+  void rev(A64Gp rd, A64Gp rn) {
+    final sf = _encSf(rd);
+    emit32(
+        (sf == 1 ? 0xDAC00C00 : 0x5AC00800) | (_encReg(rn) << 5) | _encReg(rd));
+  }
+
   /// ORR (shifted register).
   void orrReg(A64Gp rd, A64Gp rn, A64Gp rm,
       {A64Shift shift = A64Shift.lsl, int amount = 0}) {
@@ -485,13 +545,13 @@ class A64Encoder {
   }
 
   /// ASRV - Arithmetic shift right (register).
-  void asrv(A64Gp rd, A64Gp rn, A64Gp rm) => _shiftReg(rd, rn, rm, 0x08);
+  void asrv(A64Gp rd, A64Gp rn, A64Gp rm) => _shiftReg(rd, rn, rm, 0x0A);
 
   /// LSLV - Logical shift left (register).
-  void lslv(A64Gp rd, A64Gp rn, A64Gp rm) => _shiftReg(rd, rn, rm, 0x09);
+  void lslv(A64Gp rd, A64Gp rn, A64Gp rm) => _shiftReg(rd, rn, rm, 0x08);
 
   /// LSRV - Logical shift right (register).
-  void lsrv(A64Gp rd, A64Gp rn, A64Gp rm) => _shiftReg(rd, rn, rm, 0x0A);
+  void lsrv(A64Gp rd, A64Gp rn, A64Gp rm) => _shiftReg(rd, rn, rm, 0x09);
 
   /// RORV - Rotate right (register).
   void rorv(A64Gp rd, A64Gp rn, A64Gp rm) => _shiftReg(rd, rn, rm, 0x0B);
@@ -634,17 +694,90 @@ class A64Encoder {
   }
 
   /// MOV (immediate) - Load a 64-bit immediate using MOVZ/MOVK sequence.
+  /// MOV (immediate) as in `a64::Assembler` (a64assembler.cpp): a single
+  /// MOVZ/MOVN when possible, then ORR with a logical immediate, otherwise a
+  /// MOVZ/MOVN + MOVK sequence (`encode_mov_sequence_64()`).
   void movImm64(A64Gp rd, int imm64) {
-    final v = imm64;
-    final hw0 = v & 0xFFFF;
-    final hw1 = (v >> 16) & 0xFFFF;
-    final hw2 = (v >> 32) & 0xFFFF;
-    final hw3 = (v >> 48) & 0xFFFF;
+    final x = rd.is64Bit ? 1 : 0;
+    var imm = imm64;
+    if (x == 0) imm &= 0xFFFFFFFF;
 
-    movz(rd, hw0, shift: 0);
-    if (hw1 != 0) movk(rd, hw1, shift: 16);
-    if (hw2 != 0) movk(rd, hw2, shift: 32);
-    if (hw3 != 0) movk(rd, hw3, shift: 48);
+    final seq = encodeMovSequence64(imm, _encReg(rd), x);
+    if (seq.length == 1) {
+      emit32(seq[0]);
+      return;
+    }
+    if (encodeLogicalImm(imm, x == 1 ? 64 : 32) != null) {
+      logicalImm(1, rd, A64Gp(31, rd.sizeBits), imm);
+      return;
+    }
+    seq.forEach(emit32);
+  }
+
+  static int _countZeroHalfWords64(int imm) =>
+      ((imm & 0xFFFF) == 0 ? 1 : 0) +
+      ((imm & 0xFFFF0000) == 0 ? 1 : 0) +
+      ((imm & 0xFFFF00000000) == 0 ? 1 : 0) +
+      ((imm & -0x1000000000000) == 0 ? 1 : 0);
+
+  /// `encode_mov_sequence_32()`.
+  static List<int> encodeMovSequence32(int imm, int rd, int x) {
+    final kMovZ = 0x52800000 | (x << 31);
+    const kMovN = 0x12800000;
+    const kMovK = 0x72800000;
+    imm &= 0xFFFFFFFF;
+
+    if ((imm & 0xFFFF0000) == 0) {
+      return [kMovZ | ((imm & 0xFFFF) << 5) | rd];
+    }
+    if ((imm & 0xFFFF0000) == 0xFFFF0000) {
+      return [kMovN | ((~imm & 0xFFFF) << 5) | rd];
+    }
+    if ((imm & 0xFFFF) == 0) {
+      return [kMovZ | (1 << 21) | ((imm >> 16) << 5) | rd];
+    }
+    if ((imm & 0xFFFF) == 0xFFFF) {
+      return [kMovN | (1 << 21) | (((~imm >> 16) & 0xFFFF) << 5) | rd];
+    }
+    return [
+      kMovZ | ((imm & 0xFFFF) << 5) | rd,
+      kMovK | (1 << 21) | ((imm >> 16) << 5) | rd,
+    ];
+  }
+
+  /// `encode_mov_sequence_64()`.
+  static List<int> encodeMovSequence64(int imm, int rd, int x) {
+    const kMovZ = 0xD2800000;
+    const kMovN = 0x92800000;
+    const kMovK = 0xF2800000;
+
+    if (imm >= 0 && imm <= 0xFFFFFFFF) return encodeMovSequence32(imm, rd, x);
+
+    final zhw = _countZeroHalfWords64(imm);
+    final ohw = _countZeroHalfWords64(~imm);
+    final out = <int>[];
+
+    if (zhw >= ohw) {
+      var op = kMovZ;
+      for (var hw = 0; hw < 4; hw++, imm >>>= 16) {
+        final hwImm = imm & 0xFFFF;
+        if (hwImm == 0) continue;
+        out.add(op | (hw << 21) | (hwImm << 5) | rd);
+        op = kMovK;
+      }
+    } else {
+      var op = kMovN;
+      var negMask = 0xFFFF;
+      for (var hw = 0; hw < 4; hw++, imm >>>= 16) {
+        final hwImm = imm & 0xFFFF;
+        if (hwImm == 0xFFFF) continue;
+        out.add(op | (hw << 21) | ((hwImm ^ negMask) << 5) | rd);
+        op = kMovK;
+        negMask = 0;
+      }
+      if (out.isEmpty) out.add(kMovN | ((0xFFFF ^ negMask) << 5) | rd);
+    }
+    return out;
   }
 
   // ===========================================================================

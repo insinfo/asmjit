@@ -18,7 +18,7 @@ void main() {
   cc.setArg(1, val);
 
   cc.emitMR(UniOpMR.storeU32, UniMem(X86Mem.baseDisp(ctx, 0)), val);
-  cc.emitRRI(UniOpRRR.add, val, val, 1);
+  cc.emit3i(UniOpRRR.add, val, val, Imm(1));
   cc.emitMR(UniOpMR.storeU32, UniMem(X86Mem.baseDisp(ctx, 4)), val);
 
   cc.ret();

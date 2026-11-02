@@ -24,6 +24,8 @@ import '../x86/x86_simd.dart';
 import '../x86/x86_inst_db.g.dart';
 import '../arm/a64.dart';
 import '../arm/a64_inst_db.g.dart';
+import '../arm/a64_encoder.dart' show A64Encoder;
+import '../x86/x86_encoder.dart' show X86Cond;
 import 'ujitbase.dart';
 import 'unicompiler_a64_tables.dart';
 import 'unicompiler_x86_tables.dart';
@@ -494,14 +496,15 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
   // [GP Instruction Emission (Low-Level)]
   // ============================================================================
 
-  /// Emits a MOV instruction (register/immediate to register).
-  void emitMov(X86Gp dst, Operand src) {
-    if (src is Imm && src.value == 0) {
-      // Optimize: xor reg, reg for zeroing
-      final r32 = X86Gp.r32(dst.id);
-      cc.addNode(InstNode(X86InstId.kXor, [r32, r32]));
+  /// `emit_mov()`: `dst = src` (a register, memory or an immediate; zero
+  /// is materialized with XOR on x86).
+  void emitMov(BaseReg dst, Operand src) {
+    if (isX86Family) {
+      (this as UniCompilerX86)._emitMovX86(dst, src);
+    } else if (isArm64) {
+      (this as UniCompilerA64)._emitMovA64(dst, src);
     } else {
-      cc.addNode(InstNode(X86InstId.kMov, [dst, src]));
+      throw UnimplementedError('emitMov not implemented for $arch');
     }
   }
 
@@ -1000,84 +1003,8 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     }
   }
 
-  void _emitJIfX86(Label target, UniCondition condition) {
-    // First emit the condition test
-    _emitConditionTestX86(condition);
-    // Then emit the conditional jump
-    final jccId = _condCodeToJccX86(condition.cond);
-    cc.addNode(InstNode(jccId, [LabelOp(target)]));
-  }
-
   void _emitJIfA64(Label target, UniCondition condition) {
-    (this as UniCompilerA64).emitJIfA64Impl(target, condition);
-  }
-
-  void _emitConditionTestX86(UniCondition cond) {
-    final instId = _condOpToInstIdX86(cond.op);
-    cc.addNode(InstNode(instId, [cond.a, cond.b]));
-  }
-
-  int _condOpToInstIdX86(UniOpCond op) {
-    switch (op) {
-      case UniOpCond.assignAnd:
-        return X86InstId.kAnd;
-      case UniOpCond.assignOr:
-        return X86InstId.kOr;
-      case UniOpCond.assignXor:
-        return X86InstId.kXor;
-      case UniOpCond.assignAdd:
-        return X86InstId.kAdd;
-      case UniOpCond.assignSub:
-        return X86InstId.kSub;
-      case UniOpCond.assignShr:
-        return X86InstId.kShr;
-      case UniOpCond.test:
-        return X86InstId.kTest;
-      case UniOpCond.bitTest:
-        return X86InstId.kBt;
-      case UniOpCond.compare:
-        return X86InstId.kCmp;
-    }
-  }
-
-  int _condCodeToJccX86(int cond) {
-    // Map CondCode constants to x86 Jcc instruction IDs
-    switch (cond) {
-      case CondCode.kEqual: // kZero
-        return X86InstId.kJz;
-      case CondCode.kNotEqual: // kNotZero
-        return X86InstId.kJnz;
-      case CondCode.kSignedLT: // kLess
-        return X86InstId.kJl;
-      case CondCode.kSignedGE: // kGreaterEqual
-        return X86InstId.kJnl;
-      case CondCode.kSignedLE: // kLessEqual
-        return X86InstId.kJle;
-      case CondCode.kSignedGT: // kGreater
-        return X86InstId.kJnle;
-      case CondCode.kUnsignedLT: // kBelow, kCarry
-        return X86InstId.kJb;
-      case CondCode.kUnsignedGE: // kAboveEqual, kNotCarry
-        return X86InstId.kJnb;
-      case CondCode.kUnsignedLE: // kBelowEqual
-        return X86InstId.kJbe;
-      case CondCode.kUnsignedGT: // kAbove
-        return X86InstId.kJnbe;
-      case CondCode.kOverflow:
-        return X86InstId.kJo;
-      case CondCode.kNotOverflow:
-        return X86InstId.kJno;
-      case CondCode.kSign: // kNegative
-        return X86InstId.kJs;
-      case CondCode.kNotSign: // kPositive
-        return X86InstId.kJns;
-      case CondCode.kParityEven:
-        return X86InstId.kJp;
-      case CondCode.kParityOdd:
-        return X86InstId.kJnp;
-      default:
-        return X86InstId.kJmp;
-    }
+    (this as UniCompilerA64)._emitJIfA64Impl(target, condition);
   }
 
   // ============================================================================
@@ -1205,23 +1132,24 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
   // [High-Level SIMD Operations]
   // ============================================================================
 
-  /// Emit conditional move: dst = cond ? src : dst
-  void emitCmov(UniCondition cond, BaseReg dst, Operand src) {
+  /// `emit_cmov()`: `dst = condition ? sel : dst`.
+  void emitCmov(BaseReg dst, Operand sel, UniCondition condition) {
     if (isX86Family) {
-      _emitCmovX86(cond, dst, src);
+      _emitCmovX86(condition, dst, sel);
     } else if (isArm64) {
-      _emitCmovA64(cond, dst, src);
+      _emitCmovA64(condition, dst, sel);
     } else {
       throw UnimplementedError('emitCmov not implemented for $arch');
     }
   }
 
-  /// Emit conditional selection: dst = cond ? src1 : src2
-  void emitSelect(UniCondition cond, BaseReg dst, Operand src1, Operand src2) {
+  /// `emit_select()`: `dst = condition ? sel1 : sel2`.
+  void emitSelect(
+      BaseReg dst, Operand sel1, Operand sel2, UniCondition condition) {
     if (isX86Family) {
-      _emitSelectX86(cond, dst, src1, src2);
+      _emitSelectX86(condition, dst, sel1, sel2);
     } else if (isArm64) {
-      _emitSelectA64(cond, dst, src1, src2);
+      _emitSelectA64(condition, dst, sel1, sel2);
     } else {
       throw UnimplementedError('emitSelect not implemented for $arch');
     }
@@ -1509,86 +1437,6 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     }
   }
 
-  // Mirrors asmjit C++ `UniCompiler::emit_rm` (unicompiler_x86.cpp).
-  //
-  // The destination register size selects the operand size (REX.W), so
-  // narrow loads MUST use a 32-bit destination, otherwise `mov r64, [mem]`
-  // reads 8 bytes and can read past the end of user buffers.
-  void _emitRMX86(UniOpRM op, BaseReg dst, X86Mem src) {
-    final gp = dst is X86Gp ? dst : null;
-    int instId;
-    switch (op) {
-      case UniOpRM.loadU8:
-        instId = X86InstId.kMovzx;
-        if (gp != null) dst = gp.as32;
-        src = src.withSize(1);
-        break;
-      case UniOpRM.loadI8:
-        instId = X86InstId.kMovsx;
-        src = src.withSize(1);
-        break;
-      case UniOpRM.loadU16:
-        instId = X86InstId.kMovzx;
-        if (gp != null) dst = gp.as32;
-        src = src.withSize(2);
-        break;
-      case UniOpRM.loadI16:
-        instId = X86InstId.kMovsx;
-        src = src.withSize(2);
-        break;
-      case UniOpRM.loadU32:
-        // 32-bit MOV implicitly zero-extends to 64 bits.
-        instId = X86InstId.kMov;
-        if (gp != null) dst = gp.as32;
-        src = src.withSize(4);
-        break;
-      case UniOpRM.loadI32:
-        if (gp != null && gp.bits == 64) {
-          instId = X86InstId.kMovsxd;
-        } else {
-          instId = X86InstId.kMov;
-        }
-        src = src.withSize(4);
-        break;
-      case UniOpRM.loadU64:
-      case UniOpRM.loadI64:
-        instId = X86InstId.kMov;
-        src = src.withSize(8);
-        break;
-      case UniOpRM.loadMergeU8:
-        instId = X86InstId.kMov;
-        if (gp != null) dst = gp.as8;
-        src = src.withSize(1);
-        break;
-      case UniOpRM.loadShiftU8:
-        if (gp != null) {
-          cc.addNode(InstNode(X86InstId.kShl, [gp, Imm(8)]));
-          dst = gp.as8;
-        }
-        instId = X86InstId.kMov;
-        src = src.withSize(1);
-        break;
-      case UniOpRM.loadMergeU16:
-        instId = X86InstId.kMov;
-        if (gp != null) dst = gp.as16;
-        src = src.withSize(2);
-        break;
-      case UniOpRM.loadShiftU16:
-        if (gp != null) {
-          cc.addNode(InstNode(X86InstId.kShl, [gp, Imm(16)]));
-          dst = gp.as16;
-        }
-        instId = X86InstId.kMov;
-        src = src.withSize(2);
-        break;
-      case UniOpRM.loadReg:
-        instId = X86InstId.kMov;
-        if (src.size == 0) src = src.withSize(dst.size);
-        break;
-    }
-    cc.addNode(InstNode(instId, [dst, src]));
-  }
-
   void emitMR(UniOpMR op, Operand dst, Operand src) {
     Operand finalDst = dst;
     if (finalDst is UniMem) finalDst = finalDst.mem;
@@ -1602,79 +1450,6 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     }
   }
 
-  // Mirrors asmjit C++ `UniCompiler::emit_mr` (unicompiler_x86.cpp).
-  //
-  // The source register size selects the operand size (REX.W), so narrow
-  // stores MUST shrink the source register too. `mov [mem], r64` writes
-  // 8 bytes regardless of the memory operand size annotation — storing a
-  // 64-bit register for storeU32 overflows user buffers (heap corruption).
-  void _emitMRX86(UniOpMR op, X86Mem dst, BaseReg src) {
-    int instId;
-    int size;
-    switch (op) {
-      case UniOpMR.storeReg:
-        instId = X86InstId.kMov;
-        size = src.size;
-        break;
-      case UniOpMR.storeU8:
-        instId = X86InstId.kMov;
-        size = 1;
-        break;
-      case UniOpMR.storeU16:
-        instId = X86InstId.kMov;
-        size = 2;
-        break;
-      case UniOpMR.storeU32:
-        instId = X86InstId.kMov;
-        size = 4;
-        break;
-      case UniOpMR.storeU64:
-        instId = X86InstId.kMov;
-        size = 8;
-        break;
-      case UniOpMR.addReg:
-        instId = X86InstId.kAdd;
-        size = src.size;
-        break;
-      case UniOpMR.addU8:
-        instId = X86InstId.kAdd;
-        size = 1;
-        break;
-      case UniOpMR.addU16:
-        instId = X86InstId.kAdd;
-        size = 2;
-        break;
-      case UniOpMR.addU32:
-        instId = X86InstId.kAdd;
-        size = 4;
-        break;
-      case UniOpMR.addU64:
-        instId = X86InstId.kAdd;
-        size = 8;
-        break;
-    }
-
-    BaseReg r = src;
-    if (src is X86Gp) {
-      switch (size) {
-        case 1:
-          r = src.as8;
-          break;
-        case 2:
-          r = src.as16;
-          break;
-        case 4:
-          r = src.as32;
-          break;
-        case 8:
-          r = src.as64;
-          break;
-      }
-    }
-
-    cc.addNode(InstNode(instId, [dst.withSize(size), r]));
-  }
-
   void emitM(UniOpM op, Operand dst) {
     if (isX86Family) {
       _emitMX86(op, dst as X86Mem);
@@ -1682,42 +1457,6 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
       (this as UniCompilerA64)._emitMA64(op, dst as A64Mem);
     } else {
       throw UnimplementedError('emitM not implemented for $arch');
-    }
-  }
-
-  void _emitMX86(UniOpM op, X86Mem dst) {
-    int instId = X86InstId.kMov;
-    int size = 0;
-
-    switch (op) {
-      case UniOpM.storeZeroU8:
-        size = 1;
-        break;
-      case UniOpM.storeZeroU16:
-        size = 2;
-        break;
-      case UniOpM.storeZeroU32:
-        size = 4;
-        break;
-      case UniOpM.storeZeroU64:
-        size = 8;
-        break;
-      case UniOpM.prefetch:
-        // Prefetch is instruction, not MOV logic with imm 0
-        cc.addNode(InstNode(X86InstId.kPrefetch,
-            [dst])); // Note: Prefetch might need hint. kPrefetchw?
-        // Basic prefetch: prefetcht0
-        // UJIT definition of prefetch?
-        // Assuming prefetcht0 for now or generic
-        cc.addNode(InstNode(X86InstId.kPrefetcht0, [dst]));
-        return;
-      default:
-        throw UnimplementedError('emitM: $op not implemented for x86');
-    }
-
-    if (size > 0) {
-      dst = dst.withSize(size);
-      cc.addNode(InstNode(instId, [dst, Imm(0)]));
     }
   }
 
@@ -1733,10 +1472,15 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     }
   }
 
-  void emit2i(UniOpRR op, Operand dst, int imm) {
-    // Basic fallback for tests using emit2i for moves
+  /// `emit_2i()`: `dst = op(src)` where [src] is a register or memory.
+  void emit2i(UniOpRR op, BaseReg dst, Operand src) {
+    if (src is UniMem) src = src.mem;
     if (isX86Family) {
-      cc.addNode(InstNode(X86InstId.kMov, [dst, Imm(imm)]));
+      (this as UniCompilerX86)._emit2iX86(op, dst, src);
+    } else if (isArm64) {
+      (this as UniCompilerA64)._emit2iA64(op, dst, src);
+    } else {
+      throw UnimplementedError('emit2i not implemented for $arch');
     }
   }
 
@@ -1744,93 +1488,25 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
   // [Scalar (RRR/RRI) Operations]
   // ============================================================================
 
-  /// Emit 3-operand scalar instruction (RRR).
   void emitCV(UniOpCV op, BaseReg dst, BaseReg src) {
     if (isX86Family) {
       (this as UniCompilerX86).emitCVX86(op, dst, src);
     } else {
-      // (this as UniCompilerA64).emitCVA64(op, dst, src);
       throw UnimplementedError('emitCV not implemented for AArch64');
     }
   }
 
-  void emitRRR(UniOpRRR op, Operand dst, Operand src1, Operand src2) {
+  /// `emit_3i()`: `dst = op(src1, src2)` where the sources are registers,
+  /// memory or an [Imm].
+  void emit3i(UniOpRRR op, BaseReg dst, Operand src1, Operand src2) {
+    if (src1 is UniMem) src1 = src1.mem;
+    if (src2 is UniMem) src2 = src2.mem;
     if (isX86Family) {
-      _emitRRRX86(op, dst as BaseReg, src1 as BaseReg, src2);
+      (this as UniCompilerX86)._emit3iX86(op, dst, src1, src2);
     } else if (isArm64) {
-      (this as UniCompilerA64)
-          ._emitRRRA64(op, dst as BaseReg, src1 as BaseReg, src2 as BaseReg);
+      (this as UniCompilerA64)._emit3iA64(op, dst, src1, src2);
     } else {
-      throw UnimplementedError('emitRRR not implemented for $arch');
-    }
-  }
-
-  /// Emit 3-operand scalar instruction with immediate (RRI).
-  void emitRRI(UniOpRRR op, Operand dst, Operand src1, int imm) {
-    if (isX86Family) {
-      _emitRRIX86(op, dst as BaseReg, src1 as BaseReg, imm);
-    } else if (isArm64) {
-      (this as UniCompilerA64)
-          ._emitRRIA64(op, dst as BaseReg, src1 as BaseReg, imm);
-    } else {
-      throw UnimplementedError('emitRRI not implemented for $arch');
-    }
-  }
-
-  void _emitRRRX86(UniOpRRR op, BaseReg dst, BaseReg src1, Operand src2) {
-    final instId = _rrrOpToInstIdX86(op);
-    if (instId == 0)
-      throw UnimplementedError('Unsupported UniOpRRR on X86: $op');
-
-    // X86 is 2-operand: dst = dst op src.
-    if (dst != src1) {
-      cc.emitMove(dst, src1);
-    }
-    cc.addNode(InstNode(instId, [dst, src2]));
-  }
-
-  void _emitRRIX86(UniOpRRR op, BaseReg dst, BaseReg src1, int imm) {
-    final instId = _rrrOpToInstIdX86(op);
-    if (instId == 0)
-      throw UnimplementedError('Unsupported UniOpRRR on X86: $op');
-
-    if (instId == X86InstId.kImul) {
-      cc.addNode(InstNode(instId, [dst, src1, Imm(imm)]));
-      return;
-    }
-
-    if (dst != src1) {
-      cc.emitMove(dst, src1);
-    }
-    cc.addNode(InstNode(instId, [dst, Imm(imm)]));
-  }
-
-  int _rrrOpToInstIdX86(UniOpRRR op) {
-    switch (op) {
-      case UniOpRRR.and:
-        return X86InstId.kAnd;
-      case UniOpRRR.or:
-        return X86InstId.kOr;
-      case UniOpRRR.xor:
-        return X86InstId.kXor;
-      case UniOpRRR.add:
-        return X86InstId.kAdd;
-      case UniOpRRR.sub:
-        return X86InstId.kSub;
-      case UniOpRRR.mul:
-        return X86InstId.kImul;
-      case UniOpRRR.sll:
-        return X86InstId.kShl;
-      case UniOpRRR.srl:
-        return X86InstId.kShr;
-      case UniOpRRR.sra:
-        return X86InstId.kSar;
-      case UniOpRRR.rol:
-        return X86InstId.kRol;
-      case UniOpRRR.ror:
-        return X86InstId.kRor;
-      default:
-        return 0;
+      throw UnimplementedError('emit3i not implemented for $arch');
     }
   }
 }

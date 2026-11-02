@@ -30,6 +30,7 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 | **UJIT emit_2v (x86)** | ✅ Port fiel (tabela `opcode_info_2v`, `sse_int_widen`, `avx_fmov`); A64 já conferia com a referência | `ujit_vv_ops_test`: todas as ops de 128 bits, inclusive broadcast de GP |
 | **UJIT emit_3vi / emit_4v (x86 e A64)** | ✅ Port fiel (`interleaved_shuffle32_ops` do A64, FMA 132/213/231, `nmAdd/nmSub`) | `ujit_vvvi_ops_test` (256 shuffles x 5 layouts), `ujit_vvvv_ops_test` (6 layouts, AVX2 com e sem FMA) |
 | RA x86: acesso de operandos | ✅ Gerado de `isa_x86.json` (`W:`/`X:`/`w:`) em vez de "3 operandos = AVX" | |
+| **UJIT GP (x86 e A64)** | ✅ Port fiel de `emit_mov/2i/3i/rm/mr/m/cmov/select/j_if` + `ConditionApplier`; API igual ao upstream (`emit3i`, `emitCmov(dst, sel, cond)`) | `ujit_gp_ops_test` (baseline e host no x86), goldens LLVM GP x86/A64 |
 | **UJIT emit_vm / emit_mv (x86)** | ✅ Port fiel (`opcode_info_2vm`/`opcode_info_2mv`); `storeCvt*` não são implementados no upstream | `ujit_vm_mv_ops_test`: cargas/stores de 128 bits, endereços alinhados e desalinhados |
 | **Constantes vetoriais (tabela local)** | ✅ Corrigidas (antes eram lidas do próprio código) | `ujit_const_runtime_test` |
 | **ChaCha20 otimizado** | ✅ x64 e AArch64 | `chacha20_verify_test` |
@@ -96,9 +97,35 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 
 - `storeCvt*`: comentados (`UNIMPLEMENTED`) no upstream x86 e A64; o enum Dart não os tem, o que já é paridade.
 
+### UJIT GP portado fielmente (x86 e A64) e API corrigida
+- **API igual ao upstream** (o port ainda não foi lançado): `emitMov(dst, src)`, `emit2i(UniOpRR, dst, src)`, `emit3i(UniOpRRR, dst, src1, src2)` (src: registrador, memória ou `Imm`), `emitCmov(dst, sel, cond)` e `emitSelect(dst, sel1, sel2, cond)`. `emitRRR`/`emitRRI` foram removidos; chamadores (benchmark ChaCha20, testes, `tool/`) migrados.
+- x86: port de `emit_mov/emit_m/emit_rm/emit_mr/emit_cmov/emit_select/emit_2i/emit_3i/emit_j_if` e do `ConditionApplier`. Encoder/dispatcher ganharam as formas GP que faltavam (bsr/bsf/lzcnt/tzcnt/popcnt, movbe, bswap, bt, sbb, andn, shlx/shrx/sarx, rorx, rol/ror por CL, mul/div/idiv com tamanho e a forma de 3 operandos `div rdx, rax, src`, cmovcc com memória) — 131 formas conferidas com o LLVM (`x86_gp_misc_encoding_test`).
+- A64: port de `gp_emit_mem_op`, `gp_force_reg`, `ConditionApplier` (ands/orr/eor/adds/subs/tst/cmp, shr via `adds zr, a, lsr`, bit test via lsr+tst) e das mesmas funções `emit_*` (csel/cneg/rev/clz/rbit, imediatos lógicos, add/sub imm12, mul por 2^n e 2^n+1, smin/smax com 0/-1 por shift aritmético, udiv/umod, rol/ror). O port não detecta CSSC (`has_cssc()` falso).
+- Encoder A64: imediato lógico (`encodeLogicalImm`), registrador deslocado (`A64ShiftOp`), TST, ROR (imm via EXTR e registrador), REV, BIC/ORN/EON com imediato, ADDS/SUBS/CMP com `lsl #12`, e `mov` de imediato como o `a64assembler.cpp` (`encode_mov_sequence_64`: MOVZ/MOVN único, depois ORR lógico, depois MOVZ/MOVN+MOVK). **Bugs antigos do port corrigidos**: LSLV/LSRV/ASRV com opcodes trocados (lsl saía como lsr, lsr como asr, asr como lsl) e `mov w, imm` emitindo `movk lsl #32/#48` (instrução ilegal). Goldens LLVM em `a64_gp_encoding_test` (49).
+- Bugs do upstream provados (executando o asmjit C++, desvios documentados no código):
+  - A64 `smin(a, -1)`/`smax(a, -1)`: a tabela troca ORR e ORN (`smin(7, -1) = 7`, `smax(7, -1) = -1`).
+  - A64 `rol(a, 0)` emite `ror #64` → `InvalidImmediate`.
+  - A64 `sbound` com `dst == b`: o BIC sobrescreve `b` antes do CSEL (`sbound(7, 3) = 7`).
+  - A64 bit test com imediato ≥ 32: a máscara é `1u << bit` de 32 bits (`bt_nz(a, 40)` testa o bit 8).
+  - x86 `and/or/xor` com `dst == b`: `mov dst, a; and dst, b` (`and(7, 3) = 7`).
+  - x86 `sbound` com `dst == b` (registradores) e com `dst == a` (memória): `xor dst, dst` zera o operando antes do `cmp` (resultado 0).
+  - x86 `shr_nz/shr_z` com contagem em registrador: contagem 0 não altera as flags; o port emite `test a, a` após o `shr`.
+  - (já documentados antes: shift com `dst == b` sem BMI2; `emit_select` com `reverse_cond`.)
+  - Erro de transcrição do port corrigido: o `kSBound` do x86 está na seção "Reg, Reg, Mem" do upstream, não na de imediato.
+- **RA: blocos terminam em saltos** (bug grave do port, achado pelo teste GP no Win64): o CFG só abria blocos em labels, então o destino de um `jcc` no meio do bloco herdava a atribuição do *fim* do bloco — no Win64 `d` era spillado antes do `jne` e o destino retornava outro registrador. Agora, como o `RACFGBuilderT`, o código após um salto vira um bloco novo; arestas de salto com atribuição divergente recebem os moves antes do `jmp` incondicional ou num **trampolim** após o corpo da função (salto condicional redirecionado), como o `RALocalAllocator::alloc_branch()`.
+- `bswap r16` com prefixo 66 (como o assembler do upstream).
+- Teste `ujit_gp_ops_test`: `emit_3i` (todas as ops, layouts rrr/dst=a/dst=b/mem/dst=a mem/imm), `emit_2i`, `emit_rm/mr/m`, cmov/select/jIf com 17 condições de registrador e 22 com imediato (bit test 0/3/40/63, shr, cmp com imm não codificável, xor -1) e bit test/shr com registrador; x86 com o baseline (sem BMI) e o host; verde em arm64, Rosetta e Windows (AVX2+BMI2).
+- Resultado: arm64 **17721**, x64 Rosetta **44611**, Windows **44723** (antes das duas correções finais, que passaram isoladas).
+
+### Pendências conhecidas
+- O RA do port não é um port fiel do upstream (alocação global por bundles + correções locais). Exemplo: no Win64 um argumento em RCX que precisa liberar CL é spillado e recarregado em vez de movido; prólogo Win64 salva todos os callee-saved (GP e XMM6–15) de forma conservadora. Avaliar port do `RALocalAllocator`/`RAPass` do upstream.
+- `emitCV`/`UniOpCV` é invenção do Dart; o upstream usa `emit_2vs` com `UniOpVR` (`s_cvt_int_to_f32`...). Portar e remover.
+
 ### Próximos passos
-1. Conferir a parte GP do UJIT (`emit_2vs`, `emit_rm/mr`, `emit_rrr/rri`, condições/cmov/select) contra o upstream, com teste abrangente.
-2. Avaliar acesso de outros operandos além do 0 (xadd/cmpxchg) a partir do banco.
+1. Portar os testes de `referencias/asmjit-master/asmjit-testing` (goldens `TEST_INSTRUCTION` de x64/x86/a64 via conversor com lista explícita de não suportados; `asmjit_test_unicompiler*.cpp`; testes do compiler).
+2. `emit_2vs` (UniOpVR) no lugar de `emitCV`.
+3. Avaliar acesso de outros operandos além do 0 (xadd/cmpxchg) a partir do banco.
+4. AVX-512/EVEX, validado no runner linux-x64 do CI (tem AVX-512F).
 
 ## ✅ Progresso Recente (02/11/2026 - RA multiarquitetura, UJIT A64, x86 SIMD)
 

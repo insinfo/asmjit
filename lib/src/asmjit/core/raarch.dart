@@ -6,6 +6,7 @@
 /// role for the Dart [RAPass].
 
 import 'compiler.dart';
+import 'labels.dart';
 import 'radefs.dart';
 
 /// Information [RAArch.insertPrologEpilog] needs once allocation finished.
@@ -84,6 +85,9 @@ abstract class RAArch {
 
   /// Exchanges two physical registers of the same group.
   List<InstNode> swap(BaseReg a, BaseReg b);
+
+  /// Unconditional jump to [target].
+  InstNode jump(Label target);
 
   /// Bytes reserved when spilling the virtual register [reg].
   int spillSize(BaseReg reg) => reg.size;

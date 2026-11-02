@@ -101,8 +101,8 @@ void main() {
       cc.setArg(0, a);
       cc.setArg(1, b);
       final t = cc.newGp64('t');
-      cc.emitRRR(UniOpRRR.mul, t, a, b);
-      cc.emitRRR(UniOpRRR.add, t, t, a);
+      cc.emit3i(UniOpRRR.mul, t, a, b);
+      cc.emit3i(UniOpRRR.add, t, t, a);
       cc.ret([t]);
       cc.endFunc();
       cc.finalize();
@@ -144,11 +144,11 @@ void main() {
         }
         // sum = v0*1 + v1*2 + ... (all values live until consumed)
         final sum = cc.newGp64('sum');
-        cc.emitRRR(UniOpRRR.add, sum, vals[0], vals[0]);
-        cc.emitRRR(UniOpRRR.sub, sum, sum, vals[0]);
+        cc.emit3i(UniOpRRR.add, sum, vals[0], vals[0]);
+        cc.emit3i(UniOpRRR.sub, sum, sum, vals[0]);
         for (int i = 1; i < n; i++) {
           for (int k = 0; k <= i; k++) {
-            cc.emitRRR(UniOpRRR.add, sum, sum, vals[i]);
+            cc.emit3i(UniOpRRR.add, sum, sum, vals[i]);
           }
         }
         cc.ret([sum]);
@@ -182,12 +182,12 @@ void main() {
         final sum = cc.newGp64('sum');
         final loop = cc.newLabel();
         final done = cc.newLabel();
-        cc.emitRRR(UniOpRRR.sub, sum, i, i); // sum = 0
+        cc.emit3i(UniOpRRR.sub, sum, i, i); // sum = 0
         cc.emitJIf(
             done, UniCondition(UniOpCond.compare, CondCode.kEqual, i, Imm(0)));
         cc.bind(loop);
-        cc.emitRRR(UniOpRRR.add, sum, sum, i);
-        cc.emitRRI(UniOpRRR.sub, i, i, 1);
+        cc.emit3i(UniOpRRR.add, sum, sum, i);
+        cc.emit3i(UniOpRRR.sub, i, i, Imm(1));
         cc.emitJIf(loop,
             UniCondition(UniOpCond.compare, CondCode.kNotEqual, i, Imm(0)));
         cc.bind(done);

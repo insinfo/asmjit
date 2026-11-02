@@ -56,6 +56,8 @@ class A64Serializer implements ir.SerializerContext {
         ops.add(op);
       } else if (op is ir.LabelOp) {
         ops.add(op.label);
+      } else if (op is A64ShiftOp) {
+        ops.add(op);
       } else if (op is A64CondOp) {
         ops.add(op.cond);
       }

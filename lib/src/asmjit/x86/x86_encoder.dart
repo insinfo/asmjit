@@ -894,6 +894,102 @@ class X86Encoder {
     emitModRmReg(src.encoding, dst);
   }
 
+  /// Operand size in bits of a general purpose register or memory operand
+  /// (memory without a size is 64-bit).
+  static int _gpBits(Object rm) => rm is X86Gp
+      ? rm.bits
+      : (rm as X86Mem).size == 0
+          ? 64
+          : rm.size * 8;
+
+  /// `[66] [REX] opcode ModRM` of the unary group `F6/F7 /ext` (TEST /0,
+  /// NOT /2, NEG /3, MUL /4, IMUL /5, DIV /6, IDIV /7) with the operand size
+  /// of [rm].
+  void gpGroup3(int ext, Object rm) {
+    final bits = _gpBits(rm);
+    if (bits == 16) buffer.emit8(0x66);
+    final (x, b) = _simdRmExt(rm);
+    if (bits == 64 || x || b || _isByteRexReg(rm)) {
+      emitRex(bits == 64, false, x, b);
+    }
+    buffer.emit8(bits == 8 ? 0xF6 : 0xF7);
+    _simdModRm(ext, rm);
+  }
+
+  /// Shift/rotate group (`ROL /0, ROR /1, SHL /4, SHR /5, SAR /7`) by an
+  /// immediate ([count] = int), by 1, or by CL ([count] = null).
+  void gpShift(int ext, Object rm, int? count) {
+    final bits = _gpBits(rm);
+    if (bits == 16) buffer.emit8(0x66);
+    final (x, b) = _simdRmExt(rm);
+    if (bits == 64 || x || b || _isByteRexReg(rm)) {
+      emitRex(bits == 64, false, x, b);
+    }
+    final w = bits == 8 ? 0 : 1;
+    if (count == null) {
+      buffer.emit8(0xD2 + w);
+      _simdModRm(ext, rm);
+    } else if (count == 1) {
+      buffer.emit8(0xD0 + w);
+      _simdModRm(ext, rm);
+    } else {
+      buffer.emit8(0xC0 + w);
+      _simdModRm(ext, rm);
+      buffer.emit8(count & 0xFF);
+    }
+  }
+
+  /// `[prefix] [66] [REX] 0F [38|3A] opcode ModRM [imm8]` with the operand
+  /// size of [reg] (CMOVcc, BSR/BSF/LZCNT/TZCNT/POPCNT, IMUL r, r/m, MOVBE,
+  /// BT, ...). [regField] is a register or an opcode extension.
+  void gp0F(int prefix, int map, int opcode, int bits, int regField, Object rm,
+      {int? imm8}) {
+    if (bits == 16) buffer.emit8(0x66);
+    simdLegacy(X86SimdOp(prefix, map, opcode, w: bits == 64), regField, rm,
+        imm8: imm8);
+  }
+
+  /// VEX encoded general purpose instruction (ANDN, SHLX/SHRX/SARX, RORX):
+  /// `VEX.LZ.pp.map.W opcode ModRM [imm8]` with W from the operand size.
+  void gpVex(int prefix, int map, int opcode, int bits, int regField, int vvvv,
+      Object rm,
+      {int? imm8}) {
+    simdVex(X86SimdOp(prefix, map, opcode, w: bits == 64), regField, vvvv, rm,
+        l: false, imm8: imm8);
+  }
+
+  /// SPL/BPL/SIL/DIL need a REX prefix (without one ids 4..7 are AH..BH).
+  static bool _isByteRexReg(Object rm) =>
+      rm is X86Gp && rm.bits == 8 && !rm.isHighByte && rm.id >= 4 && rm.id < 8;
+
+  /// IMUL reg, [mem], imm (6B /r ib, 69 /r iw/id).
+  void imulRMI(X86Gp dst, X86Mem src, int imm) {
+    if (dst.bits == 16) buffer.emit8(0x66);
+    final (x, b) = _simdRmExt(src);
+    if (dst.bits == 64 || dst.id >= 8 || x || b) {
+      emitRex(dst.bits == 64, dst.id >= 8, x, b);
+    }
+    final imm8 = imm >= -128 && imm <= 127;
+    buffer.emit8(imm8 ? 0x6B : 0x69);
+    _simdModRm(dst.id, src);
+    if (imm8) {
+      buffer.emit8(imm & 0xFF);
+    } else {
+      _emitImmOfSize(dst.bits, imm);
+    }
+  }
+
+  /// BSWAP r32/r64 (`0F C8+r`).
+  void gpBswap(X86Gp reg) {
+    // asmjit encodes the (undefined) 16-bit form with the 66 prefix.
+    if (reg.bits == 16) buffer.emit8(0x66);
+    if (reg.bits == 64 || reg.id >= 8) {
+      emitRex(reg.bits == 64, false, false, reg.id >= 8);
+    }
+    buffer.emit8(0x0F);
+    buffer.emit8(0xC8 + (reg.id & 7));
+  }
+
   // ALU opcode bases (`op r/m, reg`): the `op reg, r/m` form is base + 2,
   // 8-bit forms use base and the others base + 1.
   static const int kAluAdd = 0x00, kAluOr = 0x08, kAluAnd = 0x20;

@@ -7,6 +7,7 @@
 
 import '../core/arch.dart';
 import '../core/compiler.dart';
+import '../core/labels.dart';
 import '../core/raarch.dart';
 import '../core/radefs.dart';
 import 'x86.dart';
@@ -59,6 +60,12 @@ class X86RAArch extends RAArch {
     X86InstId.kUcomisd,
     X86InstId.kPtest,
     X86InstId.kVptest,
+  };
+
+  static final Set<int> _mulDivIds = {
+    X86InstId.kDiv,
+    X86InstId.kIdiv,
+    X86InstId.kMul,
   };
 
   static final Set<int> _blendvIds = {
@@ -118,7 +125,13 @@ class X86RAArch extends RAArch {
     final flags = List<int>.filled(opCount, 0);
     if (opCount == 0) return flags;
 
-    if (_tiedMoveIds.contains(id)) {
+    if (_mulDivIds.contains(id) && opCount == 3) {
+      // asmjit's explicit form `div rdx, rax, src`: RDX:RAX are read and
+      // written in place (fixedUseId assigns them).
+      flags[0] = rw;
+      flags[1] = rw;
+      flags[2] = use;
+    } else if (_tiedMoveIds.contains(id)) {
       flags[0] = out;
       if (opCount > 1) flags[1] = use;
     } else if (id == X86InstId.kXchg) {
@@ -168,13 +181,18 @@ class X86RAArch extends RAArch {
     if (opIndex == 1 && _shiftIds.contains(node.instId)) return 1;
     // The legacy SSE4.1 variable blends take their mask implicitly in XMM0.
     if (opIndex == 2 && _blendvIds.contains(node.instId)) return 0;
+    // `div rdx, rax, src` (and MUL/IDIV) with explicit RDX:RAX operands.
+    if (node.opCount == 3 && _mulDivIds.contains(node.instId)) {
+      if (opIndex == 0) return 2;
+      if (opIndex == 1) return 0;
+    }
     return RAAssignment.kPhysNone;
   }
 
   @override
   void implicitRegs(InstNode node, RARegMask used, RARegMask clobbered) {
     final id = node.instId;
-    if (id == X86InstId.kDiv || id == X86InstId.kIdiv || id == X86InstId.kMul) {
+    if (_mulDivIds.contains(id) && node.opCount == 1) {
       clobbered[RegGroup.gp] |= (1 << 0) | (1 << 2); // RAX, RDX
       used[RegGroup.gp] |= (1 << 0) | (1 << 2);
     } else if (id == X86InstId.kCpuid) {
@@ -190,6 +208,9 @@ class X86RAArch extends RAArch {
       return false;
     }
   }
+
+  @override
+  InstNode jump(Label target) => JumpNode(X86InstId.kJmp, [LabelOp(target)]);
 
   @override
   InstNode move(BaseReg dst, BaseReg src) {

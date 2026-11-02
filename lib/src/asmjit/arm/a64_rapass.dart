@@ -14,6 +14,7 @@
 /// unsigned-offset LDR/STR forms can be used.
 
 import '../core/compiler.dart';
+import '../core/labels.dart';
 import '../core/raarch.dart';
 import '../core/radefs.dart';
 import 'a64.dart';
@@ -140,6 +141,9 @@ class A64RAArch extends RAArch {
 
   @override
   int spillSize(BaseReg reg) => reg is A64Vec ? 16 : 8;
+
+  @override
+  InstNode jump(Label target) => JumpNode(A64InstId.kB, [LabelOp(target)]);
 
   @override
   InstNode move(BaseReg dst, BaseReg src) =>

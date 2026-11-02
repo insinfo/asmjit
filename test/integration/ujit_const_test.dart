@@ -127,8 +127,8 @@ void main() {
         gpTemps.add(g);
         // Initialize g to avoid using uninitialized register
         compiler.mov(g, Imm(i));
-        cc.emitRRI(UniOpRRR.add, g, g,
-            i); // depende de valor inicial dos args (0), apenas para manter vivo
+        cc.emit3i(UniOpRRR.add, g, g,
+            Imm(i)); // depende de valor inicial dos args (0), apenas para manter vivo
       }
 
       cc.emitMV(UniOpMV.store128U32, mem128(dstPtr, 0), temps.first);

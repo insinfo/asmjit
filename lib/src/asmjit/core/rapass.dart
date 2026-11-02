@@ -953,21 +953,57 @@ class RAPass extends CompilerPass {
     }
   }
 
+  /// Emits the moves that switch from [fromState] (exit of [from]) to
+  /// [toState] (entry of [to]) on the edge `from -> to`.
+  ///
+  /// As in upstream `RALocalAllocator::alloc_branch()`: on a jump edge the
+  /// moves go before an unconditional jump; a conditional jump is redirected
+  /// to a trampoline placed after the function body that performs the moves
+  /// and jumps to [to]. On a fallthrough edge they go after the last node of
+  /// [from].
   void _resolveTransition(BlockNode from, BlockNode to,
       RAAssignmentState fromState, RAAssignmentState toState) {
-    // Basic state resolution (matching C++ logic but simplified for non-critical edges)
-
-    // 1. Identify where to insert resolution instructions.
-    // If 'from' has multiple successors, it's safer to insert at the beginning of 'to'.
-    // If 'to' has multiple predecessors, we should have split the edge.
-    // Assuming we insert at the end of 'from' for now.
-
     final lastNode = from.lastNode;
     if (lastNode == null) return;
 
-    final insertionPoint = (lastNode is JumpNode) ? lastNode : null;
+    final analyzer = compiler.instructionAnalyzer;
+    if (lastNode is InstNode &&
+        analyzer != null &&
+        analyzer.isJump(lastNode) &&
+        analyzer.getJumpTarget(lastNode)?.id == to.label.id) {
+      // A conditional jump to the block that also follows it: both edges
+      // need the same moves, which do not change the flags.
+      final fallsThroughToTarget = _nextBlock(lastNode) == to;
+      if (analyzer.isUnconditionalJump(lastNode) || fallsThroughToTarget) {
+        _emitTransitionMoves(from, fromState, toState, lastNode);
+      } else {
+        _emitTrampoline(from, lastNode, to, fromState, toState);
+      }
+      return;
+    }
 
-    _emitTransitionMoves(from, fromState, toState, insertionPoint);
+    _emitTransitionMoves(from, fromState, toState, null);
+  }
+
+  static BlockNode? _nextBlock(BaseNode node) {
+    var next = node.next;
+    while (next != null && next is! BlockNode) {
+      next = next.next;
+    }
+    return next as BlockNode?;
+  }
+
+  void _emitTrampoline(BlockNode from, InstNode jump, BlockNode to,
+      RAAssignmentState fromState, RAAssignmentState toState) {
+    final exit = _func!.exitNode!;
+    final trampoline = compiler.newLabel();
+    _insertNodeBefore(exit, LabelNode(trampoline));
+    final jmp = _arch.jump(to.label);
+    _insertNodeBefore(exit, jmp);
+    _emitTransitionMoves(from, fromState, toState, jmp);
+    final i = jump.operands
+        .indexWhere((op) => op is LabelOp && op.label.id == to.label.id);
+    jump.operands[i] = LabelOp(trampoline);
   }
 
   void _emitTransitionMoves(BlockNode block, RAAssignmentState fromState,

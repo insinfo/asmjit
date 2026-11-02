@@ -64,10 +64,10 @@ void main() {
         cc.setArg(3, d);
 
         final sum = cc.newGpPtr('sum');
-        cc.emitRRI(UniOpRRR.add, sum, a, 0); // mov sum, a
-        cc.emitRRR(UniOpRRR.add, sum, sum, b);
-        cc.emitRRR(UniOpRRR.add, sum, sum, c);
-        cc.emitRRR(UniOpRRR.add, sum, sum, d);
+        cc.emit3i(UniOpRRR.add, sum, a, Imm(0)); // mov sum, a
+        cc.emit3i(UniOpRRR.add, sum, sum, b);
+        cc.emit3i(UniOpRRR.add, sum, sum, c);
+        cc.emit3i(UniOpRRR.add, sum, sum, d);
 
         cc.ret([sum]);
         cc.endFunc();
@@ -138,7 +138,7 @@ void main() {
         cc.emitMR(UniOpMR.storeU32, _mem(cc, ctx, 0), val);
 
         // Store val+1 to [ctx + 4]
-        cc.emitRRI(UniOpRRR.add, val, val, 1);
+        cc.emit3i(UniOpRRR.add, val, val, Imm(1));
         cc.emitMR(UniOpMR.storeU32, _mem(cc, ctx, 4), val);
 
         cc.ret();

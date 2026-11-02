@@ -33,7 +33,7 @@ void main() {
       cc.setArg(1, b);
 
       final dst = cc.newGp32("dst");
-      cc.emitRRR(UniOpRRR.and, dst, a, b);
+      cc.emit3i(UniOpRRR.and, dst, a, b);
 
       cc.ret([dst]);
       cc.endFunc();
@@ -76,7 +76,7 @@ void main() {
       cc.setArg(0, a);
 
       final dst = cc.newGp32("dst");
-      cc.emitRRI(UniOpRRR.sll, dst, a, 5); // dst = a << 5
+      cc.emit3i(UniOpRRR.sll, dst, a, Imm(5)); // dst = a << 5
 
       cc.ret([dst]);
       cc.endFunc();

@@ -166,7 +166,7 @@ void main() {
         cc.setArg(0, ctx);
         cc.setArg(1, val);
         cc.emitMR(UniOpMR.storeU32, _mem(ctx, 0), val);
-        cc.emitRRI(UniOpRRR.add, val, val, 1);
+        cc.emit3i(UniOpRRR.add, val, val, Imm(1));
         cc.emitMR(UniOpMR.storeU32, _mem(ctx, 4), val);
         cc.ret();
         cc.endFunc();

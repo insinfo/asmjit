@@ -275,13 +275,13 @@ class ChaCha20AsmJitOptimized {
     final ctrGp = cc.newGp32('ctrGp');
 
     cc.emitRM(UniOpRM.loadU32, ctrGp, _mem32(cc, ctx, 48));
-    cc.emitRRI(UniOpRRR.add, ctrGp, ctrGp, 1); // counter++
+    cc.emit3i(UniOpRRR.add, ctrGp, ctrGp, Imm(1)); // counter++
     cc.emitMR(UniOpMR.storeU32, _mem32(cc, ctx, 48), ctrGp);
 
     // ---- Avança pointers e len ----
-    cc.emitRRI(UniOpRRR.add, input, input, 64);
-    cc.emitRRI(UniOpRRR.add, output, output, 64);
-    cc.emitRRI(UniOpRRR.add, len, len, -64);
+    cc.emit3i(UniOpRRR.add, input, input, Imm(64));
+    cc.emit3i(UniOpRRR.add, output, output, Imm(64));
+    cc.emit3i(UniOpRRR.add, len, len, Imm(-64));
 
     cc.emitJIf(
       loopStart,

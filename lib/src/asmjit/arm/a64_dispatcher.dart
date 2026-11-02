@@ -28,7 +28,110 @@ void a64Dispatch(A64Assembler asm, int instId, List<Object> ops) {
   }
 }
 
+/// General purpose forms with a shifted register (`orr x0, x1, x2, lsl #8`),
+/// a logical immediate (`and x0, x1, #0xFF00`), TST, ROR, REV and shifts by
+/// register; returns false to let [_dispatch] handle the other forms.
+bool _dispatchGp(A64Assembler asm, int instId, List<Object> ops) {
+  final n = ops.length;
+  if (n == 0 || ops[0] is! A64Gp) return false;
+  final rd = ops[0] as A64Gp;
+  A64Gp? gp(int i) => i < n && ops[i] is A64Gp ? ops[i] as A64Gp : null;
+  final shiftOp = n == 4 && ops[3] is A64ShiftOp ? ops[3] as A64ShiftOp : null;
+  final sh = shiftOp?.shift ?? A64Shift.lsl;
+  final amount = shiftOp?.amount ?? 0;
+
+  // Logical: shifted register or immediate.
+  const logicalOpc = {
+    A64InstId.kAnd: 0,
+    A64InstId.kOrr: 1,
+    A64InstId.kEor: 2,
+    A64InstId.kAnds: 3,
+  };
+  final rn = gp(1), rm = gp(2);
+  if (logicalOpc.containsKey(instId) && rn != null && n == 3 && ops[2] is int) {
+    asm.logicalImm(logicalOpc[instId]!, rd, rn, ops[2] as int);
+    return true;
+  }
+  // BIC/ORN/EON (immediate) are AND/ORR/EOR with the inverted immediate.
+  const invertedOpc = {A64InstId.kBic: 0, A64InstId.kOrn: 1, A64InstId.kEon: 2};
+  if (invertedOpc.containsKey(instId) &&
+      rn != null &&
+      n == 3 &&
+      ops[2] is int) {
+    asm.logicalImm(invertedOpc[instId]!, rd, rn, ~(ops[2] as int));
+    return true;
+  }
+  if (rn != null && rm != null && (n == 4 ? shiftOp != null : n == 3)) {
+    final f = switch (instId) {
+      A64InstId.kAnd => asm.and,
+      A64InstId.kOrr => asm.orr,
+      A64InstId.kEor => asm.eor,
+      A64InstId.kAnds => asm.ands,
+      A64InstId.kBic => asm.bic,
+      A64InstId.kBics => asm.bics,
+      A64InstId.kOrn => asm.orn,
+      A64InstId.kEon => asm.eon,
+      A64InstId.kAdd => asm.add,
+      A64InstId.kSub => asm.sub,
+      A64InstId.kAdds => asm.adds,
+      A64InstId.kSubs => asm.subs,
+      _ => null,
+    };
+    if (f != null &&
+        (shiftOp != null ||
+            instId == A64InstId.kBics ||
+            instId == A64InstId.kEon ||
+            instId == A64InstId.kAdds ||
+            instId == A64InstId.kSubs)) {
+      f(rd, rn, rm, shift: sh, amount: amount);
+      return true;
+    }
+    switch (instId) {
+      case A64InstId.kRor:
+        asm.rorv(rd, rn, rm);
+        return true;
+      case A64InstId.kLsl:
+        asm.lslv(rd, rn, rm);
+        return true;
+      case A64InstId.kLsr:
+        asm.lsrv(rd, rn, rm);
+        return true;
+      case A64InstId.kAsr:
+        asm.asrv(rd, rn, rm);
+        return true;
+    }
+  }
+
+  switch (instId) {
+    case A64InstId.kTst:
+      final zr = rd.is64Bit ? xzr : wzr;
+      if (n == 2 && ops[1] is int) {
+        asm.logicalImm(3, zr, rd, ops[1] as int);
+        return true;
+      }
+      final m = gp(1);
+      if (m != null && (n == 2 || (n == 3 && ops[2] is A64ShiftOp))) {
+        final s3 = n == 3 ? ops[2] as A64ShiftOp : null;
+        asm.ands(zr, rd, m,
+            shift: s3?.shift ?? A64Shift.lsl, amount: s3?.amount ?? 0);
+        return true;
+      }
+    case A64InstId.kRor:
+      if (rn != null && n == 3 && ops[2] is int) {
+        asm.extr(rd, rn, rn, ops[2] as int);
+        return true;
+      }
+    case A64InstId.kRev:
+      if (rn != null && n == 2) {
+        asm.rev(rd, rn);
+        return true;
+      }
+  }
+  return false;
+}
+
 void _dispatch(A64Assembler asm, int instId, List<Object> ops) {
+  if (_dispatchGp(asm, instId, ops)) return;
   switch (instId) {
     case A64InstId.kAbs:
       _vec2(asm, ops, (rd, rn) => asm.abs(rd, rn));
@@ -756,7 +859,20 @@ void _addSubImm(A64Assembler asm, A64Gp rd, A64Gp rn, int imm,
 
 void _adds(A64Assembler asm, List<Object> ops) {
   if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int) {
-    asm.addsImm(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int);
+    _addsSubsImm(asm, ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int);
+  }
+}
+
+/// ADDS/SUBS with an unsigned 12-bit immediate, optionally shifted left by
+/// 12 bits (`is_add_sub_imm()`).
+void _addsSubsImm(A64Assembler asm, A64Gp rd, A64Gp rn, int imm,
+    {bool sub = false}) {
+  if (imm >= 0 && imm <= 0xFFF) {
+    sub ? asm.subsImm(rd, rn, imm) : asm.addsImm(rd, rn, imm);
+  } else if ((imm & ~0xFFF000) == 0) {
+    sub
+        ? asm.subsImm(rd, rn, imm >> 12, shift: 12)
+        : asm.addsImm(rd, rn, imm >> 12, shift: 12);
   }
 }
 
@@ -781,7 +897,8 @@ void _sub(A64Assembler asm, List<Object> ops) {
 
 void _subs(A64Assembler asm, List<Object> ops) {
   if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int) {
-    asm.subsImm(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int);
+    _addsSubsImm(asm, ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int,
+        sub: true);
   }
 }
 
@@ -845,7 +962,8 @@ void _cmp(A64Assembler asm, List<Object> ops) {
   if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp) {
     asm.cmp(ops[0] as A64Gp, ops[1] as A64Gp);
   } else if (ops.length == 2 && ops[0] is A64Gp && ops[1] is int) {
-    asm.cmpImm(ops[0] as A64Gp, ops[1] as int);
+    final rn = ops[0] as A64Gp;
+    _addsSubsImm(asm, rn.is64Bit ? xzr : wzr, rn, ops[1] as int, sub: true);
   }
 }
 

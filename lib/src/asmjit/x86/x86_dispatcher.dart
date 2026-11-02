@@ -182,7 +182,7 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       _unary(asm, ops, (r) => asm.dec(r));
       break;
     case X86InstId.kDiv:
-      _unary(asm, ops, (r) => asm.div(r));
+      _mulDiv(asm, ops, 'div', asm.div);
       break;
     case X86InstId.kDivpd:
       _simd2(asm, ops,
@@ -205,7 +205,7 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       });
       break;
     case X86InstId.kIdiv:
-      _unary(asm, ops, (r) => asm.idiv(r));
+      _mulDiv(asm, ops, 'idiv', asm.idiv);
       break;
     case X86InstId.kImul:
       _imul(asm, ops);
@@ -356,7 +356,7 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
           (d, m) => asm.movzxRM(d, m));
       break;
     case X86InstId.kMul:
-      _unary(asm, ops, (r) => asm.mul(r));
+      _mulDiv(asm, ops, 'mul', asm.mul);
       break;
     case X86InstId.kMulpd:
       _simd2(asm, ops,
@@ -507,10 +507,70 @@ void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
       _ret(asm, ops);
       break;
     case X86InstId.kRol:
-      _shift(asm, ops, (r, imm) => asm.rolRI(r, imm), null);
+      _shift(asm, ops, (r, imm) => asm.rolRI(r, imm), (r) => asm.rolRCl(r));
       break;
     case X86InstId.kRor:
-      _shift(asm, ops, (r, imm) => asm.rorRI(r, imm), null);
+      _shift(asm, ops, (r, imm) => asm.rorRI(r, imm), (r) => asm.rorRCl(r));
+      break;
+    case X86InstId.kBsr:
+      _gpRm(asm, ops, asm.bsr);
+      break;
+    case X86InstId.kBsf:
+      _gpRm(asm, ops, asm.bsf);
+      break;
+    case X86InstId.kLzcnt:
+      _gpRm(asm, ops, asm.lzcnt);
+      break;
+    case X86InstId.kTzcnt:
+      _gpRm(asm, ops, asm.tzcnt);
+      break;
+    case X86InstId.kPopcnt:
+      _gpRm(asm, ops, asm.popcnt);
+      break;
+    case X86InstId.kMovbe:
+      if (ops.length == 2 && ops[0] is X86Gp && ops[1] is X86Mem) {
+        asm.movbe(ops[0] as X86Gp, ops[1] as X86Mem);
+      }
+      break;
+    case X86InstId.kBswap:
+      _unary(asm, ops, (r) => asm.bswap(r));
+      break;
+    case X86InstId.kBt:
+      if (ops.length == 2 && ops[0] is X86Gp && ops[1] is X86Gp) {
+        asm.bt(ops[0], ops[1] as X86Gp);
+      } else if (ops.length == 2 && ops[0] is X86Gp && ops[1] is int) {
+        asm.btI(ops[0] as X86Gp, ops[1] as int);
+      }
+      break;
+    case X86InstId.kSbb:
+      if (ops.length == 2 && ops[0] is X86Gp && ops[1] is X86Gp) {
+        asm.sbbRR(ops[0] as X86Gp, ops[1] as X86Gp);
+      }
+      break;
+    case X86InstId.kPrefetcht0:
+      if (ops.length == 1 && ops[0] is X86Mem) asm.prefetcht0(ops[0] as X86Mem);
+      break;
+    case X86InstId.kAndn:
+      if (ops.length == 3 && ops[0] is X86Gp && ops[1] is X86Gp) {
+        asm.andn(ops[0] as X86Gp, ops[1] as X86Gp, ops[2]);
+      }
+      break;
+    case X86InstId.kShlx:
+    case X86InstId.kShrx:
+    case X86InstId.kSarx:
+      if (ops.length == 3 && ops[0] is X86Gp && ops[2] is X86Gp) {
+        final f = instId == X86InstId.kShlx
+            ? asm.shlx
+            : instId == X86InstId.kShrx
+                ? asm.shrx
+                : asm.sarx;
+        f(ops[0] as X86Gp, ops[1], ops[2] as X86Gp);
+      }
+      break;
+    case X86InstId.kRorx:
+      if (ops.length == 3 && ops[0] is X86Gp && ops[2] is int) {
+        asm.rorx(ops[0] as X86Gp, ops[1], ops[2] as int);
+      }
       break;
     case X86InstId.kRsqrtps:
       _simd2(asm, ops,
@@ -1250,11 +1310,40 @@ void _shift(X86Assembler asm, List<Object> ops, void Function(X86Gp, int) ri,
   }
 }
 
+/// `reg, r/m` instructions (BSR/BSF/LZCNT/TZCNT/POPCNT).
+void _gpRm(X86Assembler asm, List<Object> ops, void Function(X86Gp, Object) f) {
+  if (ops.length == 2 &&
+      ops[0] is X86Gp &&
+      (ops[1] is X86Gp || ops[1] is X86Mem)) {
+    f(ops[0] as X86Gp, ops[1]);
+  }
+}
+
+/// MUL/DIV/IDIV `src`, or asmjit's explicit form `div rdx, rax, src` whose
+/// first two operands must have been allocated to RDX and RAX.
+void _mulDiv(
+    X86Assembler asm, List<Object> ops, String name, void Function(Object) f) {
+  if (ops.length == 1 && (ops[0] is X86Gp || ops[0] is X86Mem)) {
+    f(ops[0]);
+    return;
+  }
+  if (ops.length == 3 && (ops[2] is X86Gp || ops[2] is X86Mem)) {
+    final hi = ops[0], lo = ops[1];
+    if (hi is! X86Gp || hi.id != 2 || lo is! X86Gp || lo.id != 0) {
+      throw UnsupportedError(
+          'x86Dispatch: $name expects rdx, rax as its first operands: $ops');
+    }
+    f(ops[2]);
+  }
+}
+
 void _imul(X86Assembler asm, List<Object> ops) {
   if (ops.length == 2) {
     final dst = ops[0];
     final src = ops[1];
-    if (dst is X86Gp && src is X86Gp) {
+    if (dst is X86Gp && src is X86Mem) {
+      asm.imulRM(dst, src);
+    } else if (dst is X86Gp && src is X86Gp) {
       asm.imulRR(dst, src);
     } else if (dst is X86Gp && src is int) {
       asm.imulRI(dst, src);
@@ -1265,7 +1354,9 @@ void _imul(X86Assembler asm, List<Object> ops) {
     final dst = ops[0];
     final src = ops[1];
     final imm = ops[2];
-    if (dst is X86Gp && src is X86Gp && imm is int) {
+    if (dst is X86Gp && src is X86Mem && (imm is int || imm is Imm)) {
+      asm.imulRMI(dst, src, imm is Imm ? imm.value : imm as int);
+    } else if (dst is X86Gp && src is X86Gp && imm is int) {
       asm.imulRRI(dst, src, imm);
     } else if (dst is X86Gp && src is X86Gp && imm is Imm) {
       asm.imulRRI(dst, src, imm.value);
@@ -1355,9 +1446,11 @@ void _setcc(X86Assembler asm, int instId, List<Object> ops) {
 }
 
 void _cmovcc(X86Assembler asm, int instId, List<Object> ops) {
-  if (ops.length == 2 && ops[0] is X86Gp && ops[1] is X86Gp) {
+  if (ops.length == 2 &&
+      ops[0] is X86Gp &&
+      (ops[1] is X86Gp || ops[1] is X86Mem)) {
     final cond = _condFromInst(instId);
-    if (cond != null) asm.cmovcc(cond, ops[0] as X86Gp, ops[1] as X86Gp);
+    if (cond != null) asm.cmovcc(cond, ops[0] as X86Gp, ops[1]);
   }
 }
 

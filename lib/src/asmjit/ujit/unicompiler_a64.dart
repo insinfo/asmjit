@@ -6,46 +6,6 @@ mixin UniCompilerA64 on UniCompilerBase {
   // [A64 Internal Dispatchers]
   // ============================================================================
 
-  /// Maps UniCondition/CondCode to AArch64 condition code.
-  int _condToA64(int cc) {
-    switch (cc) {
-      case CondCode.kEqual:
-        return 0; // EQ
-      case CondCode.kNotEqual:
-        return 1; // NE
-      case CondCode.kSignedLT:
-        return 11; // LT
-      case CondCode.kSignedGE:
-        return 10; // GE
-      case CondCode.kSignedLE:
-        return 13; // LE
-      case CondCode.kSignedGT:
-        return 12; // GT
-      case CondCode.kUnsignedLT:
-        return 3; // CC/LO
-      case CondCode.kUnsignedGE:
-        return 2; // CS/HS
-      case CondCode.kUnsignedLE:
-        return 9; // LS
-      case CondCode.kUnsignedGT:
-        return 8; // HI
-      case CondCode.kOverflow:
-        return 6; // VS
-      case CondCode.kNotOverflow:
-        return 7; // VC
-      case CondCode.kSign:
-        return 4; // MI
-      case CondCode.kNotSign:
-        return 5; // PL
-      case CondCode.kParityEven:
-        return 6; // VS (Unordered)
-      case CondCode.kParityOdd:
-        return 7; // VC (Ordered)
-      default:
-        return 14; // AL (Always)
-    }
-  }
-
   /// Vector view of [reg] with exactly [bits] bits (keeps the register id).
   A64Vec _vecView(BaseReg reg, int bits) => A64Vec(reg.id, bits);
 
@@ -199,119 +159,6 @@ mixin UniCompilerA64 on UniCompilerBase {
         throw UnimplementedError('_emitMVA64: $op not implemented');
     }
     cc.addNode(InstNode(A64InstId.kStr, [_vecView(src, bits), dst]));
-  }
-
-  /// Port of `UniCompiler::emit_rm()` (unicompiler_a64.cpp).
-  void _emitRMA64(UniOpRM op, BaseReg dst, A64Mem src) {
-    if (dst is! A64Gp) {
-      throw ArgumentError('_emitRMA64 expects a GP destination: $dst');
-    }
-    switch (op) {
-      case UniOpRM.loadReg:
-        cc.addNode(InstNode(A64InstId.kLdr, [dst, src]));
-      case UniOpRM.loadI8:
-        cc.addNode(InstNode(A64InstId.kLdrsb, [dst, src]));
-      case UniOpRM.loadU8:
-        cc.addNode(InstNode(A64InstId.kLdrb, [dst.w, src]));
-      case UniOpRM.loadI16:
-        cc.addNode(InstNode(A64InstId.kLdrsh, [dst, src]));
-      case UniOpRM.loadU16:
-        cc.addNode(InstNode(A64InstId.kLdrh, [dst.w, src]));
-      case UniOpRM.loadI32:
-        cc.addNode(InstNode(
-            dst.is64Bit ? A64InstId.kLdrsw : A64InstId.kLdr, [dst, src]));
-      case UniOpRM.loadU32:
-        cc.addNode(InstNode(A64InstId.kLdr, [dst.w, src]));
-      case UniOpRM.loadI64:
-      case UniOpRM.loadU64:
-        cc.addNode(InstNode(A64InstId.kLdr, [dst.x, src]));
-      case UniOpRM.loadShiftU8:
-      case UniOpRM.loadShiftU16:
-      case UniOpRM.loadMergeU8:
-      case UniOpRM.loadMergeU16:
-        final isU8 = op == UniOpRM.loadShiftU8 || op == UniOpRM.loadMergeU8;
-        final tmp = (cc as A64Compiler).newGp(dst.type, '@tmp');
-        cc.addNode(
-            InstNode(isU8 ? A64InstId.kLdrb : A64InstId.kLdrh, [tmp.w, src]));
-        if (op == UniOpRM.loadShiftU8 || op == UniOpRM.loadShiftU16) {
-          // dst = tmp | (dst << size)
-          cc.addNode(InstNode(A64InstId.kLsl, [dst, dst, Imm(isU8 ? 8 : 16)]));
-        }
-        cc.addNode(InstNode(A64InstId.kOrr, [dst, dst, tmp]));
-    }
-  }
-
-  /// Port of `UniCompiler::emit_mr()` (unicompiler_a64.cpp).
-  void _emitMRA64(UniOpMR op, A64Mem dst, BaseReg src) {
-    if (src is! A64Gp) {
-      throw ArgumentError('_emitMRA64 expects a GP source: $src');
-    }
-    final (int storeId, int size, bool add) = switch (op) {
-      UniOpMR.storeReg => (A64InstId.kStr, 0, false),
-      UniOpMR.storeU8 => (A64InstId.kStrb, 1, false),
-      UniOpMR.storeU16 => (A64InstId.kStrh, 2, false),
-      UniOpMR.storeU32 => (A64InstId.kStr, 4, false),
-      UniOpMR.storeU64 => (A64InstId.kStr, 8, false),
-      UniOpMR.addReg => (A64InstId.kStr, 0, true),
-      UniOpMR.addU8 => (A64InstId.kStrb, 1, true),
-      UniOpMR.addU16 => (A64InstId.kStrh, 2, true),
-      UniOpMR.addU32 => (A64InstId.kStr, 4, true),
-      UniOpMR.addU64 => (A64InstId.kStr, 8, true),
-    };
-    final r = (size >= 1 && size <= 4) ? src.w : (size == 8 ? src.x : src);
-
-    if (!add) {
-      cc.addNode(InstNode(storeId, [r, dst]));
-      return;
-    }
-    final tmp = (cc as A64Compiler).newGp(r.type, '@tmp');
-    final loadId = switch (size) {
-      1 => A64InstId.kLdrb,
-      2 => A64InstId.kLdrh,
-      _ => A64InstId.kLdr,
-    };
-    cc.addNode(InstNode(loadId, [tmp, dst]));
-    cc.addNode(InstNode(A64InstId.kAdd, [tmp, tmp, r]));
-    cc.addNode(InstNode(storeId, [tmp, dst]));
-  }
-
-  void _emitMA64(UniOpM op, A64Mem dst) {
-    // Use ID 31 for Zero Register (WZR/XZR)
-    // Note: A64Gp(id, size) - assuming constructor availability
-    // If unavailable, we might need a different approach.
-    // Since we are inside the package, we hopefully have access.
-    // But A64Gp might depend on `a64_operand.dart`.
-    // Let's just create placeholder objects if needed or assume standard construction.
-    // A64Gp(31) usually means SP or ZR. In Stores it's ZR.
-
-    // We'll trust the assembler to interpret Reg 31 as ZR for STR instructions.
-
-    final wzr = A64Gp(31, 32);
-    final xzr = A64Gp(31, 64);
-
-    switch (op) {
-      case UniOpM.storeZeroU8:
-        cc.addNode(InstNode(A64InstId.kStrb, [wzr, dst]));
-        break;
-      case UniOpM.storeZeroU16:
-        cc.addNode(InstNode(A64InstId.kStrh, [wzr, dst]));
-        break;
-      case UniOpM.storeZeroU32:
-        cc.addNode(InstNode(A64InstId.kStr, [wzr, dst]));
-        break;
-      case UniOpM.storeZeroU64:
-        cc.addNode(InstNode(A64InstId.kStr, [xzr, dst]));
-        break;
-      case UniOpM.prefetch:
-        // Default prefetch PLDL1KEEP (0) ? or passed in op?
-        // UniOpM.prefetch is generic.
-        // PRFM pldl1keep, [addr]
-        // 0 is PLDL1KEEP
-        cc.addNode(InstNode(A64InstId.kPrfm, [Imm(0), dst]));
-        break;
-      default:
-        throw UnimplementedError('_emitMA64: $op not implemented');
-    }
   }
 
   // ============================================================================
@@ -927,27 +774,6 @@ mixin UniCompilerA64 on UniCompilerBase {
     throw UnimplementedError('_emit9vA64');
   }
 
-  void _emitCmovA64(UniCondition cond, BaseReg dst, Operand src) {
-    // dst = cond ? src : dst
-    if (src is BaseReg) {
-      cc.addNode(InstNode(
-          A64InstId.kCsel, [dst, src, dst, Imm(_condToA64(cond.cond))]));
-    } else {
-      throw UnimplementedError('Memory cmov not supported for A64');
-    }
-  }
-
-  void _emitSelectA64(
-      UniCondition cond, BaseReg dst, Operand src1, Operand src2) {
-    // dst = cond ? src1 : src2
-    if (src1 is BaseReg && src2 is BaseReg) {
-      cc.addNode(InstNode(
-          A64InstId.kCsel, [dst, src1, src2, Imm(_condToA64(cond.cond))]));
-    } else {
-      throw UnimplementedError('Memory select not supported for A64');
-    }
-  }
-
   /// Port of `UniCompiler::emit_2vi()` (unicompiler_a64.cpp). Swizzle
   /// immediates are [Swizzle2] / [Swizzle4] values, as in upstream.
   void _emit2viA64(UniOpVVI op, Operand dst_, Operand src_, int imm) {
@@ -1397,163 +1223,548 @@ mixin UniCompilerA64 on UniCompilerBase {
     if (dst.id != tmp.id) _vMovA64(dst, tmp);
   }
 
-  void _emitRRRA64(UniOpRRR op, BaseReg dst, BaseReg src1, BaseReg src2) {
-    if (dst is! A64Gp || src1 is! A64Gp || src2 is! A64Gp) {
-      throw ArgumentError('emitRRR expects A64Gp operands');
-    }
-    final d = dst.is64Bit ? dst.x : dst.w;
-    final s1 = src1.is64Bit ? src1.x : src1.w;
-    final s2 = src2.is64Bit ? src2.x : src2.w;
+  // ---------------------------------------------------------------------------
+  // General purpose instructions: port of gp_emit_mem_op/gp_force_reg,
+  // ConditionApplier, emit_mov/emit_m/emit_rm/emit_mr/emit_cmov/emit_select/
+  // emit_2i/emit_3i/emit_j_if (ujit/unicompiler_a64.cpp).
+  //
+  // The port has no CSSC detection (`has_cssc()` is false), so the CSSC
+  // forms (abs, ctz, smin/smax/umin/umax) are not emitted.
+  // ---------------------------------------------------------------------------
 
-    switch (op) {
-      case UniOpRRR.add:
-        cc.addNode(InstNode(A64InstId.kAdd, [d, s1, s2]));
-        break;
-      case UniOpRRR.sub:
-        cc.addNode(InstNode(A64InstId.kSub, [d, s1, s2]));
-        break;
-      case UniOpRRR.and:
-        cc.addNode(InstNode(A64InstId.kAnd, [d, s1, s2]));
-        break;
-      case UniOpRRR.or:
-        cc.addNode(InstNode(A64InstId.kOrr, [d, s1, s2]));
-        break;
-      case UniOpRRR.xor:
-        cc.addNode(InstNode(A64InstId.kEor, [d, s1, s2]));
-        break;
-      case UniOpRRR.bic:
-        cc.addNode(InstNode(A64InstId.kBic, [d, s1, s2]));
-        break;
-      case UniOpRRR.mul:
-        cc.addNode(InstNode(A64InstId.kMul, [d, s1, s2]));
-        break;
-      case UniOpRRR.sll:
-        cc.addNode(InstNode(A64InstId.kLsl, [d, s1, s2]));
-        break;
-      case UniOpRRR.srl:
-        cc.addNode(InstNode(A64InstId.kLsr, [d, s1, s2]));
-        break;
-      case UniOpRRR.sra:
-        cc.addNode(InstNode(A64InstId.kAsr, [d, s1, s2]));
-        break;
-      case UniOpRRR.ror:
-        cc.addNode(InstNode(A64InstId.kRor, [d, s1, s2]));
-        break;
-      default:
-        throw UnimplementedError('_emitRRRA64: $op');
-    }
-  }
+  /// `Inst::kIdNone` (the generated A64 database has no such id).
+  static const _kInstNoneA64 = -1;
 
-  void _emitRRIA64(UniOpRRR op, BaseReg dst, BaseReg src1, int imm) {
-    if (dst is! A64Gp || src1 is! A64Gp) {
-      throw ArgumentError('emitRRI expects A64Gp operands');
-    }
-    final d = dst.is64Bit ? dst.x : dst.w;
-    final s1 = src1.is64Bit ? src1.x : src1.w;
-    final i = Imm(imm);
+  static A64Gp _gpAs(BaseReg r, A64Gp ref) => A64Gp(r.id, ref.sizeBits);
 
-    switch (op) {
-      case UniOpRRR.add:
-        cc.addNode(InstNode(A64InstId.kAdd, [d, s1, i]));
-        break;
-      case UniOpRRR.sub:
-        cc.addNode(InstNode(A64InstId.kSub, [d, s1, i]));
-        break;
-      case UniOpRRR.and:
-        cc.addNode(InstNode(A64InstId.kAnd, [d, s1, i]));
-        break;
-      case UniOpRRR.or:
-        cc.addNode(InstNode(A64InstId.kOrr, [d, s1, i]));
-        break;
-      case UniOpRRR.xor:
-        cc.addNode(InstNode(A64InstId.kEor, [d, s1, i]));
-        break;
-      case UniOpRRR.sll:
-        cc.addNode(InstNode(A64InstId.kLsl, [d, s1, i]));
-        break;
-      case UniOpRRR.srl:
-        cc.addNode(InstNode(A64InstId.kLsr, [d, s1, i]));
-        break;
-      case UniOpRRR.sra:
-        cc.addNode(InstNode(A64InstId.kAsr, [d, s1, i]));
-        break;
-      case UniOpRRR.ror:
-        cc.addNode(InstNode(A64InstId.kRor, [d, s1, i]));
-        break;
-      default:
-        throw UnimplementedError('_emitRRIA64: $op');
-    }
-  }
+  static A64Gp _gpZeroAs(A64Gp ref) => ref.is64Bit ? xzr : wzr;
 
-  void emitJIfA64Impl(Label label, UniCondition cond) {
-    if (cond.op == UniOpCond.bitTest) {
-      // Bit Test and Branch (TBZ/TBNZ)
-      // cond.b must be immediate bit index for standard TBZ/TBNZ?
-      // Or if register, we need TST (reg, 1<<n)
-      if (cond.b is Imm) {
-        // Optimize for TBZ/TBNZ
-        final imm = (cond.b as Imm).value;
-        // Check condition: Equal (Zero) -> TBZ, NotEqual (Set) -> TBNZ
-        if (cond.cond == CondCode.kEqual) {
-          cc.addNode(
-              InstNode(A64InstId.kTbz, [LabelOp(label), cond.a, Imm(imm)]));
-          return;
-        } else if (cond.cond == CondCode.kNotEqual) {
-          cc.addNode(
-              InstNode(A64InstId.kTbnz, [LabelOp(label), cond.a, Imm(imm)]));
-          return;
-        }
+  A64Gp _newSimilarGpA64(A64Gp ref, [String? name]) =>
+      (cc as A64Compiler).newGp(ref.type, name);
+
+  /// `gp_emit_mem_op()`: a shifted index must match the access size, other
+  /// shifts are applied to a temporary address.
+  void _gpEmitMemOpA64(A64Gp r, A64Mem m, int instId, int memSize) {
+    if (m.index != null && m.shift != 0) {
+      final size = memSize != 0 ? memSize : r.size;
+      if (size != 1 << m.shift) {
+        final tmp = _newSimilarGpA64(xzr, '@mem_addr');
+        _a64(A64InstId.kAdd, [
+          tmp,
+          m.base!,
+          m.index!,
+          A64ShiftOp(A64Shift.lsl, m.shift),
+        ]);
+        m = A64Mem.base(tmp);
       }
-      // Fallback for register bit or non-EQ/NE conditions: TST + B.cond
-      // TST is alias for ANDS (discard result)
-      // TST reg, (1<<imm) hard to generate here if imm is reg.
-      // General case:
     }
-
-    // Standard Compare/Test
-    _emitConditionTestA64(cond);
-
-    // Branch
-    cc.addNode(InstNode(
-        A64InstId.kB_cond, [LabelOp(label), Imm(_condToA64(cond.cond))]));
+    _a64(instId, [r, m]);
   }
 
-  void _emitConditionTestA64(UniCondition cond) {
-    final op = cond.op;
-    final a = cond.a as BaseReg; // Should be reg
-    final b = cond.b;
+  /// `gp_force_reg()`: [op] as a register of the size of [ref].
+  A64Gp _gpForceRegA64(Operand op, A64Gp ref) {
+    if (op is BaseReg) return _gpAs(op, ref);
+    if (op is Imm && op.value == 0) return _gpZeroAs(ref);
 
+    final reg = _newSimilarGpA64(ref, '@tmp');
+    if (op is A64Mem) {
+      _gpEmitMemOpA64(reg, op, A64InstId.kLdr, reg.size);
+    } else {
+      _a64(A64InstId.kMov, [reg, op]);
+    }
+    return reg;
+  }
+
+  /// `a64::Utils::is_logical_imm()`.
+  static bool _isLogicalImm(int value, int width) =>
+      A64Encoder.encodeLogicalImm(value, width) != null;
+
+  /// `a64::Utils::is_add_sub_imm()` (the value as an unsigned 64-bit
+  /// integer).
+  static bool _isAddSubImm(int value) =>
+      (value >= 0 && value <= 0xFFF) || (value & ~0xFFF000) == 0;
+
+  /// The AArch64 condition of a [CondCode] value.
+  static A64Cond _a64Cond(int cond) => switch (cond) {
+        CondCode.kEqual => A64Cond.eq,
+        CondCode.kNotEqual => A64Cond.ne,
+        CondCode.kSignedLT => A64Cond.lt,
+        CondCode.kSignedGE => A64Cond.ge,
+        CondCode.kSignedLE => A64Cond.le,
+        CondCode.kSignedGT => A64Cond.gt,
+        CondCode.kUnsignedLT => A64Cond.cc,
+        CondCode.kUnsignedGE => A64Cond.cs,
+        CondCode.kUnsignedLE => A64Cond.ls,
+        CondCode.kUnsignedGT => A64Cond.hi,
+        CondCode.kOverflow => A64Cond.vs,
+        CondCode.kNotOverflow => A64Cond.vc,
+        CondCode.kSign => A64Cond.mi,
+        CondCode.kNotSign => A64Cond.pl,
+        _ => throw ArgumentError('No AArch64 condition for CondCode $cond'),
+      };
+
+  /// `ConditionApplier::optimize()` + `emit()`: emits the instruction that
+  /// sets the flags and returns the condition to test.
+  int _applyConditionA64(UniCondition condition) {
+    var op = condition.op;
+    var cond = condition.cond;
+    final a = condition.a as A64Gp;
+    var b = condition.b;
+    final width = a.sizeBits;
+
+    // The Dart CondCode is shared by both backends and its kBTZero /
+    // kBTNotZero are the x86 carry conditions; on AArch64 (as in upstream
+    // `arm::CondCode`) they are kZero / kNotZero.
+    if (op == UniOpCond.bitTest) {
+      cond = cond == CondCode.kBTNotZero ? CondCode.kNotZero : CondCode.kZero;
+    }
+
+    // optimize()
     switch (op) {
       case UniOpCond.compare:
-        // CMP (subs)
-        // Check operands. A64 CMP supports Reg, Imm, ShiftedReg
-        cc.addNode(InstNode(A64InstId.kCmp, [a, b]));
-        break;
-      case UniOpCond.test:
-        // TST (ands)
-        cc.addNode(InstNode(A64InstId.kTst, [a, b]));
-        break;
-      case UniOpCond.bitTest:
-        // Handle TST a, (1<<b) logic if not handled by TBZ/TBNZ
-        // For general bit test using TST: TST a, (1<<b) -- requires shifting 1 if b is reg, or imm mask if b is imm.
-        // If b is Imm(bitIndex), we construct a mask.
-        if (b is Imm) {
-          final mask = 1 << b.value;
-          // Valid immediate for logical?
-          // A64 logical immediates valid?
-          cc.addNode(InstNode(A64InstId.kTst, [a, Imm(mask)]));
-        } else {
-          // Register shift: LSL tmp, 1, val?
-          // Without temporary, we can't easily construct mask.
-          // Assume TST supports register? TST x0, x1.
-          // But bitTest implies b is INDEX. We want mask = 1 << index.
-          // This requires lowering.
-          throw UnimplementedError(
-              'BitTest with register index requires scratch reg');
+        // `reverse_cond()` keeps EQ / NE.
+        if (b is Imm &&
+            b.value == 0 &&
+            (cond == CondCode.kEqual || cond == CondCode.kNotEqual)) {
+          op = UniOpCond.test;
+          b = a;
         }
-        break;
+      case UniOpCond.bitTest:
+        if (b is Imm) {
+          // Deviation from upstream, which computes the mask as the 32-bit
+          // `1u << bit_index`; running upstream with bt_nz(a, Imm(40))
+          // emits `tst x0, 256` (bit 8).
+          op = UniOpCond.test;
+          b = Imm(1 << b.value);
+        }
       default:
-        throw UnimplementedError('_emitConditionTestA64: $op');
+        break;
     }
+
+    // emit()
+    switch (op) {
+      case UniOpCond.assignAnd:
+        if (b is Imm && _isLogicalImm(b.value, width)) {
+          _a64(A64InstId.kAnds, [a, a, b]);
+        } else {
+          _a64(A64InstId.kAnds, [a, a, _gpForceRegA64(b, a)]);
+        }
+      case UniOpCond.assignAdd:
+      case UniOpCond.assignSub:
+        final instId =
+            op == UniOpCond.assignAdd ? A64InstId.kAdds : A64InstId.kSubs;
+        if (b is Imm && _isAddSubImm(b.value)) {
+          _a64(instId, [a, a, b]);
+        } else {
+          _a64(instId, [a, a, _gpForceRegA64(b, a)]);
+        }
+      case UniOpCond.assignXor:
+      case UniOpCond.assignOr:
+        if (op == UniOpCond.assignXor &&
+            b is Imm &&
+            (b.value == -1 || (width == 32 && b.value == 0xFFFFFFFF))) {
+          _a64(A64InstId.kMvn, [a, a]);
+          _a64(A64InstId.kTst, [a, a]);
+          return cond;
+        }
+        final instId =
+            op == UniOpCond.assignOr ? A64InstId.kOrr : A64InstId.kEor;
+        if (b is Imm && _isLogicalImm(b.value, width)) {
+          _a64(instId, [a, a, b]);
+        } else {
+          _a64(instId, [a, a, _gpForceRegA64(b, a)]);
+        }
+        _a64(A64InstId.kTst, [a, a]);
+      case UniOpCond.assignShr:
+        if (b is Imm) {
+          _a64(A64InstId.kAdds, [
+            a,
+            _gpZeroAs(a),
+            a,
+            A64ShiftOp(A64Shift.lsr, b.value & 0xFFFFFFFF),
+          ]);
+        } else {
+          _a64(A64InstId.kLsr, [a, a, _gpForceRegA64(b, a)]);
+          _a64(A64InstId.kTst, [a, a]);
+        }
+      case UniOpCond.test:
+        if (b is Imm && _isLogicalImm(b.value, width)) {
+          _a64(A64InstId.kTst, [a, b]);
+        } else {
+          _a64(A64InstId.kTst, [a, _gpForceRegA64(b, a)]);
+        }
+      case UniOpCond.compare:
+        if (b is Imm && _isAddSubImm(b.value)) {
+          _a64(A64InstId.kCmp, [a, b]);
+        } else {
+          _a64(A64InstId.kCmp, [a, _gpForceRegA64(b, a)]);
+        }
+      case UniOpCond.bitTest:
+        final tmp = _newSimilarGpA64(a);
+        _a64(A64InstId.kLsr, [tmp, a, _gpForceRegA64(b, a)]);
+        _a64(A64InstId.kTst, [tmp, Imm(1)]);
+    }
+    return cond;
+  }
+
+  /// `emit_mov()`.
+  void _emitMovA64(BaseReg dst_, Operand src) {
+    final dst = dst_ as A64Gp;
+    if (src is A64Mem) {
+      _gpEmitMemOpA64(dst, src, A64InstId.kLdr, dst.size);
+    } else {
+      _a64(A64InstId.kMov, [dst, src is BaseReg ? _gpAs(src, dst) : src]);
+    }
+  }
+
+  /// `emit_m()`.
+  void _emitMA64(UniOpM op, A64Mem m) {
+    const stInst = [
+      (_kInstNoneA64, 0), // prefetch
+      (A64InstId.kStr, 0), // storeZeroReg
+      (A64InstId.kStrb, 1), // storeZeroU8
+      (A64InstId.kStrh, 2), // storeZeroU16
+      (A64InstId.kStr, 4), // storeZeroU32
+      (A64InstId.kStr, 8), // storeZeroU64
+    ];
+    final zero =
+        op == UniOpM.storeZeroReg || op == UniOpM.storeZeroU64 ? xzr : wzr;
+    final (instId, memSize) = stInst[op.index];
+    if (instId == _kInstNoneA64) return;
+    _gpEmitMemOpA64(zero, m, instId, memSize);
+  }
+
+  /// `emit_rm()`.
+  void _emitRMA64(UniOpRM op, BaseReg dst, A64Mem src) {
+    const ldInst = [
+      (A64InstId.kLdr, 0), // loadReg
+      (A64InstId.kLdrsb, 1), // loadI8
+      (A64InstId.kLdrb, 1), // loadU8
+      (A64InstId.kLdrsh, 2), // loadI16
+      (A64InstId.kLdrh, 2), // loadU16
+      (A64InstId.kLdr, 4), // loadI32
+      (A64InstId.kLdr, 4), // loadU32
+      (A64InstId.kLdr, 8), // loadI64
+      (A64InstId.kLdr, 8), // loadU64
+      (A64InstId.kLdrb, 1), // loadMergeU8
+      (A64InstId.kLdrb, 1), // loadShiftU8
+      (A64InstId.kLdrh, 2), // loadMergeU16
+      (A64InstId.kLdrh, 2), // loadShiftU16
+    ];
+    var r = dst as A64Gp;
+    var (instId, memSize) = ldInst[op.index];
+
+    switch (op) {
+      case UniOpRM.loadShiftU8:
+      case UniOpRM.loadShiftU16:
+        final tmp = _newSimilarGpA64(r);
+        _gpEmitMemOpA64(tmp.w, src, instId, memSize);
+        _a64(
+            A64InstId.kOrr, [r, tmp, r, A64ShiftOp(A64Shift.lsl, memSize * 8)]);
+      case UniOpRM.loadMergeU8:
+      case UniOpRM.loadMergeU16:
+        final tmp = _newSimilarGpA64(r);
+        _gpEmitMemOpA64(tmp.w, src, instId, memSize);
+        _a64(A64InstId.kOrr, [r, r, tmp]);
+      default:
+        if (op == UniOpRM.loadI32 && r.is64Bit) instId = A64InstId.kLdrsw;
+        if (op == UniOpRM.loadU8 ||
+            op == UniOpRM.loadU16 ||
+            op == UniOpRM.loadU32) {
+          r = r.w;
+        }
+        _gpEmitMemOpA64(r, src, instId, memSize);
+    }
+  }
+
+  /// `emit_mr()`.
+  void _emitMRA64(UniOpMR op, A64Mem m, BaseReg src) {
+    const opInfo = [
+      (_kInstNoneA64, A64InstId.kStr, 0), // storeReg
+      (_kInstNoneA64, A64InstId.kStrb, 1), // storeU8
+      (_kInstNoneA64, A64InstId.kStrh, 2), // storeU16
+      (_kInstNoneA64, A64InstId.kStr, 4), // storeU32
+      (_kInstNoneA64, A64InstId.kStr, 8), // storeU64
+      (A64InstId.kAdd, A64InstId.kStr, 0), // addReg
+      (A64InstId.kAdd, A64InstId.kStrb, 1), // addU8
+      (A64InstId.kAdd, A64InstId.kStrh, 2), // addU16
+      (A64InstId.kAdd, A64InstId.kStr, 4), // addU32
+      (A64InstId.kAdd, A64InstId.kStr, 8), // addU64
+    ];
+    var r = src as A64Gp;
+    final (opInst, storeInst, size) = opInfo[op.index];
+    if (size >= 1 && size <= 4) r = r.w;
+
+    if (opInst == _kInstNoneA64) {
+      _a64(storeInst, [r, m]);
+      return;
+    }
+    final tmp = _newSimilarGpA64(r, '@tmp');
+    switch (size) {
+      case 0:
+        _emitRMA64(UniOpRM.loadReg, tmp, m);
+      case 1:
+        _emitRMA64(UniOpRM.loadU8, tmp, m);
+      case 2:
+        _emitRMA64(UniOpRM.loadU16, tmp, m);
+      case 4:
+        _emitRMA64(UniOpRM.loadU32, tmp, m);
+      case 8:
+        _emitRMA64(UniOpRM.loadU64, tmp, m);
+    }
+    _a64(opInst, [tmp, tmp, r]);
+    _a64(storeInst, [tmp, m]);
+  }
+
+  /// `emit_cmov()`.
+  void _emitCmovA64(UniCondition condition, BaseReg dst_, Operand sel) {
+    final dst = dst_ as A64Gp;
+    final cond = _applyConditionA64(condition);
+    _a64(A64InstId.kCsel,
+        [dst, _gpForceRegA64(sel, dst), dst, A64CondOp(_a64Cond(cond))]);
+  }
+
+  /// `emit_select()`.
+  void _emitSelectA64(
+      UniCondition condition, BaseReg dst_, Operand sel1_, Operand sel2_) {
+    final dst = dst_ as A64Gp;
+    final cond = _applyConditionA64(condition);
+    final sel1 = _gpForceRegA64(sel1_, dst);
+    final sel2 = _gpForceRegA64(sel2_, dst);
+    _a64(A64InstId.kCsel, [dst, sel1, sel2, A64CondOp(_a64Cond(cond))]);
+  }
+
+  /// `emit_j_if()`.
+  void _emitJIfA64Impl(Label target, UniCondition condition) {
+    final cond = _applyConditionA64(condition);
+    _a64(A64InstId.kB_cond, [LabelOp(target), A64CondOp(_a64Cond(cond))]);
+  }
+
+  /// `emit_2i()`.
+  void _emit2iA64(UniOpRR op, BaseReg dst_, Operand src_) {
+    final dst = dst_ as A64Gp;
+    if (op == UniOpRR.mov) {
+      // Dart convenience (not an upstream op).
+      _emitMovA64(dst, src_);
+      return;
+    }
+    if (src_ is! BaseReg && src_ is! A64Mem) {
+      throw ArgumentError('emit_2i: $op with $src_');
+    }
+    final src = _gpForceRegA64(src_, dst);
+
+    switch (op) {
+      case UniOpRR.abs:
+        _a64(A64InstId.kCmp, [src, Imm(0)]);
+        _a64(A64InstId.kCneg, [dst, src, const A64CondOp(A64Cond.mi)]);
+      case UniOpRR.neg:
+        _a64(A64InstId.kNeg, [dst, src]);
+      case UniOpRR.not:
+        _a64(A64InstId.kMvn, [dst, src]);
+      case UniOpRR.bSwap:
+        _a64(A64InstId.kRev, [dst, src]);
+      case UniOpRR.clz:
+        _a64(A64InstId.kClz, [dst, src]);
+      case UniOpRR.ctz:
+        _a64(A64InstId.kRbit, [dst, src]);
+        _a64(A64InstId.kClz, [dst, dst]);
+      case UniOpRR.reflect:
+        _a64(A64InstId.kEor,
+            [dst, src, src, A64ShiftOp(A64Shift.asr, dst.sizeBits - 1)]);
+      case UniOpRR.mov:
+        break;
+    }
+  }
+
+  static bool _isOp3iCommutativeA64(UniOpRRR op) =>
+      op == UniOpRRR.and ||
+      op == UniOpRRR.or ||
+      op == UniOpRRR.xor ||
+      op == UniOpRRR.add ||
+      op == UniOpRRR.mul ||
+      op == UniOpRRR.sMin ||
+      op == UniOpRRR.sMax ||
+      op == UniOpRRR.uMin ||
+      op == UniOpRRR.uMax;
+
+  static const _logicalInst = [
+    A64InstId.kAnd,
+    A64InstId.kOrr,
+    A64InstId.kEor,
+    A64InstId.kBic,
+  ];
+
+  static const _shiftInst = [A64InstId.kLsl, A64InstId.kLsr, A64InstId.kAsr];
+
+  /// `emit_3i()`.
+  void _emit3iA64(UniOpRRR op, BaseReg dst_, Operand src1, Operand src2) {
+    final dst = dst_ as A64Gp;
+    final width = dst.sizeBits;
+
+    if (src1 is! BaseReg) {
+      if (src2 is BaseReg && _isOp3iCommutativeA64(op)) {
+        final t = src1;
+        src1 = src2;
+        src2 = t;
+      } else {
+        src1 = _gpForceRegA64(src1, dst);
+      }
+    }
+
+    // ArithOp Reg, Reg, Imm
+    if (src2 is Imm) {
+      final a = _gpAs(src1, dst);
+      final b = src2;
+
+      switch (op) {
+        case UniOpRRR.xor:
+        case UniOpRRR.and:
+        case UniOpRRR.or:
+        case UniOpRRR.bic:
+          if (op == UniOpRRR.xor &&
+              (b.value == -1 ||
+                  ((b.value & 0xFFFFFFFF) == 0xFFFFFFFF && width == 32))) {
+            _a64(A64InstId.kMvn, [dst, a]);
+            return;
+          }
+          if (_isLogicalImm(b.value, width)) {
+            _a64(_logicalInst[op.index - UniOpRRR.and.index], [dst, a, b]);
+            return;
+          }
+        case UniOpRRR.add:
+        case UniOpRRR.sub:
+          var value = b.value;
+          var reverse = value < 0;
+          if (reverse) value = -value;
+          if (op == UniOpRRR.sub) reverse = !reverse;
+          // The upstream "post-index patching" experiment (marked TODO) is
+          // not ported.
+          if (value >= 0 && value <= 0xFFF) {
+            _a64(reverse ? A64InstId.kSub : A64InstId.kAdd,
+                [dst, a, Imm(value)]);
+            return;
+          }
+        case UniOpRRR.mul:
+          var value = b.value;
+          // `value > 0u` on the unsigned 64-bit value.
+          if (value != 0) {
+            if (value & (value - 1) == 0) {
+              _a64(A64InstId.kLsl, [dst, a, Imm(_ctz64(value))]);
+              return;
+            }
+            // Multiplication with `power_of_2 + 1`.
+            value--;
+            if (value != 0 && value & (value - 1) == 0) {
+              _a64(A64InstId.kAdd,
+                  [dst, a, a, A64ShiftOp(A64Shift.lsl, _ctz64(value))]);
+              return;
+            }
+          }
+        case UniOpRRR.sMin:
+        case UniOpRRR.sMax:
+          final value = b.value;
+          if (value == 0 || value == -1) {
+            // smin(a, 0) == and(a, expand_msb(a)), smin(a, -1) == orn(...),
+            // smax(a, 0) == bic(...), smax(a, -1) == orr(...).
+            //
+            // Deviation from upstream, whose table has ORR for smin(a, -1)
+            // and ORN for smax(a, -1). Running upstream on AArch64 gives
+            // smin(7, -1) = 7, smin(-5, -1) = -1, smax(7, -1) = -1 and
+            // smax(-5, -1) = -5.
+            const instTable = [
+              A64InstId.kAnd,
+              A64InstId.kOrn,
+              A64InstId.kBic,
+              A64InstId.kOrr,
+            ];
+            final instId = instTable[
+                (op.index - UniOpRRR.sMin.index) * 2 + (value == -1 ? 1 : 0)];
+            _a64(instId, [dst, a, a, A64ShiftOp(A64Shift.asr, width - 1)]);
+            return;
+          }
+        case UniOpRRR.sll:
+        case UniOpRRR.srl:
+        case UniOpRRR.sra:
+          _a64(_shiftInst[op.index - UniOpRRR.sll.index], [dst, a, b]);
+          return;
+        case UniOpRRR.rol:
+        case UniOpRRR.ror:
+          var value = b.value & (width - 1);
+          // Deviation from upstream, which emits `ror dst, a, #width` for a
+          // rotation left by 0 (`width - 0`); running upstream fails with
+          // InvalidImmediate. The rotation amount is taken modulo `width`.
+          if (op == UniOpRRR.rol) value = (width - value) & (width - 1);
+          _a64(A64InstId.kRor, [dst, a, Imm(value)]);
+          return;
+        default:
+          // Unhandled instruction means to use a register instead of
+          // immediate.
+          break;
+      }
+    }
+
+    // ArithOp Reg, Reg, Reg
+    final a = _gpAs(src1, dst);
+    final b = _gpForceRegA64(src2, dst);
+
+    switch (op) {
+      case UniOpRRR.and:
+      case UniOpRRR.or:
+      case UniOpRRR.xor:
+      case UniOpRRR.bic:
+        _a64(_logicalInst[op.index - UniOpRRR.and.index], [dst, a, b]);
+      case UniOpRRR.add:
+        _a64(A64InstId.kAdd, [dst, a, b]);
+      case UniOpRRR.sub:
+        _a64(A64InstId.kSub, [dst, a, b]);
+      case UniOpRRR.mul:
+        _a64(A64InstId.kMul, [dst, a, b]);
+      case UniOpRRR.uDiv:
+        _a64(A64InstId.kUdiv, [dst, a, b]);
+      case UniOpRRR.uMod:
+        final tmp = _newSimilarGpA64(dst, '@tmp');
+        _a64(A64InstId.kUdiv, [tmp, a, b]);
+        _a64(A64InstId.kMul, [tmp, tmp, b]);
+        _a64(A64InstId.kSub, [dst, a, tmp]);
+      case UniOpRRR.sMin:
+      case UniOpRRR.sMax:
+      case UniOpRRR.uMin:
+      case UniOpRRR.uMax:
+        final cond = switch (op) {
+          UniOpRRR.sMin => A64Cond.lt,
+          UniOpRRR.sMax => A64Cond.gt,
+          UniOpRRR.uMin => A64Cond.cc,
+          _ => A64Cond.hi,
+        };
+        _a64(A64InstId.kCmp, [a, b]);
+        _a64(A64InstId.kCsel, [dst, a, b, A64CondOp(cond)]);
+      case UniOpRRR.sll:
+      case UniOpRRR.srl:
+      case UniOpRRR.sra:
+        _a64(_shiftInst[op.index - UniOpRRR.sll.index], [dst, a, b]);
+      case UniOpRRR.rol:
+        final tmp = _newSimilarGpA64(dst, '@rol_rev');
+        _a64(A64InstId.kNeg, [tmp, b]);
+        _a64(A64InstId.kRor, [dst, a, tmp]);
+      case UniOpRRR.ror:
+        _a64(A64InstId.kRor, [dst, a, b]);
+      case UniOpRRR.sBound:
+        // Deviation from upstream, which writes `bic dst, a, a, asr` before
+        // the `csel` that reads `b`; with `dst == b` running upstream gives
+        // sbound(7, 3) = 7. The BIC result goes to a temporary then.
+        final t = dst.id == b.id ? _newSimilarGpA64(dst, '@tmp') : dst;
+        _a64(A64InstId.kCmp, [a, b]);
+        _a64(A64InstId.kBic, [t, a, a, A64ShiftOp(A64Shift.asr, width - 1)]);
+        _a64(A64InstId.kCsel, [dst, t, b, const A64CondOp(A64Cond.lt)]);
+    }
+  }
+
+  static int _ctz64(int v) {
+    var n = 0;
+    while (v & 1 == 0) {
+      v = v >>> 1;
+      n++;
+    }
+    return n;
   }
 }

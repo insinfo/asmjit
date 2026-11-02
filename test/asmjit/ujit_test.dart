@@ -65,7 +65,7 @@ void main() {
       cc.mov(r, Imm(0));
       cc.mov(temp, Imm(1));
       cc.emitCmov(
-          UniCondition(UniOpCond.compare, CondCode.kNotEqual, a, b), r, temp);
+          r, temp, UniCondition(UniOpCond.compare, CondCode.kNotEqual, a, b));
       cc.emitMR(UniOpMR.storeU32, X86Mem.ptr(ptr, 4), r);
 
       // Variation 2: Select
@@ -75,8 +75,8 @@ void main() {
       final falseVal = cc.newGp32("falseVal");
       cc.mov(trueVal, Imm(1));
       cc.mov(falseVal, Imm(0));
-      cc.emitSelect(UniCondition(UniOpCond.compare, CondCode.kSignedGT, a, b),
-          r, trueVal, falseVal);
+      cc.emitSelect(r, trueVal, falseVal,
+          UniCondition(UniOpCond.compare, CondCode.kSignedGT, a, b));
       cc.emitMR(UniOpMR.storeU32, X86Mem.ptr(ptr, 8), r);
 
       cc.endFunc();

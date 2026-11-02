@@ -719,14 +719,10 @@ class X86Assembler extends BaseEmitter {
   }
 
   /// NEG reg (two's complement negation).
-  void neg(X86Gp reg) {
-    _enc.negR64(reg);
-  }
+  void neg(X86Gp reg) => _enc.gpGroup3(3, reg);
 
   /// NOT reg (one's complement).
-  void not(X86Gp reg) {
-    _enc.notR64(reg);
-  }
+  void not(X86Gp reg) => _enc.gpGroup3(2, reg);
 
   // ===========================================================================
   // Shift instructions
@@ -818,9 +814,8 @@ class X86Assembler extends BaseEmitter {
   // ===========================================================================
 
   /// CMOVcc dst, src (conditional move).
-  void cmovcc(X86Cond cond, X86Gp dst, X86Gp src) {
-    _enc.cmovccR64R64(cond, dst, src);
-  }
+  void cmovcc(X86Cond cond, X86Gp dst, Object src) =>
+      _enc.gp0F(0, 1, 0x40 + cond.code, dst.bits, dst.id, src);
 
   /// CMOVE dst, src (move if equal).
   void cmove(X86Gp dst, X86Gp src) => cmovcc(X86Cond.e, dst, src);
@@ -901,32 +896,11 @@ class X86Assembler extends BaseEmitter {
   /// BOUND r16/r32, [mem].
   void bound(X86Gp dst, X86Mem mem) => _enc.boundRM(dst, mem);
 
-  /// BSF dst, src (bit scan forward).
-  void bsf(X86Gp dst, X86Gp src) {
-    if (dst.bits == 64 && src.bits == 64) {
-      _enc.bsfR64R64(dst, src);
-    } else {
-      _enc.bsfRR(dst, src);
-    }
-  }
-
   /// BSF dst, [mem].
   void bsfRM(X86Gp dst, X86Mem mem) => _enc.bsfRM(dst, mem);
 
-  /// BSR dst, src (bit scan reverse).
-  void bsr(X86Gp dst, X86Gp src) {
-    if (dst.bits == 64 && src.bits == 64) {
-      _enc.bsrR64R64(dst, src);
-    } else {
-      _enc.bsrRR(dst, src);
-    }
-  }
-
   /// BSR dst, [mem].
   void bsrRM(X86Gp dst, X86Mem mem) => _enc.bsrRM(dst, mem);
-
-  /// BSWAP reg.
-  void bswap(X86Gp reg) => _enc.bswapR(reg);
 
   /// BT reg, imm.
   void btRI(X86Gp dst, int imm) => _enc.btRI(dst, imm);
@@ -964,21 +938,6 @@ class X86Assembler extends BaseEmitter {
   /// BTS reg, reg.
   void btsRR(X86Gp dst, X86Gp src) => _enc.btsRR(dst, src);
 
-  /// POPCNT dst, src (population count).
-  void popcnt(X86Gp dst, X86Gp src) {
-    _enc.popcntR64R64(dst, src);
-  }
-
-  /// LZCNT dst, src (leading zero count).
-  void lzcnt(X86Gp dst, X86Gp src) {
-    _enc.lzcntR64R64(dst, src);
-  }
-
-  /// TZCNT dst, src (trailing zero count).
-  void tzcnt(X86Gp dst, X86Gp src) {
-    _enc.tzcntR64R64(dst, src);
-  }
-
   // ===========================================================================
   // Division
   // ===========================================================================
@@ -1003,15 +962,11 @@ class X86Assembler extends BaseEmitter {
 
   /// IDIV reg - Signed divide RDX:RAX by reg
   /// Result: quotient in RAX, remainder in RDX
-  void idiv(X86Gp reg) {
-    _enc.idivR64(reg);
-  }
+  void idiv(Object src) => _enc.gpGroup3(7, src);
 
   /// DIV reg - Unsigned divide RDX:RAX by reg
   /// Result: quotient in RAX, remainder in RDX
-  void div(X86Gp reg) {
-    _enc.divR64(reg);
-  }
+  void div(Object src) => _enc.gpGroup3(6, src);
 
   // ===========================================================================
   // High-precision arithmetic (for cryptography)
@@ -1051,11 +1006,6 @@ class X86Assembler extends BaseEmitter {
     _enc.adcMI(dst, imm);
   }
 
-  /// SBB dst, src - Subtract with borrow
-  void sbbRR(X86Gp dst, X86Gp src) {
-    _enc.sbbRR(dst, src);
-  }
-
   /// SBB dst, imm - Subtract with borrow
   void sbbRI(X86Gp dst, int imm) {
     if (dst.bits == 8) {
@@ -1076,9 +1026,61 @@ class X86Assembler extends BaseEmitter {
   }
 
   /// MUL src - Unsigned multiply RDX:RAX = RAX * src
-  void mul(X86Gp src) {
-    _enc.mulR64(src);
-  }
+  void mul(Object src) => _enc.gpGroup3(4, src);
+
+  /// ROL/ROR/SHL/SHR/SAR by CL.
+  void rolRCl(X86Gp reg) => _enc.gpShift(0, reg, null);
+  void rorRCl(X86Gp reg) => _enc.gpShift(1, reg, null);
+
+  /// BSR/BSF/LZCNT/TZCNT/POPCNT reg, r/m.
+  void bsr(X86Gp dst, Object src) =>
+      _enc.gp0F(0, 1, 0xBD, dst.bits, dst.id, src);
+  void bsf(X86Gp dst, Object src) =>
+      _enc.gp0F(0, 1, 0xBC, dst.bits, dst.id, src);
+  void lzcnt(X86Gp dst, Object src) =>
+      _enc.gp0F(0xF3, 1, 0xBD, dst.bits, dst.id, src);
+  void tzcnt(X86Gp dst, Object src) =>
+      _enc.gp0F(0xF3, 1, 0xBC, dst.bits, dst.id, src);
+  void popcnt(X86Gp dst, Object src) =>
+      _enc.gp0F(0xF3, 1, 0xB8, dst.bits, dst.id, src);
+
+  /// IMUL reg, [mem], imm.
+  void imulRMI(X86Gp dst, X86Mem src, int imm) => _enc.imulRMI(dst, src, imm);
+
+  /// IMUL reg, [mem].
+  void imulRM(X86Gp dst, X86Mem src) =>
+      _enc.gp0F(0, 1, 0xAF, dst.bits, dst.id, src);
+
+  /// MOVBE reg, [mem].
+  void movbe(X86Gp dst, X86Mem src) =>
+      _enc.gp0F(0, 2, 0xF0, dst.bits, dst.id, src);
+
+  /// BSWAP reg.
+  void bswap(X86Gp reg) => _enc.gpBswap(reg);
+
+  /// BT r/m, reg and BT r/m, imm8.
+  void bt(Object dst, X86Gp bit) =>
+      _enc.gp0F(0, 1, 0xA3, bit.bits, bit.id, dst);
+  void btI(X86Gp dst, int bit) =>
+      _enc.gp0F(0, 1, 0xBA, dst.bits, 4, dst, imm8: bit);
+
+  /// SBB reg, reg.
+  void sbbRR(X86Gp dst, X86Gp src) => _enc.aluRR(0x18, dst, src);
+
+  /// PREFETCHT0 [mem].
+  void prefetcht0(X86Mem mem) => _enc.gp0F(0, 1, 0x18, 32, 1, mem);
+
+  /// BMI: ANDN dst, src1, src2 (dst = ~src1 & src2).
+  void andn(X86Gp dst, X86Gp src1, Object src2) =>
+      _enc.gpVex(0, 2, 0xF2, dst.bits, dst.id, src1.id, src2);
+
+  /// BMI2: SHLX/SHRX/SARX dst, src, count.
+  void shlx(X86Gp dst, Object src, X86Gp count) =>
+      _enc.gpVex(0x66, 2, 0xF7, dst.bits, dst.id, count.id, src);
+  void shrx(X86Gp dst, Object src, X86Gp count) =>
+      _enc.gpVex(0xF2, 2, 0xF7, dst.bits, dst.id, count.id, src);
+  void sarx(X86Gp dst, Object src, X86Gp count) =>
+      _enc.gpVex(0xF3, 2, 0xF7, dst.bits, dst.id, count.id, src);
 
   /// MULX hi, lo, src (BMI2) - Unsigned multiply without flags
   void mulx(X86Gp hi, X86Gp lo, X86Gp src) {
@@ -1105,23 +1107,8 @@ class X86Assembler extends BaseEmitter {
   }
 
   /// RORX dst, src, imm8 (BMI2) - Rotate right without affecting flags.
-  void rorx(X86Gp dst, X86Gp src, int imm8) {
-    _enc.rorxR64R64Imm8(dst, src, imm8);
-  }
-
-  /// SARX dst, src, shift (BMI2) - Arithmetic shift right without affecting flags.
-  void sarx(X86Gp dst, X86Gp src, X86Gp shift) {
-    _enc.sarxR64R64R64(dst, src, shift);
-  }
-
-  /// SHLX dst, src, shift (BMI2) - Logical shift left without affecting flags.
-  void shlx(X86Gp dst, X86Gp src, X86Gp shift) {
-    _enc.shlxR64R64R64(dst, src, shift);
-  }
-
-  /// SHRX dst, src, shift (BMI2) - Logical shift right without affecting flags.
-  void shrx(X86Gp dst, X86Gp src, X86Gp shift) {
-    _enc.shrxR64R64R64(dst, src, shift);
+  void rorx(X86Gp dst, Object src, int imm8) {
+    _enc.gpVex(0xF2, 3, 0xF0, dst.bits, dst.id, 0, src, imm8: imm8);
   }
 
   /// ADCX dst, src (ADX) - Add with carry (uses CF only)

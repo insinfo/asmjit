@@ -396,6 +396,26 @@ class A64CondOp extends Operand {
   String toString() => 'Cond(${cond.name})';
 }
 
+/// Shift applied to the last register operand of a data-processing
+/// instruction (`orr x0, x1, x2, lsl #8`), like asmjit's `a64::lsl(n)`.
+class A64ShiftOp extends Operand {
+  final A64Shift shift;
+  final int amount;
+
+  const A64ShiftOp(this.shift, this.amount);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is A64ShiftOp && other.shift == shift && other.amount == amount;
+
+  @override
+  int get hashCode => Object.hash(shift, amount);
+
+  @override
+  String toString() => '${shift.name} #$amount';
+}
+
 /// ARM64 Memory operand.
 class A64Mem extends BaseMem {
   /// Base register.

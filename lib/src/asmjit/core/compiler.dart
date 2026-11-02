@@ -250,6 +250,9 @@ class BaseCompiler extends BaseBuilder {
   /// Stores jump annotations.
   final List<JumpAnnotation> _jumpAnnotations = [];
 
+  /// Instruction analyzer of the architecture (set by [CFGBuilder]).
+  InstructionAnalyzer? instructionAnalyzer;
+
   /// Local and global constant pools.
   late final ConstPool? _constPools;
 
@@ -518,12 +521,23 @@ class CFGBuilder extends CompilerPass {
     }
   }
 
+  /// Blocks start at [BlockNode]s (bound labels). As in upstream
+  /// `RACFGBuilderT`, a jump also ends its block: the code after a jump that
+  /// is not already a block gets a new [BlockNode], so the register
+  /// assignment at the jump is the exit assignment of its block (the state
+  /// both edges see).
   void _buildBlocks(NodeList nodes) {
-    // In C++, blocks are usually built by identifying labels and jumps.
-    // If we rely on BlockNode being present (as labels), we iterate labels.
-    // If BlockNodes are constructed here, we'd need to replace LabelNodes with BlockNodes.
-    // For now assuming BlockNodes are already in the stream (emitted by user) or we treat LabelNodes as Blocks?
-    // The previous Dart implementation assumed BlockNodes.
+    compiler.instructionAnalyzer = analyzer;
+    for (final node in nodes.nodes.toList()) {
+      if (node is! InstNode || node is FuncRetNode) continue;
+      if (!analyzer.isJump(node) || analyzer.getJumpTarget(node) == null) {
+        continue;
+      }
+      final next = node.next;
+      // A BlockNode (or the function's exit label) already starts a block.
+      if (next == null || next is LabelNode || next is SentinelNode) continue;
+      nodes.insertAfter(BlockNode(compiler.newLabel()), node);
+    }
   }
 
   void _linkBlocks(NodeList nodes) {

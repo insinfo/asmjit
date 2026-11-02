@@ -177,6 +177,14 @@ class A64Assembler extends BaseEmitter {
       _enc.andsReg(rd, rn, rm, shift: shift, amount: amount);
 
   /// BIC - Bitwise Bit Clear.
+  /// AND/ORR/EOR/ANDS (immediate) with a logical (bitmask) immediate; [opc]
+  /// is 0 (AND), 1 (ORR), 2 (EOR) or 3 (ANDS).
+  void logicalImm(int opc, A64Gp rd, A64Gp rn, int value) =>
+      _enc.logicalImm(opc, rd, rn, value);
+
+  /// REV (reverse bytes).
+  void rev(A64Gp rd, A64Gp rn) => _enc.rev(rd, rn);
+
   void bic(A64Gp rd, A64Gp rn, A64Gp rm,
           {A64Shift shift = A64Shift.lsl, int amount = 0}) =>
       _enc.bicReg(rd, rn, rm, shift: shift, amount: amount);
