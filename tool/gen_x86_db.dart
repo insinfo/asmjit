@@ -196,6 +196,41 @@ class X86DbGenerator {
     ));
   }
 
+  /// Access of the first operand per operand count, from the `R:`/`W:`/`X:`
+  /// prefixes of the forms (no prefix means read). `w:` only overwrites the
+  /// addressed part of the register, so like asmjit's RA (which turns such a
+  /// write into read/write when the virtual register is wider) it is a
+  /// read/write of vector registers, whose virtual registers are full width;
+  /// general purpose `w:` writes stay writes. Forms with the same operand
+  /// count that disagree are treated as read/write. APX forms are not used.
+  int _op0Access(InstInfo inst) {
+    final byCount = <int, int>{};
+    for (final f in inst.forms) {
+      if (f.arch == 'apx') continue;
+      final ops = f.operands
+          .split(',')
+          .map((o) => o.trim())
+          .where((o) => o.isNotEmpty)
+          .toList();
+      if (ops.isEmpty || ops.length > 15) continue;
+      final m = RegExp(r'^([RWXrwx]):(.*)').firstMatch(ops[0]);
+      final access = m == null
+          ? 1
+          : switch (m.group(1)!) {
+              'W' => 2,
+              'w' =>
+                RegExp(r'^(xmm|ymm|zmm|xy|mm)').hasMatch(m.group(2)!) ? 3 : 2,
+              'X' || 'x' => 3,
+              _ => 1,
+            };
+      final prev = byCount[ops.length];
+      byCount[ops.length] = prev == null || prev == access ? access : 3;
+    }
+    var value = 0;
+    byCount.forEach((count, access) => value |= access << (2 * count));
+    return value;
+  }
+
   ({String mnemonic, String operands, bool hasLock, bool hasRep})? _parseSyntax(
       String syntax) {
     var s = syntax.trim();
@@ -264,12 +299,27 @@ class X86DbGenerator {
     buffer.writeln('  final int flags;');
     buffer.writeln('  final List<String> extensions;');
     buffer.writeln('');
+    buffer.writeln(
+        '  /// Access of the first operand per operand count (2 bits per');
+    buffer.writeln(
+        '  /// count, implicit operands like `<xmm0>` included): 0 = no form,');
+    buffer.writeln('  /// 1 = read, 2 = write, 3 = read/write.');
+    buffer.writeln('  final int op0Access;');
+    buffer.writeln('');
     buffer.writeln('  const X86InstInfo({');
     buffer.writeln('    required this.id,');
     buffer.writeln('    required this.name,');
     buffer.writeln('    this.flags = 0,');
     buffer.writeln('    this.extensions = const [],');
+    buffer.writeln('    this.op0Access = 0,');
     buffer.writeln('  });');
+    buffer.writeln('');
+    buffer.writeln(
+        '  /// Access of the first operand of the form with [opCount]');
+    buffer.writeln('  /// operands (0 when the instruction has no such form).');
+    buffer.writeln('  int op0AccessOf(int opCount) =>');
+    buffer
+        .writeln('      opCount < 16 ? (op0Access >> (2 * opCount)) & 3 : 0;');
     buffer.writeln('}');
     buffer.writeln('');
 
@@ -320,8 +370,12 @@ class X86DbGenerator {
           ? 'const []'
           : "const [${inst.extensions.map((e) => "'$e'").join(', ')}]";
 
+      final access = _op0Access(inst);
+      final accessStr = access == 0
+          ? ''
+          : ', op0Access: 0x${access.toRadixString(16).toUpperCase()}';
       buffer.writeln("  X86InstInfo(id: ${inst.id}, name: '${inst.name}', "
-          'flags: $flagsStr, extensions: $extsStr),');
+          'flags: $flagsStr, extensions: $extsStr$accessStr),');
     }
 
     buffer.writeln('];');

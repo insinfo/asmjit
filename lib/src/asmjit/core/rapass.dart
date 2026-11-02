@@ -1225,7 +1225,12 @@ class RAPass extends CompilerPass {
 
         int useMask = 0xFFFFFFFF;
         int useId = _arch.fixedUseId(node, i);
-        if (useId != RAAssignment.kPhysNone) useMask = 1 << useId;
+        if (useId != RAAssignment.kPhysNone) {
+          useMask = 1 << useId;
+          // Like RAInstBuilder::add(): a fixed register is used by the
+          // instruction, so no other operand may keep it.
+          used[workReg.group] |= useMask;
+        }
 
         _tie(tiedRegs, workReg, currentFlags, useMask, useId, 0xFFFFFFFF,
             RAAssignment.kPhysNone);

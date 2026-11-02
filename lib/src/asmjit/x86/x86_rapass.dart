@@ -61,6 +61,12 @@ class X86RAArch extends RAArch {
     X86InstId.kVptest,
   };
 
+  static final Set<int> _blendvIds = {
+    X86InstId.kPblendvb,
+    X86InstId.kBlendvps,
+    X86InstId.kBlendvpd,
+  };
+
   static final Set<int> _shiftIds = {
     X86InstId.kShl,
     X86InstId.kShr,
@@ -104,6 +110,9 @@ class X86RAArch extends RAArch {
   List<int> operandFlags(InstNode node) {
     const use = RATiedFlags.kUse | RATiedFlags.kRead;
     const out = RATiedFlags.kOut | RATiedFlags.kWrite;
+    // Like asmjit (`kRW | kUse`): a read/write operand is rewritten in place,
+    // in the register it is read from.
+    const rw = RATiedFlags.kUse | RATiedFlags.kRead | RATiedFlags.kWrite;
     final id = node.instId;
     final opCount = node.opCount;
     final flags = List<int>.filled(opCount, 0);
@@ -121,6 +130,19 @@ class X86RAArch extends RAArch {
       }
     } else if (id == X86InstId.kPop) {
       flags[0] = out;
+    } else if (_op0Access(id, opCount) != 0) {
+      // Access of the destination from the instruction database (`W:`,
+      // `X:`, ... in isa_x86.json): legacy SSE forms with an immediate or an
+      // implicit XMM0 (`shufps`, `palignr`, `pblendvb`) read and write it,
+      // `pshufd` and the VEX forms only write it.
+      flags[0] = switch (_op0Access(id, opCount)) {
+        1 => use,
+        2 => out,
+        _ => rw,
+      };
+      for (int i = 1; i < opCount; i++) {
+        flags[i] = use;
+      }
     } else if (opCount >= 3) {
       // AVX non-destructive form: op0 = out, rest = use.
       flags[0] = out;
@@ -135,10 +157,17 @@ class X86RAArch extends RAArch {
     return flags;
   }
 
+  static int _op0Access(int instId, int opCount) =>
+      instId >= 0 && instId < kX86InstDb.length
+          ? kX86InstDb[instId].op0AccessOf(opCount)
+          : 0;
+
   @override
   int fixedUseId(InstNode node, int opIndex) {
     // Variable shift/rotate count must be in CL.
     if (opIndex == 1 && _shiftIds.contains(node.instId)) return 1;
+    // The legacy SSE4.1 variable blends take their mask implicitly in XMM0.
+    if (opIndex == 2 && _blendvIds.contains(node.instId)) return 0;
     return RAAssignment.kPhysNone;
   }
 
