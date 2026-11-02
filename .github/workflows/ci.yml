@@ -87,7 +87,8 @@ jobs:
     name: Test (${{ matrix.name }}, Dart ${{ matrix.sdk }}, QEMU)
     needs: checks
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # Takes ~5 minutes under QEMU; the timeout only bounds a hung isolate.
+    timeout-minutes: 45
     continue-on-error: true
     strategy:
       fail-fast: false
