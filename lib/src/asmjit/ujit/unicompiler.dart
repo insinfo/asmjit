@@ -447,9 +447,19 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
   /// Returns the function init hook node.
   BaseNode? get funcInitHook => _funcInitHook;
 
-  /// Hooks the current function for UniCompiler-specific initialization.
+  /// Hooks the current function for UniCompiler-specific initialization
+  /// (`hook_func()`): with AVX the function uses VEX encodings (also for the
+  /// register allocator's moves) and cleans the upper vector halves on
+  /// return.
   void hookFunc() {
     _funcInitHook = cc.cursor;
+    final f = cc.func;
+    if (f != null && !isArmFamily && hasAvx) {
+      f.frame
+        ..setAvxEnabled()
+        ..setAvxAutoCleanup();
+      if (hasAvx512) f.frame.setAvx512Enabled();
+    }
   }
 
   /// Unhooks the current function.

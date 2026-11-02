@@ -103,6 +103,7 @@ class X86RAArch extends RAArch {
           ? callConv.id == CallConvId.x64Windows
           : cc.environment.os == 'windows';
       _isWindowsTarget = isWindows;
+      _avxEnabled = func?.frame.isAvxEnabled() ?? false;
 
       // All 16 GPs except RSP (stack pointer) and RBP (frame pointer).
       avail[RegGroup.gp] = 0xFFFF & ~(1 << 4) & ~(1 << 5);
@@ -983,13 +984,12 @@ class X86RAArch extends RAArch {
     }
   }
 
-  bool _hasAvx(BaseCompiler? cc) {
-    try {
-      return (cc as dynamic).hasAvx as bool;
-    } catch (_) {
-      return false;
-    }
-  }
+  /// Whether the function being allocated uses VEX encoded moves for its
+  /// vector registers (`FuncFrame::is_avx_enabled()`, as upstream
+  /// `EmitHelper::reset(..., avx_enabled)`): needed for YMM/ZMM registers.
+  bool _avxEnabled = false;
+
+  bool _hasAvx(BaseCompiler? cc) => _avxEnabled;
 
   @override
   InstNode jump(Label target) => JumpNode(X86InstId.kJmp, [LabelOp(target)]);
@@ -1203,10 +1203,6 @@ class X86RAArch extends RAArch {
 
     // Epilog before every return.
     for (final ret in ctx.retNodes) {
-      // As upstream `emit_epilog()`: AVX cleanup first.
-      if (func.frame.hasAvxCleanup) {
-        ctx.insertBefore(ret, InstNode(X86InstId.kVzeroupper, []));
-      }
       for (final slot in gpSlots.reversed) {
         ctx.insertBefore(
             ret,
@@ -1221,6 +1217,14 @@ class X86RAArch extends RAArch {
               vecSaveBytes == 32 ? X86Ymm(slot.key.id) : slot.key,
               X86Mem.baseDisp(rbp, -slot.value, size: vecSaveBytes)
             ]));
+      }
+      // As upstream `emit_epilog()`: VZEROUPPER after the registers are
+      // restored, with AVX cleanup or with automatic AVX cleanup when
+      // vector registers are dirty.
+      if (func.frame.hasAvxCleanup ||
+          (func.frame.hasAttribute(FuncAttributes.kX86_AVXAutoCleanup) &&
+              ctx.clobbered[RegGroup.vec] != 0)) {
+        ctx.insertBefore(ret, InstNode(X86InstId.kVzeroupper, []));
       }
       ctx.insertBefore(ret, InstNode(X86InstId.kMov, [rsp, rbp]));
       ctx.insertBefore(ret, InstNode(X86InstId.kPop, [rbp]));

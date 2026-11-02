@@ -930,6 +930,12 @@ class FuncFrame {
   void setAvxEnabled() => addAttributes(FuncAttributes.kX86_AVXEnabled);
   void resetAvxEnabled() => clearAttributes(FuncAttributes.kX86_AVXEnabled);
 
+  /// `has_avx_auto_cleanup()` / `set_avx_auto_cleanup()`: the epilog emits
+  /// `vzeroupper` when vector registers are dirty.
+  bool get hasAvxAutoCleanup =>
+      hasAttribute(FuncAttributes.kX86_AVXAutoCleanup);
+  void setAvxAutoCleanup() => addAttributes(FuncAttributes.kX86_AVXAutoCleanup);
+
   /// `has_avx_cleanup()` / `set_avx_cleanup()`: the epilog emits
   /// `vzeroupper`.
   bool get hasAvxCleanup => hasAttribute(FuncAttributes.kX86_AVXCleanup);
