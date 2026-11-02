@@ -1,5 +1,6 @@
 // Relocation of absolute targets emitted without a base address
-// (`RelocEntry`, `CodeHolder::relocate_to_base()`). The expected images
+// (`RelocEntry`, `CodeHolder::relocate_to_base()`), and of 32-bit x86
+// [LABEL|RIP] operands, which become absolute addresses. The expected images
 // were produced by upstream asmjit: the same instructions assembled with
 // `code.init(env)` (no base address), then `flatten()`,
 // `relocate_to_base(base)` and `copy_flattened_data()`.
@@ -141,6 +142,63 @@ void main() {
       X86Assembler(code).emit(X86InstId.kCall, [0x1122334455]);
       expect(code.needsRelocation, isTrue);
       expect(() => code.finalize(), throwsA(isA<AsmJitException>()));
+    });
+  });
+
+  group('x86 (32-bit) [LABEL|RIP] -> absolute (RelToAbs)', () {
+    String image(void Function(X86Assembler a, CodeHolder code) emit) {
+      final code = CodeHolder(env: Environment.x86());
+      emit(X86Assembler(code), code);
+      code.resolveLabelFixups();
+      code.relocateToBase(0x10000);
+      return _hex(code.finalize().textBytes);
+    }
+
+    test('bound label', () {
+      expect(image((a, code) {
+        final l = a.newLabel();
+        a
+          ..bind(l)
+          ..emit(X86InstId.kNop, [])
+          ..emit(X86InstId.kMov, [eax, X86RipMem.label(l, size: 4)])
+          ..emit(X86InstId.kRet, []);
+      }), '908B0500000100C3');
+    });
+
+    test('unbound label, with displacement and immediate', () {
+      expect(image((a, code) {
+        final l = a.newLabel();
+        a
+          ..emit(X86InstId.kMov,
+              [eax, X86RipMem(label: l, displacement: 4, size: 4)])
+          ..emit(X86InstId.kAdd, [X86RipMem.label(l, size: 4), 0x12345])
+          ..emit(X86InstId.kRet, [])
+          ..bind(l)
+          ..embedUInt32(7)
+          ..embedUInt32(8);
+      }), '8B051500010081051100010045230100C30700000008000000');
+    });
+
+    test('rip', () {
+      expect(image((a, code) {
+        a
+          ..emit(X86InstId.kNop, [])
+          ..emit(X86InstId.kLea, [ecx, const X86RipMem(displacement: 16)])
+          ..emit(X86InstId.kRet, []);
+      }), '908D0D17000100C3');
+    });
+
+    test('label in another section', () {
+      expect(image((a, code) {
+        final data = code.newSection('.data', SectionFlags.none, alignment: 8);
+        final l = a.newLabel();
+        a
+          ..emit(X86InstId.kMov, [eax, X86RipMem.label(l, size: 4)])
+          ..emit(X86InstId.kRet, [])
+          ..section(data)
+          ..bind(l)
+          ..embedUInt32(0xAABBCCDD);
+      }), '8B0508000100C300DDCCBBAA');
     });
   });
 

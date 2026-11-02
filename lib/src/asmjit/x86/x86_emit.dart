@@ -645,6 +645,9 @@ final class X86Emitter {
     int opReg;
 
     Label? label;
+    // Relocation of a 32-bit [LABEL|RIP] operand, linked to the label fixup
+    // created by EmitRel when the label is not bound yet.
+    RelocEntry? re;
     int relOffset = 0;
     int relSize = 0;
     int memOpAoMark = -1;
@@ -6645,7 +6648,9 @@ final class X86Emitter {
             final of = OffsetFormat()
               ..resetToSimpleValue(OffsetType.kSignedOffset, relSize);
 
-            code.newFixup(label!, section.id, offset, relOffset, of);
+            final fixup =
+                code.newFixup(label!, section.id, offset, relOffset, of);
+            if (re != null) fixup.labelOrRelocId = re.id;
 
             // Emit dummy zeros, must be patched later when the reference becomes known.
             _w.emitZeros(relSize);
@@ -6717,10 +6722,51 @@ final class X86Emitter {
             continue loop;
           }
         case _S.EmitModSib_LabelRip_X86:
-          // 32-bit mode only: [LABEL|RIP] needs a RelToAbs relocation, which
-          // the port's relocations can't express yet.
+          relOffset = rmRel!.offsetLo32;
+          if ((rmInfo & _kMemInfoBaseLabel) != 0) {
+            // [LABEL->ABS].
+            label = rmRel!.label;
+            re = code.newRelocEntry(RelocType.relToAbs);
+
+            re.sourceSectionId = section.id;
+            re.sourceOffset = instStart;
+            re.format
+              ..resetToSimpleValue(OffsetType.kUnsignedOffset, 4)
+              ..setLeadingAndTrailingSize(_w.cursor - instStart, immSize);
+            re.payload = relOffset;
+
+            final bound = code.getLabelOffset(label!);
+            if (bound != null) {
+              // Label bound to the current section.
+              re.payload += bound;
+              re.targetSectionId = code.labelManager.getState(label!).sectionId;
+              _w.emit32uLe(0);
+            } else {
+              // Non-bound label or label bound to a different section.
+              relOffset = -4 - immSize;
+              relSize = 4;
+              {
+                s = _S.EmitRel;
+                continue loop;
+              }
+            }
+          } else {
+            // [RIP->ABS].
+            re = code.newRelocEntry(RelocType.relToAbs);
+
+            re.sourceSectionId = section.id;
+            re.targetSectionId = section.id;
+            re.format
+              ..resetToSimpleValue(OffsetType.kUnsignedOffset, 4)
+              ..setLeadingAndTrailingSize(_w.cursor - instStart, immSize);
+            re.sourceOffset = instStart;
+            re.payload = re.sourceOffset + re.format.regionSize() + relOffset;
+
+            _w.emit32uLe(0);
+          }
+          _w.emitImmediate(immValue, immSize);
           {
-            s = _S.InvalidInstruction;
+            s = _S.EmitDone;
             continue loop;
           }
         case _S.EmitModVSib:

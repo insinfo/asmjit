@@ -177,7 +177,7 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - Encoders sem base address agora registram a relocação como o upstream em vez de dar erro: x86 `[abs]` RIP-relativo, `jmp/call/jcc imm` (REX de preenchimento + entrada na `.addrtab` para jmp/call em 64 bits), A64 `b/bl/b.cond/cbz/tbz/adr/adrp imm`.
 - `JitRuntime.add()` segue o `JitRuntime::_add()`: `flatten` → aloca → `relocateToBase(endereço da alocação)` → copia a imagem (a `.addrtab` encolhe quando os alvos ficam a ±2GB). `CodeHolder.finalize()` recusa código que ainda precisa de relocação; `addCached` inclui as relocações na chave.
 - `test/asmjit/reloc_test.dart`: imagens relocadas idênticas às do upstream (programa C++ com `relocate_to_base`), erros iguais (jcc fora de ±2GB, `adrp` a distância não múltipla de 4096 — limitação do upstream, que rejeita em vez de errar —, `b` fora de ±128MB) e execução JIT de `jmp` para outra função JIT por endereço.
-- Pendente: `[LABEL|RIP]` em 32 bits (RelToAbs com fixup de label ligado à relocação) e `embedLabel`/`embedLabelDelta` (o serializer ignora `EmbedLabelNode`; o upstream usa RelToAbs), necessários para jump tables.
+- `[LABEL|RIP]` em 32 bits (sem RIP-relativo): vira endereço absoluto por RelToAbs; com label ainda não ligado, o fixup aponta para a relocação (`labelOrRelocId`) e o bind soma o offset ao payload, como o upstream. Imagens iguais às do upstream em `reloc_test.dart`.
 
 ### Labels/fixups, seções e `embed*` como no upstream
 - Fixups de label: `Fixup` (seção, offset, `rel`, `OffsetFormat`, `labelOrRelocId`), `CodeHolder.newFixup()`, `bindLabel()` resolve os da mesma seção no bind (via `CodeWriterUtils.writeOffset`) e `resolveCrossSectionFixups()` os entre seções depois do `flatten()`. Substitui `RelocKind`/`Reloc`, que eram reaplicados a cada `finalize()`. `finalize()`/`JitRuntime.add()` continuam falhando se um label referenciado nunca for ligado.
@@ -224,7 +224,8 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - `test/asmjit/ujit_vr_ops_test.dart`: todas as `UniOpVR` em todos os índices (SSE2, SSE4.1 e host no x86; AArch64).
 
 ### Próximos passos
-1. Port de `asmjit_test_compiler_x86.cpp` (em andamento, num agente) e `InvokeNode` no RA; `[LABEL|RIP]` em 32 bits.
+1. Port de `asmjit_test_compiler_x86.cpp` (em andamento, num agente) e `InvokeNode` no RA.
+2. `JitAllocator` do upstream no `JitRuntime` (em andamento, num agente).
 3. Portar `asmjit_test_unicompiler*.cpp` e os testes do compiler.
 4. Acesso de outros operandos além do 0 (xadd/cmpxchg) a partir do banco.
 5. AVX-512/EVEX no UJIT, validado no runner linux-x64 do CI (tem AVX-512F).
