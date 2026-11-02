@@ -287,6 +287,13 @@ class BaseCompiler extends BaseBuilder {
   /// Get virtual registers.
   List<VirtReg> get virtRegs => List.unmodifiable(_virtRegs);
 
+  /// The virtual register with the operand id [id] (`virt_reg_by_id()`), or
+  /// null if [id] is not a virtual register of this compiler.
+  VirtReg? virtRegById(int id) {
+    final index = id - Globals.kMinVirtId;
+    return index >= 0 && index < _virtRegs.length ? _virtRegs[index] : null;
+  }
+
   /// Sets function argument pack.
   void setArg(int argIndex, BaseReg reg) {
     if (_func == null) throw AsmJitError.invalidState; // Must be in function

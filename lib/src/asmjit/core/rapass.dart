@@ -63,6 +63,20 @@ class RAPass extends CompilerPass {
   bool _isKill(int virtId, int workId, int pos) =>
       _lastUsePos[virtId] == pos && !(_blockLiveOut?.testBit(workId) ?? false);
 
+  /// Registers of each instruction from [RAArch.analyzeInst] (null when
+  /// the architecture does not describe the instruction).
+  final Map<InstNode, List<RAInstOp>?> _instOpsCache = {};
+
+  List<RAInstOp>? _instOps(InstNode node) => _instOpsCache.putIfAbsent(node,
+      () => node is FuncRetNode ? null : _arch.analyzeInst(compiler, node));
+
+  /// Whether [reg] is the base of a stack area created by `newStack()` (a
+  /// "register home" memory operand: no register is allocated for it).
+  bool _isStackSlotReg(BaseReg reg) {
+    final workId = _virtIdToWorkId[reg.id];
+    return workId != null && _allocator.workRegById(workId).isStackSlot;
+  }
+
   // Global Liveness data
   final Map<int, RABlockData> _blockData = {};
   int _numWorkRegs = 0;
@@ -235,55 +249,31 @@ class RAPass extends CompilerPass {
   }
 
   void _mapVirtuals(NodeList nodes) {
+    void map(BaseReg? reg) {
+      if (reg == null || reg.isPhysical || reg.isNone) return;
+      if (_virtIdToWorkId.containsKey(reg.id)) return;
+      final vr = compiler.virtRegById(reg.id);
+      // The work register has the declared type of the virtual register, not
+      // the view the first instruction happens to use (`v.r8()`).
+      final workReg = _allocator.addWorkReg(
+          reg.group, vr != null ? _arch.virtRegOperand(vr, reg) : reg);
+      _virtIdToWorkId[reg.id] = workReg.workId;
+      if (vr != null && vr.isStack) workReg.markStackSlot();
+    }
+
     for (final node in nodes.nodes) {
       if (node is InstNode) {
         for (int i = 0; i < node.opCount; i++) {
           final op = node.operands[i];
-          if (op is BaseReg && !op.isPhysical && !op.isNone) {
-            if (!_virtIdToWorkId.containsKey(op.id)) {
-              final workReg = _allocator.addWorkReg(op.group, op);
-              _virtIdToWorkId[op.id] = workReg.workId;
-
-              final vIndex = op.id - Globals.kMinVirtId;
-              if (vIndex >= 0 && vIndex < compiler.virtRegs.length) {
-                if (compiler.virtRegs[vIndex].isStack) {
-                  workReg.markStackSlot();
-                }
-              }
-            }
+          if (op is BaseReg) {
+            map(op);
           } else if (op is BaseMem) {
             // Deep scan memory operands (Base/Index)
-            if (op.base != null && !op.base!.isPhysical && !op.base!.isNone) {
-              if (!_virtIdToWorkId.containsKey(op.base!.id)) {
-                final workReg = _allocator.addWorkReg(op.base!.group, op.base!);
-                _virtIdToWorkId[op.base!.id] = workReg.workId;
-
-                final vIndex = op.base!.id - Globals.kMinVirtId;
-                if (vIndex >= 0 && vIndex < compiler.virtRegs.length) {
-                  if (compiler.virtRegs[vIndex].isStack) {
-                    workReg.markStackSlot();
-                  }
-                }
-              }
-            }
-            if (op.index != null &&
-                !op.index!.isPhysical &&
-                !op.index!.isNone) {
-              if (!_virtIdToWorkId.containsKey(op.index!.id)) {
-                final workReg =
-                    _allocator.addWorkReg(op.index!.group, op.index!);
-                _virtIdToWorkId[op.index!.id] = workReg.workId;
-
-                final vIndex = op.index!.id - Globals.kMinVirtId;
-                if (vIndex >= 0 && vIndex < compiler.virtRegs.length) {
-                  if (compiler.virtRegs[vIndex].isStack) {
-                    workReg.markStackSlot();
-                  }
-                }
-              }
-            }
+            map(op.base);
+            map(op.index);
           }
         }
+        map(node.extraReg);
       }
     }
     _numWorkRegs = _virtIdToWorkId.length;
@@ -365,6 +355,25 @@ class RAPass extends CompilerPass {
   }
 
   void _analyzeInstLiveness(InstNode node, RABlockData data) {
+    final ops = _instOps(node);
+    if (ops != null) {
+      // Reads see the value from before the instruction; writes are applied
+      // afterwards so `add a, b` keeps `a` live-in.
+      final writes = <int>[];
+      for (final o in ops) {
+        if (o.reg.isPhysical || _isStackSlotReg(o.reg)) continue;
+        final workId = _virtIdToWorkId[o.reg.id];
+        if (workId == null) continue;
+        _allocator.workRegById(workId).liveStats.freq += data.weight;
+        if (o.isRead && !data.kill.testBit(workId)) data.gen.setBit(workId);
+        if (o.isWrite) writes.add(workId);
+      }
+      for (final workId in writes) {
+        data.kill.setBit(workId);
+      }
+      return;
+    }
+
     final flags = _arch.preciseLiveness ? _operandFlags(node) : null;
     final writes = <int>[];
 
@@ -538,6 +547,20 @@ class RAPass extends CompilerPass {
         }
       } else if (node is InstNode && currentBlock != null) {
         // Process Inst
+        final ops = _instOps(node);
+        if (ops != null) {
+          for (final o in ops) {
+            if (o.isRead && !_isStackSlotReg(o.reg)) {
+              _activateUse(o.reg, activeRegs, startPos, node.position);
+            }
+          }
+          for (final o in ops) {
+            if (o.isWrite && !_isStackSlotReg(o.reg)) {
+              _handleDef(o.reg, activeRegs, startPos, node.position);
+            }
+          }
+          continue;
+        }
         if (_arch.preciseLiveness) {
           final flags = _operandFlags(node);
           // 1. Uses (registers read and every memory base/index).
@@ -1300,6 +1323,40 @@ class RAPass extends CompilerPass {
       return;
     }
 
+    final ops = _instOps(node);
+    if (ops != null) {
+      for (final o in ops) {
+        final reg = o.reg;
+        if (reg.isPhysical) {
+          // Physical registers used directly by the instruction (upstream
+          // leaves them to the user): keep them out of the allocation.
+          if (o.isWrite) clobbered[reg.group] |= 1 << reg.id;
+          if (o.isRead) used[reg.group] |= 1 << reg.id;
+          continue;
+        }
+        if (_isStackSlotReg(reg)) continue;
+        final workId = _virtIdToWorkId[reg.id];
+        if (workId == null) continue;
+        final workReg = _allocator.workRegById(workId);
+        var flags = o.flags;
+        if (o.isRead && _isKill(reg.id, workId, node.position)) {
+          flags |= RATiedFlags.kKill;
+        }
+        // As `RAInstBuilder::add()`: a fixed register is used (or
+        // clobbered) by the instruction, so no other operand may keep it.
+        if (o.useId != RAAssignment.kPhysNone) {
+          used[workReg.group] |= 1 << o.useId;
+          flags |= RATiedFlags.kUseFixed;
+        }
+        if (o.outId != RAAssignment.kPhysNone) {
+          clobbered[workReg.group] |= 1 << o.outId;
+          flags |= RATiedFlags.kOutFixed;
+        }
+        _tie(tiedRegs, workReg, flags, o.useMask, o.useId, o.outMask, o.outId);
+      }
+      return;
+    }
+
     if (node.hasNoOperands) return;
 
     final opCount = node.opCount;
@@ -1455,6 +1512,29 @@ class RAPass extends CompilerPass {
     // written uses the tie's output register and a read-only operand (or a
     // memory base/index) its input register.
     final opFlags = _operandFlags(node);
+
+    // The register of each rewrite slot (`use_rewrite_mask` /
+    // `out_rewrite_mask`): a slot on the use side gets the use id of its
+    // tied register, a slot on the out side its out id.
+    final slotPhys = <(int, int), int>{};
+    final ops = _instOps(node);
+    if (ops != null) {
+      for (final o in ops) {
+        if (o.reg.isPhysical) continue;
+        final workId = _virtIdToWorkId[o.reg.id];
+        if (workId == null) continue;
+        for (final t in tiedRegs) {
+          if (t.workReg.workId != workId) continue;
+          final id = o.isUseSide ? t.useId : t.outId;
+          if (id != RAAssignment.kPhysNone) slotPhys[(o.slot, o.opIndex)] = id;
+        }
+      }
+      final extra = node.extraReg;
+      final extraId = slotPhys[(RAInstOp.kSlotExtra, -1)];
+      if (extra != null && extraId != null)
+        node.extraReg = extra.toPhys(extraId);
+    }
+
     int physOf(BaseReg reg, {bool write = false}) {
       final workId = _virtIdToWorkId[reg.id];
       if (workId == null) return RAAssignment.kPhysNone;
@@ -1474,8 +1554,9 @@ class RAPass extends CompilerPass {
       final op = node.operands[i];
       if (op is BaseReg && !op.isPhysical && !op.isNone) {
         final f = i < opFlags.length ? opFlags[i] : 0;
-        final physId = physOf(op,
-            write: (f & (RATiedFlags.kOut | RATiedFlags.kWrite)) != 0);
+        final physId = slotPhys[(RAInstOp.kSlotReg, i)] ??
+            physOf(op,
+                write: (f & (RATiedFlags.kOut | RATiedFlags.kWrite)) != 0);
         if (physId != RAAssignment.kPhysNone) {
           node.operands[i] = op.toPhys(physId);
         }
@@ -1490,7 +1571,8 @@ class RAPass extends CompilerPass {
             if (workReg.isStackSlot) {
               BaseReg? newIndex = op.index;
               if (op.index != null && !op.index!.isPhysical) {
-                final physId = physOf(op.index!);
+                final physId =
+                    slotPhys[(RAInstOp.kSlotMemIndex, i)] ?? physOf(op.index!);
                 if (physId != RAAssignment.kPhysNone) {
                   newIndex = op.index!.toPhys(physId);
                 }
@@ -1511,14 +1593,16 @@ class RAPass extends CompilerPass {
         BaseReg? newIndex = op.index;
 
         if (op.base != null && !op.base!.isPhysical) {
-          final physId = physOf(op.base!);
+          final physId =
+              slotPhys[(RAInstOp.kSlotMemBase, i)] ?? physOf(op.base!);
           if (physId != RAAssignment.kPhysNone) {
             newBase = op.base!.toPhys(physId);
           }
         }
 
         if (op.index != null && !op.index!.isPhysical) {
-          final physId = physOf(op.index!);
+          final physId =
+              slotPhys[(RAInstOp.kSlotMemIndex, i)] ?? physOf(op.index!);
           if (physId != RAAssignment.kPhysNone) {
             newIndex = op.index!.toPhys(physId);
           }

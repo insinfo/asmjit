@@ -56,8 +56,67 @@ class RAFrameContext {
       ];
 }
 
+/// One register of an instruction as seen by the register allocator: what
+/// `RACFGBuilder::on_instruction()` passes to `RAInstBuilder::add()`, plus
+/// where the register is in the instruction (its rewrite slot).
+class RAInstOp {
+  /// A register operand ([opIndex] is the operand).
+  static const int kSlotReg = 0;
+
+  /// The base register of the memory operand [opIndex].
+  static const int kSlotMemBase = 1;
+
+  /// The index register of the memory operand [opIndex].
+  static const int kSlotMemIndex = 2;
+
+  /// The extra register of the instruction ([InstNode.extraReg]).
+  static const int kSlotExtra = 3;
+
+  /// The register (virtual or physical).
+  final BaseReg reg;
+  final int slot;
+  final int opIndex;
+
+  /// [RATiedFlags]. The register is rewritten to the use id of its tied
+  /// register when [RATiedFlags.kUse] is set, otherwise to the out id.
+  int flags;
+
+  /// Allowed registers and fixed physical ids ([RAAssignment.kPhysNone]).
+  int useMask;
+  int useId;
+  int outMask;
+  int outId;
+
+  RAInstOp(this.reg, this.slot, this.opIndex, this.flags,
+      {this.useMask = 0xFFFFFFFF,
+      this.useId = RAAssignment.kPhysNone,
+      this.outMask = 0xFFFFFFFF,
+      this.outId = RAAssignment.kPhysNone});
+
+  bool get isRead => (flags & RATiedFlags.kRead) != 0;
+  bool get isWrite => (flags & RATiedFlags.kWrite) != 0;
+  bool get isUseSide => (flags & RATiedFlags.kUse) != 0;
+
+  /// `RATiedReg::make_read_only()`.
+  void makeReadOnly() => flags =
+      (flags & ~(RATiedFlags.kOut | RATiedFlags.kWrite)) | RATiedFlags.kUse;
+
+  /// `RATiedReg::make_write_only()`.
+  void makeWriteOnly() => flags =
+      (flags & ~(RATiedFlags.kUse | RATiedFlags.kRead)) | RATiedFlags.kOut;
+}
+
 /// Architecture hooks used by [RAPass].
 abstract class RAArch {
+  /// Registers of [node] with their read/write flags and constraints
+  /// (`RACFGBuilder::on_instruction()`), or null to use [operandFlags],
+  /// [fixedUseId] and [implicitRegs] instead.
+  List<RAInstOp>? analyzeInst(BaseCompiler cc, InstNode node) => null;
+
+  /// The register operand of the declared type of [vr] (whose operand id is
+  /// the id of [seen], a register operand that uses it); [seen] by default.
+  BaseReg virtRegOperand(VirtReg vr, BaseReg seen) => seen;
+
   /// Fills allocatable ([avail]) and callee-saved ([preserved]) registers.
   void initRegMasks(BaseCompiler cc, RARegMask avail, RARegMask preserved);
 

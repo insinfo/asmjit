@@ -10,9 +10,13 @@ import '../core/compiler.dart';
 import '../core/labels.dart';
 import '../core/raarch.dart';
 import '../core/radefs.dart';
+import '../core/reg_type.dart';
+import '../core/inst_api.dart';
 import '../core/type.dart';
 import 'x86.dart';
 import 'x86_inst_db.g.dart';
+import 'x86_opcode.dart';
+import 'x86_rw_info.dart';
 import 'x86_operands.dart';
 import 'x86_simd.dart';
 
@@ -109,6 +113,299 @@ class X86RAArch extends RAArch {
       // EBX, EBP, ESI, EDI.
       preserved[RegGroup.gp] = (1 << 3) | (1 << 5) | (1 << 6) | (1 << 7);
     }
+  }
+
+  // ===========================================================================
+  // RACFGBuilder::on_instruction()
+  // ===========================================================================
+
+  /// `ra_use_out_flags_from_rw_flags()`.
+  static int _useOutFlags(int rwFlags) {
+    const map = [
+      RATiedFlags.kNone,
+      RATiedFlags.kRead | RATiedFlags.kUse, // kRead
+      RATiedFlags.kWrite | RATiedFlags.kOut, // kWrite
+      RATiedFlags.kRW | RATiedFlags.kUse, // kRW
+      RATiedFlags.kNone,
+      // kRead | kRegMem
+      RATiedFlags.kRead | RATiedFlags.kUse | RATiedFlags.kUseRM,
+      // kWrite | kRegMem
+      RATiedFlags.kWrite | RATiedFlags.kOut | RATiedFlags.kOutRM,
+      // kRW | kRegMem
+      RATiedFlags.kRW | RATiedFlags.kUse | RATiedFlags.kUseRM,
+    ];
+    return map[rwFlags & (OpRWFlags.kRW | OpRWFlags.kRegMem)];
+  }
+
+  /// `ra_imm_mask_from_size()`.
+  static int _immMaskFromSize(int size) => switch (size) {
+        1 => 0xFF,
+        2 => 0xFFFF,
+        4 => 0xFFFFFFFF,
+        8 => -1,
+        _ => 0,
+      };
+
+  /// Port of `x86::RACFGBuilder::on_instruction()`: the tied registers of
+  /// [node] from its read/write information ([x86QueryRWInfo]). Returns
+  /// null for an instruction the RW information does not describe.
+  ///
+  /// Physical registers are listed too (with their RW flags); upstream
+  /// ignores them, the Dart [RAPass] uses them as used/clobbered registers.
+  @override
+  List<RAInstOp>? analyzeInst(BaseCompiler cc, InstNode node) {
+    if (node is FuncRetNode || node is InvokeNode) return null;
+    final instId = node.instId;
+    if (instId < 0 || instId >= kX86InstDb.length) return null;
+
+    final operands = node.operands;
+    final rwInfo = InstRWInfo();
+    if (!x86QueryRWInfo(cc.arch.is64Bit, instId, operands, rwInfo,
+        options: node.options, extraReg: node.extraReg)) {
+      return null;
+    }
+
+    final dbFlags = kX86InstDb[instId].dbFlags;
+    final is64Bit = cc.arch.is64Bit;
+    var hasGpbHiConstraint = false;
+    var singleRegOps = 0;
+    final ops = <RAInstOp>[];
+
+    // The mask is for all registers, but we are mostly interested in
+    // AVX-512 registers at the moment.
+    var instructionAllowedRegs = 0xFFFFFFFF;
+    if ((dbFlags & X86InstDbFlags.kEvex) != 0) {
+      // EVEX instruction and VEX instructions that can be encoded with EVEX
+      // have the possibility to use 32 SIMD registers (XMM/YMM/ZMM).
+      if ((dbFlags & X86InstDbFlags.kVex) != 0 &&
+          (dbFlags & X86InstDbFlags.kEvexCompat) == 0) {
+        if ((dbFlags & X86InstDbFlags.kEvexKReg) != 0) {
+          // EVEX encodable only if the first operand is K register.
+          if (operands.isEmpty || operands[0] is! X86KReg) {
+            instructionAllowedRegs = 0xFFFF;
+          }
+        } else if ((dbFlags & X86InstDbFlags.kEvexTwoOp) != 0) {
+          // EVEX encodable only if the instruction has two operands.
+          if (operands.length != 2) instructionAllowedRegs = 0xFFFF;
+        } else {
+          instructionAllowedRegs = 0xFFFF;
+        }
+      }
+    } else if ((dbFlags & X86InstDbFlags.kEvexTransformable) == 0) {
+      // Not EVEX, restrict everything to [0-15] registers.
+      instructionAllowedRegs = 0xFFFF;
+    }
+
+    for (var i = 0; i < operands.length; i++) {
+      final op = operands[i];
+      final opRwInfo = rwInfo.operand(i);
+
+      if (op is BaseReg) {
+        var flags = _useOutFlags(opRwInfo.opFlags);
+        var allowedRegs = instructionAllowedRegs;
+
+        if (opRwInfo.isUnique) flags |= RATiedFlags.kUnique;
+
+        // X86-specific constraints related to LO|HI general purpose
+        // registers. This is only required when the register is part of the
+        // encoding. If the register is fixed we won't restrict anything as
+        // it doesn't restrict encoding of other registers.
+        if (op is X86Gp &&
+            op.size == 1 &&
+            !opRwInfo.hasOpFlag(OpRWFlags.kRegPhysId)) {
+          flags |= RATiedFlags.kX86Gpb;
+          if (!is64Bit) {
+            allowedRegs = 0x0F;
+          } else if (op.isHighByte) {
+            hasGpbHiConstraint = true;
+            allowedRegs = 0x0F;
+          }
+        }
+
+        if (op.isPhysical) {
+          ops.add(RAInstOp(op, RAInstOp.kSlotReg, i, flags));
+          continue;
+        }
+
+        // Use RW instead of Write in case that not the whole register is
+        // overwritten. This is important for liveness as we cannot kill a
+        // register that will be used. For example `mov al, 0xFF` is not a
+        // write-only operation if user allocated the whole `rax` register.
+        if ((flags & RATiedFlags.kRW) == RATiedFlags.kWrite) {
+          final virtSize = cc.virtRegById(op.id)?.size ?? 0;
+          final regSize = virtSize > 0 ? virtSize : op.size;
+          final regByteMask = regSize >= 64 ? -1 : (1 << regSize) - 1;
+          if ((regByteMask &
+                  ~(opRwInfo.writeByteMask | opRwInfo.extendByteMask)) !=
+              0) {
+            // Not write-only operation.
+            flags = (flags & ~RATiedFlags.kOut) |
+                (RATiedFlags.kRead | RATiedFlags.kUse);
+          }
+        }
+
+        final raOp = RAInstOp(op, RAInstOp.kSlotReg, i, flags,
+            useMask: allowedRegs, outMask: allowedRegs);
+        if ((flags & RATiedFlags.kUse) != 0) {
+          if (opRwInfo.hasOpFlag(OpRWFlags.kRegPhysId)) {
+            raOp.useId = opRwInfo.physId;
+            raOp.flags |= RATiedFlags.kUseFixed;
+          }
+        } else {
+          if (opRwInfo.hasOpFlag(OpRWFlags.kRegPhysId)) {
+            raOp.outId = opRwInfo.physId;
+            raOp.flags |= RATiedFlags.kOutFixed;
+          }
+        }
+        ops.add(raOp);
+        if (singleRegOps == i) singleRegOps++;
+      } else if (op is BaseMem) {
+        final base = op.base;
+        if (base != null) {
+          // `ra_mem_base_rw_flags()`.
+          final flags = _useOutFlags((opRwInfo.opFlags >> 12) & OpRWFlags.kRW);
+          final raOp = RAInstOp(base, RAInstOp.kSlotMemBase, i, flags);
+          if (opRwInfo.hasOpFlag(OpRWFlags.kMemPhysId)) {
+            if ((flags & RATiedFlags.kUse) != 0) {
+              raOp.useId = opRwInfo.physId;
+              raOp.flags |= RATiedFlags.kUseFixed;
+            } else {
+              raOp.outId = opRwInfo.physId;
+              raOp.flags |= RATiedFlags.kOutFixed;
+            }
+          }
+          ops.add(raOp);
+        }
+
+        final index = op.index;
+        if (index != null) {
+          // Index registers have never fixed id on X86/x64.
+          ops.add(RAInstOp(index, RAInstOp.kSlotMemIndex, i,
+              RATiedFlags.kUse | RATiedFlags.kRead,
+              useMask: instructionAllowedRegs,
+              outMask: instructionAllowedRegs));
+        }
+      }
+    }
+
+    // Handle extra operand (either REP {cx|ecx|rcx} or AVX-512 {k}
+    // selector).
+    final extraReg = node.extraReg;
+    if (extraReg != null) {
+      if (!extraReg.isPhysical) {
+        if (extraReg.group == RegGroup.mask) {
+          // AVX-512 mask selector {k} register - read-only, allocable to any
+          // register except {k0}.
+          ops.add(RAInstOp(extraReg, RAInstOp.kSlotExtra, -1,
+              RATiedFlags.kUse | RATiedFlags.kRead));
+          singleRegOps = 0;
+        } else {
+          // REP {cx|ecx|rcx} register - read & write, allocable to
+          // {cx|ecx|rcx} only.
+          ops.add(RAInstOp(extraReg, RAInstOp.kSlotExtra, -1,
+              RATiedFlags.kUse | RATiedFlags.kRW | RATiedFlags.kUseFixed,
+              useId: X86RegId.rcx.index));
+        }
+      } else if (extraReg.group == RegGroup.mask && extraReg.id != 0) {
+        singleRegOps = 0;
+      }
+    }
+
+    // Handle X86 constraints.
+    if (hasGpbHiConstraint) {
+      for (final o in ops) {
+        final filter = (o.flags & RATiedFlags.kX86Gpb) != 0 ? 0x0F : 0xFF;
+        o.useMask &= filter;
+        o.outMask &= filter;
+      }
+    }
+
+    // `ib.tied_reg_count() == 1`: a single virtual register.
+    final virtIds = {
+      for (final o in ops)
+        if (!o.reg.isPhysical) o.reg.id
+    };
+    if (virtIds.length == 1) {
+      // Handle special cases of some instructions where all operands share
+      // the same register. In such case the single operand becomes
+      // read-only or write-only.
+      var sameRegHint = InstSameRegHint.kNone;
+      if (singleRegOps == operands.length) {
+        sameRegHint = x86InstSameRegHint(instId);
+      } else if (operands.length == 2 &&
+          operands[1] is Imm &&
+          operands[0] is BaseReg) {
+        // Handle some tricks used by X86 asm.
+        final reg = operands[0] as BaseReg;
+        final imm = (operands[1] as Imm).value;
+        final virtSize = cc.virtRegById(virtIds.first)?.size ?? 0;
+        final workRegSize = virtSize > 0 ? virtSize : reg.size;
+
+        if (instId == X86InstId.kOr) {
+          // Sets the value of the destination register to -1, previous
+          // content unused.
+          if (reg.size >= 4 || reg.size >= workRegSize) {
+            if (imm == -1 || imm == _immMaskFromSize(reg.size)) {
+              sameRegHint = InstSameRegHint.kWO;
+            }
+          }
+        }
+        if (instId == X86InstId.kOr ||
+            instId == X86InstId.kAdd ||
+            instId == X86InstId.kAnd ||
+            instId == X86InstId.kRol ||
+            instId == X86InstId.kRor ||
+            instId == X86InstId.kSar ||
+            instId == X86InstId.kShl ||
+            instId == X86InstId.kShr ||
+            instId == X86InstId.kSub ||
+            instId == X86InstId.kXor) {
+          // Updates [E|R]FLAGS without changing the content.
+          if (reg.size != 4 || reg.size >= workRegSize) {
+            if (imm == 0) sameRegHint = InstSameRegHint.kRO;
+          }
+        }
+      } else if (operands.length == 4 && operands[3] is Imm) {
+        if (instId == X86InstId.kVpternlogd ||
+            instId == X86InstId.kVpternlogq) {
+          final predicate = (operands[3] as Imm).value & 0xFF;
+          if (predicate == 0x00 || predicate == 0xFF) {
+            for (final o in ops) {
+              if (!o.reg.isPhysical) o.makeWriteOnly();
+            }
+          }
+        }
+      }
+
+      switch (sameRegHint) {
+        case InstSameRegHint.kRO:
+          for (final o in ops) {
+            if (!o.reg.isPhysical) o.makeReadOnly();
+          }
+        case InstSameRegHint.kWO:
+          for (final o in ops) {
+            if (!o.reg.isPhysical) o.makeWriteOnly();
+          }
+      }
+    }
+
+    return ops;
+  }
+
+  @override
+  BaseReg virtRegOperand(VirtReg vr, BaseReg seen) {
+    final id = seen.id;
+    return switch (RegType.values[vr.signature.regType]) {
+      RegType.gp8Lo => X86Gp.r8(id),
+      RegType.gp16 => X86Gp.r16(id),
+      RegType.gp32 => X86Gp.r32(id),
+      RegType.gp64 => X86Gp.r64(id),
+      RegType.vec128 => X86Xmm(id),
+      RegType.vec256 => X86Ymm(id),
+      RegType.vec512 => X86Zmm(id),
+      RegType.mask => X86KReg(id),
+      _ => seen,
+    };
   }
 
   @override
