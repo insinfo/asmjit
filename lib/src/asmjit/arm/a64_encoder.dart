@@ -708,7 +708,7 @@ class A64Encoder {
       return;
     }
     if (encodeLogicalImm(imm, x == 1 ? 64 : 32) != null) {
-      logicalImm(1, rd, A64Gp(31, rd.sizeBits), imm);
+      logicalImm(1, rd, A64Gp(A64Gp.kIdZr, rd.sizeBits), imm);
       return;
     }
     seq.forEach(emit32);

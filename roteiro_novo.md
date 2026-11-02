@@ -22,7 +22,7 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 | RAPass | ✅ Neutro de arquitetura (`RAArch`: `X86RAArch`, `A64RAArch`) | spills, callee-saved, laços (A64 e x64) |
 | **x86 Assembler (`_emit`)** | ✅ Port fiel de `x86assembler.cpp` dirigido pelas tabelas do `x86instdb` | **17886/17891 goldens do upstream** (x64), 873 formas SIMD idênticas ao LLVM |
 | x86 Encoder GP (ALU) | ✅ ADD/OR/AND/SUB/XOR/CMP/TEST/IMUL e MOV mem,imm respeitam o tamanho (8/16/32/64) | 215 formas idênticas ao LLVM |
-| A64 Encoder | ✅ load/store, SIMD three-same/different, permute, narrow corrigidos | goldens LLVM (ldst + SIMD) |
+| **A64 Assembler (`_emit`)** | ✅ Port fiel de `a64assembler.cpp` dirigido pelas tabelas do `a64instdb` | **3970/3992 goldens do upstream** |
 | Dispatchers x86/A64 | ✅ Escritos à mão, **fail-loud** (instrução sem bytes = erro) | |
 | Bancos de instruções | ✅ Gerados e indexados por id | `inst_db_consistency_test` |
 | **UJIT emit_3v (x86 e A64)** | ✅ Port fiel de `emit_3v` + tabela `opcode_info_3v` do x86; **todas as 179 ops comuns** validadas em runtime com 4 layouts de operandos | `ujit_vvv_ops_test`: SSE2, SSE4.1, host (AVX2 no Windows) e AArch64 |
@@ -142,8 +142,21 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - Defeitos que o encoder antigo escondia, corrigidos: o UJIT montava a constante vetorial com tamanho de memória (`ymmword` para constantes de 32 bytes); o upstream usa `x86::ptr()` sem tamanho. Com o encoder fiel isso virava `vmovdqa ymm` (VEX.256) e falhava por alinhamento em hosts AVX. O `x86_avx512_test` usava `kAddps` (SSE) com ZMM; agora usa `kVaddps/kVaddpd` com bytes do LLVM.
 - Suítes: arm64 17749, Rosetta 44636, Windows AVX2 44750.
 
+### Encoder A64 portado do upstream (`a64assembler.cpp`)
+- `lib/src/asmjit/arm/a64_emit.dart`: port de `a64::Assembler::_emit()` (mesma técnica do x86: máquina de estados traduzida do C++ e corrigida à mão) com os helpers (`SizeOp`, `size_op_map`, `pick_fp_opcode`, `encode_lmh`, `check_*`, `Opcode`, `OffsetFormat`).
+- Dados: `tool/vendor_a64_instdb.dart` copia as linhas `INST(...)` e a seção `EncodingData` do `a64instdb.cpp` para `assets/db/`; `tool/gen_a64_encoder.dart` gera `a64_encoding_data.g.dart` (tabela de instruções do upstream + arrays de dados). `a64_instdb.dart` porta os structs/constantes do `a64instdb_p.h`.
+- O encoder usa os **ids do upstream** (776, com as variantes vetoriais `_v`); `A64Emitter` mapeia os ids Dart e escolhe a variante `_v` quando há operando vetorial (como os overloads da API C++). `b.cond` vira `B` com condição embutida; `ret()` é `ret(x30)`.
+- Modelo de operandos alinhado ao upstream: **XZR/WZR com id 63** (SP é 31; `BaseReg.isPhysical` segue `is_virt_id`), `A64Vec.elementType/elementIndex` (`v.at(et, i)` = `v.s(i)`), `A64Mem.extend` (UXTW/SXTW/SXTX), `A64Mem.label`, `A64Mem.postIndexReg`, `A64Shift` com MSL e extends (valores do `ShiftOp`), relocação `arm64Branch14` (TBZ/TBNZ).
+- `A64Assembler.emit()` e o serializer usam o encoder portado; o dispatcher A64 escrito à mão foi removido. O UJIT A64 passou a usar registradores com índice de elemento (`dup v, v.s(i)`, `mov v.d(i), v.d(j)`) como o upstream.
+- **Goldens A64: 3970/3992** (antes 860). Faltam: operandos `Predicate::*` (PRFOp, SysReg, AT/DC/IC/TLBI, BTI — enums a portar), `adr/adrp` com endereço absoluto (exige base address) e `fcvtxn` (ausente do banco Dart).
+- Defeitos do tradutor C++→Dart encontrados e corrigidos pelos goldens (anotar para revisões futuras): `bool` comparado com `int` é sempre falso em Dart (o C++ converte implicitamente); deslocamentos `uint32_t` precisam truncar em 32 bits; `uint64_t` precisa de `>>>` e comparação sem sinal.
+- Suítes: arm64 17750, Rosetta 44636, Windows AVX2 44750.
+
+### CI multiarquitetura
+- Jobs com QEMU (linux-arm32, linux-riscv64) e ia32 nativo (`continue-on-error`): o asmjit só gera código x86-64/AArch64, então nesses hosts rodam os testes que não executam JIT (encoding, goldens, IR/RA). Correções feitas para eles: `CpuInfo` só executa CPUID em x86-64 e testes dependentes do host passaram a usar ambiente explícito/skip.
+
 ### Próximos passos
-1. Port fiel do assembler A64 (`a64assembler.cpp` + `a64instdb`), guiado pelos goldens, e distinguir SP de ZR no A64 como o upstream.
+1. Portar os enums `Predicate` do A64 (PRFOp, SysReg, AT/DC/IC/TLBI, BTI) e suporte a base address no `CodeHolder` (relocações AbsToRel do x86 e do A64).
 2. Reescrever os métodos de conveniência do `X86Assembler` (`addRR`, `movRI`...) sobre `emit()` e remover o `X86Encoder` escrito à mão.
 3. Portar `asmjit_test_unicompiler*.cpp` e os testes do compiler.
 4. `emit_2vs` (UniOpVR) no lugar de `emitCV`.

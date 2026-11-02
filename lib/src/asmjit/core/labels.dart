@@ -107,6 +107,9 @@ enum RelocKind {
   /// ARM64 19-bit conditional branch (B.cond, CBZ, CBNZ).
   arm64Branch19,
 
+  /// AArch64 TBZ/TBNZ: imm14 at bits [18:5], scaled by 4.
+  arm64Branch14,
+
   /// ARM64 ADR/ADRP 21-bit PC-relative.
   arm64Adr21,
 }
@@ -145,6 +148,7 @@ class Reloc {
       case RelocKind.ripRel32:
       case RelocKind.arm64Branch26:
       case RelocKind.arm64Branch19:
+      case RelocKind.arm64Branch14:
       case RelocKind.arm64Adr21:
         return 4;
       case RelocKind.abs64:

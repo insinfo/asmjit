@@ -21,6 +21,14 @@ final class CppNum extends CppExpr {
   String toString() => '$value';
 }
 
+/// Floating point literal.
+final class CppDouble extends CppExpr {
+  final double value;
+  CppDouble(this.value);
+  @override
+  String toString() => '$value';
+}
+
 /// Call `name(args)`, or method call `receiver.name(args)`.
 final class CppCall extends CppExpr {
   final CppExpr? receiver;
@@ -112,6 +120,7 @@ class _Parser {
     }
     if (accept('-')) {
       final e = primary();
+      if (e is CppDouble) return CppDouble(-e.value);
       if (e is! CppNum) throw CppParseError('"-" before a non-number in "$s"');
       return CppNum(-e.value);
     }
@@ -126,6 +135,11 @@ class _Parser {
   }
 
   CppExpr number() {
+    final f = RegExp(r'[0-9]+\.[0-9]+').matchAsPrefix(s, i);
+    if (f != null) {
+      i = f.end;
+      return CppDouble(double.parse(f.group(0)!));
+    }
     final m = RegExp(r'(0[xX][0-9A-Fa-f]+|[0-9]+)([uU]?[lL]{0,2})')
         .matchAsPrefix(s, i)!;
     i = m.end;

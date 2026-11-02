@@ -7,7 +7,7 @@ import '../core/code_buffer.dart';
 import '../core/labels.dart';
 import 'a64.dart';
 import 'a64_encoder.dart';
-import 'a64_dispatcher.dart';
+import 'a64_emit.dart';
 
 import '../core/emitter.dart';
 
@@ -34,10 +34,15 @@ class A64Assembler extends BaseEmitter {
     return A64Assembler(code);
   }
 
-  /// Emits a raw instruction by ID with generic operands.
+  /// Port of upstream `a64::Assembler::_emit()` (a64_emit.dart).
+  late final A64Emitter _emitter = A64Emitter(code, code.text.buffer);
+
+  /// Emits a raw instruction by ID with generic operands (registers,
+  /// [A64Mem], integers, [A64ShiftOp], [A64Cond] and [Label]s), encoded as
+  /// upstream `a64::Assembler::_emit()`.
   void emit(int instId, List<Object> ops) {
     instructionCount++;
-    a64Dispatch(this, instId, ops);
+    _emitter.emit(instId, ops);
   }
 
   // ===========================================================================

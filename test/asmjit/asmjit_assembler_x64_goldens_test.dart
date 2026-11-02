@@ -128,6 +128,8 @@ Object _operand(CppExpr e) {
   switch (e) {
     case CppNum(:final value):
       return value;
+    case CppDouble():
+      throw GoldenUnsupported('operand $e');
     case CppIdent(name: 'rip'):
       return 'rip';
     case CppIdent(:final name):

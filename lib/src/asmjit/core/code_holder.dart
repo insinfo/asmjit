@@ -348,6 +348,13 @@ class CodeHolder {
         final inst = buffer.read32At(atOffset);
         buffer.write32At(atOffset, (inst & 0xFC000000) | (disp & 0x3FFFFFF));
 
+      case RelocKind.arm64Branch14:
+        // TBZ/TBNZ: imm14 at bits [18:5], scaled by 4.
+        final disp = _a64BranchDisp(targetOffset - atOffset, 14);
+        final inst = buffer.read32At(atOffset);
+        buffer.write32At(
+            atOffset, (inst & 0xFFF8001F) | ((disp & 0x3FFF) << 5));
+
       case RelocKind.arm64Branch19:
         // B.cond/CBZ/CBNZ: imm19 at bits [23:5], scaled by 4.
         final disp = _a64BranchDisp(targetOffset - atOffset, 19);

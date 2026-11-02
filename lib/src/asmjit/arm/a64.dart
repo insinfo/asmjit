@@ -4,6 +4,7 @@
 /// Ported from asmjit/arm/a64globals.h and a64operand.h
 
 import '../core/operand.dart';
+import '../core/labels.dart';
 import '../core/reg_type.dart';
 
 // ===========================================================================
@@ -57,8 +58,21 @@ class A64Gp extends BaseReg {
   @override
   int get hashCode => Object.hash(id, sizeBits);
 
+  /// `Gp::kIdSp`: SP (and WSP) use id 31.
+  static const int kIdSp = 31;
+
+  /// `Gp::kIdZr`: XZR/WZR use id 63 (encoded as 31), as in upstream, so the
+  /// two registers that share encoding 31 stay distinguishable.
+  static const int kIdZr = 63;
+
+  bool get isSp => id == kIdSp;
+  bool get isZr => id == kIdZr;
+
   @override
   String toString() {
+    if (id == kIdZr) {
+      return is64Bit ? 'xzr' : 'wzr';
+    }
     if (id == 31) {
       return is64Bit ? 'sp' : 'wsp';
     }
@@ -101,7 +115,22 @@ class A64Vec extends BaseReg {
   /// Vector arrangement.
   final A64Layout layout;
 
-  const A64Vec(this.id, this.sizeBits, [this.layout = A64Layout.none]);
+  /// Element type (`VecElementType`: 1 = B, 2 = H, 3 = S, 4 = D, 5 = B4,
+  /// 6 = H2) when it is not implied by [layout] (element access such as
+  /// `v3.s(3)` or the `.4b`/`.2h` groups of dot products).
+  final int? elementType;
+
+  /// Element index (`v3.s(3)`), or -1.
+  final int elementIndex;
+
+  const A64Vec(this.id, this.sizeBits,
+      [this.layout = A64Layout.none, this.elementType, this.elementIndex = -1]);
+
+  /// Element [index] of type [elementType] of this register (upstream
+  /// `Vec::b(i)`, `h(i)`, `s(i)`, `d(i)`): a 128-bit register with an
+  /// element index.
+  A64Vec at(int elementType, int index) =>
+      A64Vec(id, 128, A64Layout.none, elementType, index);
 
   @override
   RegType get type =>
@@ -141,10 +170,12 @@ class A64Vec extends BaseReg {
   A64Vec get q => A64Vec(id, 128);
 
   // Modifiers
-  A64Vec cloneWithLayout(A64Layout l) => A64Vec(id, sizeBits, l);
+  A64Vec cloneWithLayout(A64Layout l) =>
+      A64Vec(id, sizeBits, l, elementType, elementIndex);
 
   @override
-  BaseReg toPhys(int physId) => A64Vec(physId, sizeBits, layout);
+  BaseReg toPhys(int physId) =>
+      A64Vec(physId, sizeBits, layout, elementType, elementIndex);
 
   @override
   bool operator ==(Object other) =>
@@ -152,10 +183,13 @@ class A64Vec extends BaseReg {
       other is A64Vec &&
           other.id == id &&
           other.sizeBits == sizeBits &&
-          other.layout == layout;
+          other.layout == layout &&
+          other.elementType == elementType &&
+          other.elementIndex == elementIndex;
 
   @override
-  int get hashCode => Object.hash(id, sizeBits, layout);
+  int get hashCode =>
+      Object.hash(id, sizeBits, layout, elementType, elementIndex);
 
   @override
   String toString() {
@@ -216,7 +250,7 @@ const x30 = A64Gp(30, 64); // Link Register (LR)
 const fp = x29; // Frame Pointer
 const lr = x30; // Link Register
 const sp = A64Gp(31, 64); // Stack Pointer
-const xzr = A64Gp(31, 64); // Zero Register (64-bit)
+const xzr = A64Gp(A64Gp.kIdZr, 64); // Zero Register (64-bit)
 
 // 32-bit General Purpose Registers (W0-W30)
 const w0 = A64Gp(0, 32);
@@ -251,7 +285,7 @@ const w28 = A64Gp(28, 32);
 const w29 = A64Gp(29, 32);
 const w30 = A64Gp(30, 32);
 const wsp = A64Gp(31, 32); // Stack Pointer (32-bit)
-const wzr = A64Gp(31, 32); // Zero Register (32-bit)
+const wzr = A64Gp(A64Gp.kIdZr, 32); // Zero Register (32-bit)
 
 // 128-bit SIMD/FP Registers (V0-V31)
 const v0 = A64Vec(0, 128);
@@ -433,6 +467,13 @@ class A64Mem extends BaseMem {
   /// Shift amount for index.
   final int shift;
 
+  /// Extend of the index register (upstream `ShiftOp`: 8 = UXTW, 12 = SXTW,
+  /// 13 = SXTX), or null for LSL.
+  final int? extend;
+
+  /// Label base (PC-relative, `ptr(label)`), or null.
+  final Label? label;
+
   /// Addressing mode.
   final A64AddrMode addrMode;
 
@@ -450,7 +491,13 @@ class A64Mem extends BaseMem {
     this.shift = 0,
     this.addrMode = A64AddrMode.offset,
     this.size = 0,
+    this.extend,
+    this.label,
   });
+
+  /// `[label, #offset]`: PC-relative address of [label].
+  factory A64Mem.label(Label label, [int offset = 0]) =>
+      A64Mem._(label: label, displacement: offset);
 
   /// [base] - Simple base register addressing.
   factory A64Mem.base(A64Gp base, {int size = 0}) {
@@ -482,8 +529,14 @@ class A64Mem extends BaseMem {
 
   /// [base, index] - Base + index register.
   factory A64Mem.baseIndex(A64Gp base, A64Gp index,
-      {int shift = 0, int size = 0}) {
-    return A64Mem._(base: base, index: index, shift: shift, size: size);
+      {int shift = 0, int size = 0, int? extend}) {
+    return A64Mem._(
+        base: base, index: index, shift: shift, size: size, extend: extend);
+  }
+
+  /// `[base], index` (post-index by a register, used by LD1..ST4).
+  factory A64Mem.postIndexReg(A64Gp base, A64Gp index) {
+    return A64Mem._(base: base, index: index, addrMode: A64AddrMode.postIndex);
   }
 
   /// Has base register.
@@ -559,8 +612,23 @@ enum A64Shift {
   asr(2),
 
   /// Rotate right.
-  ror(3);
+  ror(3),
 
+  /// Masked shift left (MOVI/MVNI).
+  msl(5),
+
+  /// Extended register / index: UXTB, UXTH, UXTW, UXTX, SXTB, SXTH, SXTW,
+  /// SXTX.
+  uxtb(6),
+  uxth(7),
+  uxtw(8),
+  uxtx(9),
+  sxtb(10),
+  sxth(11),
+  sxtw(12),
+  sxtx(13);
+
+  /// Upstream `ShiftOp` value (LSL..ROR are also the 2-bit shift field).
   final int encoding;
   const A64Shift(this.encoding);
 }

@@ -6,9 +6,10 @@ void main() {
   group('A64CodeBuilder', () {
     test('Vector ops build correct IR', () {
       final builder = A64CodeBuilder.create();
-      final v0 = builder.newVecReg(sizeBits: 128);
-      final v1 = builder.newVecReg(sizeBits: 128);
-      final v2 = builder.newVecReg(sizeBits: 128);
+      // Vector arithmetic needs an arrangement (`.4s`), as in upstream.
+      final v0 = builder.newVecReg(sizeBits: 128).s4;
+      final v1 = builder.newVecReg(sizeBits: 128).s4;
+      final v2 = builder.newVecReg(sizeBits: 128).s4;
 
       builder.faddVec(v0, v1, v2);
       builder.fsubVec(v0, v1, v2);

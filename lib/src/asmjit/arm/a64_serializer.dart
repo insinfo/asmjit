@@ -1,7 +1,6 @@
 import '../core/builder.dart' as ir;
 import '../core/labels.dart';
 import 'a64_assembler.dart';
-import 'a64_dispatcher.dart';
 import 'a64.dart';
 
 /// Serializer that converts Builder IR to A64Assembler calls (subset).
@@ -62,6 +61,6 @@ class A64Serializer implements ir.SerializerContext {
         ops.add(op.cond);
       }
     }
-    a64Dispatch(asm, instId, ops);
+    asm.emit(instId, ops);
   }
 }

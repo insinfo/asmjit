@@ -191,8 +191,10 @@ abstract class BaseReg extends Operand {
   /// Whether this is a mask register.
   bool get isMask => type == RegType.mask;
 
-  /// Whether this is a physical register (not virtual).
-  bool get isPhysical => id < Globals.kMaxPhysRegs && id >= 0;
+  /// Whether this is a physical register (not virtual): as upstream
+  /// `Operand::is_virt_id()`, virtual ids start at [Globals.kMinVirtId]
+  /// (AArch64 XZR/WZR are physical with id 63).
+  bool get isPhysical => id >= 0 && id < Globals.kMinVirtId;
 
   /// Creates a physical register of the same type with the given ID.
   BaseReg toPhys(int physId);

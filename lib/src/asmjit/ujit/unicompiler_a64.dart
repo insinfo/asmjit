@@ -86,8 +86,8 @@ mixin UniCompilerA64 on UniCompilerBase {
     if (ins != null) {
       final tmp = newVecWithWidth(VecWidth.k128, '@ins');
       cc.addNode(InstNode(A64InstId.kLdr, [_vecView(tmp, 8 << ins), src]));
-      cc.addNode(InstNode(A64InstId.kMov,
-          [_vArr(dst, ins), Imm(idx), _vArr(tmp, ins), Imm(0)]));
+      cc.addNode(InstNode(
+          A64InstId.kMov, [_vElem(dst, ins, idx), _vElem(tmp, ins, 0)]));
       return;
     }
 
@@ -124,8 +124,8 @@ mixin UniCompilerA64 on UniCompilerBase {
       var from = src;
       if (idx != 0) {
         from = newVecWithWidth(VecWidth.k128, '@ext');
-        cc.addNode(InstNode(A64InstId.kMov,
-            [_vArr(from, ext), Imm(0), _vArr(src, ext), Imm(idx)]));
+        cc.addNode(InstNode(
+            A64InstId.kMov, [_vElem(from, ext, 0), _vElem(src, ext, idx)]));
       }
       cc.addNode(InstNode(A64InstId.kStr, [_vecView(from, 8 << ext), dst]));
       return;
@@ -300,7 +300,7 @@ mixin UniCompilerA64 on UniCompilerBase {
         } else {
           src = src_ as BaseReg;
         }
-        cc.addNode(InstNode(A64InstId.kDup, [d, _vArr(src, el), Imm(0)]));
+        cc.addNode(InstNode(A64InstId.kDup, [d, _vElem(src, el, 0)]));
         return;
 
       case UniOpVV.broadcastV128U32:
@@ -448,6 +448,11 @@ mixin UniCompilerA64 on UniCompilerBase {
 
   /// View of [reg] with element size [el] (0..3), optionally the low half.
   void _a64(int instId, List<Operand> ops) => cc.addNode(InstNode(instId, ops));
+
+  /// Element [index] of [reg] (upstream `v.b(i)`, `h(i)`, `s(i)`, `d(i)`);
+  /// [el] is the element size log2 (0 = B ... 3 = D).
+  A64Vec _vElem(BaseReg reg, int el, int index) =>
+      A64Vec(reg.id, 128).at(el + 1, index);
 
   A64Vec _vArr(BaseReg reg, int el, {bool lo = false}) =>
       A64Vec(reg.id, lo ? 64 : 128, (lo ? _loLayouts : _fullLayouts)[el]);
@@ -695,8 +700,8 @@ mixin UniCompilerA64 on UniCompilerBase {
       case UniOpVVV.combineHiLoF64:
         // dst = {src1.u64[1], src2.u64[0]}.
         final src2 = _asVecA64(src2_, dst, kFmNone);
-        void movD0(BaseReg to, BaseReg from, int i) => _a64(
-            A64InstId.kMov, [_vArr(to, 3), Imm(i), _vArr(from, 3), Imm(i)]);
+        void movD0(BaseReg to, BaseReg from, int i) =>
+            _a64(A64InstId.kMov, [_vElem(to, 3, i), _vElem(from, 3, i)]);
         if (dst.id == src1.id) {
           if (dst.id == src2.id) return;
           movD0(dst, src2, 0);
@@ -788,14 +793,14 @@ mixin UniCompilerA64 on UniCompilerBase {
         // If the shift is used to extract a high 64-bit element and zero the
         // rest of the register.
         if (op == UniOpVVI.srlbU128 && imm == 8) {
-          _a64(A64InstId.kDup, [A64Vec(dst.id, 64), _vArr(src, 3), Imm(1)]);
+          _a64(A64InstId.kDup, [A64Vec(dst.id, 64), _vElem(src, 3, 1)]);
           return;
         }
 
         // If the shift is used to extract the last 32-bit element and zero
         // the rest of the register.
         if (op == UniOpVVI.srlbU128 && imm == 12) {
-          _a64(A64InstId.kDup, [A64Vec(dst.id, 32), _vArr(src, 2), Imm(3)]);
+          _a64(A64InstId.kDup, [A64Vec(dst.id, 32), _vElem(src, 2, 3)]);
           return;
         }
 
@@ -849,7 +854,7 @@ mixin UniCompilerA64 on UniCompilerBase {
         final src = _asVecA64(src_, dst, kFmNone);
         // Use `dup` to broadcast one 64-bit element.
         if (imm == swizzle2(0, 0).value || imm == swizzle2(1, 1).value) {
-          _a64(A64InstId.kDup, [_vArr(dst, 3), _vArr(src, 3), Imm(imm & 1)]);
+          _a64(A64InstId.kDup, [_vArr(dst, 3), _vElem(src, 3, imm & 1)]);
           return;
         }
         // Use `ext` to swap two 64-bit elements.
@@ -941,10 +946,10 @@ mixin UniCompilerA64 on UniCompilerBase {
         case 2: // kIns: always the last operation, on the destination only.
           final srcLane = (op >> 4) & 3, dstLane = (op >> 6) & 3;
           _a64(A64InstId.kMov,
-              [_vArr(opDst, 2), Imm(dstLane), _vArr(opDst, 2), Imm(srcLane)]);
+              [_vElem(opDst, 2, dstLane), _vElem(opDst, 2, srcLane)]);
         case 3: // kDup: broadcast of a single element.
           _a64(A64InstId.kDup,
-              [_vArr(opDst, 2), _vArr(opSrc[0], 2), Imm((op >> 4) & 3)]);
+              [_vArr(opDst, 2), _vElem(opSrc[0], 2, (op >> 4) & 3)]);
         case 4: // kExt: rotation.
           _a64(A64InstId.kExt, [
             _vArr(opDst, 0),
@@ -1107,10 +1112,10 @@ mixin UniCompilerA64 on UniCompilerBase {
       switch (op >> 8) {
         case kOpInsS:
           _a64(A64InstId.kMov,
-              [_vArr(opDst, 2), Imm((op >> 2) & 3), _vArr(a, 2), Imm(op & 3)]);
+              [_vElem(opDst, 2, (op >> 2) & 3), _vElem(a, 2, op & 3)]);
         case kOpInsD:
           _a64(A64InstId.kMov,
-              [_vArr(opDst, 3), Imm((op >> 2) & 3), _vArr(a, 3), Imm(op & 3)]);
+              [_vElem(opDst, 3, (op >> 2) & 3), _vElem(a, 3, op & 3)]);
         case kOpPerm:
           final instId = permInst[op & 7];
           if (instId == A64InstId.kExt) {
@@ -1127,7 +1132,7 @@ mixin UniCompilerA64 on UniCompilerBase {
         case kOpRev64:
           _a64(A64InstId.kRev64, [_vArr(opDst, 2), _vArr(a, 2)]);
         case kOpDup:
-          _a64(A64InstId.kDup, [_vArr(opDst, 2), _vArr(a, 2), Imm(op & 3)]);
+          _a64(A64InstId.kDup, [_vArr(opDst, 2), _vElem(a, 2, op & 3)]);
         default:
           throw StateError(
               'invalid shuffle operation 0x${op.toRadixString(16)}');

@@ -520,6 +520,8 @@ final class SimdFcm {
   final int _registerHf;
   final int _zero_op;
   const SimdFcm(this._registerOp, this._registerHf, this._zero_op);
+  bool get has_register_op => _registerOp != 0;
+  bool get has_zero_op => _zero_op != 0;
   int get register_scalar_op =>
       (((_registerOp) << 10) | (0x5 << 28)) & 0xFFFFFFFF;
   int get register_vector_op => ((_registerOp) << 10) & 0xFFFFFFFF;
