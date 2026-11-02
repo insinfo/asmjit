@@ -7,7 +7,7 @@ import '../core/code_buffer.dart';
 import '../core/labels.dart';
 import 'a64.dart';
 import 'a64_encoder.dart';
-import 'a64_dispatcher.g.dart';
+import 'a64_dispatcher.dart';
 
 import '../core/emitter.dart';
 
