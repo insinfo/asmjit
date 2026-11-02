@@ -1,6 +1,6 @@
 # Roteiro de Portação: AsmJit C++ → Dart
 //C:\MyDartProjects\asmjit\roteiro_novo.md
-**Última Atualização**: 2026-01-04 (Atual)
+**Última Atualização**: 2026-11-02 (Atual)
 continue lendo o codigo fonte c++ C:\MyDartProjects\asmjit\referencias\asmjit-master e portando
 
 foco em 64 bits, windows e linux e paridade com c++
@@ -17,19 +17,59 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 
 | Componente | Status | Testes |
 |------------|--------|--------|
-| Core (CodeHolder, Buffer, Runtime) | ✅ Funcional | **757 passando** ✨ |
+| Core (CodeHolder, Buffer, Runtime) | ✅ Funcional | x64: **809 passando** (Windows, macOS x64/Rosetta) |
+| Runtime JIT AArch64 (macOS/Linux) | ✅ Funcional (MAP_JIT + flush de icache) | `a64_jit_execution_test` |
 | x86 Assembler | ✅ ~95% | +100 instrucoes (SSE/AVX/AVX-512, Rounding) |
 | x86 Encoder | ✅ ~96% | Byte-to-byte pass (Fixed 32-bit Shifts) |
-| A64 Assembler | ✅ ~62% | logic/shifts/bitmasks/adc/sbc added |
+| A64 Assembler | ✅ ~62% | branches/labels agora relocados via CodeHolder |
 | A64 Encoder | ✅ ~58% | logic/shifts/bitmasks/adc/sbc added |
-| Compiler Base | ✅ ~85% | Fixed Ret/Jump Serialization | 
-| RALocal | ✅ Implementado | Funcional |
-| RAGlobal | ✅ Parcial (Coalescing, Priority, Weighing) | Epilog/Ret Insertion Fixed |
-| **UJIT Layer** | ✅ ~90% | X86 ~92% / A64 ~90% |
-| **Benchmarks** | ✅ Operacionais | ChaCha20 Optimized estável |
-| **Lint Status** | ⚠️ Quase limpo | TODOs monitorados; lint sem erros críticos |
+| Compiler Base | ✅ ~85% | Fixed Ret/Jump Serialization |
+| RALocal / RAGlobal (x86) | ✅ Funcional | Win64 e SysV verificados |
+| RAPass para **A64** | ❌ Não funcional | prólogo/epílogo/arg moves/ret emitidos com `X86InstId` |
+| **UJIT x86** | ✅ ~92% | |
+| **UJIT A64** | ⚠️ ~25% (985 de 4391 linhas do C++) | faltam `addU32`, `minI32`, `broadcast*`, ... |
+| **CI GitHub** | ✅ `.github/workflows/ci.yml` | linux x64/arm64, windows x64, macos arm64/x64 |
+| **Lint / formato** | ✅ `dart analyze --fatal-infos` limpo, `dart format` verificado no CI | |
+
+> Host arm64 (macOS Apple Silicon): 132 passando, 64 pulados (testes que executam código x86 são pulados via `test/support/host.dart`).
 
 ---
+
+## ✅ Progresso Recente (02/11/2026 - Produção / multiplataforma)
+
+### CI e higiene do repositório
+- Novo `.github/workflows/ci.yml`: job `checks` (analyze `--fatal-infos`, `dart format`, e **regeneração dos `*.g.dart` com `git diff --exit-code`**) + matriz de testes linux-x64, linux-arm64, windows-x64, macos-arm64, macos-x64 (Dart 3.6.2) e Dart stable em linux-x64/macos-arm64.
+- `tool/print_host_info.dart`: imprime ABI/arquitetura/CPU nos logs do CI.
+- `referencias/` deixou de ser versionada (`git rm --cached` + `.gitignore`); os fontes C++ continuam no disco.
+- `.gitattributes` (`eol=lf`) e working tree normalizado: os ~120 arquivos em CRLF vindos do Windows geravam diffs de arquivo inteiro.
+
+### Testes cientes do host (`test/support/host.dart`)
+- `skipUnlessX64Host` / `skipUnlessA64Host` / `x64TestEnv()`. Executar código x86 num host arm64 travava o isolate (o `x86_compiler_jit_test` ficava pendurado para sempre).
+- Testes de IR x86 que usavam `Environment.host()` agora fixam um ambiente x86-64.
+- `integration_abi_test`: usava `CallConvId.x64Windows` fixo e falhava em SysV; agora `cdecl` (ABI do host).
+
+### Correções de biblioteca
+1. **JIT AArch64 no macOS**: o binário `dart` só tem o entitlement `allow-jit`; páginas executáveis precisam de `mmap(MAP_JIT)` (antes o processo era morto com SIGKILL). Adicionado também flush de icache em POSIX ARM (`sys_icache_invalidate` no macOS, `__clear_cache` da libgcc no Linux) — antes era no-op.
+2. **Labels A64**: fixups de `b/bl/b.cond/cbz/cbnz` só eram resolvidos em `A64Assembler.finalize()`; `JitRuntime.add()` chama `code.finalize()` e o branch ficava com offset 0 (loop infinito). Agora usam `RelocKind.arm64Branch26/19` resolvidos no `CodeHolder` (com checagem de faixa; `arm64Adr21` também implementado).
+3. `A64Serializer.onAlign` emitia 1 NOP (4 bytes) por byte de padding.
+4. `UniCompiler.newGp32/newGp64/newGpPtr` retornavam sempre `X86Gp`; agora retornam `A64Gp` em alvos ARM.
+5. **ChaCha20 otimizado**: removido o hack que fixava `ctx` em `rcx`/`r9` físico (o RA não sabia que o registrador estava vivo e o reutilizava no SysV → saída errada). Usa o registrador virtual; verificado em Win64 (AVX2) e SysV.
+
+### Próximos passos (prioridade para produção no ARM)
+1. **RAPass arquitetura-neutro**: extrair emissão de move/ret/prólogo/epílogo/arg moves para hooks por arquitetura (como `FuncFrame`/`EmitHelper` no C++) e implementar a versão A64. Teste pendente: `a64_jit_execution_test` "UniCompiler + register allocation" (marcado como skip).
+2. **UJIT A64**: portar as tabelas de `unicompiler_a64.cpp` (ops inteiras vetoriais `add/sub/min/max*`, `broadcast*`, `loadDup*`).
+3. Avaliar dispatcher escrito à mão vs. gerado (ver seção abaixo).
+
+## 🔧 Geradores (`tool/`): manter ou escrever direto? (análise 02/11/2026)
+
+| Arquivo gerado | Origem | Veredito |
+|---|---|---|
+| `x86_inst_db.g.dart` (1839 instr.), `a64_inst_db.g.dart` (1347 instr.) | dados de `assets/db/isa_*.json` (mesma base do `tablegen.js` do C++) | **Manter gerado.** Puro dado, determinístico (regeneração reproduz byte a byte o versionado) e agora verificado no CI. Escrever à mão seria inviável e perderia o sincronismo com o upstream. |
+| `x86_dispatcher.g.dart`, `a64_dispatcher.g.dart` | `_dispatchCall`/`supported`/`_helpers` em `gen_*_db.dart`: ~700 linhas (x86) e 120 casos (A64) de Dart **escrito à mão dentro de strings** | **Melhor escrever direto.** Não há geração real: cada instrução já é um caso manual. Em string não há analyzer, autocomplete nem refatoração, e o gerador já divergiu do dispatcher uma vez (build quebrado). |
+
+Plano sugerido:
+1. Converter os dispatchers em código Dart normal (`x86_dispatcher.dart`/`a64_dispatcher.dart`) a partir do `.g.dart` atual e remover a geração do dispatcher dos geradores (os geradores ficam só com o DB).
+2. Paridade de longo prazo com o C++: o asmjit C++ não tem "dispatcher" — o `Assembler::_emit(instId, ops)` codifica a partir das tabelas de opcodes geradas no InstDB. Estender o gerador para emitir as tabelas de encoding e ter um `_emit` dirigido por tabela eliminaria o dispatcher e boa parte dos métodos escritos à mão do encoder.
 
 ## ✅ Progresso Recente (04/01/2026 - Atualização 5)
 

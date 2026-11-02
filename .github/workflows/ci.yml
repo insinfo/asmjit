@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Analyze / format / generated code
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.6.2
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Analyze
+        run: dart analyze --fatal-infos
+
+      # Generated files (*.g.dart) are excluded: they are owned by tool/gen_*.dart.
+      - name: Check formatting
+        run: |
+          dart format --output=none --set-exit-if-changed \
+            $(git ls-files 'lib/*.dart' 'test/*.dart' 'tool/*.dart' 'bin/*.dart' | grep -v '\.g\.dart$')
+
+      # Generated files must never be edited by hand: regenerate and require no diff.
+      - name: Check generated code is up to date
+        run: |
+          dart run tool/gen_tables.dart
+          git diff --exit-code -- lib/ tool/
+
+  test:
+    name: Test (${{ matrix.name }}, Dart ${{ matrix.sdk }})
+    needs: checks
+    runs-on: ${{ matrix.os }}
+    # JIT code that hangs blocks the isolate, so per-test timeouts cannot fire.
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Minimum supported SDK (pubspec: ^3.6.0) on every host.
+          - { name: linux-x64, os: ubuntu-latest, sdk: 3.6.2 }
+          - { name: linux-arm64, os: ubuntu-24.04-arm, sdk: 3.6.2 }
+          - { name: windows-x64, os: windows-latest, sdk: 3.6.2 }
+          - { name: macos-arm64, os: macos-latest, sdk: 3.6.2 }
+          - { name: macos-x64, os: macos-15-intel, sdk: 3.6.2 }
+          # Latest stable SDK on the two primary hosts.
+          - { name: linux-x64, os: ubuntu-latest, sdk: stable }
+          - { name: macos-arm64, os: macos-latest, sdk: stable }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: ${{ matrix.sdk }}
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Host info
+        run: dart run --verbosity=error tool/print_host_info.dart
+
+      - name: Run tests
+        run: dart test --reporter=expanded --timeout=60s
