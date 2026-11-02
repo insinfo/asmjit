@@ -252,3 +252,57 @@ const List<A64UniOpVInfo> kA64OpcodeInfo3v = [
   _V3(A64InstId.kSmlal2, true, 0, 0, 0, 3, 0, 2, 2, 0), // mAddwHiI32
   _V3(A64InstId.kUmlal2, true, 0, 0, 0, 3, 0, 2, 2, 0), // mAddwHiU32
 ];
+
+/// Ported from `opcode_info_2vi`; one entry per [UniOpVVI] value present in
+/// upstream (Dart-only values after the last entry are handled separately).
+const List<A64UniOpVInfo> kA64OpcodeInfo2vi = [
+  _V3(A64InstId.kShl, true, 0, 0, 0, 1, 0, 1, 0, 0), // sllU16
+  _V3(A64InstId.kShl, true, 0, 0, 0, 2, 0, 2, 0, 0), // sllU32
+  _V3(A64InstId.kShl, true, 0, 0, 0, 3, 0, 3, 0, 0), // sllU64
+  _V3(A64InstId.kUshr, true, 0, 0, 0, 1, 0, 1, 0, 0), // srlU16
+  _V3(A64InstId.kUshr, true, 0, 0, 0, 2, 0, 2, 0, 0), // srlU32
+  _V3(A64InstId.kUshr, true, 0, 0, 0, 3, 0, 3, 0, 0), // srlU64
+  _V3(A64InstId.kSshr, true, 0, 0, 0, 1, 0, 1, 0, 0), // sraI16
+  _V3(A64InstId.kSshr, true, 0, 0, 0, 2, 0, 2, 0, 0), // sraI32
+  _V3(A64InstId.kSshr, true, 0, 0, 0, 3, 0, 3, 0, 0), // sraI64
+  _V3(A64InstId.kExt, false, 0, 0, 0, 0, 0, 0, 0, 0), // sllbU128
+  _V3(A64InstId.kExt, false, 0, 0, 0, 0, 0, 0, 0, 0), // srlbU128
+  _V3(-1, false, 0, 0, 0, 1, 0, 1, 0, 0), // swizzleU16x4
+  _V3(-1, false, 0, 0, 0, 1, 0, 1, 0, 0), // swizzleLoU16x4
+  _V3(-1, false, 0, 0, 0, 1, 0, 1, 0, 0), // swizzleHiU16x4
+  _V3(-1, false, 0, 0, 0, 2, 0, 2, 0, 0), // swizzleU32x4
+  _V3(-1, false, 0, 0, 0, 3, 0, 3, 0, 0), // swizzleU64x2
+  _V3(-1, false, 0, 0, 3, 2, 0, 2, 0, 0), // swizzleF32x4
+  _V3(-1, false, 0, 0, 4, 3, 0, 3, 0, 0), // swizzleF64x2
+  _V3(-1, false, 0, 0, 0, 3, 0, 3, 0, 0), // swizzleU64x4
+  _V3(-1, false, 0, 0, 4, 3, 0, 3, 0, 0), // swizzleF64x4
+  _V3(-1, false, 0, 0, 0, 2, 0, 2, 0, 0), // extractV128I32
+  _V3(-1, false, 0, 0, 0, 3, 0, 3, 0, 0), // extractV128I64
+  _V3(-1, false, 0, 0, 3, 2, 0, 2, 0, 0), // extractV128F32
+  _V3(-1, false, 0, 0, 4, 3, 0, 3, 0, 0), // extractV128F64
+  _V3(-1, false, 0, 0, 0, 2, 0, 2, 0, 0), // extractV256I32
+  _V3(-1, false, 0, 0, 0, 3, 0, 3, 0, 0), // extractV256I64
+  _V3(-1, false, 0, 0, 3, 2, 0, 2, 0, 0), // extractV256F32
+  _V3(-1, false, 0, 0, 4, 3, 0, 3, 0, 0), // extractV256F64
+  _V3(A64InstId.kUrshr, true, 0, 0, 0, 1, 0, 1, 0, 0), // srlRndU16
+  _V3(A64InstId.kUrshr, true, 0, 0, 0, 2, 0, 2, 0, 0), // srlRndU32
+  _V3(A64InstId.kUrshr, true, 0, 0, 0, 3, 0, 3, 0, 0), // srlRndU64
+  _V3(A64InstId.kUsra, true, 0, 0, 0, 1, 0, 1, 0, 0), // srlAccU16
+  _V3(A64InstId.kUsra, true, 0, 0, 0, 2, 0, 2, 0, 0), // srlAccU32
+  _V3(A64InstId.kUsra, true, 0, 0, 0, 3, 0, 3, 0, 0), // srlAccU64
+  _V3(A64InstId.kUrsra, true, 0, 0, 0, 1, 0, 1, 0, 0), // srlRndAccU16
+  _V3(A64InstId.kUrsra, true, 0, 0, 0, 2, 0, 2, 0, 0), // srlRndAccU32
+  _V3(A64InstId.kUrsra, true, 0, 0, 0, 3, 0, 3, 0, 0), // srlRndAccU64
+  _V3(A64InstId.kShrn, true, 0, 0, 0, 0, 0, 1, 1, 0), // srlnLoU16
+  _V3(A64InstId.kShrn2, true, 0, 0, 0, 0, 0, 1, 2, 0), // srlnHiU16
+  _V3(A64InstId.kShrn, true, 0, 0, 0, 1, 0, 2, 1, 0), // srlnLoU32
+  _V3(A64InstId.kShrn2, true, 0, 0, 0, 1, 0, 2, 2, 0), // srlnHiU32
+  _V3(A64InstId.kShrn, true, 0, 0, 0, 2, 0, 3, 1, 0), // srlnLoU64
+  _V3(A64InstId.kShrn2, true, 0, 0, 0, 2, 0, 3, 2, 0), // srlnHiU64
+  _V3(A64InstId.kRshrn, true, 0, 0, 0, 0, 1, 1, 0, 0), // srlnRndLoU16
+  _V3(A64InstId.kRshrn2, true, 0, 0, 0, 0, 2, 1, 0, 0), // srlnRndHiU16
+  _V3(A64InstId.kRshrn, true, 0, 0, 0, 1, 1, 2, 0, 0), // srlnRndLoU32
+  _V3(A64InstId.kRshrn2, true, 0, 0, 0, 1, 2, 2, 0, 0), // srlnRndHiU32
+  _V3(A64InstId.kRshrn, true, 0, 0, 0, 2, 1, 3, 0, 0), // srlnRndLoU64
+  _V3(A64InstId.kRshrn2, true, 0, 0, 0, 2, 2, 3, 0, 0), // srlnRndHiU64
+];

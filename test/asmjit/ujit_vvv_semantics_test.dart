@@ -23,7 +23,16 @@ final Object _skip = _host == Arch.x64 || _host == Arch.aarch64
     : 'requires an x86-64 or AArch64 host';
 
 Uint8List _run(UniOpVVV op, Uint8List a, Uint8List b,
-    {bool sameSrc = false, CpuFeatures? features}) {
+        {bool sameSrc = false, CpuFeatures? features}) =>
+    _runEmit((cc, d, x, y) => cc.emit3v(op, d, x, sameSrc ? x : y), a, b,
+        features: features);
+
+/// JIT-compiles `emit(cc, dst, a, b)` on 128-bit vectors and runs it.
+Uint8List _runEmit(
+    void Function(UniCompiler cc, BaseReg d, BaseReg a, BaseReg b) emit,
+    Uint8List a,
+    Uint8List b,
+    {CpuFeatures? features}) {
   final rt = JitRuntime();
   try {
     final code = CodeHolder(env: rt.environment);
@@ -45,7 +54,7 @@ Uint8List _run(UniOpVVV op, Uint8List a, Uint8List b,
     final vd = cc.newVec('d');
     cc.emitVM(UniOpVM.load128U32, va, mem(p, 0));
     cc.emitVM(UniOpVM.load128U32, vb, mem(p, 16));
-    cc.emit3v(op, vd, va, sameSrc ? va : vb);
+    emit(cc, vd, va, vb);
     cc.emitMV(UniOpMV.store128U32, mem(p, 32), vd);
     cc.ret();
     cc.endFunc();
@@ -241,6 +250,76 @@ void main() {
     UniOpVVV.cmpGeF32: _f32Mask((x, y) => x >= y),
   };
 
+  // emit2vi cases: (op, imm, reference on `a`).
+  final vviCases = <String, (UniOpVVI, int, Uint8List Function(Uint8List))>{
+    'sllU32 #7': (
+      UniOpVVI.sllU32,
+      7,
+      (a) => _lanes(4, false, (x, _) => x << 7)(a, a)
+    ),
+    'srlU32 #9': (
+      UniOpVVI.srlU32,
+      9,
+      (a) => _lanes(4, false, (x, _) => x >> 9)(a, a)
+    ),
+    'sraI32 #3': (
+      UniOpVVI.sraI32,
+      3,
+      (a) => _lanes(4, true, (x, _) => x >> 3)(a, a)
+    ),
+    'sllU16 #4': (
+      UniOpVVI.sllU16,
+      4,
+      (a) => _lanes(2, false, (x, _) => x << 4)(a, a)
+    ),
+    'srlU64 #12': (
+      UniOpVVI.srlU64,
+      12,
+      (a) => _bytes([
+            for (final lane in [0, 8])
+              ...(ByteData(8)
+                    ..setUint64(
+                        0,
+                        ByteData.sublistView(a)
+                                .getUint64(lane, Endian.little) >>>
+                            12,
+                        Endian.little))
+                  .buffer
+                  .asUint8List()
+          ])
+    ),
+    'sllbU128 #3': (
+      UniOpVVI.sllbU128,
+      3,
+      (a) => _bytes([0, 0, 0, ...a.sublist(0, 13)])
+    ),
+    'srlbU128 #5': (
+      UniOpVVI.srlbU128,
+      5,
+      (a) => _bytes([...a.sublist(5), 0, 0, 0, 0, 0])
+    ),
+    'swizzleU32x4 [2,0,3,1]': (
+      UniOpVVI.swizzleU32x4,
+      2 | (0 << 2) | (3 << 4) | (1 << 6),
+      (a) => _bytes([
+            ...a.sublist(8, 12),
+            ...a.sublist(0, 4),
+            ...a.sublist(12, 16),
+            ...a.sublist(4, 8)
+          ])
+    ),
+    'swizzleU32x4 rotate 1': (
+      UniOpVVI.swizzleU32x4,
+      1 | (2 << 2) | (3 << 4) | (0 << 6),
+      (a) => _bytes([...a.sublist(4), ...a.sublist(0, 4)])
+    ),
+    'swizzleU64x2 swap': (
+      UniOpVVI.swizzleU64x2,
+      1,
+      (a) => _bytes([...a.sublist(8), ...a.sublist(0, 8)])
+    ),
+  };
+
   for (final fs in _featureSets.entries) {
     group('UniOpVVV semantics (${fs.key})', () {
       final f = fs.value;
@@ -253,6 +332,23 @@ void main() {
         test(op.name, () {
           expect(_run(op, fa, fb, features: f), ref(fa, fb));
         });
+      });
+      vviCases.forEach((name, c) {
+        test(name, () {
+          expect(
+              _runEmit((cc, d, x, y) => cc.emit2vi(c.$1, d, x, c.$2), ia, ib,
+                  features: f),
+              c.$3(ia));
+        });
+      });
+      test('alignrU128 (palignr semantics: src1 high, src2 low)', () {
+        expect(
+            _runEmit(
+                (cc, d, x, y) => cc.emit3vi(UniOpVVVI.alignrU128, d, x, y, 4),
+                ia,
+                ib,
+                features: f),
+            _bytes([...ib.sublist(4), ...ia.sublist(0, 4)]));
       });
       test('same source register shortcuts', () {
         final ones = Uint8List(16)..fillRange(0, 16, 0xFF);

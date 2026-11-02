@@ -1912,6 +1912,26 @@ mixin UniCompilerX86 on UniCompilerBase {
       throw ArgumentError('SIMD operands must be registers');
     }
     switch (op) {
+      case UniOpVVI.sllbU128:
+      case UniOpVVI.srlbU128:
+        final r = _copyVecX86(src);
+        _sseShiftImmX86(
+            op == UniOpVVI.sllbU128 ? X86InstId.kPslldq : X86InstId.kPsrldq,
+            r,
+            imm);
+        _vMovX86(dst, r);
+        break;
+      case UniOpVVI.swizzleU64x2:
+      case UniOpVVI.swizzleF64x2:
+        // Select qwords via PSHUFD on dword pairs.
+        final i0 = imm & 1, i1 = (imm >> 1) & 1;
+        final dw = (2 * i0) |
+            ((2 * i0 + 1) << 2) |
+            ((2 * i1) << 4) |
+            ((2 * i1 + 1) << 6);
+        cc.addNode(InstNode(hasAvx ? X86InstId.kVpshufd : X86InstId.kPshufd,
+            [dst, src, Imm(dw)]));
+        break;
       case UniOpVVI.sllU16:
         _vSllI16X86(dst, src, imm);
         break;
@@ -1996,6 +2016,19 @@ mixin UniCompilerX86 on UniCompilerBase {
       throw ArgumentError('SIMD operands must be registers');
     }
     switch (op) {
+      case UniOpVVVI.alignrU128 when !hasAvx && !hasSsse3:
+        // SSE2: dst = (src2 >> imm bytes) | (src1 << (16 - imm) bytes).
+        if (imm == 0) {
+          _vMovX86(dst, src2);
+          break;
+        }
+        final lo = _copyVecX86(src2);
+        _sseShiftImmX86(X86InstId.kPsrldq, lo, imm);
+        final hi = _copyVecX86(src1);
+        _sseShiftImmX86(X86InstId.kPslldq, hi, 16 - imm);
+        _sseOpX86(X86InstId.kPor, lo, hi);
+        _vMovX86(dst, lo);
+        break;
       case UniOpVVVI.alignrU128:
         if (hasAvx) {
           cc.addNode(

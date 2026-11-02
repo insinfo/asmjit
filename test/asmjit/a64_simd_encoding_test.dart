@@ -7,6 +7,7 @@ import 'package:asmjit/asmjit.dart';
 import 'package:test/test.dart';
 
 A64Vec v(int id, A64Layout l) => A64Vec(id, 128, l);
+A64Vec vv(int id, A64Layout l, [int bits = 128]) => A64Vec(id, bits, l);
 
 const s4 = A64Layout.s4, d2 = A64Layout.d2, b16 = A64Layout.b16;
 const h8 = A64Layout.h8, s2 = A64Layout.s2, h4 = A64Layout.h4;
@@ -189,6 +190,94 @@ void main() {
     'sqxtun2 v0.8h, v1.4s': ((a) => a.sqxtun2(v(0, h8), v(1, s4)), 0x6E612820),
     'xtn v0.2s, v1.2d': ((a) => a.xtn(A64Vec(0, 64, s2), v(1, d2)), 0x0EA12820),
     'uqxtn2 v0.16b, v1.8h': ((a) => a.uqxtn2(v(0, b16), v(1, h8)), 0x6E214820),
+    'shl v1.4s, v0.4s, #16': (
+      (a) => a.shlVec(vv(1, A64Layout.s4), vv(0, A64Layout.s4), 16),
+      0x4F305401
+    ),
+    'shl v1.16b, v0.16b, #7': (
+      (a) => a.shlVec(vv(1, A64Layout.b16), vv(0, A64Layout.b16), 7),
+      0x4F0F5401
+    ),
+    'shl v1.2d, v0.2d, #63': (
+      (a) => a.shlVec(vv(1, A64Layout.d2), vv(0, A64Layout.d2), 63),
+      0x4F7F5401
+    ),
+    'sli v1.4s, v0.4s, #12': (
+      (a) => a.sliVec(vv(1, A64Layout.s4), vv(0, A64Layout.s4), 12),
+      0x6F2C5401
+    ),
+    'ushr v1.4s, v0.4s, #20': (
+      (a) => a.ushrVec(vv(1, A64Layout.s4), vv(0, A64Layout.s4), 20),
+      0x6F2C0401
+    ),
+    'ushr v1.8h, v0.8h, #16': (
+      (a) => a.ushrVec(vv(1, A64Layout.h8), vv(0, A64Layout.h8), 16),
+      0x6F100401
+    ),
+    'sshr v1.2s, v0.2s, #1': (
+      (a) => a.sshrVec(vv(1, A64Layout.s2, 64), vv(0, A64Layout.s2, 64), 1),
+      0x0F3F0401
+    ),
+    'sri v1.4s, v0.4s, #25': (
+      (a) => a.sriVec(vv(1, A64Layout.s4), vv(0, A64Layout.s4), 25),
+      0x6F274401
+    ),
+    'usra v1.2d, v0.2d, #32': (
+      (a) => a.usraVec(vv(1, A64Layout.d2), vv(0, A64Layout.d2), 32),
+      0x6F601401
+    ),
+    'ssra v1.8h, v0.8h, #3': (
+      (a) => a.ssraVec(vv(1, A64Layout.h8), vv(0, A64Layout.h8), 3),
+      0x4F1D1401
+    ),
+    'shrn v1.4h, v0.4s, #16': (
+      (a) => a.shrnVec(vv(1, A64Layout.h4, 64), vv(0, A64Layout.s4), 16),
+      0x0F108401
+    ),
+    'shrn2 v1.8h, v0.4s, #16': (
+      (a) => a.shrnVec(vv(1, A64Layout.h8), vv(0, A64Layout.s4), 16),
+      0x4F108401
+    ),
+    'ushll v1.8h, v0.8b, #0': (
+      (a) => a.ushllVec(vv(1, A64Layout.h8), vv(0, A64Layout.b8, 64), 0),
+      0x2F08A401
+    ),
+    'ushll2 v1.4s, v0.8h, #2': (
+      (a) => a.ushllVec(vv(1, A64Layout.s4), vv(0, A64Layout.h8), 2),
+      0x6F12A401
+    ),
+    'sshll v1.2d, v0.2s, #0': (
+      (a) => a.sshllVec(vv(1, A64Layout.d2), vv(0, A64Layout.s2, 64), 0),
+      0x0F20A401
+    ),
+    'mov v1.s[2], v0.s[1]': (
+      (a) => a.ins(vv(1, A64Layout.s4), 2, vv(0, A64Layout.s4), 1),
+      0x6E142401
+    ),
+    'mov v3.d[1], v4.d[0]': (
+      (a) => a.ins(vv(3, A64Layout.d2), 1, vv(4, A64Layout.d2), 0),
+      0x6E180483
+    ),
+    'mov v3.b[15], v4.b[3]': (
+      (a) => a.ins(vv(3, A64Layout.b16), 15, vv(4, A64Layout.b16), 3),
+      0x6E1F1C83
+    ),
+    'urshr v1.4s, v0.4s, #8': (
+      (a) => a.urshrVec(vv(1, A64Layout.s4), vv(0, A64Layout.s4), 8),
+      0x6F382401
+    ),
+    'ursra v1.8h, v0.8h, #4': (
+      (a) => a.ursraVec(vv(1, A64Layout.h8), vv(0, A64Layout.h8), 4),
+      0x6F1C3401
+    ),
+    'rshrn v1.8b, v0.8h, #8': (
+      (a) => a.rshrnVec(vv(1, A64Layout.b8, 64), vv(0, A64Layout.h8), 8),
+      0x0F088C01
+    ),
+    'rshrn2 v1.16b, v0.8h, #8': (
+      (a) => a.rshrnVec(vv(1, A64Layout.b16), vv(0, A64Layout.h8), 8),
+      0x4F088C01
+    ),
   };
 
   group('A64 Advanced SIMD encoding', () {

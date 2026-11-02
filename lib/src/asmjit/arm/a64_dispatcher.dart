@@ -578,6 +578,57 @@ void _dispatch(A64Assembler asm, int instId, List<Object> ops) {
     case A64InstId.kUqxtn2:
       _v2(asm, ops, asm.uqxtn2);
       break;
+    case A64InstId.kShl:
+      _vShift(asm, ops, asm.shlVec);
+      break;
+    case A64InstId.kSli:
+      _vShift(asm, ops, asm.sliVec);
+      break;
+    case A64InstId.kSshr:
+      _vShift(asm, ops, asm.sshrVec);
+      break;
+    case A64InstId.kUshr:
+      _vShift(asm, ops, asm.ushrVec);
+      break;
+    case A64InstId.kSsra:
+      _vShift(asm, ops, asm.ssraVec);
+      break;
+    case A64InstId.kUsra:
+      _vShift(asm, ops, asm.usraVec);
+      break;
+    case A64InstId.kSri:
+      _vShift(asm, ops, asm.sriVec);
+      break;
+    case A64InstId.kShrn:
+      _vShift(asm, ops, asm.shrnVec);
+      break;
+    case A64InstId.kShrn2:
+      _vShift(asm, ops, asm.shrnVec);
+      break;
+    case A64InstId.kSshll:
+      _vShift(asm, ops, asm.sshllVec);
+      break;
+    case A64InstId.kUshll:
+      _vShift(asm, ops, asm.ushllVec);
+      break;
+    case A64InstId.kSshll2:
+      _vShift(asm, ops, asm.sshllVec);
+      break;
+    case A64InstId.kUshll2:
+      _vShift(asm, ops, asm.ushllVec);
+      break;
+    case A64InstId.kUrshr:
+      _vShift(asm, ops, asm.urshrVec);
+      break;
+    case A64InstId.kUrsra:
+      _vShift(asm, ops, asm.ursraVec);
+      break;
+    case A64InstId.kRshrn:
+      _vShift(asm, ops, asm.rshrnVec);
+      break;
+    case A64InstId.kRshrn2:
+      _vShift(asm, ops, asm.rshrnVec);
+      break;
     default:
       break;
   }
@@ -721,6 +772,15 @@ void _cmn(A64Assembler asm, List<Object> ops) {
 }
 
 void _mov(A64Assembler asm, List<Object> ops) {
+  // MOV (element), alias of INS: [Vd, dstIndex, Vn, srcIndex].
+  if (ops.length == 4 &&
+      ops[0] is A64Vec &&
+      ops[1] is int &&
+      ops[2] is A64Vec &&
+      ops[3] is int) {
+    asm.ins(ops[0] as A64Vec, ops[1] as int, ops[2] as A64Vec, ops[3] as int);
+    return;
+  }
   if (ops.length != 2) return;
   final dst = ops[0], src = ops[1];
   if (dst is A64Gp && src is int) {
@@ -768,6 +828,17 @@ void _adrp(A64Assembler asm, List<Object> ops) {
 void _b(A64Assembler asm, List<Object> ops) {
   if (ops.length == 1 && ops[0] is Label) {
     asm.b(ops[0] as Label);
+  }
+}
+
+/// Vector shift by immediate: `[A64Vec, A64Vec, int]`.
+void _vShift(
+    A64Assembler asm, List<Object> ops, void Function(A64Vec, A64Vec, int) fn) {
+  if (ops.length == 3 &&
+      ops[0] is A64Vec &&
+      ops[1] is A64Vec &&
+      ops[2] is int) {
+    fn(ops[0] as A64Vec, ops[1] as A64Vec, ops[2] as int);
   }
 }
 

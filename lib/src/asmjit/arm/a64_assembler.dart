@@ -786,6 +786,25 @@ class A64Assembler extends BaseEmitter {
   void smlalVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.smlalVec(rd, rn, rm);
   void umlalVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.umlalVec(rd, rn, rm);
 
+  void shlVec(A64Vec rd, A64Vec rn, int shift) => _enc.shlVec(rd, rn, shift);
+  void sliVec(A64Vec rd, A64Vec rn, int shift) => _enc.sliVec(rd, rn, shift);
+  void sshrVec(A64Vec rd, A64Vec rn, int shift) => _enc.sshrVec(rd, rn, shift);
+  void ushrVec(A64Vec rd, A64Vec rn, int shift) => _enc.ushrVec(rd, rn, shift);
+  void ssraVec(A64Vec rd, A64Vec rn, int shift) => _enc.ssraVec(rd, rn, shift);
+  void usraVec(A64Vec rd, A64Vec rn, int shift) => _enc.usraVec(rd, rn, shift);
+  void sriVec(A64Vec rd, A64Vec rn, int shift) => _enc.sriVec(rd, rn, shift);
+  void urshrVec(A64Vec rd, A64Vec rn, int shift) =>
+      _enc.urshrVec(rd, rn, shift);
+  void ursraVec(A64Vec rd, A64Vec rn, int shift) =>
+      _enc.ursraVec(rd, rn, shift);
+  void rshrnVec(A64Vec rd, A64Vec rn, int shift) =>
+      _enc.rshrnVec(rd, rn, shift);
+  void shrnVec(A64Vec rd, A64Vec rn, int shift) => _enc.shrnVec(rd, rn, shift);
+  void sshllVec(A64Vec rd, A64Vec rn, int shift) =>
+      _enc.sshllVec(rd, rn, shift);
+  void ushllVec(A64Vec rd, A64Vec rn, int shift) =>
+      _enc.ushllVec(rd, rn, shift);
+
   /// MOVI (per-byte immediate).
   void moviB(A64Vec rd, int imm8) => _enc.moviB(rd, imm8);
   void faddp(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>

@@ -26,3 +26,8 @@ Environment x64TestEnv() {
       ? Environment.x64Windows()
       : Environment.x64SysV();
 }
+
+/// `skip:` value for tests that execute JIT code through the portable
+/// UniCompiler path (x86-64 or AArch64 hosts).
+final Object skipUnlessJitHost =
+    hostIsX64 || hostIsA64 ? false : 'requires an x86-64 or AArch64 host';

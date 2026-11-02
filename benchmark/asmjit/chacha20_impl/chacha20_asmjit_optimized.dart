@@ -378,8 +378,9 @@ class ChaCha20AsmJitOptimized {
       }
       cc.emit2vi(UniOpVVI.swizzleU32x4, dst, src, imm);
     } else {
-      final byteShift = (4 - count) * 4;
-      cc.emit3vi(UniOpVVVI.alignrU128, dst, src, src, byteShift);
+      // EXT with the same source rotates bytes: dst.s[i] = src.s[(i + count) & 3],
+      // matching the x86 swizzle above.
+      cc.emit3vi(UniOpVVVI.alignrU128, dst, src, src, count * 4);
     }
   }
 }

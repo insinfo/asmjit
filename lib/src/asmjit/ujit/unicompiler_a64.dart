@@ -346,27 +346,6 @@ mixin UniCompilerA64 on UniCompilerBase {
     }
   }
 
-  // Helper for Shift Left (immediate)
-  void _vShlA64(BaseReg dst, BaseReg src, int imm, A64Layout layout) {
-    final d = _toA64Vec(dst, layout);
-    final s = _toA64Vec(src, layout);
-    cc.addNode(InstNode(A64InstId.kShl, [d, s, Imm(imm)]));
-  }
-
-  // Helper for Logical Shift Right (immediate)
-  void _vLsrA64(BaseReg dst, BaseReg src, int imm, A64Layout layout) {
-    final d = _toA64Vec(dst, layout);
-    final s = _toA64Vec(src, layout);
-    cc.addNode(InstNode(A64InstId.kLsr, [d, s, Imm(imm)]));
-  }
-
-  // Helper for Arithmetic Shift Right (immediate)
-  void _vAsrA64(BaseReg dst, BaseReg src, int imm, A64Layout layout) {
-    final d = _toA64Vec(dst, layout);
-    final s = _toA64Vec(src, layout);
-    cc.addNode(InstNode(A64InstId.kAsr, [d, s, Imm(imm)]));
-  }
-
   // Helper for FMLA (Fused Multiply Add)
   void _vFmlaA64(BaseReg dst, BaseReg src1, BaseReg src2, A64Layout layout) {
     final d = _toA64Vec(dst, layout);
@@ -668,43 +647,79 @@ mixin UniCompilerA64 on UniCompilerBase {
     }
   }
 
-  void _emit2viA64(UniOpVVI op, Operand dst, Operand src, int imm) {
-    final d = dst as BaseReg;
-    final s = src as BaseReg;
+  /// Port of `UniCompiler::emit_2vi()` (unicompiler_a64.cpp).
+  void _emit2viA64(UniOpVVI op, Operand dst_, Operand src_, int imm) {
+    final dst = dst_ as BaseReg;
+    final src = _asVecA64(src_, dst, kFmNone);
 
     switch (op) {
-      case UniOpVVI.sllU16:
-        _vShlA64(d, s, imm, A64Layout.h8);
-        return;
-      case UniOpVVI.sllU32:
-        _vShlA64(d, s, imm, A64Layout.s4);
-        return;
-      case UniOpVVI.sllU64:
-        _vShlA64(d, s, imm, A64Layout.d2);
-        return;
-
-      case UniOpVVI.srlU16:
-        _vLsrA64(d, s, imm, A64Layout.h8);
-        return;
-      case UniOpVVI.srlU32:
-        _vLsrA64(d, s, imm, A64Layout.s4);
-        return;
-      case UniOpVVI.srlU64:
-        _vLsrA64(d, s, imm, A64Layout.d2);
+      case UniOpVVI.sllbU128:
+      case UniOpVVI.srlbU128:
+        if (imm < 0 || imm > 15) throw ArgumentError('byte shift $imm');
+        if (imm == 0) {
+          _vMovA64(dst, src);
+          return;
+        }
+        final zero = newVecWithWidth(VecWidth.k128, '@zero');
+        cc.addNode(InstNode(A64InstId.kMovi, [_vArr(zero, 0), Imm(0)]));
+        // EXT d, n, m, #i -> d = m:n >> (8 * i).
+        cc.addNode(InstNode(
+            A64InstId.kExt,
+            op == UniOpVVI.sllbU128
+                ? [_vArr(dst, 0), _vArr(zero, 0), _vArr(src, 0), Imm(16 - imm)]
+                : [_vArr(dst, 0), _vArr(src, 0), _vArr(zero, 0), Imm(imm)]));
         return;
 
-      case UniOpVVI.sraI16:
-        _vAsrA64(d, s, imm, A64Layout.h8);
+      case UniOpVVI.swizzleU32x4:
+      case UniOpVVI.swizzleF32x4:
+        // dst.s[i] = src.s[(imm >> 2i) & 3] (same encoding as PSHUFD).
+        final idx = [for (int i = 0; i < 4; i++) (imm >> (2 * i)) & 3];
+        if (idx[0] == 0 && idx[1] == 1 && idx[2] == 2 && idx[3] == 3) {
+          _vMovA64(dst, src);
+          return;
+        }
+        final out =
+            dst.id == src.id ? newVecWithWidth(VecWidth.k128, '@swz') : dst;
+        for (int i = 0; i < 4; i++) {
+          cc.addNode(InstNode(A64InstId.kMov,
+              [_vArr(out, 2), Imm(i), _vArr(src, 2), Imm(idx[i])]));
+        }
+        if (out.id != dst.id) _vMovA64(dst, out);
         return;
-      case UniOpVVI.sraI32:
-        _vAsrA64(d, s, imm, A64Layout.s4);
-        return;
-      case UniOpVVI.sraI64:
-        _vAsrA64(d, s, imm, A64Layout.d2);
+
+      case UniOpVVI.swizzleU64x2:
+      case UniOpVVI.swizzleF64x2:
+        final i0 = imm & 1, i1 = (imm >> 1) & 1;
+        if (i0 == 0 && i1 == 1) {
+          _vMovA64(dst, src);
+        } else if (i0 == 1 && i1 == 0) {
+          cc.addNode(InstNode(A64InstId.kExt,
+              [_vArr(dst, 0), _vArr(src, 0), _vArr(src, 0), Imm(8)]));
+        } else {
+          final out =
+              dst.id == src.id ? newVecWithWidth(VecWidth.k128, '@swz') : dst;
+          cc.addNode(InstNode(
+              A64InstId.kMov, [_vArr(out, 3), Imm(0), _vArr(src, 3), Imm(i0)]));
+          cc.addNode(InstNode(
+              A64InstId.kMov, [_vArr(out, 3), Imm(1), _vArr(src, 3), Imm(i1)]));
+          if (out.id != dst.id) _vMovA64(dst, out);
+        }
         return;
 
       default:
-        throw UnimplementedError('_emit2viA64: $op');
+        if (op.index >= kA64OpcodeInfo2vi.length) {
+          throw UnimplementedError('_emit2viA64: $op');
+        }
+        final info = kA64OpcodeInfo2vi[op.index];
+        if (!info.asimd || info.instId < 0) {
+          throw UnimplementedError('_emit2viA64: $op');
+        }
+        // Narrowing shifts write the low (SHRN) or high (SHRN2) half.
+        final d = _vArr(dst, info.dstElement,
+            lo: info.dstPart == kPartLo ||
+                (info.srcPart == kPartLo && info.dstElement < info.srcElement));
+        final s = _vArr(src, info.srcElement);
+        cc.addNode(InstNode(info.instId, [d, s, Imm(imm)]));
     }
   }
 
@@ -726,7 +741,12 @@ mixin UniCompilerA64 on UniCompilerBase {
 
     switch (op) {
       case UniOpVVVI.alignrU128:
-        _vExtA64(d, s1, s2, imm, A64Layout.b16);
+        // PALIGNR semantics (src1 high, src2 low): EXT dst, src2, src1, #imm.
+        if (imm == 0) {
+          _vMovA64(d, s2);
+        } else {
+          _vExtA64(d, s2, s1, imm, A64Layout.b16);
+        }
         break;
       case UniOpVVVI.interleaveShuffleU32x4:
       case UniOpVVVI.interleaveShuffleF32x4:

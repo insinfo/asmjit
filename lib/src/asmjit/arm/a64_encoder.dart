@@ -1670,6 +1670,64 @@ class A64Encoder {
   void umlalVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
       _vec3Diff(1, 0x8, rd, rn, rm);
 
+  /// Advanced SIMD shift by immediate:
+  /// `0|Q|U|011110|immh:immb|opcode|1|Rn|Rd`. Left shifts encode
+  /// `esize + shift`, right shifts `2 * esize - shift`. [sizeOf] provides the
+  /// element size, [qOf] the Q bit (they differ for narrowing/widening ops).
+  void _vecShiftImm(int u, int opcode, A64Vec rd, A64Vec rn, int shift,
+      {required bool left, A64Vec? sizeOf, A64Vec? qOf}) {
+    final esize = 8 << _vecElemSizeBits(sizeOf ?? rd);
+    final ok =
+        left ? shift >= 0 && shift < esize : shift >= 1 && shift <= esize;
+    if (!ok) {
+      throw ArgumentError('Shift #$shift out of range for $esize-bit elements');
+    }
+    final immhb = left ? esize + shift : 2 * esize - shift;
+    final q = _resolveWide(qOf ?? rd, true) ? 1 : 0;
+    emit32((q << 30) |
+        (u << 29) |
+        (0x1E << 23) |
+        (immhb << 16) |
+        (opcode << 11) |
+        (1 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd));
+  }
+
+  void shlVec(A64Vec rd, A64Vec rn, int shift) =>
+      _vecShiftImm(0, 0x0A, rd, rn, shift, left: true);
+  void sliVec(A64Vec rd, A64Vec rn, int shift) =>
+      _vecShiftImm(1, 0x0A, rd, rn, shift, left: true);
+  void sshrVec(A64Vec rd, A64Vec rn, int shift) =>
+      _vecShiftImm(0, 0x00, rd, rn, shift, left: false);
+  void ushrVec(A64Vec rd, A64Vec rn, int shift) =>
+      _vecShiftImm(1, 0x00, rd, rn, shift, left: false);
+  void ssraVec(A64Vec rd, A64Vec rn, int shift) =>
+      _vecShiftImm(0, 0x02, rd, rn, shift, left: false);
+  void usraVec(A64Vec rd, A64Vec rn, int shift) =>
+      _vecShiftImm(1, 0x02, rd, rn, shift, left: false);
+  void sriVec(A64Vec rd, A64Vec rn, int shift) =>
+      _vecShiftImm(1, 0x08, rd, rn, shift, left: false);
+
+  void urshrVec(A64Vec rd, A64Vec rn, int shift) =>
+      _vecShiftImm(1, 0x04, rd, rn, shift, left: false);
+  void ursraVec(A64Vec rd, A64Vec rn, int shift) =>
+      _vecShiftImm(1, 0x06, rd, rn, shift, left: false);
+
+  /// RSHRN/RSHRN2 (rounding shift right narrow).
+  void rshrnVec(A64Vec rd, A64Vec rn, int shift) =>
+      _vecShiftImm(0, 0x11, rd, rn, shift, left: false);
+
+  /// SHRN/SHRN2: element size and Q come from the narrow destination.
+  void shrnVec(A64Vec rd, A64Vec rn, int shift) =>
+      _vecShiftImm(0, 0x10, rd, rn, shift, left: false);
+
+  /// SSHLL/USHLL(2): element size and Q come from the narrow source.
+  void sshllVec(A64Vec rd, A64Vec rn, int shift) =>
+      _vecShiftImm(0, 0x14, rd, rn, shift, left: true, sizeOf: rn, qOf: rn);
+  void ushllVec(A64Vec rd, A64Vec rn, int shift) =>
+      _vecShiftImm(1, 0x14, rd, rn, shift, left: true, sizeOf: rn, qOf: rn);
+
   /// EXT: `ext Vd.16B, Vn.16B, Vm.16B, #index` (Vd = Vm:Vn >> index*8).
   /// Encoding: 0|Q|101110|00|0|Rm|0|imm4|0|Rn|Rd
   void extVec(A64Vec rd, A64Vec rn, A64Vec rm, int index) {
@@ -1722,43 +1780,24 @@ class A64Encoder {
 
   /// INS (element).
   void ins(A64Vec rd, int rdIdx, A64Vec rn, int rnIdx) {
-    // Basic implementation: INS Vd.Ts[index1], Vn.Ts[index2]
-    // Alias for MOV (element).
-    // Encoding: 0|1|001110000|imm5|0|imm4|1|Rn|Rd
-
-    // Simplification: assume same element size for now.
-    final rawSz = _vecElemSizeBits(rd);
-    int imm5 = 0;
-    if (rawSz == 0) {
-      imm5 = (rnIdx << 1) | 1;
-    } else if (rawSz == 1) {
-      imm5 = (rnIdx << 2) | 2;
-    } else if (rawSz == 2) {
-      imm5 = (rnIdx << 3) | 4;
-    } else if (rawSz == 3) {
-      imm5 = (rnIdx << 4) | 8;
+    // INS (element), alias MOV Vd.T[rdIdx], Vn.T[rnIdx]:
+    // 0|1|1|01110000|imm5|0|imm4|1|Rn|Rd, where imm5 = (rdIdx << (sz + 1)) |
+    // (1 << sz) selects the element size and destination, imm4 = rnIdx << sz.
+    final sz = _vecElemSizeBits(rd);
+    final lanes = 16 >> sz;
+    if (rdIdx < 0 || rdIdx >= lanes || rnIdx < 0 || rnIdx >= lanes) {
+      throw ArgumentError('INS element index out of range');
     }
-
-    int imm4 = 0; // Destination index
-    if (rawSz == 0) {
-      imm4 = rdIdx;
-    } else if (rawSz == 1) {
-      imm4 = rdIdx << 1;
-    } else if (rawSz == 2) {
-      imm4 = rdIdx << 2;
-    } else if (rawSz == 3) {
-      imm4 = rdIdx << 3;
-    }
-
-    final inst = (1 << 30) |
+    final imm5 = (rdIdx << (sz + 1)) | (1 << sz);
+    final imm4 = rnIdx << sz;
+    emit32((1 << 30) |
+        (1 << 29) |
         (0x0E << 24) |
         (imm5 << 16) |
-        (0 << 15) |
         (imm4 << 11) |
         (1 << 10) |
         (_encVec(rn) << 5) |
-        _encVec(rd);
-    emit32(inst);
+        _encVec(rd));
   }
 
   /// UMOV (element) - Move vector element to GP register (unsigned).

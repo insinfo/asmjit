@@ -54,5 +54,5 @@ void main() {
         }
       }
     });
-  }, skip: skipUnlessX64Host);
+  }, skip: skipUnlessJitHost);
 }
