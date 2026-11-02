@@ -30,6 +30,10 @@ import 'x86_operands.dart';
 abstract final class X86EmitOptions {
   static const int kNone = 0;
   static const int kReserved = 0x00000001;
+
+  /// `InstOptions::kUnfollow`: the register allocator does not follow the
+  /// jump (it has no successors in the control flow graph).
+  static const int kUnfollow = 0x00000002;
   static const int kShortForm = 0x00000010;
   static const int kLongForm = 0x00000020;
   static const int kTaken = 0x00000040;

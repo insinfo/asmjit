@@ -136,6 +136,10 @@ class BaseNode {
   }
 }
 
+/// `InstOptions::kUnfollow` (asmjit/core/inst.h): the register allocator
+/// does not follow the jump.
+const int kInstOptionUnfollow = 0x00000002;
+
 /// Instruction node.
 class InstNode extends BaseNode {
   /// Instruction ID.
@@ -163,6 +167,52 @@ class InstNode extends BaseNode {
 
   @override
   String toString() => 'InstNode($instId, $operands)';
+}
+
+/// Constant pool (`ConstPoolNode`): its label is bound at the aligned
+/// start of the constants, which are referenced as `[label + offset]`.
+///
+/// Each constant is aligned to its size (up to 64 bytes) and identical
+/// constants are shared, which is what upstream `ConstPool` guarantees;
+/// the exact placement of the constants inside the pool may differ.
+class ConstPoolNode extends LabelNode {
+  final List<int> _data = [];
+  int _alignment = 1;
+
+  ConstPoolNode(Label label) : super(label, type: NodeType.constPool);
+
+  /// The bytes of the pool.
+  List<int> get data => _data;
+
+  /// The alignment of the pool (the largest alignment of its constants).
+  int get alignment => _alignment;
+
+  int get size => _data.length;
+  bool get isEmpty => _data.isEmpty;
+
+  /// Adds [bytes] (`ConstPool::add()`) and returns their offset.
+  int add(List<int> bytes) {
+    final n = bytes.length;
+    var align = 1;
+    while (align < n && align < 64) {
+      align <<= 1;
+    }
+    // Share an identical, equally aligned constant.
+    for (var off = 0; off + n <= _data.length; off += align) {
+      var same = true;
+      for (var i = 0; i < n && same; i++) {
+        same = _data[off + i] == bytes[i];
+      }
+      if (same) return off;
+    }
+    while (_data.length % align != 0) {
+      _data.add(0);
+    }
+    final off = _data.length;
+    _data.addAll(bytes);
+    if (align > _alignment) _alignment = align;
+    return off;
+  }
 }
 
 /// Label node.
@@ -705,8 +755,14 @@ void serializeNodes(NodeList nodes, SerializerContext ctx) {
         final label = (node as LabelNode).label;
         if (label.isValid) ctx.onLabel(label);
         break;
-      case NodeType.funcRet:
       case NodeType.constPool:
+        // `embed_const_pool()`: aligned data, the label, the constants.
+        final pool = node as ConstPoolNode;
+        ctx.onAlign(AlignMode.data, pool.alignment);
+        ctx.onLabel(pool.label);
+        ctx.onEmbedData(pool.data, 1);
+        break;
+      case NodeType.funcRet:
         // These nodes are either handled by higher-level passes or ignored.
         break;
       default:

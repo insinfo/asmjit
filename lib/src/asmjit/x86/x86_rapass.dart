@@ -109,6 +109,8 @@ class X86RAArch extends RAArch {
       avail[RegGroup.gp] = 0xFFFF & ~(1 << 4) & ~(1 << 5);
       // XMM0-XMM15 (AVX-512 registers are not allocated yet).
       avail[RegGroup.vec] = 0xFFFF;
+      // K1-K7 (K0 cannot be used as a write mask selector).
+      avail[RegGroup.mask] = 0xFE;
 
       int presGp = 0;
       for (final reg
@@ -996,6 +998,9 @@ class X86RAArch extends RAArch {
 
   @override
   InstNode move(BaseReg dst, BaseReg src) {
+    // `emit_reg_move()` of a mask register (`kMask64`).
+    if (dst.group == RegGroup.mask)
+      return InstNode(X86InstId.kKmovq, [dst, src]);
     if (dst.group == RegGroup.vec) {
       return InstNode(
           _hasAvx(_cc) ? X86InstId.kVmovaps : X86InstId.kMovaps, [dst, src]);
@@ -1005,6 +1010,8 @@ class X86RAArch extends RAArch {
 
   @override
   InstNode load(BaseReg dst, BaseMem src) {
+    if (dst.group == RegGroup.mask)
+      return InstNode(X86InstId.kKmovq, [dst, src]);
     if (dst.group == RegGroup.vec) {
       return InstNode(
           _hasAvx(_cc) ? X86InstId.kVmovups : X86InstId.kMovups, [dst, src]);
@@ -1035,6 +1042,8 @@ class X86RAArch extends RAArch {
 
   @override
   InstNode save(BaseMem dst, BaseReg src) {
+    if (src.group == RegGroup.mask)
+      return InstNode(X86InstId.kKmovq, [dst, src]);
     if (src.group == RegGroup.vec) {
       return InstNode(
           _hasAvx(_cc) ? X86InstId.kVmovups : X86InstId.kMovups, [dst, src]);

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../core/compiler.dart';
 import 'x86_assembler.dart';
 import '../core/labels.dart';
@@ -125,6 +127,38 @@ class X86Compiler extends BaseCompiler {
   X86Zmm newZmmInt16x32([String? name]) => newZmm(name);
 
   // ===========================================================================
+  // Constants (x86::Compiler::new_const() ...)
+  // ===========================================================================
+
+  /// `new_const(scope, data, size)`: a RIP-relative memory operand of the
+  /// constant [data] in the constant pool of [scope].
+  X86RipMem newConst(ConstPoolScope scope, List<int> data) {
+    final (label, offset) = newConstData(scope, data);
+    return X86RipMem(label: label, displacement: offset, size: data.length);
+  }
+
+  static List<int> _bytesOf(int value, int size) =>
+      [for (var i = 0; i < size; i++) (value >> (8 * i)) & 0xFF];
+
+  X86RipMem newByteConst(ConstPoolScope scope, int value) =>
+      newConst(scope, _bytesOf(value, 1));
+  X86RipMem newInt16Const(ConstPoolScope scope, int value) =>
+      newConst(scope, _bytesOf(value, 2));
+  X86RipMem newInt32Const(ConstPoolScope scope, int value) =>
+      newConst(scope, _bytesOf(value, 4));
+  X86RipMem newInt64Const(ConstPoolScope scope, int value) =>
+      newConst(scope, _bytesOf(value, 8));
+  X86RipMem newFloatConst(ConstPoolScope scope, double value) {
+    final bd = ByteData(4)..setFloat32(0, value, Endian.little);
+    return newConst(scope, bd.buffer.asUint8List());
+  }
+
+  X86RipMem newDoubleConst(ConstPoolScope scope, double value) {
+    final bd = ByteData(8)..setFloat64(0, value, Endian.little);
+    return newConst(scope, bd.buffer.asUint8List());
+  }
+
+  // ===========================================================================
   // Instruction options (x86::EmitterExplicitT)
   // ===========================================================================
 
@@ -140,6 +174,13 @@ class X86Compiler extends BaseCompiler {
   X86Compiler repne(BaseReg zcx) {
     instOptions |= X86EmitOptions.kX86_Repne;
     extraReg = zcx;
+    return this;
+  }
+
+  /// `unfollow()`: the register allocator does not follow the next jump
+  /// (it has no successors).
+  X86Compiler unfollow() {
+    instOptions |= X86EmitOptions.kUnfollow;
     return this;
   }
 

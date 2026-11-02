@@ -22,6 +22,15 @@ import 'raarch.dart';
 export 'builder.dart';
 export 'emitter.dart';
 
+/// Scope of a constant (`ConstPoolScope`).
+enum ConstPoolScope {
+  /// Local constant, emitted at the end of the current function.
+  local,
+
+  /// Global constant, emitted at the end of the code.
+  global,
+}
+
 /// Jump annotation used to annotate jumps.
 class JumpAnnotation {
   final BaseCompiler compiler;
@@ -327,6 +336,27 @@ class BaseCompiler extends BaseBuilder {
   /// Get constant pools.
   ConstPool? get constPools => _constPools;
 
+  /// The local and global constant pools being filled (`_const_pools`).
+  final List<ConstPoolNode?> _constPoolNodes = [null, null];
+
+  /// Adds the constant [data] to the pool of [scope] (`_new_const()`) and
+  /// returns the pool label and the offset of the constant in it; the
+  /// architecture makes the memory operand `[label + offset]`.
+  (Label, int) newConstData(ConstPoolScope scope, List<int> data) {
+    final pool = _constPoolNodes[scope.index] ??= ConstPoolNode(newLabel());
+    return (pool.label, pool.add(data));
+  }
+
+  /// `GlobalConstPoolPass`: flushes the global constant pool at the end of
+  /// the code.
+  void flushGlobalConstPool() {
+    final pool = _constPoolNodes[ConstPoolScope.global.index];
+    if (pool != null) {
+      nodes.append(pool);
+      _constPoolNodes[ConstPoolScope.global.index] = null;
+    }
+  }
+
   /// internal
   int _virtIdCounter = Globals.kMinVirtId;
 
@@ -457,6 +487,7 @@ class BaseCompiler extends BaseBuilder {
     for (final pass in _passes) {
       pass.run(nodes);
     }
+    flushGlobalConstPool();
   }
 
   /// Ends the current function (`end_func()`); the cursor moves to its end
@@ -476,6 +507,13 @@ class BaseCompiler extends BaseBuilder {
             analyzer != null &&
             (analyzer.isUnconditionalJump(last) || analyzer.isReturn(last))));
     if (fallsThrough) nodes.insertBefore(FuncRetNode(const []), exitNode);
+
+    // Add the local constant pool at the end of the function (if exists).
+    final localPool = _constPoolNodes[ConstPoolScope.local.index];
+    if (localPool != null) {
+      nodes.insertBefore(localPool, func.end!);
+      _constPoolNodes[ConstPoolScope.local.index] = null;
+    }
 
     _func = null;
     setCursor(func.end);
@@ -619,7 +657,9 @@ class CFGBuilder extends CompilerPass {
         currentBlock = node;
         funcBlocks.add(node);
       } else if (node is InstNode && currentBlock != null) {
-        if (analyzer.isJump(node)) {
+        // An unfollowed jump (`kUnfollow`) has no successors.
+        if (analyzer.isJump(node) &&
+            (node.options & kInstOptionUnfollow) == 0) {
           final target = analyzer.getJumpTarget(node);
           if (target != null) {
             final targetBlock = labelMap[target.id];
