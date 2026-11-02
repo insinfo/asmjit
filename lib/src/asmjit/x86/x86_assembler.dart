@@ -29,26 +29,6 @@ class X86Assembler extends BaseEmitter {
   /// The internal code buffer.
   late final CodeBuffer _buf;
 
-  /// Accounts for bytes emitted after a RIP-relative disp32 (an immediate)
-  /// in relocations recorded since [instStart]: the CPU computes the target
-  /// from the end of the instruction, not from the end of the disp32.
-  void fixupRipRelocs(int instStart) {
-    final relocs = code.text.relocs;
-    for (int i = relocs.length - 1; i >= 0; i--) {
-      final r = relocs[i];
-      if (r.atOffset < instStart) break;
-      if (r.kind != RelocKind.ripRel32) continue;
-      final trailing = offset - (r.atOffset + 4);
-      if (trailing > 0) {
-        relocs[i] = Reloc(
-            kind: r.kind,
-            atOffset: r.atOffset,
-            target: r.target,
-            addend: r.addend - trailing);
-      }
-    }
-  }
-
   /// Encoding options (used by higher-level pipelines).
   int encodingOptions = EncodingOptions.kNone;
 

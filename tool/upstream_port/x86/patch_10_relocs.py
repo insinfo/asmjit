@@ -83,7 +83,9 @@ _span("        if ((rmInfo & _kMemInfoBaseLabel) != 0) {\n          // [RIP].\n 
           label = rmRel!.label;
           relOffset -= (4 + immSize);
 
-          final bound = code.getLabelOffset(label!);
+          final bound = code.isLabelBoundTo(label!, code.text.id)
+          ? code.getLabelOffset(label!)
+          : null;
           if (bound != null) {
             // Label bound to the current section.
             relOffset += _i32(bound - _w.cursor);
@@ -102,7 +104,9 @@ _rep("    var ip = (_w.offsetFrom(_buffer_data));\n    var rel32 = 0;\n    var o
 _rep("    var inst32_size = 1 + 4;", "    inst32_size = 1 + 4;")
 _span("      var label_id = rmRel!.labelId;\n      if (!_code->is_label_valid(label_id)) {", "        { s = _S.EmitJmpCallRel; continue loop; }\n      }",
 """      label = rmRel!.label;
-      final bound = code.getLabelOffset(label!);
+      final bound = code.isLabelBoundTo(label!, code.text.id)
+          ? code.getLabelOffset(label!)
+          : null;
       if (bound != null) {
         // Label bound to the current section.
         rel32 = _u32((bound - ip - inst32_size) & 0xFFFFFFFF);
@@ -175,15 +179,14 @@ _rep("    if (_isIntN(8, _i32(rel32 + inst32_size - inst8_size)) && opcode8 && !
 _rep("      if (!opcode || _test(options, _IO.kShortForm))\n        { s = _S.InvalidDisplacement; continue loop; }\n\n      options &= ~_IO.kShortForm;",
      "      if (opcode == 0 || _test(options, _IO.kShortForm))\n        { s = _S.InvalidDisplacement; continue loop; }\n\n      options &= ~_IO.kShortForm;")
 
-# EmitRel: the label fixup (displacement = target + rel_offset - offset).
+# EmitRel: the label fixup (displacement = target - offset + rel_offset).
 _span("    // Chain with label.\n    var offset = (_w.offsetFrom(_buffer_data));", "    _w.emitZeros(relSize);\n  }",
-"""    // Chain with label: the CodeHolder resolves `target + addend - (at + size)`.
-    final at = _w.cursor;
-    if (relSize == 4) {
-      code.addRel32(label!, at, relOffset + 4);
-    } else {
-      code.addRel8(label!, at, relOffset + 1);
-    }
+"""    // Chain with label.
+    final offset = _w.cursor;
+    final of = OffsetFormat()
+      ..resetToSimpleValue(OffsetType.kSignedOffset, relSize);
+
+    code.newFixup(label!, code.text.id, offset, relOffset, of);
 
     // Emit dummy zeros, must be patched later when the reference becomes known.
     _w.emitZeros(relSize);

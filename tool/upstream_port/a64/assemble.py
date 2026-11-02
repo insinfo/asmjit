@@ -28,20 +28,6 @@ footer="""
     }
   }
 
-  /// `CodeHolder::new_fixup()`: the port's relocation kinds for the AArch64
-  /// offset formats (the fixup is applied when [label] is bound).
-  void _addFixup(Label label, int at, int addend, OffsetFormat f, int instId) {
-    final kind = switch ((f.type(), f.immBitShift(), f.immBitCount())) {
-      (A64OffsetType.kSignedOffset, 0, 26) => RelocKind.arm64Branch26,
-      (A64OffsetType.kSignedOffset, 5, 19) => RelocKind.arm64Branch19,
-      (A64OffsetType.kSignedOffset, 5, 14) => RelocKind.arm64Branch14,
-      (A64OffsetType.kAArch64_ADR, _, _) => RelocKind.arm64Adr21,
-      _ => null,
-    };
-    if (kind == null) _fail('InvalidDisplacement', instId);
-    code.addReloc(Reloc(kind: kind, atOffset: at, target: label, addend: addend));
-  }
-
   Never _fail(String error, int instId) {
     final name = instId > 0 && instId < kA64UpInstNames.length
         ? kA64UpInstNames[instId]

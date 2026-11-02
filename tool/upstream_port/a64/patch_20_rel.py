@@ -9,7 +9,9 @@ _span("      case _S.EmitOp_Rel:\n", "      case _S.EmitOp_DispImm:", """      c
       final label = rmRel!.label!;
       final labelOffset = rmRel!.isLabel() ? 0 : rmRel!.offset;
 
-      final bound = code.getLabelOffset(label);
+      final bound = code.isLabelBoundTo(label, code.text.id)
+          ? code.getLabelOffset(label)
+          : null;
       if (bound != null) {
         // Label bound to the current section.
         offsetValue = bound - _w.cursor + labelOffset;
@@ -17,7 +19,9 @@ _span("      case _S.EmitOp_Rel:\n", "      case _S.EmitOp_DispImm:", """      c
       }
       else {
         // Create a fixup referencing an non-bound label.
-        _addFixup(label, _w.cursor, labelOffset, offsetFormat, instId);
+        final codeOffset = _w.cursor;
+        code.newFixup(label, code.text.id, codeOffset, labelOffset,
+            offsetFormat.copy());
         { state = _S.EmitOp; continue loop; }
       }
     }

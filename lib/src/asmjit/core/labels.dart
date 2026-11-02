@@ -4,6 +4,8 @@
 /// Ported from asmjit/core/codeholder.h (label-related parts)
 
 import 'error.dart';
+import 'fixup.dart';
+import 'globals.dart';
 
 /// A label identifier.
 ///
@@ -36,18 +38,18 @@ class Label {
   String toString() => 'Label($id)';
 }
 
-/// The internal state of a label.
+/// The internal state of a label (`LabelEntry`).
 class LabelState {
   /// The offset where this label is bound, or null if not yet bound.
   int? boundOffset;
 
-  /// Offsets that need to be fixed up when this label is bound.
-  final List<_LabelFixup> fixups = [];
+  /// Fixups referencing this label while it is not bound (`_get_fixups()`).
+  final List<Fixup> fixups = [];
 
   /// Optional name for named labels.
   final String? name;
 
-  /// The section ID where this label is defined.
+  /// The section ID where this label is bound.
   int sectionId;
 
   /// Creates a new label state.
@@ -66,95 +68,29 @@ class LabelState {
   bool get hasFixups => fixups.isNotEmpty;
 }
 
-/// A fixup for a label reference.
-class _LabelFixup {
-  /// The offset in the code buffer where the fixup needs to be applied.
-  final int atOffset;
+/// A place in code or data that references a label which is not known yet
+/// (`Fixup`): resolved when the label is bound in the same section, or by
+/// `CodeHolder.resolveCrossSectionFixups()` once sections have offsets.
+///
+/// The written displacement is `target - offset + rel`.
+final class Fixup {
+  /// Section where the fixup is.
+  final int sectionId;
 
-  /// The kind of relocation.
-  final RelocKind kind;
+  /// Label id of a cross-section fixup, or the id of the `RelocEntry` whose
+  /// payload receives the label offset, or `Globals.kInvalidId`.
+  int labelOrRelocId = Globals.kInvalidId;
 
-  /// Additional addend to apply.
-  final int addend;
+  /// Offset of the patched region relative to the start of the section.
+  final int offset;
 
-  const _LabelFixup({
-    required this.atOffset,
-    required this.kind,
-    this.addend = 0,
-  });
-}
+  /// Displacement adjustment.
+  final int rel;
 
-/// The kind of relocation.
-enum RelocKind {
-  /// PC-relative 8-bit displacement (short jump).
-  rel8,
+  /// Format of the written displacement.
+  final OffsetFormat format;
 
-  /// PC-relative 32-bit displacement (near jump/call).
-  rel32,
-
-  /// Absolute 32-bit address.
-  abs32,
-
-  /// Absolute 64-bit address.
-  abs64,
-
-  /// RIP-relative 32-bit displacement (x86-64).
-  ripRel32,
-
-  /// ARM64 26-bit branch (B, BL).
-  arm64Branch26,
-
-  /// ARM64 19-bit conditional branch (B.cond, CBZ, CBNZ).
-  arm64Branch19,
-
-  /// AArch64 TBZ/TBNZ: imm14 at bits [18:5], scaled by 4.
-  arm64Branch14,
-
-  /// ARM64 ADR/ADRP 21-bit PC-relative.
-  arm64Adr21,
-}
-
-/// A relocation entry.
-class Reloc {
-  /// The kind of relocation.
-  final RelocKind kind;
-
-  /// The offset in the code buffer where this relocation applies.
-  final int atOffset;
-
-  /// The target label.
-  final Label target;
-
-  /// Additional addend.
-  final int addend;
-
-  /// The size of the relocation (in bytes).
-  final int size;
-
-  Reloc({
-    required this.kind,
-    required this.atOffset,
-    required this.target,
-    this.addend = 0,
-    int? size,
-  }) : size = size ?? _defaultSize(kind);
-
-  static int _defaultSize(RelocKind kind) {
-    switch (kind) {
-      case RelocKind.rel8:
-        return 1;
-      case RelocKind.rel32:
-      case RelocKind.abs32:
-      case RelocKind.ripRel32:
-      case RelocKind.arm64Branch26:
-      case RelocKind.arm64Branch19:
-      case RelocKind.arm64Branch14:
-      case RelocKind.arm64Adr21:
-        return 4;
-      case RelocKind.abs64:
-        return 8;
-    }
-  }
+  Fixup(this.sectionId, this.offset, this.rel, this.format);
 }
 
 /// Manages labels for a code holder.
@@ -220,16 +156,6 @@ class LabelManager {
       );
     }
     state.boundOffset = offset;
-  }
-
-  /// Adds a fixup for a label.
-  void addFixup(Label label, int atOffset, RelocKind kind, [int addend = 0]) {
-    final state = getState(label);
-    state.fixups.add(_LabelFixup(
-      atOffset: atOffset,
-      kind: kind,
-      addend: addend,
-    ));
   }
 
   /// Gets all labels.

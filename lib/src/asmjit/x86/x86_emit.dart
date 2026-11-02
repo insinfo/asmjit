@@ -5977,7 +5977,9 @@ final class X86Emitter {
                   label = rmRel!.label;
                   relOffset -= (4 + immSize);
 
-                  final bound = code.getLabelOffset(label!);
+                  final bound = code.isLabelBoundTo(label!, code.text.id)
+                      ? code.getLabelOffset(label!)
+                      : null;
                   if (bound != null) {
                     // Label bound to the current section.
                     relOffset += _i32(bound - _w.cursor);
@@ -6502,7 +6504,9 @@ final class X86Emitter {
 
             if (rmRel!.isLabel()) {
               label = rmRel!.label;
-              final bound = code.getLabelOffset(label!);
+              final bound = code.isLabelBoundTo(label!, code.text.id)
+                  ? code.getLabelOffset(label!)
+                  : null;
               if (bound != null) {
                 // Label bound to the current section.
                 rel32 = _u32((bound - ip - inst32_size) & 0xFFFFFFFF);
@@ -6632,13 +6636,12 @@ final class X86Emitter {
           {
             // ASMJIT_ASSERT(relSize == 1 || relSize == 4);
 
-            // Chain with label: the CodeHolder resolves `target + addend - (at + size)`.
-            final at = _w.cursor;
-            if (relSize == 4) {
-              code.addRel32(label!, at, relOffset + 4);
-            } else {
-              code.addRel8(label!, at, relOffset + 1);
-            }
+            // Chain with label.
+            final offset = _w.cursor;
+            final of = OffsetFormat()
+              ..resetToSimpleValue(OffsetType.kSignedOffset, relSize);
+
+            code.newFixup(label!, code.text.id, offset, relOffset, of);
 
             // Emit dummy zeros, must be patched later when the reference becomes known.
             _w.emitZeros(relSize);

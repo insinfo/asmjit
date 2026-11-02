@@ -30,9 +30,6 @@ class Section {
     return buffer.bytes;
   }
 
-  /// Relocations in this section.
-  final List<Reloc> relocs = [];
-
   /// Section flags.
   final SectionFlags flags;
 
@@ -535,9 +532,7 @@ class CodeHolder {
   }
 
   /// Binds a label to the current position in the text section.
-  void bind(Label label) {
-    _labelManager.bind(label, text.buffer.length);
-  }
+  void bind(Label label) => bindLabel(label, text.id, text.buffer.length);
 
   /// Attaches a logger to the code holder.
   void attach(BaseLogger logger) {
@@ -559,10 +554,8 @@ class CodeHolder {
     detach();
   }
 
-  /// Binds a label to a specific offset.
-  void bindAt(Label label, int offset) {
-    _labelManager.bind(label, offset);
-  }
+  /// Binds a label to a specific offset of the text section.
+  void bindAt(Label label, int offset) => bindLabel(label, text.id, offset);
 
   /// Whether a label is bound.
   bool isLabelBound(Label label) => _labelManager.isBound(label);
@@ -570,35 +563,121 @@ class CodeHolder {
   /// Gets the bound offset of a label.
   int? getLabelOffset(Label label) => _labelManager.getBoundOffset(label);
 
-  // ===========================================================================
-  // Relocation management
-  // ===========================================================================
-
-  /// Adds a relocation to the text section.
-  void addReloc(Reloc reloc) {
-    text.relocs.add(reloc);
-    _labelManager.addFixup(
-        reloc.target, reloc.atOffset, reloc.kind, reloc.addend);
+  /// Whether [label] is bound to the section [sectionId] (`is_bound_to`).
+  bool isLabelBoundTo(Label label, int sectionId) {
+    final le = _labelManager.getState(label);
+    return le.isBound && le.sectionId == sectionId;
   }
 
-  /// Adds a rel32 relocation (for calls/jumps).
-  void addRel32(Label target, int atOffset, [int addend = 0]) {
-    addReloc(Reloc(
-      kind: RelocKind.rel32,
-      atOffset: atOffset,
-      target: target,
-      addend: addend,
-    ));
+  // ===========================================================================
+  // Fixups
+  // ===========================================================================
+
+  /// Cross-section fixups of bound labels, resolved by
+  /// [resolveCrossSectionFixups] (`_fixups`).
+  final List<Fixup> _fixups = [];
+
+  int _unresolvedFixupCount = 0;
+
+  /// Number of fixups not resolved yet (`unresolved_fixup_count()`).
+  int get unresolvedFixupCount => _unresolvedFixupCount;
+
+  /// Whether some fixups are not resolved yet (`has_unresolved_fixups()`).
+  bool get hasUnresolvedFixups => _unresolvedFixupCount != 0;
+
+  /// Creates a fixup of the region at [offset] of section [sectionId] that
+  /// references the unbound [label] (`new_fixup`).
+  Fixup newFixup(
+      Label label, int sectionId, int offset, int rel, OffsetFormat format) {
+    final le = _labelManager.getState(label);
+    // Cannot be bound if we are creating a link.
+    assert(!le.isBound);
+    final fixup = Fixup(sectionId, offset, rel, format);
+    le.fixups.add(fixup);
+    _unresolvedFixupCount++;
+    return fixup;
   }
 
-  /// Adds a rel8 relocation (for short jumps).
-  void addRel8(Label target, int atOffset, [int addend = 0]) {
-    addReloc(Reloc(
-      kind: RelocKind.rel8,
-      atOffset: atOffset,
-      target: target,
-      addend: addend,
-    ));
+  /// Binds [label] to [toOffset] of section [toSectionId] (`bind_label`) and
+  /// resolves the fixups of the same section; cross-section fixups wait for
+  /// [resolveCrossSectionFixups].
+  void bindLabel(Label label, int toSectionId, int toOffset) {
+    if (toSectionId < 0 || toSectionId >= _sections.length) {
+      throw AsmJitException(
+          AsmJitError.invalidSection, 'Invalid section id: $toSectionId');
+    }
+    final le = _labelManager.getState(label);
+
+    // Label can be bound only once.
+    _labelManager.bind(label, toOffset);
+    le.sectionId = toSectionId;
+
+    final buf = _sections[toSectionId].buffer;
+    AsmJitException? err;
+    var resolved = 0;
+
+    for (final fixup in le.fixups) {
+      final relocId = fixup.labelOrRelocId;
+
+      if (relocId != Globals.kInvalidId) {
+        // Adjust the relocation payload.
+        final re = _relocations[relocId];
+        re.payload += toOffset;
+        re.targetSectionId = toSectionId;
+      } else if (fixup.sectionId != toSectionId) {
+        fixup.labelOrRelocId = label.id;
+        _fixups.add(fixup);
+        continue;
+      } else {
+        final displacement = toOffset - fixup.offset + fixup.rel;
+
+        // Overwrite a real displacement in the CodeBuffer.
+        if (!CodeWriterUtils.writeOffset(
+            buf, fixup.offset, displacement, fixup.format)) {
+          err ??= AsmJitException(AsmJitError.invalidDisplacement,
+              'Label ${label.id}: displacement $displacement does not fit');
+          fixup.labelOrRelocId = label.id;
+          _fixups.add(fixup);
+          continue;
+        }
+      }
+      resolved++;
+    }
+    le.fixups.clear();
+    _unresolvedFixupCount -= resolved;
+    if (err != null) throw err;
+  }
+
+  /// Resolves the fixups between sections once they have offsets
+  /// ([flatten]) (`resolve_cross_section_fixups`).
+  void resolveCrossSectionFixups() {
+    if (!hasUnresolvedFixups) return;
+
+    AsmJitException? err;
+    final unresolved = <Fixup>[];
+    for (final fixup in _fixups) {
+      final le = _labelManager.getState(Label(fixup.labelOrRelocId));
+      final toOffset = _sections[le.sectionId].offset + le.boundOffset!;
+
+      final fromSection = _sections[fixup.sectionId];
+      // Calculate the offset relative to the start of the virtual base.
+      final fromOffset = fromSection.offset + fixup.offset;
+      final displacement = toOffset - fromOffset + fixup.rel;
+
+      // Overwrite a real displacement in the CodeBuffer.
+      if (CodeWriterUtils.writeOffset(
+          fromSection.buffer, fixup.offset, displacement, fixup.format)) {
+        _unresolvedFixupCount--;
+      } else {
+        err ??= AsmJitException(AsmJitError.invalidDisplacement,
+            'Cross-section displacement $displacement does not fit');
+        unresolved.add(fixup);
+      }
+    }
+    _fixups
+      ..clear()
+      ..addAll(unresolved);
+    if (err != null) throw err;
   }
 
   // ===========================================================================
@@ -637,107 +716,21 @@ class CodeHolder {
     return _finalizedCode!;
   }
 
-  /// Resolves the label fixups of the text section.
+  /// Assigns section offsets ([flatten]) and resolves the cross-section
+  /// fixups; fails if a referenced label was never bound.
   void resolveLabelFixups() {
-    for (final reloc in text.relocs) {
-      _resolveReloc(reloc, text.buffer);
+    for (final label in _labelManager.labels) {
+      final le = _labelManager.getState(label);
+      if (le.isUnbound && le.hasFixups) {
+        throw AsmJitException(
+          AsmJitError.expressionLabelNotBound,
+          'Label ${label.id} is not bound (fixup at offset '
+          '${le.fixups.first.offset})',
+        );
+      }
     }
-  }
-
-  void _resolveReloc(Reloc reloc, CodeBuffer buffer) {
-    final labelState = _labelManager.getState(reloc.target);
-
-    if (!labelState.isBound) {
-      throw AsmJitException(
-        AsmJitError.expressionLabelNotBound,
-        'Label ${reloc.target.id} is not bound (reloc at offset ${reloc.atOffset})',
-      );
-    }
-
-    final targetOffset = labelState.boundOffset! + reloc.addend;
-    final atOffset = reloc.atOffset;
-
-    switch (reloc.kind) {
-      case RelocKind.rel8:
-        // rel8 = target - next_ip
-        final nextIp = atOffset + 1;
-        final disp = targetOffset - nextIp;
-        if (disp < -128 || disp > 127) {
-          throw AsmJitException(
-            AsmJitError.relocOffsetOutOfRange,
-            'rel8 displacement out of range: $disp',
-          );
-        }
-        buffer.patch8(atOffset, disp);
-
-      case RelocKind.rel32:
-        // rel32 = target - next_ip
-        final nextIp = atOffset + 4;
-        final disp = targetOffset - nextIp;
-        buffer.patch32(atOffset, disp);
-
-      case RelocKind.ripRel32:
-        // rip-rel32: same as rel32
-        final nextIp = atOffset + 4;
-        final disp = targetOffset - nextIp;
-        buffer.patch32(atOffset, disp);
-
-      case RelocKind.abs32:
-        buffer.patch32(atOffset, targetOffset);
-
-      case RelocKind.abs64:
-        buffer.patch64(atOffset, targetOffset);
-
-      case RelocKind.arm64Branch26:
-        // B/BL: imm26 at bits [25:0], scaled by 4, relative to the instruction.
-        final disp = _a64BranchDisp(targetOffset - atOffset, 26);
-        final inst = buffer.read32At(atOffset);
-        buffer.write32At(atOffset, (inst & 0xFC000000) | (disp & 0x3FFFFFF));
-
-      case RelocKind.arm64Branch14:
-        // TBZ/TBNZ: imm14 at bits [18:5], scaled by 4.
-        final disp = _a64BranchDisp(targetOffset - atOffset, 14);
-        final inst = buffer.read32At(atOffset);
-        buffer.write32At(
-            atOffset, (inst & 0xFFF8001F) | ((disp & 0x3FFF) << 5));
-
-      case RelocKind.arm64Branch19:
-        // B.cond/CBZ/CBNZ: imm19 at bits [23:5], scaled by 4.
-        final disp = _a64BranchDisp(targetOffset - atOffset, 19);
-        final inst = buffer.read32At(atOffset);
-        buffer.write32At(
-            atOffset, (inst & 0xFF00001F) | ((disp & 0x7FFFF) << 5));
-
-      case RelocKind.arm64Adr21:
-        // ADR: immlo at bits [30:29], immhi at bits [23:5], byte granular.
-        final disp = targetOffset - atOffset;
-        if (disp < -(1 << 20) || disp >= (1 << 20)) {
-          throw AsmJitException(
-            AsmJitError.relocOffsetOutOfRange,
-            'ADR displacement out of range: $disp',
-          );
-        }
-        final inst = buffer.read32At(atOffset);
-        buffer.write32At(
-            atOffset,
-            (inst & 0x9F00001F) |
-                ((disp & 0x3) << 29) |
-                (((disp >> 2) & 0x7FFFF) << 5));
-    }
-  }
-
-  /// Validates an AArch64 branch displacement in bytes and returns it in
-  /// instruction units (`disp / 4`), checked against a signed [bits] field.
-  static int _a64BranchDisp(int disp, int bits) {
-    final limit = 1 << (bits - 1);
-    final units = disp >> 2;
-    if ((disp & 3) != 0 || units < -limit || units >= limit) {
-      throw AsmJitException(
-        AsmJitError.relocOffsetOutOfRange,
-        'AArch64 branch displacement out of range for imm$bits: $disp',
-      );
-    }
-    return units;
+    flatten();
+    resolveCrossSectionFixups();
   }
 
   // ===========================================================================
@@ -748,12 +741,13 @@ class CodeHolder {
   void reset() {
     for (final section in _sections) {
       section.buffer.clear();
-      section.relocs.clear();
       section.offset = 0;
       section.virtualSize = 0;
     }
     _labelManager.clear();
     _relocations.clear();
+    _fixups.clear();
+    _unresolvedFixupCount = 0;
     _addressTableEntries.clear();
     _relocatedBase = null;
   }

@@ -152,7 +152,10 @@ class ConstPool {
   ///
   /// Returns a map of label ID to offset for fixup resolution.
   /// The pool should be emitted after all code has been generated.
-  Map<int, int> emit(CodeBuffer buffer, LabelManager labelManager) {
+  ///
+  /// [bind] binds each entry label (`CodeHolder.bindAt`), which also
+  /// resolves the fixups referencing it.
+  Map<int, int> emit(CodeBuffer buffer, void Function(Label, int) bind) {
     final labelOffsets = <int, int>{};
 
     // Sort by alignment (largest first) to minimize padding
@@ -173,8 +176,7 @@ class ConstPool {
       entry.offset = buffer.length;
       labelOffsets[entry.label.id] = buffer.length;
 
-      // Bind the label if we have a label manager
-      labelManager.bind(entry.label, buffer.length);
+      bind(entry.label, buffer.length);
 
       // Emit the data
       buffer.emitBytes(entry.data);

@@ -59,8 +59,6 @@ class X86Serializer implements ir.SerializerContext {
 
   /// Emits the instruction with pre-processed operands.
   void emitInst(int instId, List<Object> ops, int options) {
-    final start = asm.offset;
     asm.emit(instId, ops);
-    asm.fixupRipRelocs(start);
   }
 }

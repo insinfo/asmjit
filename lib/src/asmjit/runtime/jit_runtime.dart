@@ -117,7 +117,6 @@ class JitRuntime {
     // As `JitRuntime::_add()`: flatten, allocate, relocate to the address of
     // the allocation and copy the flattened image.
     code.resolveLabelFixups();
-    code.flatten();
 
     final estimatedCodeSize = code.codeSize;
     if (estimatedCodeSize == 0) {

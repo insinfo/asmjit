@@ -1,6 +1,6 @@
 /// AsmJit Unit Tests - Labels and Relocations
 ///
-/// Tests for Label and Reloc functionality.
+/// Tests for Label and Fixup functionality.
 
 import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
@@ -92,32 +92,46 @@ void main() {
     });
   });
 
-  group('Reloc', () {
-    test('rel32 has size 4', () {
-      final reloc = Reloc(
-        kind: RelocKind.rel32,
-        atOffset: 0,
-        target: Label(0),
-      );
-      expect(reloc.size, equals(4));
+  group('Fixup', () {
+    OffsetFormat rel32() =>
+        OffsetFormat()..resetToSimpleValue(OffsetType.kSignedOffset, 4);
+
+    test('is resolved when the label is bound', () {
+      final code = CodeHolder(env: Environment.x64SysV());
+      final l = code.newLabel();
+      code.text.buffer.emitZeros(4);
+      code.newFixup(l, code.text.id, 0, -4, rel32());
+      expect(code.unresolvedFixupCount, 1);
+      code.text.buffer.emitZeros(12);
+      code.bind(l);
+      expect(code.unresolvedFixupCount, 0);
+      // target(16) - offset(0) + rel(-4).
+      expect(code.text.buffer.read32At(0), 12);
     });
 
-    test('rel8 has size 1', () {
-      final reloc = Reloc(
-        kind: RelocKind.rel8,
-        atOffset: 0,
-        target: Label(0),
-      );
-      expect(reloc.size, equals(1));
+    test('rejects a displacement that does not fit', () {
+      final code = CodeHolder(env: Environment.x64SysV());
+      final l = code.newLabel();
+      code.text.buffer.emitZeros(1);
+      code.newFixup(l, code.text.id, 0, -1,
+          OffsetFormat()..resetToSimpleValue(OffsetType.kSignedOffset, 1));
+      code.text.buffer.emitZeros(300);
+      expect(
+          () => code.bind(l),
+          throwsA(isA<AsmJitException>()
+              .having((e) => e.code, 'code', AsmJitError.invalidDisplacement)));
+      expect(code.unresolvedFixupCount, 1);
     });
 
-    test('abs64 has size 8', () {
-      final reloc = Reloc(
-        kind: RelocKind.abs64,
-        atOffset: 0,
-        target: Label(0),
-      );
-      expect(reloc.size, equals(8));
+    test('finalize() fails for a referenced label that is never bound', () {
+      final code = CodeHolder(env: Environment.x64SysV());
+      final l = code.newLabel();
+      code.text.buffer.emitZeros(4);
+      code.newFixup(l, code.text.id, 0, -4, rel32());
+      expect(
+          () => code.finalize(),
+          throwsA(isA<AsmJitException>().having(
+              (e) => e.code, 'code', AsmJitError.expressionLabelNotBound)));
     });
   });
 }
