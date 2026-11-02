@@ -286,6 +286,187 @@ int _callAlignBase(Pointer<Void> p, int n) {
   throw ArgumentError.value(n);
 }
 
+/// `x86::shuffle_imm(a, b, c, d)`.
+int _shuffleImm(int a, int b, int c, int d) =>
+    (a << 6) | (b << 4) | (c << 2) | d;
+
+/// Port of `generate_sse_alpha_blend_internal()`
+/// (asmjit-testing/tests/asmjit_test_misc.h).
+void _generateSseAlphaBlendInternal(X86Compiler cc, X86Gp dst, X86Gp src,
+    X86Gp n, X86Gp gp0, List<X86Xmm> simd) {
+  final i = n;
+  final j = gp0;
+
+  final vzero = simd[0];
+  final v0080 = simd[1];
+  final v0101 = simd[2];
+
+  final lSmallLoop = cc.newLabel();
+  final lSmallEnd = cc.newLabel();
+  final lLargeLoop = cc.newLabel();
+  final lLargeEnd = cc.newLabel();
+  final lDone = cc.newLabel();
+
+  void e(int id, List<Operand> ops) => cc.inst(id, ops);
+
+  // Load SIMD Constants.
+  cc
+    ..xorps(vzero, vzero)
+    ..mov(gp0.as32, Imm(0x00800080))
+    ..movd(v0080, gp0.as32)
+    ..mov(gp0.as32, Imm(0x01010101))
+    ..movd(v0101, gp0.as32);
+  e(X86InstId.kPshufd, [v0080, v0080, Imm(_shuffleImm(0, 0, 0, 0))]);
+  e(X86InstId.kPshufd, [v0101, v0101, Imm(_shuffleImm(0, 0, 0, 0))]);
+
+  // How many pixels have to be processed to make the loop aligned.
+  cc
+    ..xor_(j, j)
+    ..sub(j, dst)
+    ..and_(j, Imm(15))
+    ..shr(j, Imm(2))
+    ..jz(lSmallEnd)
+    ..cmp(j, i);
+  e(X86InstId.kCmovnle, [j, i]); // j = min(i, j)
+  cc.sub(i, j); // i -= j
+
+  // Small loop.
+  cc.bind(lSmallLoop);
+  {
+    final x0 = simd[3];
+    final y0 = simd[4];
+    final a0 = simd[5];
+
+    cc
+      ..movd(y0, X86Mem.base(src))
+      ..movd(x0, X86Mem.base(dst));
+
+    e(X86InstId.kPcmpeqb, [a0, a0]);
+    cc.pxor(a0, y0);
+    e(X86InstId.kPsrlw, [a0, Imm(8)]);
+    e(X86InstId.kPunpcklbw, [x0, vzero]);
+
+    e(X86InstId.kPshuflw, [a0, a0, Imm(_shuffleImm(1, 1, 1, 1))]);
+    e(X86InstId.kPunpcklbw, [y0, vzero]);
+
+    cc.pmullw(x0, a0);
+    e(X86InstId.kPaddsw, [x0, v0080]);
+    e(X86InstId.kPmulhuw, [x0, v0101]);
+
+    cc.paddw(x0, y0);
+    e(X86InstId.kPackuswb, [x0, x0]);
+
+    cc
+      ..movd(X86Mem.base(dst), x0)
+      ..add(dst, Imm(4))
+      ..add(src, Imm(4))
+      ..dec(j)
+      ..jnz(lSmallLoop);
+  }
+
+  // Second section, prepare for an aligned loop.
+  cc
+    ..bind(lSmallEnd)
+    ..test(i, i)
+    ..mov(j, i)
+    ..jz(lDone)
+    ..and_(j, Imm(3))
+    ..shr(i, Imm(2))
+    ..jz(lLargeEnd);
+
+  // Aligned loop.
+  cc.bind(lLargeLoop);
+  {
+    final x0 = simd[3];
+    final x1 = simd[4];
+    final y0 = simd[5];
+    final a0 = simd[6];
+    final a1 = simd[7];
+
+    cc
+      ..movups(y0, X86Mem.base(src))
+      ..movaps(x0, X86Mem.base(dst));
+
+    e(X86InstId.kPcmpeqb, [a0, a0]);
+    cc
+      ..xorps(a0, y0)
+      ..movaps(x1, x0);
+
+    e(X86InstId.kPsrlw, [a0, Imm(8)]);
+    e(X86InstId.kPunpcklbw, [x0, vzero]);
+
+    cc.movaps(a1, a0);
+    e(X86InstId.kPunpcklwd, [a0, a0]);
+
+    e(X86InstId.kPunpckhbw, [x1, vzero]);
+    e(X86InstId.kPunpckhwd, [a1, a1]);
+
+    e(X86InstId.kPshufd, [a0, a0, Imm(_shuffleImm(3, 3, 1, 1))]);
+    e(X86InstId.kPshufd, [a1, a1, Imm(_shuffleImm(3, 3, 1, 1))]);
+
+    cc
+      ..pmullw(x0, a0)
+      ..pmullw(x1, a1);
+
+    e(X86InstId.kPaddsw, [x0, v0080]);
+    e(X86InstId.kPaddsw, [x1, v0080]);
+
+    e(X86InstId.kPmulhuw, [x0, v0101]);
+    e(X86InstId.kPmulhuw, [x1, v0101]);
+
+    cc.add(src, Imm(16));
+    e(X86InstId.kPackuswb, [x0, x1]);
+
+    cc
+      ..paddw(x0, y0)
+      ..movaps(X86Mem.base(dst), x0)
+      ..add(dst, Imm(16))
+      ..dec(i)
+      ..jnz(lLargeLoop);
+  }
+
+  cc
+    ..bind(lLargeEnd)
+    ..test(j, j)
+    ..jnz(lSmallLoop)
+    ..bind(lDone);
+}
+
+/// Port of `generate_sse_alpha_blend()` for a compiler.
+void _generateSseAlphaBlend(X86Compiler cc) {
+  final dst = cc.newGpPtr('dst');
+  final src = cc.newGpPtr('src');
+  final i = cc.newGpPtr('i');
+  final j = cc.newGpPtr('j');
+  final v = [for (var k = 0; k < 8; k++) cc.newXmm('v$k')];
+
+  final funcNode = cc.addFunc(FuncSignature.build(
+      [TypeId.intPtr, TypeId.intPtr, TypeId.uintPtr], TypeId.void_));
+  funcNode.setArg(0, 0, dst);
+  funcNode.setArg(1, 0, src);
+  funcNode.setArg(2, 0, i);
+  _generateSseAlphaBlendInternal(cc, dst, src, i, j, v);
+  cc.endFunc();
+}
+
+/// `X86Test_AlphaBlend::blend_src_over()`.
+int _blendSrcOver(int d, int s) {
+  final saInv = (~s & 0xFFFFFFFF) >> 24;
+
+  var d20 = d & 0x00FF00FF;
+  var d31 = (d >> 8) & 0x00FF00FF;
+
+  d20 = (d20 * saInv) & 0xFFFFFFFF;
+  d31 = (d31 * saInv) & 0xFFFFFFFF;
+
+  d20 = (((d20 + ((d20 >> 8) & 0x00FF00FF) + 0x00800080) & 0xFF00FF00) >> 8);
+  d31 = ((d31 + ((d31 >> 8) & 0x00FF00FF) + 0x00800080) & 0xFF00FF00);
+
+  return (d20 + d31 + s) & 0xFFFFFFFF;
+}
+
+final bool _hasAvx512f = hostIsX64 && CpuInfo.host().features.avx512f;
+
 void main() {
   late JitRuntime rt;
   setUp(() => rt = JitRuntime());
@@ -1327,6 +1508,159 @@ void main() {
       }
     }, skip: skipUnlessX64Host);
 
+    test('AlphaBlend', () {
+      const kCount = 17;
+      final p = compile(_generateSseAlphaBlend);
+      const dstConstData = [
+        0x00000000,
+        0x10101010,
+        0x20100804,
+        0x30200003,
+        0x40204040,
+        0x5000004D,
+        0x60302E2C,
+        0x706F6E6D,
+        0x807F4F2F,
+        0x90349001,
+        0xA0010203,
+        0xB03204AB,
+        0xC023AFBD,
+        0xD0D0D0C0,
+        0xE0AABBCC,
+        0xFFFFFFFF,
+        0xF8F4F2F1
+      ];
+      const srcConstData = [
+        0xE0E0E0E0,
+        0xA0008080,
+        0x341F1E1A,
+        0xFEFEFEFE,
+        0x80302010,
+        0x49490A0B,
+        0x998F7798,
+        0x00000000,
+        0x01010101,
+        0xA0264733,
+        0xBAB0B1B9,
+        0xFF000000,
+        0xDAB0A0C1,
+        0xE0BACFDA,
+        0x99887766,
+        0xFFFFFF80,
+        0xEE0A5FEC
+      ];
+      // Has to be aligned.
+      final storage = calloc<Uint32>(2 * (kCount + 3) + 4);
+      try {
+        final base = (storage.address + 15) & ~15;
+        final dstBuffer = Pointer<Uint32>.fromAddress(base);
+        final srcBuffer = dstBuffer + (kCount + 3);
+        for (var i = 0; i < kCount; i++) {
+          dstBuffer[i] = dstConstData[i];
+          srcBuffer[i] = srcConstData[i];
+        }
+        final expBuffer = [
+          for (var i = 0; i < kCount; i++)
+            _blendSrcOver(dstConstData[i], srcConstData[i])
+        ];
+        p
+            .cast<
+                NativeFunction<
+                    Void Function(Pointer<Uint32>, Pointer<Uint32>, IntPtr)>>()
+            .asFunction<
+                void Function(Pointer<Uint32>, Pointer<Uint32>,
+                    int)>()(dstBuffer, srcBuffer, kCount);
+        expect([for (var i = 0; i < kCount; i++) dstBuffer[i]], expBuffer);
+      } finally {
+        calloc.free(storage);
+      }
+    }, skip: skipUnlessX64Host);
+
+    // Upstream adds the AVX-512 tests only when the host has AVX512_F.
+    test('AVX512_KK', () {
+      final p = compile((cc) {
+        final funcNode = cc.addFunc(FuncSignature.build(
+            [TypeId.intPtr, TypeId.intPtr, TypeId.uint32], TypeId.uint32));
+
+        final a = cc.newGpPtr('a');
+        final b = cc.newGpPtr('b');
+        final pred = cc.newGp32('pred');
+        final result = cc.newGp32('result');
+
+        final va = cc.newZmm('va');
+        final vb = cc.newZmm('vb');
+        final kIn = cc.newKd('k_in');
+        final kOut = cc.newKd('k_out');
+
+        funcNode.setArg(0, 0, a);
+        funcNode.setArg(1, 0, b);
+        funcNode.setArg(2, 0, pred);
+
+        cc
+          ..inst(X86InstId.kVmovdqu32, [va, X86Mem.base(a)])
+          ..inst(X86InstId.kVmovdqu32, [vb, X86Mem.base(b)])
+          ..inst(X86InstId.kKmovd, [kIn, pred])
+          ..k(kIn).inst(X86InstId.kVpcmpeqd, [kOut, va, vb])
+          ..inst(X86InstId.kKmovd, [result, kOut])
+          ..ret([result])
+          ..endFunc();
+      });
+      const srcA = [0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1];
+      const srcB = [0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1];
+      final m = calloc<Uint32>(32);
+      try {
+        for (var i = 0; i < 16; i++) {
+          m[i] = srcA[i];
+          m[16 + i] = srcB[i];
+        }
+        final ret = p
+                .cast<
+                    NativeFunction<
+                        Uint32 Function(
+                            Pointer<Uint32>, Pointer<Uint32>, Uint32)>>()
+                .asFunction<
+                    int Function(Pointer<Uint32>, Pointer<Uint32>, int)>()(
+            m, m + 16, 0xF0F0);
+        expect(ret, 0xA040);
+      } finally {
+        calloc.free(m);
+      }
+    },
+        skip: !hostIsX64
+            ? skipUnlessX64Host
+            : _hasAvx512f
+                ? false
+                : 'requires AVX512_F (as upstream)');
+
+    test('AVX512_TernLog', () {
+      final p = compile((cc) {
+        final funcNode =
+            cc.addFunc(FuncSignature.build([TypeId.intPtr], TypeId.void_));
+        final outPtr = cc.newGpPtr('out_ptr');
+        final vec = cc.newZmm('vec');
+        funcNode.setArg(0, 0, outPtr);
+        cc
+          ..inst(X86InstId.kVpternlogd, [vec, vec, vec, Imm(0xFF)])
+          ..inst(X86InstId.kVmovdqu8, [X86Mem.base(outPtr), vec])
+          ..endFunc();
+      });
+      final out = calloc<Uint32>(16);
+      try {
+        p
+            .cast<NativeFunction<Void Function(Pointer<Uint32>)>>()
+            .asFunction<void Function(Pointer<Uint32>)>()(out);
+        expect(
+            [for (var i = 0; i < 16; i++) out[i]], List.filled(16, 0xFFFFFFFF));
+      } finally {
+        calloc.free(out);
+      }
+    },
+        skip: !hostIsX64
+            ? skipUnlessX64Host
+            : _hasAvx512f
+                ? false
+                : 'requires AVX512_F (as upstream)');
+
     test('ExtraBlock', () {
       final p = compile((cc) {
         final cond = cc.newGp32('cond');
@@ -1389,6 +1723,63 @@ void main() {
   });
 
   group('Misc', () {
+    for (final (name, scope) in [
+      ('MiscLocalConstPool', ConstPoolScope.local),
+      ('MiscGlobalConstPool', ConstPoolScope.global),
+    ]) {
+      test(name, () {
+        final p = compile((cc) {
+          cc.addFunc(FuncSignature.build([], TypeId.int32));
+          final v0 = cc.newGp32('v0');
+          final v1 = cc.newGp32('v1');
+          final c0 = cc.newInt32Const(scope, 200);
+          final c1 = cc.newInt32Const(scope, 33);
+          cc
+            ..mov(v0, c0)
+            ..mov(v1, c1)
+            ..add(v0, v1)
+            ..ret([v0])
+            ..endFunc();
+        });
+        expect(
+            p.cast<NativeFunction<_IntNative>>().asFunction<_IntDart>()(), 233);
+      }, skip: skipUnlessX64Host);
+    }
+
+    // Upstream runs it with setjmp()/longjmp(): `handler()` longjmps back
+    // to the caller of the generated function, which dart:ffi cannot do (a
+    // Dart callback cannot unwind native frames). The function is compiled
+    // and the unfollowed jump checked to be emitted without successors.
+    test('MiscUnfollow (compile only)', () {
+      final code = CodeHolder(env: x64TestEnv());
+      final cc = X86Compiler(env: code.env, labelManager: code.labelManager);
+      // NOTE: Fastcall calling convention is the most appropriate here as
+      // all arguments are passed via registers and there won't be any stack
+      // misalignment in the `handler()`.
+      final a = cc.newGp32('a');
+      final b = cc.newGpPtr('b');
+      final tramp = cc.newLabel();
+
+      final funcNode = cc.addFunc(FuncSignature.build(
+          [TypeId.int32, TypeId.intPtr], TypeId.int32, CallConvId.fastCall));
+      funcNode.setArg(0, 0, a);
+      funcNode.setArg(1, 0, b);
+
+      cc
+        ..cmp(a, Imm(0))
+        ..jz(tramp)
+        ..ret([a])
+        ..bind(tramp);
+      final jmp = cc.unfollow().jmpIndirect(b);
+      cc.endFunc();
+
+      expect(jmp.options & kInstOptionUnfollow, isNot(0));
+      cc.finalize();
+      cc.serializeToAssembler(X86Assembler(code));
+      // `jmp b` was rewritten to a physical register.
+      expect((jmp.operands[0] as BaseReg).isPhysical, isTrue);
+    });
+
     test('VecToScalar', () {
       const kVecCount = 64;
       final p = compile((cc) {

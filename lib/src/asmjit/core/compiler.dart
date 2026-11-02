@@ -474,7 +474,11 @@ class BaseCompiler extends BaseBuilder {
   /// possible targets are [annotation] (`emit_annotated_jump()`).
   JumpNode emitAnnotatedJump(int instId, Operand target,
       [JumpAnnotation? annotation]) {
-    final node = JumpNode(instId, [target], annotation: annotation);
+    final node =
+        JumpNode(instId, [target], options: instOptions, annotation: annotation)
+          ..extraReg = extraReg;
+    instOptions = 0;
+    extraReg = null;
     addNode(node);
     return node;
   }
