@@ -40,6 +40,14 @@ const int _PROT_EXEC = 0x4;
 
 const int _MAP_PRIVATE = 0x02;
 final int _MAP_ANONYMOUS = Platform.isMacOS ? 0x1000 : 0x20;
+
+/// `MAP_JIT` (macOS). Apple Silicon processes run with the hardened runtime
+/// (the `dart` binary only has the `allow-jit` entitlement), so executable
+/// pages must come from a MAP_JIT mapping, otherwise the kernel kills the
+/// process with SIGKILL when the code is executed.
+final int _MAP_JIT = 0x800;
+int get _mapJitFlag =>
+    (Platform.isMacOS || Platform.isIOS) && !_hostIsX86 ? _MAP_JIT : 0;
 const int _MAP_FAILED = -1;
 
 // Windows native function types
@@ -85,6 +93,16 @@ typedef _MprotectDart = int Function(Pointer<Void> addr, int len, int prot);
 typedef _SysconfNative = IntPtr Function(Int32 name);
 typedef _SysconfDart = int Function(int name);
 
+// macOS: void sys_icache_invalidate(void* start, size_t len)
+typedef _SysIcacheInvalidateNative = Void Function(
+    Pointer<Void> start, IntPtr len);
+typedef _SysIcacheInvalidateDart = void Function(Pointer<Void> start, int len);
+
+// Linux (libgcc): void __clear_cache(void* begin, void* end)
+typedef _ClearCacheNative = Void Function(
+    Pointer<Void> begin, Pointer<Void> end);
+typedef _ClearCacheDart = void Function(Pointer<Void> begin, Pointer<Void> end);
+
 // Late-initialized Windows functions
 late final _VirtualAllocDart _virtualAlloc;
 late final _VirtualFreeDart _virtualFree;
@@ -98,6 +116,56 @@ late final _MmapDart _mmap;
 late final _MunmapDart _munmap;
 late final _MprotectDart _mprotect;
 late final _SysconfDart _sysconf;
+
+// POSIX instruction cache maintenance (only resolved on non-x86 hosts).
+_SysIcacheInvalidateDart? _sysIcacheInvalidate;
+_ClearCacheDart? _clearCache;
+
+/// True when the host CPU keeps instruction and data caches coherent (x86),
+/// so no explicit instruction cache maintenance is required.
+final bool _hostIsX86 = const [
+  Abi.linuxX64,
+  Abi.linuxIA32,
+  Abi.macosX64,
+  Abi.windowsX64,
+  Abi.windowsIA32,
+  Abi.androidX64,
+  Abi.androidIA32,
+  Abi.fuchsiaX64,
+].contains(Abi.current());
+
+void _initIcacheFunctions() {
+  if (Platform.isMacOS || Platform.isIOS) {
+    _sysIcacheInvalidate = DynamicLibrary.process()
+        .lookup<NativeFunction<_SysIcacheInvalidateNative>>(
+            'sys_icache_invalidate')
+        .asFunction<_SysIcacheInvalidateDart>();
+    return;
+  }
+
+  // `__clear_cache` lives in libgcc; it is usually already loaded into the
+  // process, otherwise fall back to opening libgcc_s explicitly.
+  for (final open in <DynamicLibrary Function()>[
+    DynamicLibrary.process,
+    () => DynamicLibrary.open('libgcc_s.so.1'),
+  ]) {
+    try {
+      final lib = open();
+      if (lib.providesSymbol('__clear_cache')) {
+        _clearCache = lib
+            .lookup<NativeFunction<_ClearCacheNative>>('__clear_cache')
+            .asFunction<_ClearCacheDart>();
+        return;
+      }
+    } catch (_) {
+      // Try the next candidate.
+    }
+  }
+  throw AsmJitException(
+    AsmJitError.invalidState,
+    'Unable to resolve __clear_cache for instruction cache maintenance',
+  );
+}
 
 bool _initialized = false;
 
@@ -137,6 +205,7 @@ void _initPlatformFunctions() {
     _sysconf = libc.libc
         .lookup<NativeFunction<_SysconfNative>>('sysconf')
         .asFunction<_SysconfDart>();
+    if (!_hostIsX86) _initIcacheFunctions();
   }
 
   _initialized = true;
@@ -304,7 +373,7 @@ abstract class VirtMem {
         nullptr,
         size,
         prot,
-        _MAP_PRIVATE | _MAP_ANONYMOUS,
+        _MAP_PRIVATE | _MAP_ANONYMOUS | _mapJitFlag,
         -1,
         0,
       );
@@ -408,12 +477,12 @@ abstract class VirtMem {
     if (Platform.isWindows) {
       final hProcess = _getCurrentProcess();
       _flushInstructionCache(hProcess, addr, size);
-    } else {
-      // On POSIX, use __builtin___clear_cache or cacheflush.
-      // For x86/x64 this is typically not needed.
-      // For ARM, we'd need to call appropriate syscall.
-      // For now, we skip on POSIX x86/x64.
+    } else if (_sysIcacheInvalidate != null) {
+      _sysIcacheInvalidate!(addr, size);
+    } else if (_clearCache != null) {
+      _clearCache!(addr, (addr.cast<Uint8>() + size).cast<Void>());
     }
+    // x86/x64 keeps I/D caches coherent; nothing to do.
   }
 
   /// Writes bytes to virtual memory.

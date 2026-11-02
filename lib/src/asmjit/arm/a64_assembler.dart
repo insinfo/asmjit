@@ -16,9 +16,6 @@ import '../core/emitter.dart';
 /// Provides a high-level API for emitting ARM64 instructions.
 /// Handles label binding, relocations, and instruction encoding.
 class A64Assembler extends BaseEmitter {
-  /// Pending label fixups.
-  final List<_A64LabelFixup> _fixups = [];
-
   /// The internal code buffer.
   late final CodeBuffer _buf;
 
@@ -63,6 +60,10 @@ class A64Assembler extends BaseEmitter {
   /// Binds a label to the current position.
   void bind(Label label) {
     code.bindAt(label, offset);
+  }
+
+  void _addBranchReloc(Label label, int atOffset, RelocKind kind) {
+    code.addReloc(Reloc(kind: kind, atOffset: atOffset, target: label));
   }
 
   // ===========================================================================
@@ -438,7 +439,7 @@ class A64Assembler extends BaseEmitter {
   void b(Label label) {
     final currentOffset = offset;
     _enc.b(0); // Placeholder
-    _fixups.add(_A64LabelFixup(label, currentOffset, _A64FixupKind.branch26));
+    _addBranchReloc(label, currentOffset, RelocKind.arm64Branch26);
   }
 
   /// ADR - PC-relative address (immediate).
@@ -455,28 +456,28 @@ class A64Assembler extends BaseEmitter {
   void bl(Label label) {
     final currentOffset = offset;
     _enc.bl(0);
-    _fixups.add(_A64LabelFixup(label, currentOffset, _A64FixupKind.branch26));
+    _addBranchReloc(label, currentOffset, RelocKind.arm64Branch26);
   }
 
   /// B.cond - Conditional branch to label.
   void bCond(A64Cond cond, Label label) {
     final currentOffset = offset;
     _enc.bCond(cond, 0);
-    _fixups.add(_A64LabelFixup(label, currentOffset, _A64FixupKind.branch19));
+    _addBranchReloc(label, currentOffset, RelocKind.arm64Branch19);
   }
 
   /// CBZ - Compare and branch if zero.
   void cbz(A64Gp rt, Label label) {
     final currentOffset = offset;
     _enc.cbz(rt, 0);
-    _fixups.add(_A64LabelFixup(label, currentOffset, _A64FixupKind.branch19));
+    _addBranchReloc(label, currentOffset, RelocKind.arm64Branch19);
   }
 
   /// CBNZ - Compare and branch if not zero.
   void cbnz(A64Gp rt, Label label) {
     final currentOffset = offset;
     _enc.cbnz(rt, 0);
-    _fixups.add(_A64LabelFixup(label, currentOffset, _A64FixupKind.branch19));
+    _addBranchReloc(label, currentOffset, RelocKind.arm64Branch19);
   }
 
   /// Convenience conditional branches.
@@ -880,37 +881,8 @@ class A64Assembler extends BaseEmitter {
   // Finalization
   // ===========================================================================
 
-  /// Resolves all label fixups and returns the finalized code.
-  FinalizedCode finalize() {
-    // Resolve ARM64-specific fixups
-    for (final fixup in _fixups) {
-      final labelOffset = code.getLabelOffset(fixup.label);
-      if (labelOffset == null) {
-        throw StateError('Label ${fixup.label} is not bound');
-      }
-
-      final relOffset = labelOffset - fixup.atOffset;
-
-      switch (fixup.kind) {
-        case _A64FixupKind.branch26:
-          // B/BL: imm26 at bits [25:0], scaled by 4
-          final imm26 = (relOffset >> 2) & 0x3FFFFFF;
-          final existing = _buf.read32At(fixup.atOffset);
-          _buf.write32At(fixup.atOffset, (existing & 0xFC000000) | imm26);
-          break;
-
-        case _A64FixupKind.branch19:
-          // B.cond/CBZ/CBNZ: imm19 at bits [23:5], scaled by 4
-          final imm19 = (relOffset >> 2) & 0x7FFFF;
-          final existing = _buf.read32At(fixup.atOffset);
-          _buf.write32At(
-              fixup.atOffset, (existing & 0xFF00001F) | (imm19 << 5));
-          break;
-      }
-    }
-
-    return code.finalize();
-  }
+  /// Finalizes the code (label relocations are resolved by [CodeHolder]).
+  FinalizedCode finalize() => code.finalize();
 
   // ===========================================================================
   // Raw Bytes
@@ -927,22 +899,4 @@ class A64Assembler extends BaseEmitter {
   void emit32(int inst) {
     _enc.emit32(inst);
   }
-}
-
-/// ARM64 label fixup kind.
-enum _A64FixupKind {
-  /// 26-bit branch (B, BL).
-  branch26,
-
-  /// 19-bit conditional branch (B.cond, CBZ, CBNZ).
-  branch19,
-}
-
-/// ARM64 label fixup.
-class _A64LabelFixup {
-  final Label label;
-  final int atOffset;
-  final _A64FixupKind kind;
-
-  const _A64LabelFixup(this.label, this.atOffset, this.kind);
 }

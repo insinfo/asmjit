@@ -21,7 +21,7 @@ class Section {
 
   /// The code/data buffer.
   final CodeBuffer buffer;
-  
+
   /// return buffer.bytes
   Uint8List asUint8List() {
     return buffer.bytes;
@@ -343,15 +343,48 @@ class CodeHolder {
         buffer.patch64(atOffset, targetOffset);
 
       case RelocKind.arm64Branch26:
+        // B/BL: imm26 at bits [25:0], scaled by 4, relative to the instruction.
+        final disp = _a64BranchDisp(targetOffset - atOffset, 26);
+        final inst = buffer.read32At(atOffset);
+        buffer.write32At(atOffset, (inst & 0xFC000000) | (disp & 0x3FFFFFF));
+
       case RelocKind.arm64Branch19:
+        // B.cond/CBZ/CBNZ: imm19 at bits [23:5], scaled by 4.
+        final disp = _a64BranchDisp(targetOffset - atOffset, 19);
+        final inst = buffer.read32At(atOffset);
+        buffer.write32At(
+            atOffset, (inst & 0xFF00001F) | ((disp & 0x7FFFF) << 5));
+
       case RelocKind.arm64Adr21:
-        // ARM64-specific relocations are handled by A64Assembler.finalize()
-        // They should not appear in standard CodeHolder relocations.
-        throw AsmJitException(
-          AsmJitError.invalidArgument,
-          'ARM64 relocations must be handled by A64Assembler',
-        );
+        // ADR: immlo at bits [30:29], immhi at bits [23:5], byte granular.
+        final disp = targetOffset - atOffset;
+        if (disp < -(1 << 20) || disp >= (1 << 20)) {
+          throw AsmJitException(
+            AsmJitError.relocOffsetOutOfRange,
+            'ADR displacement out of range: $disp',
+          );
+        }
+        final inst = buffer.read32At(atOffset);
+        buffer.write32At(
+            atOffset,
+            (inst & 0x9F00001F) |
+                ((disp & 0x3) << 29) |
+                (((disp >> 2) & 0x7FFFF) << 5));
     }
+  }
+
+  /// Validates an AArch64 branch displacement in bytes and returns it in
+  /// instruction units (`disp / 4`), checked against a signed [bits] field.
+  static int _a64BranchDisp(int disp, int bits) {
+    final limit = 1 << (bits - 1);
+    final units = disp >> 2;
+    if ((disp & 3) != 0 || units < -limit || units >= limit) {
+      throw AsmJitException(
+        AsmJitError.relocOffsetOutOfRange,
+        'AArch64 branch displacement out of range for imm$bits: $disp',
+      );
+    }
+    return units;
   }
 
   // ===========================================================================

@@ -340,24 +340,28 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
   // ============================================================================
 
   /// Creates a new 32-bit general purpose register.
-  X86Gp newGp32([String? name]) {
+  ///
+  /// Returns an [X86Gp] on x86 targets and an [A64Gp] on AArch64 targets.
+  BaseReg newGp32([String? name]) {
     final vreg = cc.newVirtReg(TypeId.int32,
         OperandSignature.fromRegTypeAndGroup(RegType.gp32, RegGroup.gp), name);
-    return X86Gp.r32(vreg.id);
+    return isArmFamily ? A64Gp(vreg.id, 32) : X86Gp.r32(vreg.id);
   }
 
   /// Creates a new 64-bit general purpose register.
-  X86Gp newGp64([String? name]) {
+  ///
+  /// Returns an [X86Gp] on x86 targets and an [A64Gp] on AArch64 targets.
+  BaseReg newGp64([String? name]) {
     final vreg = cc.newVirtReg(TypeId.int64,
         OperandSignature.fromRegTypeAndGroup(RegType.gp64, RegGroup.gp), name);
-    return X86Gp.r64(vreg.id);
+    return isArmFamily ? A64Gp(vreg.id, 64) : X86Gp.r64(vreg.id);
   }
 
   /// Creates a native-sized GP register.
-  X86Gp newGpz([String? name]) => is64Bit ? newGp64(name) : newGp32(name);
+  BaseReg newGpz([String? name]) => is64Bit ? newGp64(name) : newGp32(name);
 
   /// Creates a pointer-sized GP register.
-  X86Gp newGpPtr([String? name]) => newGpz(name);
+  BaseReg newGpPtr([String? name]) => newGpz(name);
 
   /// Creates a new XMM register (128-bit).
   X86Xmm newXmm([String? name]) {

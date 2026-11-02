@@ -19,11 +19,10 @@ class A64Serializer implements ir.SerializerContext {
   @override
   void onAlign(ir.AlignMode mode, int alignment) {
     if (mode == ir.AlignMode.code) {
-      // A64Assembler has no direct align; emit NOPs as padding if needed.
+      // A64Assembler has no direct align; pad with 4-byte NOPs.
       final misalign = asm.code.text.buffer.length % alignment;
       if (misalign != 0) {
-        final pad = alignment - misalign;
-        for (var i = 0; i < pad; i++) {
+        for (var pad = alignment - misalign; pad >= 4; pad -= 4) {
           asm.nop();
         }
       }
