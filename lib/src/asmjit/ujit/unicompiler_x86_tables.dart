@@ -1,7 +1,9 @@
 /// x86 lowering tables for UniCompiler.
 ///
-/// Ported from `opcode_info_2vi` and `opcode_info_3v` in asmjit's
-/// `ujit/unicompiler_x86.cpp`; one entry per [UniOpVVI] / [UniOpVVV] value
+/// Ported from `opcode_info_2v`, `opcode_info_2vi` and `opcode_info_3v` in
+/// asmjit's
+/// `ujit/unicompiler_x86.cpp`; one entry per [UniOpVV] / [UniOpVVI] /
+/// [UniOpVVV] value
 /// shared by all architectures, in enum order (upstream's x86-only
 /// `kPermute*` 3v entries require AVX-512 and are not part of the Dart
 /// enum).
@@ -479,4 +481,193 @@ const List<X86UniOpVInfo> kX86OpcodeInfo2vi = [
       0), // extractV256F32
   _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 3, 3, 0,
       0), // extractV256F64
+];
+
+const List<X86UniOpVInfo> kX86OpcodeInfo2v = [
+  _V(X86InstId.kMovaps, 0, SSEExt.kIntrin, X86InstId.kVmovaps, AVXExt.kIntrin,
+      0, 0, 0, 0, 0x00, 4, 0, 0, 0), // mov
+  _V(X86InstId.kMovq, 0, SSEExt.kIntrin, X86InstId.kVmovq, AVXExt.kIntrin, 0, 0,
+      0, 0, 0x00, 4, 3, 0, 0), // movU64
+  _V(-1, 0, SSEExt.kIntrin, X86InstId.kVpbroadcastb, AVXExt.kIntrin, 0, 0, 0, 0,
+      0x01, 4, 0, 0, 0), // broadcastU8Z
+  _V(-1, 0, SSEExt.kIntrin, X86InstId.kVpbroadcastw, AVXExt.kIntrin, 0, 0, 0, 0,
+      0x01, 4, 1, 0, 0), // broadcastU16Z
+  _V(-1, 0, SSEExt.kIntrin, X86InstId.kVpbroadcastb, AVXExt.kIntrin, 0, 0, 0, 0,
+      0x00, 4, 0, 0, 0), // broadcastU8
+  _V(-1, 0, SSEExt.kIntrin, X86InstId.kVpbroadcastw, AVXExt.kIntrin, 0, 0, 0, 0,
+      0x00, 4, 1, 0, 0), // broadcastU16
+  _V(-1, 0, SSEExt.kIntrin, X86InstId.kVpbroadcastd, AVXExt.kIntrin, 0, 0, 0, 0,
+      0x00, 4, 2, 0, 0), // broadcastU32
+  _V(-1, 0, SSEExt.kIntrin, X86InstId.kVpbroadcastq, AVXExt.kIntrin, 0, 0, 0, 0,
+      0x00, 4, 3, 0, 0), // broadcastU64
+  _V(-1, 0, SSEExt.kIntrin, X86InstId.kVbroadcastss, AVXExt.kIntrin, 0, 0, 0, 0,
+      0x00, 4, 2, 0, 0), // broadcastF32
+  _V(-1, 0, SSEExt.kIntrin, X86InstId.kVbroadcastsd, AVXExt.kIntrin, 0, 0, 0, 0,
+      0x00, 4, 3, 0, 0), // broadcastF64
+  _V(-1, 0, SSEExt.kIntrin, X86InstId.kVbroadcasti32x4, AVXExt.kIntrin, 0, 0, 0,
+      0, 0x00, 4, 2, 0, 0), // broadcastV128U32
+  _V(-1, 0, SSEExt.kIntrin, X86InstId.kVbroadcasti64x2, AVXExt.kIntrin, 0, 0, 0,
+      0, 0x00, 4, 3, 0, 0), // broadcastV128U64
+  _V(-1, 0, SSEExt.kIntrin, X86InstId.kVbroadcastf32x4, AVXExt.kIntrin, 0, 0, 0,
+      0, 0x00, 4, 2, 0, 0), // broadcastV128F32
+  _V(-1, 0, SSEExt.kIntrin, X86InstId.kVbroadcastf64x2, AVXExt.kIntrin, 0, 0, 0,
+      0, 0x00, 4, 3, 0, 0), // broadcastV128F64
+  _V(-1, 0, SSEExt.kIntrin, X86InstId.kVbroadcasti32x8, AVXExt.kIntrin, 0, 0, 0,
+      0, 0x00, 4, 2, 0, 0), // broadcastV256U32
+  _V(-1, 0, SSEExt.kIntrin, X86InstId.kVbroadcasti64x4, AVXExt.kIntrin, 0, 0, 0,
+      0, 0x00, 4, 3, 0, 0), // broadcastV256U64
+  _V(-1, 0, SSEExt.kIntrin, X86InstId.kVbroadcasti32x8, AVXExt.kIntrin, 0, 0, 0,
+      0, 0x00, 4, 2, 0, 0), // broadcastV256F32
+  _V(-1, 0, SSEExt.kIntrin, X86InstId.kVbroadcasti64x4, AVXExt.kIntrin, 0, 0, 0,
+      0, 0x00, 4, 3, 0, 0), // broadcastV256F64
+  _V(X86InstId.kPabsb, 2, SSEExt.kSSSE3, X86InstId.kVpabsb, AVXExt.kAVX, 0, 0,
+      0, 0, 0x00, 4, 0, 0, 0), // absI8
+  _V(X86InstId.kPabsw, 2, SSEExt.kSSSE3, X86InstId.kVpabsw, AVXExt.kAVX, 0, 0,
+      0, 0, 0x00, 4, 1, 0, 0), // absI16
+  _V(X86InstId.kPabsd, 2, SSEExt.kSSSE3, X86InstId.kVpabsd, AVXExt.kAVX, 0, 0,
+      0, 0, 0x00, 4, 2, 4, 0), // absI32
+  _V(-1, 0, SSEExt.kIntrin, X86InstId.kVpabsq, AVXExt.kAVX512, 0, 0, 0, 0, 0x00,
+      4, 3, 8, 0), // absI64
+  _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 2, 4,
+      0), // notU32
+  _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 3, 8,
+      0), // notU64
+  _V(X86InstId.kPmovsxbw, 0, SSEExt.kIntrin, X86InstId.kVpmovsxbw,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 1, 0, 0), // cvtI8LoToI16
+  _V(X86InstId.kPmovsxbw, 0, SSEExt.kIntrin, X86InstId.kVpmovsxbw,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 1, 0, 0), // cvtI8HiToI16
+  _V(X86InstId.kPmovzxbw, 0, SSEExt.kIntrin, X86InstId.kVpmovzxbw,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 1, 0, 0), // cvtU8LoToU16
+  _V(X86InstId.kPmovzxbw, 0, SSEExt.kIntrin, X86InstId.kVpmovzxbw,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 1, 0, 0), // cvtU8HiToU16
+  _V(X86InstId.kPmovsxbd, 0, SSEExt.kIntrin, X86InstId.kVpmovsxbd,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 2, 0, 0), // cvtI8ToI32
+  _V(X86InstId.kPmovzxbd, 0, SSEExt.kIntrin, X86InstId.kVpmovzxbd,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 2, 0, 0), // cvtU8ToU32
+  _V(X86InstId.kPmovsxwd, 0, SSEExt.kIntrin, X86InstId.kVpmovsxwd,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 2, 0, 0), // cvtI16LoToI32
+  _V(X86InstId.kPmovsxwd, 0, SSEExt.kIntrin, X86InstId.kVpmovsxwd,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 2, 0, 0), // cvtI16HiToI32
+  _V(X86InstId.kPmovzxwd, 0, SSEExt.kIntrin, X86InstId.kVpmovzxwd,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 2, 0, 0), // cvtU16LoToU32
+  _V(X86InstId.kPmovzxwd, 0, SSEExt.kIntrin, X86InstId.kVpmovzxwd,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 2, 0, 0), // cvtU16HiToU32
+  _V(X86InstId.kPmovsxdq, 0, SSEExt.kIntrin, X86InstId.kVpmovsxdq,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 3, 0, 0), // cvtI32LoToI64
+  _V(X86InstId.kPmovsxdq, 0, SSEExt.kIntrin, X86InstId.kVpmovsxdq,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 3, 0, 0), // cvtI32HiToI64
+  _V(X86InstId.kPmovzxdq, 0, SSEExt.kIntrin, X86InstId.kVpmovzxdq,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 3, 0, 0), // cvtU32LoToU64
+  _V(X86InstId.kPmovzxdq, 0, SSEExt.kIntrin, X86InstId.kVpmovzxdq,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 3, 0, 0), // cvtU32HiToU64
+  _V(X86InstId.kAndps, 0, SSEExt.kIntrin, X86InstId.kVandps, AVXExt.kIntrin, 0,
+      0, 0, 0, 0x00, 0, 2, 4, 0), // absF32S
+  _V(X86InstId.kAndpd, 0, SSEExt.kIntrin, X86InstId.kVandpd, AVXExt.kIntrin, 0,
+      0, 0, 0, 0x00, 1, 3, 8, 0), // absF64S
+  _V(X86InstId.kAndps, 0, SSEExt.kIntrin, X86InstId.kVandps, AVXExt.kIntrin, 0,
+      0, 0, 0, 0x00, 2, 2, 4, 0), // absF32
+  _V(X86InstId.kAndpd, 0, SSEExt.kIntrin, X86InstId.kVandpd, AVXExt.kIntrin, 0,
+      0, 0, 0, 0x00, 3, 3, 8, 0), // absF64
+  _V(X86InstId.kXorps, 0, SSEExt.kIntrin, X86InstId.kVxorps, AVXExt.kIntrin, 0,
+      0, 0, 0, 0x00, 0, 2, 4, 0), // negF32S
+  _V(X86InstId.kXorpd, 0, SSEExt.kIntrin, X86InstId.kVxorpd, AVXExt.kIntrin, 0,
+      0, 0, 0, 0x00, 1, 3, 8, 0), // negF64S
+  _V(X86InstId.kXorps, 0, SSEExt.kIntrin, X86InstId.kVxorps, AVXExt.kIntrin, 0,
+      0, 0, 0, 0x00, 2, 2, 4, 0), // negF32
+  _V(X86InstId.kXorpd, 0, SSEExt.kIntrin, X86InstId.kVxorpd, AVXExt.kIntrin, 0,
+      0, 0, 0, 0x00, 3, 3, 8, 0), // negF64
+  _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 2, 4,
+      0), // notF32
+  _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 3, 8,
+      0), // notF64
+  _V(X86InstId.kRoundss, 2, SSEExt.kIntrin, X86InstId.kVroundss, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x0B, 0, 2, 4, 0), // truncF32S
+  _V(X86InstId.kRoundsd, 2, SSEExt.kIntrin, X86InstId.kVroundsd, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x0B, 1, 3, 8, 0), // truncF64S
+  _V(X86InstId.kRoundps, 2, SSEExt.kIntrin, X86InstId.kVroundps, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x0B, 2, 2, 4, 0), // truncF32
+  _V(X86InstId.kRoundpd, 2, SSEExt.kIntrin, X86InstId.kVroundpd, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x0B, 3, 3, 8, 0), // truncF64
+  _V(X86InstId.kRoundss, 2, SSEExt.kIntrin, X86InstId.kVroundss, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x09, 0, 2, 4, 0), // floorF32S
+  _V(X86InstId.kRoundsd, 2, SSEExt.kIntrin, X86InstId.kVroundsd, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x09, 1, 3, 8, 0), // floorF64S
+  _V(X86InstId.kRoundps, 2, SSEExt.kIntrin, X86InstId.kVroundps, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x09, 2, 2, 4, 0), // floorF32
+  _V(X86InstId.kRoundpd, 2, SSEExt.kIntrin, X86InstId.kVroundpd, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x09, 3, 3, 8, 0), // floorF64
+  _V(X86InstId.kRoundss, 2, SSEExt.kIntrin, X86InstId.kVroundss, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x0A, 0, 2, 4, 0), // ceilF32S
+  _V(X86InstId.kRoundsd, 2, SSEExt.kIntrin, X86InstId.kVroundsd, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x0A, 1, 3, 8, 0), // ceilF64S
+  _V(X86InstId.kRoundps, 2, SSEExt.kIntrin, X86InstId.kVroundps, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x0A, 2, 2, 4, 0), // ceilF32
+  _V(X86InstId.kRoundpd, 2, SSEExt.kIntrin, X86InstId.kVroundpd, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x0A, 3, 3, 8, 0), // ceilF64
+  _V(X86InstId.kRoundss, 2, SSEExt.kIntrin, X86InstId.kVroundss, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x08, 0, 2, 4, 0), // roundEvenF32S
+  _V(X86InstId.kRoundsd, 2, SSEExt.kIntrin, X86InstId.kVroundsd, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x08, 1, 3, 8, 0), // roundEvenF64S
+  _V(X86InstId.kRoundps, 2, SSEExt.kIntrin, X86InstId.kVroundps, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x08, 2, 2, 4, 0), // roundEvenF32
+  _V(X86InstId.kRoundpd, 2, SSEExt.kIntrin, X86InstId.kVroundpd, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x08, 3, 3, 8, 0), // roundEvenF64
+  _V(X86InstId.kRoundss, 2, SSEExt.kIntrin, X86InstId.kVroundss, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x0B, 0, 2, 4, 0), // roundHalfAwayF32S
+  _V(X86InstId.kRoundsd, 2, SSEExt.kIntrin, X86InstId.kVroundsd, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x0B, 1, 3, 8, 0), // roundHalfAwayF64S
+  _V(X86InstId.kRoundps, 2, SSEExt.kIntrin, X86InstId.kVroundps, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x0B, 2, 2, 4, 0), // roundHalfAwayF32
+  _V(X86InstId.kRoundpd, 2, SSEExt.kIntrin, X86InstId.kVroundpd, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x0B, 3, 3, 8, 0), // roundHalfAwayF64
+  _V(X86InstId.kRoundss, 2, SSEExt.kIntrin, X86InstId.kVroundss, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x09, 0, 2, 4, 0), // roundHalfUpF32S
+  _V(X86InstId.kRoundsd, 2, SSEExt.kIntrin, X86InstId.kVroundsd, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x09, 1, 3, 8, 0), // roundHalfUpF64S
+  _V(X86InstId.kRoundps, 2, SSEExt.kIntrin, X86InstId.kVroundps, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x09, 2, 2, 4, 0), // roundHalfUpF32
+  _V(X86InstId.kRoundpd, 2, SSEExt.kIntrin, X86InstId.kVroundpd, AVXExt.kIntrin,
+      0, 0, 0, 1, 0x09, 3, 3, 8, 0), // roundHalfUpF64
+  _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 2, 4,
+      0), // rcpF32
+  _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 3, 8,
+      0), // rcpF64
+  _V(X86InstId.kSqrtss, 2, SSEExt.kIntrin, X86InstId.kVsqrtss, AVXExt.kIntrin,
+      0, 0, 0, 0, 0x00, 0, 2, 4, 0), // sqrtF32S
+  _V(X86InstId.kSqrtsd, 2, SSEExt.kIntrin, X86InstId.kVsqrtsd, AVXExt.kIntrin,
+      0, 0, 0, 0, 0x00, 1, 3, 8, 0), // sqrtF64S
+  _V(X86InstId.kSqrtps, 2, SSEExt.kSSE2, X86InstId.kVsqrtps, AVXExt.kAVX, 0, 0,
+      0, 0, 0x00, 2, 2, 4, 0), // sqrtF32
+  _V(X86InstId.kSqrtpd, 2, SSEExt.kSSE2, X86InstId.kVsqrtpd, AVXExt.kAVX, 0, 0,
+      0, 0, 0x00, 3, 3, 8, 0), // sqrtF64
+  _V(X86InstId.kCvtss2sd, 2, SSEExt.kIntrin, X86InstId.kVcvtss2sd,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 1, 3, 0, 0), // cvtF32ToF64S
+  _V(X86InstId.kCvtsd2ss, 2, SSEExt.kIntrin, X86InstId.kVcvtsd2ss,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 1, 2, 0, 0), // cvtF64ToF32S
+  _V(X86InstId.kCvtdq2ps, 2, SSEExt.kSSE2, X86InstId.kVcvtdq2ps, AVXExt.kAVX, 0,
+      0, 0, 0, 0x00, 2, 2, 4, 0), // cvtI32ToF32
+  _V(X86InstId.kCvtps2pd, 2, SSEExt.kSSE2, X86InstId.kVcvtps2pd, AVXExt.kIntrin,
+      0, 0, 0, 0, 0x00, 2, 3, 4, 0), // cvtF32LoToF64
+  _V(X86InstId.kCvtps2pd, 2, SSEExt.kIntrin, X86InstId.kVcvtps2pd,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 2, 3, 4, 1), // cvtF32HiToF64
+  _V(X86InstId.kCvtpd2ps, 2, SSEExt.kSSE2, X86InstId.kVcvtpd2ps, AVXExt.kIntrin,
+      0, 0, 0, 0, 0x00, 3, 2, 4, 0), // cvtF64ToF32Lo
+  _V(X86InstId.kCvtpd2ps, 2, SSEExt.kIntrin, X86InstId.kVcvtpd2ps,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 3, 2, 4, 1), // cvtF64ToF32Hi
+  _V(X86InstId.kCvtdq2pd, 2, SSEExt.kSSE2, X86InstId.kVcvtdq2pd, AVXExt.kIntrin,
+      0, 0, 0, 0, 0x00, 4, 3, 4, 0), // cvtI32LoToF64
+  _V(X86InstId.kCvtdq2pd, 2, SSEExt.kIntrin, X86InstId.kVcvtdq2pd,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 3, 4, 1), // cvtI32HiToF64
+  _V(X86InstId.kCvttps2dq, 2, SSEExt.kSSE2, X86InstId.kVcvttps2dq, AVXExt.kAVX,
+      0, 0, 0, 0, 0x00, 2, 2, 4, 0), // cvtTruncF32ToI32
+  _V(X86InstId.kCvttpd2dq, 2, SSEExt.kSSE2, X86InstId.kVcvttpd2dq,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 3, 2, 4, 0), // cvtTruncF64ToI32Lo
+  _V(X86InstId.kCvttpd2dq, 2, SSEExt.kIntrin, X86InstId.kVcvttpd2dq,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 3, 2, 4, 1), // cvtTruncF64ToI32Hi
+  _V(X86InstId.kCvtps2dq, 2, SSEExt.kSSE2, X86InstId.kVcvtps2dq, AVXExt.kAVX, 0,
+      0, 0, 0, 0x00, 2, 2, 4, 0), // cvtRoundF32ToI32
+  _V(X86InstId.kCvtpd2dq, 2, SSEExt.kSSE2, X86InstId.kVcvtpd2dq, AVXExt.kIntrin,
+      0, 0, 0, 0, 0x00, 3, 2, 4, 0), // cvtRoundF64ToI32Lo
+  _V(X86InstId.kCvtpd2dq, 2, SSEExt.kIntrin, X86InstId.kVcvtpd2dq,
+      AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 3, 2, 4, 1), // cvtRoundF64ToI32Hi
 ];

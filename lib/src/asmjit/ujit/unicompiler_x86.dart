@@ -727,299 +727,947 @@ mixin UniCompilerX86 on UniCompilerBase {
         '_emitMVX86: $op not implemented (hasAvx=$hasAvx)');
   }
 
-  void _emit2vX86(UniOpVV op, Operand dst, Operand src) {
-    if (dst is! BaseReg) {
-      throw ArgumentError('SIMD dst must be register');
+  /// `avx_fmov()`.
+  void _avxFmovX86(BaseReg dst, Operand src, int fm) {
+    if (src is BaseReg) {
+      if (dst.id != src.id) {
+        _emitX86(
+            X86InstId.kVmovaps, [_isScalarFm(fm) ? X86Xmm(dst.id) : dst, src]);
+      }
+    } else if (_isScalarFm(fm)) {
+      _emitX86(_vexIdX86(_sseFloatInst[fm].fmovs), [dst, src]);
+    } else {
+      _emitX86(_vexIdX86(_sseFloatInst[fm].fmovu), [dst, src]);
     }
-    if (_emit2vEmulatedX86(op, dst, src)) return;
+  }
+
+  // WideningOp of `sse_int_widen()`.
+  static const _kI8ToI16 = 1, _kU8ToU16 = 2, _kI8ToI32 = 3, _kU8ToU32 = 4;
+  static const _kI16ToI32 = 6, _kU16ToU32 = 7, _kI32ToI64 = 8, _kU32ToU64 = 9;
+
+  /// `sse_int_widening_op_info`: (mov, unpack_lo, sign_extends).
+  static const _sseIntWidening = <(int, int, bool)>[
+    (-1, -1, false), // kNone.
+    (X86InstId.kPmovsxbw, X86InstId.kPunpcklbw, true), // kI8ToI16.
+    (X86InstId.kPmovzxbw, X86InstId.kPunpcklbw, false), // kU8ToU16.
+    (X86InstId.kPmovsxbd, -1, true), // kI8ToI32.
+    (X86InstId.kPmovzxbd, -1, false), // kU8ToU32.
+    (X86InstId.kPmovzxbq, -1, false), // kU8ToU64.
+    (X86InstId.kPmovsxwd, X86InstId.kPunpcklwd, true), // kI16ToI32.
+    (X86InstId.kPmovzxwd, X86InstId.kPunpcklwd, false), // kU16ToU32.
+    (X86InstId.kPmovsxdq, X86InstId.kPunpckldq, true), // kI32ToI64.
+    (X86InstId.kPmovzxdq, X86InstId.kPunpckldq, false), // kU32ToU64.
+  ];
+
+  /// `sse_int_widen()`.
+  void _sseIntWidenX86(BaseReg dst, BaseReg src, int cvt) {
+    final (mov, unpackLo, signExtends) = _sseIntWidening[cvt];
+
+    if (hasSse41) {
+      _emitX86(mov, [dst, src]);
+      return;
+    }
+
+    if (!signExtends && unpackLo != -1) {
+      final zero =
+          _simdConstX86(VecConstTable.p_0000000000000000, Bcst.kNA, dst);
+      _sseMovX86(dst, src);
+      _emitX86(unpackLo, [dst, zero]);
+      return;
+    }
+
+    switch (cvt) {
+      case _kI8ToI16:
+        _emitX86(unpackLo, [dst, src]);
+        _emitX86(X86InstId.kPsraw, [dst, Imm(8)]);
+      case _kI8ToI32:
+        _emitX86(X86InstId.kPunpcklbw, [dst, src]);
+        _emitX86(X86InstId.kPunpcklwd, [dst, dst]);
+        _emitX86(X86InstId.kPsrad, [dst, Imm(24)]);
+      case _kU8ToU32:
+        final zero =
+            _simdConstX86(VecConstTable.p_0000000000000000, Bcst.kNA, dst);
+        _sseMovX86(dst, src);
+        _emitX86(X86InstId.kPunpcklbw, [dst, zero]);
+        _emitX86(X86InstId.kPunpcklwd, [dst, zero]);
+      case _kI16ToI32:
+        _emitX86(unpackLo, [dst, src]);
+        _emitX86(X86InstId.kPsrad, [dst, Imm(16)]);
+      case _kI32ToI64:
+        final tmp = _newSimilarRegX86(dst, '@tmp');
+        _sseMovX86(tmp, src);
+        _sseMovX86(dst, src);
+        _emitX86(X86InstId.kPsrad, [tmp, Imm(31)]);
+        _emitX86(X86InstId.kPunpckldq, [dst, tmp]);
+      default:
+        throw StateError('unreachable widening $cvt');
+    }
+  }
+
+  /// Masks of the abs/neg float ops of `emit_2v()`.
+  static VecConst _absNegMaskX86(UniOpVV op) => switch (op) {
+        UniOpVV.absF32 || UniOpVV.absF32S => VecConstTable.p_7FFFFFFF7FFFFFFF,
+        UniOpVV.absF64 || UniOpVV.absF64S => VecConstTable.p_7FFFFFFFFFFFFFFF,
+        UniOpVV.negF32 || UniOpVV.negF32S => VecConstTable.p_8000000080000000,
+        _ => VecConstTable.p_8000000000000000,
+      };
+
+  static Bcst _bcstOf(int broadcastSize) => switch (broadcastSize) {
+        4 => Bcst.k32,
+        8 => Bcst.k64,
+        _ => Bcst.kNA,
+      };
+
+  /// `get_fop_half_minus_1ulp()` / `get_fop_msb_bit()`.
+  Operand _fopHalfMinus1UlpX86(BaseReg dst, int fm) => _isF32Fm(fm)
+      ? _simdConstX86(VecConstTable.f32_0_5_minus_1ulp, Bcst.k32, dst)
+      : _simdConstX86(VecConstTable.f64_0_5_minus_1ulp, Bcst.k64, dst);
+
+  Operand _fopMsbBitX86(BaseReg dst, int fm) => _isF32Fm(fm)
+      ? _simdConstX86(VecConstTable.p_8000000080000000, Bcst.k32, dst)
+      : _simdConstX86(VecConstTable.p_8000000000000000, Bcst.k64, dst);
+
+  static BaseReg _asGpX86(BaseReg r, int bits) => switch (bits) {
+        8 => X86Gp.r8(r.id),
+        16 => X86Gp.r16(r.id),
+        32 => X86Gp.r32(r.id),
+        _ => X86Gp.r64(r.id),
+      };
+
+  /// Port of `emit_2v()` (ujit/unicompiler_x86.cpp).
+  ///
+  /// As a Dart convenience `mov` also moves general purpose registers.
+  void _emit2vX86(UniOpVV op, Operand dst_, Operand src_) {
+    if (dst_ is! BaseReg) {
+      throw ArgumentError('SIMD destination must be a register');
+    }
+    if (op == UniOpVV.mov && (dst_.isGp || (src_ is BaseReg && src_.isGp))) {
+      _vMovX86(dst_, src_);
+      return;
+    }
+
+    var dst = dst_;
+    var src = src_;
+    final info = kX86OpcodeInfo2v[op.index];
+    final fm = info.floatMode;
+
+    if (hasAvx) {
+      // AVX Implementation
+      // ------------------
+      var instId = info.avxInstId;
+
+      if (hasAvxExt(info.avxExt)) {
+        _emitX86(instId, [dst, src, if (info.useImm != 0) Imm(info.imm)]);
+        return;
+      }
+
+      switch (op) {
+        case UniOpVV.mov:
+          _emitX86(X86InstId.kVmovaps, [dst, src]);
+          return;
+
+        case UniOpVV.movU64:
+          if (src is BaseReg) src = X86Xmm(src.id);
+          _emitX86(X86InstId.kVmovq, [X86Xmm(dst.id), src]);
+          return;
+
+        case UniOpVV.broadcastU8Z:
+        case UniOpVV.broadcastU16Z:
+        case UniOpVV.broadcastU8:
+        case UniOpVV.broadcastU16:
+        case UniOpVV.broadcastU32:
+        case UniOpVV.broadcastU64:
+        case UniOpVV.broadcastF32:
+        case UniOpVV.broadcastF64:
+          // Intrinsic - 32/64-bit broadcasts require AVX, 8/16-bit
+          // broadcasts require AVX2/AVX512.
+          final elementSize = info.elementSize;
+
+          if (src is BaseReg && src.isGp) {
+            final srcGp = _asGpX86(src, elementSize <= 2 ? 32 : 64);
+
+            // BroadcastU[8|16]Z without AVX2: the unused part of the source
+            // is zero, so multiplying by a constant extends the data into 32
+            // bits and VPSHUFD does the rest.
+            if (!hasAvx2 && elementSize <= 1 && info.imm == 0x01) {
+              final expanded = (this as UniCompiler).newGp32('@expanded');
+              _emitX86(X86InstId.kImul, [
+                expanded,
+                srcGp,
+                Imm(elementSize == 0 ? 0x01010101 : 0x00010001)
+              ]);
+              final x = X86Xmm(dst.id);
+              _emitX86(X86InstId.kVmovd, [x, expanded]);
+              _emitX86(X86InstId.kVpshufd, [x, x, Imm(_shufImm4(0, 0, 0, 0))]);
+              if (dst is! X86Xmm) {
+                _emitX86(X86InstId.kVinsertf128, [dst, dst, x, Imm(0)]);
+              }
+              return;
+            }
+
+            // AVX/AVX2 doesn't provide broadcast from GP to XMM, we have to
+            // move to XMM first.
+            _emitX86(elementSize <= 2 ? X86InstId.kVmovd : X86InstId.kVmovq,
+                [X86Xmm(dst.id), srcGp]);
+            src = X86Xmm(dst.id);
+          }
+
+          // We have either a broadcast from memory or an XMM register - AVX2
+          // requires special handling from here...
+          if (!hasAvx2) {
+            final dstXmm = X86Xmm(dst.id);
+            if (elementSize <= 1) {
+              // AVX doesn't provide 8-bit and 16-bit broadcasts - VPSHUFB
+              // repeats the byte (word).
+              final insertInstId =
+                  elementSize == 0 ? X86InstId.kVpinsrb : X86InstId.kVpinsrw;
+              final pred = _simdVecConstX86(
+                  elementSize == 0
+                      ? VecConstTable.p_0000000000000000
+                      : VecConstTable.p_0100010001000100,
+                  Bcst.k32,
+                  dstXmm);
+              if (src is X86Mem) {
+                _emitX86(insertInstId, [
+                  dstXmm,
+                  pred,
+                  src.withSize(elementSize == 0 ? 1 : 2),
+                  Imm(0)
+                ]);
+                _emitX86(X86InstId.kVpshufb, [dstXmm, dstXmm, pred]);
+              } else {
+                _emitX86(X86InstId.kVpshufb,
+                    [dstXmm, X86Xmm((src as BaseReg).id), pred]);
+              }
+            } else {
+              // AVX's VBROADCAST[SS|SD] only take memory sources.
+              if (src is X86Mem) {
+                var bcstInstId = elementSize == 2
+                    ? X86InstId.kVbroadcastss
+                    : X86InstId.kVbroadcastsd;
+                if (dst is X86Xmm && bcstInstId == X86InstId.kVbroadcastsd) {
+                  bcstInstId = X86InstId.kVmovddup;
+                }
+                _emitX86(
+                    bcstInstId, [dst, src.withSize(elementSize == 2 ? 4 : 8)]);
+                return;
+              }
+              final srcXmm = X86Xmm((src as BaseReg).id);
+              if (elementSize == 2) {
+                _emitX86(X86InstId.kVpshufd,
+                    [dstXmm, srcXmm, Imm(_shufImm4(0, 0, 0, 0))]);
+              } else {
+                _emitX86(X86InstId.kVmovddup, [dstXmm, srcXmm]);
+              }
+            }
+            if (dst is! X86Xmm) {
+              _emitX86(X86InstId.kVinsertf128, [dst, dst, dstXmm, Imm(0)]);
+            }
+            return;
+          }
+
+          // VBROADCASTSD cannot be used when XMM is a destination, in that
+          // case we must use VMOVDDUP.
+          if (dst is X86Xmm && instId == X86InstId.kVbroadcastsd) {
+            instId = X86InstId.kVmovddup;
+          }
+          if (src is X86Mem) {
+            _emitX86(instId, [dst, src.withSize(1 << elementSize)]);
+          } else {
+            _emitX86(instId, [dst, X86Xmm((src as BaseReg).id)]);
+          }
+          return;
+
+        case UniOpVV.broadcastV128U32:
+        case UniOpVV.broadcastV128U64:
+        case UniOpVV.broadcastV128F32:
+        case UniOpVV.broadcastV128F64:
+          if (src is BaseReg) src = X86Xmm(src.id);
+          // 128-bit broadcast is like 128-bit mov in this case as we don't
+          // have a wider destination.
+          if (dst is X86Xmm) {
+            _avxMovX86(dst, src);
+            return;
+          }
+          final isFloat = op.index >= UniOpVV.broadcastV128F32.index;
+          if (src is X86Mem) {
+            _emitX86(
+                isFloat || !hasAvx2
+                    ? X86InstId.kVbroadcastf128
+                    : X86InstId.kVbroadcasti128,
+                [dst, src]);
+            return;
+          }
+          _emitX86(
+              isFloat || !hasAvx2
+                  ? X86InstId.kVinsertf128
+                  : X86InstId.kVinserti128,
+              [dst, X86Ymm((src as BaseReg).id), src, Imm(1)]);
+          return;
+
+        case UniOpVV.broadcastV256U32:
+        case UniOpVV.broadcastV256U64:
+        case UniOpVV.broadcastV256F32:
+        case UniOpVV.broadcastV256F64:
+          if (src is BaseReg) src = X86Ymm(src.id);
+          // Cannot broadcast 256-bit vector to a 128-bit or 256-bit vector.
+          _avxMovX86(X86Ymm(dst.id), src);
+          return;
+
+        case UniOpVV.absI64:
+          // Native operation requires AVX512, which is not supported by the
+          // target.
+          final tmp = _newSimilarRegX86(dst, '@tmp');
+          _emitX86(X86InstId.kVpxor, [tmp, tmp, tmp]);
+          _emitX86(X86InstId.kVpsubq, [tmp, tmp, src]);
+          _emitX86(X86InstId.kVblendvpd, [dst, tmp, src, tmp]);
+          return;
+
+        case UniOpVV.notU32:
+        case UniOpVV.notU64:
+        case UniOpVV.notF32:
+        case UniOpVV.notF64:
+          _avxBitNotX86(dst, src);
+          return;
+
+        case UniOpVV.cvtI8ToI32:
+        case UniOpVV.cvtU8ToU32:
+          if (src is BaseReg) {
+            src = X86Xmm(src.id);
+          } else {
+            src = (src as X86Mem).withSize(dst.size ~/ 4);
+          }
+          _emitX86(instId, [dst, src]);
+          return;
+
+        case UniOpVV.cvtI8HiToI16:
+        case UniOpVV.cvtU8HiToU16:
+        case UniOpVV.cvtI16HiToI32:
+        case UniOpVV.cvtU16HiToU32:
+        case UniOpVV.cvtI32HiToI64:
+        case UniOpVV.cvtU32HiToU64:
+        case UniOpVV.cvtI8LoToI16:
+        case UniOpVV.cvtU8LoToU16:
+        case UniOpVV.cvtI16LoToI32:
+        case UniOpVV.cvtU16LoToU32:
+        case UniOpVV.cvtI32LoToI64:
+        case UniOpVV.cvtU32LoToU64:
+          final hi = op == UniOpVV.cvtI8HiToI16 ||
+              op == UniOpVV.cvtU8HiToU16 ||
+              op == UniOpVV.cvtI16HiToI32 ||
+              op == UniOpVV.cvtU16HiToU32 ||
+              op == UniOpVV.cvtI32HiToI64 ||
+              op == UniOpVV.cvtU32HiToU64;
+          if (hi) {
+            if (src is BaseReg) {
+              if (dst is X86Xmm) {
+                final tmp = newVecWithWidth(VecWidth.k128, '@tmp');
+                _emitX86(
+                    X86InstId.kVpshufd, [tmp, src, Imm(_shufImm4(3, 2, 3, 2))]);
+                src = tmp;
+              } else {
+                final tmp = newVecWithWidth(VecWidth.k128, '@tmp');
+                _emitX86(
+                    X86InstId.kVextractf128, [tmp, X86Ymm(src.id), Imm(1)]);
+                src = tmp;
+              }
+            } else {
+              final m = src as X86Mem;
+              src = m.withDisplacement(m.displacement + dst.size ~/ 2);
+            }
+          }
+          if (src is BaseReg) {
+            src = dst is X86Zmm ? X86Ymm(src.id) : X86Xmm(src.id);
+          } else {
+            src = (src as X86Mem).withSize(dst.size ~/ 2);
+          }
+          _emitX86(instId, [dst, src]);
+          return;
+
+        case UniOpVV.absF32S:
+        case UniOpVV.absF64S:
+        case UniOpVV.absF32:
+        case UniOpVV.absF64:
+        case UniOpVV.negF32S:
+        case UniOpVV.negF64S:
+        case UniOpVV.negF32:
+        case UniOpVV.negF64:
+          final msk = _simdConstX86(
+              _absNegMaskX86(op), _bcstOf(info.broadcastSize), dst);
+          if (src is! BaseReg && _isScalarFm(fm)) {
+            _avxFmovX86(dst, src, fm);
+            _emitX86(instId, [dst, dst, msk]);
+          } else if (src is! BaseReg && msk is! BaseReg) {
+            _avxFmovX86(dst, msk, fm);
+            _emitX86(instId, [dst, dst, src]);
+          } else if (src is! BaseReg) {
+            _emitX86(instId, [dst, msk, src]);
+          } else {
+            _emitX86(instId, [dst, src, msk]);
+          }
+          return;
+
+        case UniOpVV.rcpF32:
+        case UniOpVV.rcpF64:
+          final one = _simdVecConstX86(
+              op == UniOpVV.rcpF32 ? VecConstTable.f32_1 : VecConstTable.f64_1,
+              Bcst.k32,
+              dst);
+          _emitX86(op == UniOpVV.rcpF32 ? X86InstId.kVdivps : X86InstId.kVdivpd,
+              [dst, one, src]);
+          return;
+
+        case UniOpVV.truncF32S:
+        case UniOpVV.truncF64S:
+        case UniOpVV.truncF32:
+        case UniOpVV.truncF64:
+        case UniOpVV.floorF32S:
+        case UniOpVV.floorF64S:
+        case UniOpVV.floorF32:
+        case UniOpVV.floorF64:
+        case UniOpVV.ceilF32S:
+        case UniOpVV.ceilF64S:
+        case UniOpVV.ceilF32:
+        case UniOpVV.ceilF64:
+        case UniOpVV.roundEvenF32S:
+        case UniOpVV.roundEvenF64S:
+        case UniOpVV.roundEvenF32:
+        case UniOpVV.roundEvenF64:
+          if (_isScalarFm(fm)) {
+            dst = X86Xmm(dst.id);
+            // These instructions use 3 operand form for historical reasons.
+            if (src is! BaseReg) {
+              _emitX86(_vexIdX86(_sseFloatInst[fm].fmovs), [dst, src]);
+              _emitX86(instId, [dst, dst, dst, Imm(info.imm)]);
+            } else {
+              final s = X86Xmm(src.id);
+              _emitX86(instId, [dst, s, s, Imm(info.imm)]);
+            }
+          } else {
+            _emitX86(instId, [dst, src, Imm(info.imm)]);
+          }
+          return;
+
+        case UniOpVV.roundHalfAwayF32S:
+        case UniOpVV.roundHalfAwayF64S:
+        case UniOpVV.roundHalfAwayF32:
+        case UniOpVV.roundHalfAwayF64:
+          final fi = _sseFloatInst[fm];
+          if (_isScalarFm(fm)) {
+            dst = X86Xmm(dst.id);
+            if (src is BaseReg) src = X86Xmm(src.id);
+          }
+          if (src is! BaseReg) {
+            _avxFmovX86(dst, src, fm);
+            src = dst;
+          }
+          final half = _fopHalfMinus1UlpX86(dst, fm);
+          final msb = _fopMsbBitX86(dst, fm);
+          final tmp = _newSimilarRegX86(dst, '@tmp');
+          _emitX86(_vexIdX86(fi.fand), [tmp, src, msb]);
+          _emitX86(_vexIdX86(fi.for_), [tmp, tmp, half]);
+          _emitX86(_vexIdX86(fi.fadd), [dst, src, tmp]);
+          // kTrunc | kSuppress.
+          if (_isScalarFm(fm)) {
+            _emitX86(_vexIdX86(fi.fround), [dst, dst, dst, Imm(0x0B)]);
+          } else {
+            _emitX86(_vexIdX86(fi.fround), [dst, dst, Imm(0x0B)]);
+          }
+          return;
+
+        case UniOpVV.roundHalfUpF32S:
+        case UniOpVV.roundHalfUpF64S:
+        case UniOpVV.roundHalfUpF32:
+        case UniOpVV.roundHalfUpF64:
+          if (_isScalarFm(fm)) dst = X86Xmm(dst.id);
+          final half = _fopHalfMinus1UlpX86(dst, fm);
+          final off = op.index - UniOpVV.roundHalfUpF32S.index;
+          final addOp = UniOpVVV.values[UniOpVVV.addF32S.index + off];
+          final floorOp = UniOpVV.values[UniOpVV.floorF32S.index + off];
+          if (src is! BaseReg) {
+            final tmp = _newSimilarRegX86(dst, '@tmp');
+            _avxFmovX86(tmp, src, fm);
+            _emit3vX86(addOp, tmp, tmp, half);
+            _emit2vX86(floorOp, dst, tmp);
+          } else {
+            _emit3vX86(addOp, dst, _cloneAsX86(src, dst), half);
+            _emit2vX86(floorOp, dst, dst);
+          }
+          return;
+
+        case UniOpVV.sqrtF32S:
+        case UniOpVV.sqrtF64S:
+          dst = X86Xmm(dst.id);
+          // These instructions use 3 operand form for historical reasons.
+          if (src is! BaseReg) {
+            _avxFmovX86(dst, src, fm);
+            _emitX86(instId, [dst, dst, dst]);
+          } else {
+            final s = X86Xmm(src.id);
+            _emitX86(instId, [dst, s, s]);
+          }
+          return;
+
+        case UniOpVV.cvtF32ToF64S:
+        case UniOpVV.cvtF64ToF32S:
+          dst = X86Xmm(dst.id);
+          if (src is BaseReg) src = X86Xmm(src.id);
+          // These instructions use 3 operand form for historical reasons.
+          final zeros =
+              _simdVecConstX86(VecConstTable.p_0000000000000000, Bcst.k32, dst);
+          _emitX86(instId, [dst, zeros, src]);
+          return;
+
+        case UniOpVV.cvtF32LoToF64:
+        case UniOpVV.cvtI32LoToF64:
+          // Widening conversion - low part conversions are native.
+          if (src is BaseReg) {
+            src = dst is X86Zmm ? X86Ymm(src.id) : X86Xmm(src.id);
+          } else {
+            src = (src as X86Mem).withSize((dst.size >> 4) * 8);
+          }
+          _emitX86(instId, [dst, src]);
+          return;
+
+        case UniOpVV.cvtF32HiToF64:
+        case UniOpVV.cvtI32HiToF64:
+          if (src is BaseReg) {
+            final tmp = newVecWithWidth(VecWidth.k128, '@tmp');
+            if (dst is X86Ymm) {
+              _emitX86(X86InstId.kVextracti128, [tmp, X86Ymm(src.id), Imm(1)]);
+            } else {
+              _emitX86(X86InstId.kVpshufd,
+                  [tmp, X86Xmm(src.id), Imm(_shufImm4(3, 2, 3, 2))]);
+            }
+            _emitX86(instId, [dst, tmp]);
+          } else {
+            final w = dst.size >> 4;
+            final m = src as X86Mem;
+            _emitX86(instId, [
+              dst,
+              m.withSize(w * 8).withDisplacement(m.displacement + w * 8)
+            ]);
+          }
+          return;
+
+        case UniOpVV.cvtF64ToF32Lo:
+        case UniOpVV.cvtTruncF64ToI32Lo:
+        case UniOpVV.cvtRoundF64ToI32Lo:
+          // Narrowing conversion - low part conversions are native.
+          final srcSize = src is X86Mem ? src.size : (src as BaseReg).size;
+          final dstSize = math.max(dst.size ~/ 2, srcSize);
+          final w = dstSize >> 5;
+          dst = w <= 1 ? X86Xmm(dst.id) : X86Ymm(dst.id);
+          if (src is BaseReg) {
+            src = w == 0 ? X86Xmm(src.id) : X86Ymm(src.id);
+          } else if ((src as X86Mem).size == 0) {
+            src = src.withSize(w * 32);
+          }
+          _emitX86(instId, [dst, src]);
+          return;
+
+        case UniOpVV.cvtF64ToF32Hi:
+        case UniOpVV.cvtTruncF64ToI32Hi:
+        case UniOpVV.cvtRoundF64ToI32Hi:
+          final tmp = newVecWithWidth(VecWidth.k128, '@tmp');
+          if (src is X86Mem) src = src.withSize(dst.size);
+          _emitX86(instId, [tmp, src]);
+          if (dst is X86Ymm) {
+            _emitX86(X86InstId.kVinserti128, [dst, dst, tmp, Imm(1)]);
+          } else {
+            _emitX86(X86InstId.kVunpcklpd, [dst, dst, tmp]);
+          }
+          return;
+
+        default:
+          throw _requiresX86(op, info.avxExt.name.substring(1));
+      }
+    }
+
+    // SSE Implementation
+    // ------------------
+    final instId = info.sseInstId;
+
+    if (hasSseExt(info.sseExt)) {
+      _emitX86(instId, [dst, src, if (info.useImm != 0) Imm(info.imm)]);
+      return;
+    }
+
     switch (op) {
       case UniOpVV.mov:
-        _vMovX86(dst, src);
-        break;
+        _emitX86(X86InstId.kMovaps, [dst, src]);
+        return;
+
       case UniOpVV.movU64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVmovq, [dst, src]));
-        } else {
-          cc.addNode(InstNode(X86InstId.kMovq, [dst, src]));
-        }
-        break;
-      case UniOpVV.broadcastU32:
-        if (hasAvx2) {
-          cc.addNode(InstNode(X86InstId.kVpbroadcastd, [dst, src]));
-        } else if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVbroadcastss, [dst, src]));
-        } else {
-          cc.addNode(InstNode(X86InstId.kPshufd, [dst, src, Imm(0)]));
-        }
-        break;
-      case UniOpVV.broadcastU64:
-        if (hasAvx2) {
-          cc.addNode(InstNode(X86InstId.kVpbroadcastq, [dst, src]));
-        } else if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVbroadcastsd, [dst, src]));
-        } else {
-          cc.addNode(InstNode(X86InstId.kPshufd, [dst, src, Imm(0x44)]));
-        }
-        break;
+        _emitX86(X86InstId.kMovq, [dst, src]);
+        return;
+
+      case UniOpVV.broadcastU8Z:
+      case UniOpVV.broadcastU16Z:
       case UniOpVV.broadcastU8:
-        if (hasAvx2) {
-          cc.addNode(InstNode(X86InstId.kVpbroadcastb, [dst, src]));
-        } else {
-          if (src is! BaseReg || dst.id != src.id) _vMovX86(dst, src);
-          cc.addNode(InstNode(X86InstId.kPunpcklbw, [dst, dst]));
-          cc.addNode(InstNode(X86InstId.kPunpcklwd, [dst, dst]));
-          cc.addNode(InstNode(X86InstId.kPshufd, [dst, dst, Imm(0)]));
-        }
-        break;
       case UniOpVV.broadcastU16:
-        if (hasAvx2) {
-          cc.addNode(InstNode(X86InstId.kVpbroadcastw, [dst, src]));
-        } else {
-          if (src is! BaseReg || dst.id != src.id) _vMovX86(dst, src);
-          cc.addNode(InstNode(X86InstId.kPshuflw, [dst, dst, Imm(0)]));
-          cc.addNode(InstNode(X86InstId.kPshufd, [dst, dst, Imm(0)]));
+        // Intrinsic - 8/16-bit broadcasts are not available in SSE mode.
+        final elementSize = info.elementSize;
+        if (src is X86Mem || (src is BaseReg && src.isGp)) {
+          final tmp = (this as UniCompiler).newGp32('@tmp');
+          final mulBy = elementSize == 0 ? 0x01010101 : 0x00010001;
+          if (src is X86Mem) {
+            _emitX86(X86InstId.kMovzx,
+                [tmp, src.withSize(elementSize == 0 ? 1 : 2)]);
+            _emitX86(X86InstId.kImul, [tmp, tmp, Imm(mulBy)]);
+          } else if (info.imm == 0x01) {
+            // If it's guaranteed that the unused part of the register is
+            // zero, we can multiply without zero extending.
+            _emitX86(X86InstId.kImul,
+                [tmp, _asGpX86(src as BaseReg, 32), Imm(mulBy)]);
+          } else {
+            _emitX86(X86InstId.kMovzx,
+                [tmp, _asGpX86(src as BaseReg, elementSize == 0 ? 8 : 16)]);
+            _emitX86(X86InstId.kImul, [tmp, tmp, Imm(mulBy)]);
+          }
+          _emitX86(X86InstId.kMovd, [dst, tmp]);
+          _emitX86(X86InstId.kPshufd, [dst, dst, Imm(_shufImm4(0, 0, 0, 0))]);
+          return;
         }
-        break;
+
+        if (hasSsse3 &&
+            (elementSize == 0 ||
+                (elementSize == 1 && _isSameVecX86(dst, src)))) {
+          final predicate = _simdConstX86(
+              elementSize == 0
+                  ? VecConstTable.p_0000000000000000
+                  : VecConstTable.p_0100010001000100,
+              Bcst.kNA,
+              dst);
+          _sseMovX86(dst, src);
+          _emitX86(X86InstId.kPshufb, [dst, predicate]);
+          return;
+        }
+
+        if (elementSize == 0) {
+          _sseMovX86(dst, src);
+          _emitX86(X86InstId.kPunpcklbw, [dst, dst]);
+          src = dst;
+        }
+        _emitX86(X86InstId.kPshuflw, [dst, src, Imm(_shufImm4(0, 0, 0, 0))]);
+        _emitX86(X86InstId.kPshufd, [dst, dst, Imm(_shufImm4(0, 0, 0, 0))]);
+        return;
+
+      case UniOpVV.broadcastU32:
+      case UniOpVV.broadcastF32:
+        // Intrinsic - 32-bit broadcast is not available in SSE mode.
+        if (src is BaseReg && src.isGp) {
+          _emitX86(X86InstId.kMovd, [dst, _asGpX86(src, 32)]);
+          src = dst;
+        }
+        if (src is BaseReg) {
+          _emitX86(X86InstId.kPshufd, [dst, src, Imm(_shufImm4(0, 0, 0, 0))]);
+        } else {
+          _emitX86(X86InstId.kMovd, [dst, (src as X86Mem).withSize(4)]);
+          _emitX86(X86InstId.kPshufd, [dst, dst, Imm(_shufImm4(0, 0, 0, 0))]);
+        }
+        return;
+
+      case UniOpVV.broadcastU64:
+      case UniOpVV.broadcastF64:
+        // Intrinsic - 64-bit broadcast is not available in SSE mode.
+        if (src is BaseReg && src.isGp) {
+          _emitX86(X86InstId.kMovq, [dst, _asGpX86(src, 64)]);
+          src = dst;
+        }
+        if (src is X86Mem) src = src.withSize(8);
+        if (hasSse3) {
+          _emitX86(X86InstId.kMovddup, [dst, src]);
+        } else if (src is BaseReg) {
+          _emitX86(X86InstId.kPshufd, [dst, src, Imm(_shufImm4(1, 0, 1, 0))]);
+        } else {
+          _emitX86(X86InstId.kMovq, [dst, src]);
+          _emitX86(X86InstId.kPshufd, [dst, dst, Imm(_shufImm4(1, 0, 1, 0))]);
+        }
+        return;
+
+      case UniOpVV.broadcastV128U32:
+      case UniOpVV.broadcastV128U64:
+      case UniOpVV.broadcastV128F32:
+      case UniOpVV.broadcastV128F64:
+        // 128-bit broadcast is like 128-bit mov as there are no wider
+        // vectors.
+        _sseMovX86(dst, src);
+        return;
+
       case UniOpVV.absI8:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpabsb, [dst, src]));
-        } else if (hasSsse3) {
-          if (dst != src) _vMovX86(dst, src);
-          cc.addNode(InstNode(X86InstId.kPabsb, [dst, dst]));
-        } else {
-          throw _requiresX86(op, 'SSSE3');
-        }
-        break;
       case UniOpVV.absI16:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpabsw, [dst, src]));
-        } else if (hasSsse3) {
-          if (dst != src) _vMovX86(dst, src);
-          cc.addNode(InstNode(X86InstId.kPabsw, [dst, dst]));
+        // Native operation requires SSSE3, which is not supported by the
+        // target.
+        final sub = op == UniOpVV.absI8 ? X86InstId.kPsubb : X86InstId.kPsubw;
+        final sel = op == UniOpVV.absI8 ? X86InstId.kPminub : X86InstId.kPmaxsw;
+        if (_isSameVecX86(dst, src)) {
+          final tmp = _newSimilarRegX86(dst, '@tmp');
+          _emitX86(X86InstId.kPxor, [tmp, tmp]);
+          _emitX86(sub, [tmp, dst]);
+          _emitX86(sel, [dst, tmp]);
         } else {
-          throw _requiresX86(op, 'SSSE3');
+          _emitX86(X86InstId.kPxor, [dst, dst]);
+          _emitX86(sub, [dst, src]);
+          _emitX86(sel, [dst, src]);
         }
-        break;
+        return;
+
       case UniOpVV.absI32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpabsd, [dst, src]));
-        } else if (hasSsse3) {
-          if (dst != src) _vMovX86(dst, src);
-          cc.addNode(InstNode(X86InstId.kPabsd, [dst, dst]));
-        } else {
-          throw _requiresX86(op, 'SSSE3');
-        }
-        break;
+        // Native operation requires SSSE3, which is not supported by the
+        // target.
+        final tmp = _newSimilarRegX86(dst, '@tmp');
+        _emitX86(X86InstId.kMovaps, [tmp, src]);
+        _emitX86(X86InstId.kPsrad, [tmp, Imm(31)]);
+        _sseMovX86(dst, src);
+        _emitX86(X86InstId.kPxor, [dst, tmp]);
+        _emitX86(X86InstId.kPsubd, [dst, tmp]);
+        return;
+
+      case UniOpVV.absI64:
+        // Native operation requires AVX512, which is not supported by the
+        // target.
+        final tmp = _newSimilarRegX86(dst, '@tmp');
+        _emitX86(X86InstId.kPshufd, [tmp, src, Imm(_shufImm4(3, 3, 1, 1))]);
+        _emitX86(X86InstId.kPsrad, [tmp, Imm(31)]);
+        _sseMovX86(dst, src);
+        _emitX86(X86InstId.kPxor, [dst, tmp]);
+        _emitX86(X86InstId.kPsubq, [dst, tmp]);
+        return;
+
       case UniOpVV.notU32:
       case UniOpVV.notU64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpcmpeqd, [dst, dst, dst]));
-          cc.addNode(InstNode(X86InstId.kVpxor, [dst, dst, src]));
-        } else {
-          cc.addNode(InstNode(X86InstId.kPcmpeqd, [dst, dst]));
-          cc.addNode(InstNode(X86InstId.kPxor, [dst, src]));
+      case UniOpVV.notF32:
+      case UniOpVV.notF64:
+        _sseBitNotX86(dst, src);
+        return;
+
+      case UniOpVV.cvtI8ToI32:
+      case UniOpVV.cvtU8ToU32:
+        if (src is X86Mem) src = src.withSize(4);
+        if (hasSse41) {
+          _emitX86(instId, [dst, src]);
+          return;
         }
-        break;
-      case UniOpVV.cvtU8LoToU16:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpmovzxbw, [dst, src]));
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kPmovzxbw, [dst, src]));
-        } else {
-          _vZeroX86(dst);
-          cc.addNode(InstNode(X86InstId.kPunpcklbw, [dst, src]));
+        if (src is X86Mem) {
+          _emitX86(X86InstId.kMovd, [dst, src]);
+          src = dst;
         }
-        break;
+        _sseIntWidenX86(dst, src as BaseReg,
+            op == UniOpVV.cvtI8ToI32 ? _kI8ToI32 : _kU8ToU32);
+        return;
+
+      case UniOpVV.cvtI8HiToI16:
+      case UniOpVV.cvtU8HiToU16:
+      case UniOpVV.cvtI16HiToI32:
+      case UniOpVV.cvtU16HiToU32:
+      case UniOpVV.cvtI32HiToI64:
+      case UniOpVV.cvtU32HiToU64:
       case UniOpVV.cvtI8LoToI16:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpmovsxbw, [dst, src]));
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kPmovsxbw, [dst, src]));
-        } else {
-          throw _requiresX86(op, 'SSE4.1');
-        }
-        break;
-      case UniOpVV.cvtU16LoToU32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpmovzxwd, [dst, src]));
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kPmovzxwd, [dst, src]));
-        } else {
-          _vZeroX86(dst);
-          cc.addNode(InstNode(X86InstId.kPunpcklwd, [dst, src]));
-        }
-        break;
+      case UniOpVV.cvtU8LoToU16:
       case UniOpVV.cvtI16LoToI32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpmovsxwd, [dst, src]));
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kPmovsxwd, [dst, src]));
-        } else {
-          throw _requiresX86(op, 'SSE4.1');
-        }
-        break;
-      case UniOpVV.cvtU32LoToU64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpmovzxdq, [dst, src]));
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kPmovzxdq, [dst, src]));
-        } else {
-          _vZeroX86(dst);
-          cc.addNode(InstNode(X86InstId.kPunpckldq, [dst, src]));
-        }
-        break;
+      case UniOpVV.cvtU16LoToU32:
       case UniOpVV.cvtI32LoToI64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpmovsxdq, [dst, src]));
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kPmovsxdq, [dst, src]));
-        } else {
-          throw _requiresX86(op, 'SSE4.1');
+      case UniOpVV.cvtU32LoToU64:
+        var cvtOp = op;
+        var cvtInstId = instId;
+        final unsignedHi = op == UniOpVV.cvtU8HiToU16 ||
+            op == UniOpVV.cvtU16HiToU32 ||
+            op == UniOpVV.cvtU32HiToU64;
+        final hi = unsignedHi ||
+            op == UniOpVV.cvtI8HiToI16 ||
+            op == UniOpVV.cvtI16HiToI32 ||
+            op == UniOpVV.cvtI32HiToI64;
+
+        if (unsignedHi && src is BaseReg && dst.id != src.id && hasSse41) {
+          _emitX86(X86InstId.kPshufd, [dst, src, Imm(_shufImm4(3, 2, 3, 2))]);
+          _emitX86(instId, [dst, dst]);
+          return;
         }
-        break;
-      case UniOpVV.sqrtF32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVsqrtps, [dst, src]));
-        } else {
-          if (dst != src) cc.addNode(InstNode(X86InstId.kMovaps, [dst, src]));
-          cc.addNode(InstNode(X86InstId.kSqrtps, [dst, dst]));
+
+        if (hi) {
+          if (src is BaseReg) {
+            _sseMovX86(dst, src);
+            final zero =
+                _simdConstX86(VecConstTable.p_0000000000000000, Bcst.kNA, dst);
+            switch (op) {
+              case UniOpVV.cvtI8HiToI16:
+                _emitX86(X86InstId.kPunpckhbw, [dst, dst]);
+                _emitX86(X86InstId.kPsraw, [dst, Imm(8)]);
+              case UniOpVV.cvtU8HiToU16:
+                _emitX86(X86InstId.kPunpckhbw, [dst, zero]);
+              case UniOpVV.cvtI16HiToI32:
+                _emitX86(X86InstId.kPunpckhwd, [dst, dst]);
+                _emitX86(X86InstId.kPsrad, [dst, Imm(16)]);
+              case UniOpVV.cvtU16HiToU32:
+                _emitX86(X86InstId.kPunpckhwd, [dst, zero]);
+              case UniOpVV.cvtI32HiToI64:
+                final tmp = newVecWithWidth(VecWidth.k128, '@tmp');
+                _sseMovX86(tmp, dst);
+                _emitX86(X86InstId.kPsrad, [tmp, Imm(31)]);
+                _emitX86(X86InstId.kPunpckhdq, [dst, tmp]);
+              default:
+                _emitX86(X86InstId.kPunpckhdq, [dst, zero]);
+            }
+            return;
+          }
+          // The high half in memory is the low half of the next 8 bytes.
+          final m = src as X86Mem;
+          src = m.withDisplacement(m.displacement + 8);
+          cvtOp = UniOpVV.values[op.index - 1];
+          cvtInstId = kX86OpcodeInfo2v[cvtOp.index].sseInstId;
         }
-        break;
-      case UniOpVV.sqrtF64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVsqrtpd, [dst, src]));
-        } else {
-          if (dst != src) cc.addNode(InstNode(X86InstId.kMovaps, [dst, src]));
-          cc.addNode(InstNode(X86InstId.kSqrtpd, [dst, dst]));
+
+        if (src is X86Mem) src = src.withSize(8);
+        if (hasSse41) {
+          _emitX86(cvtInstId, [dst, src]);
+          return;
         }
-        break;
-      case UniOpVV.rcpF32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVrcpps, [dst, src]));
-        } else {
-          if (dst != src) cc.addNode(InstNode(X86InstId.kMovaps, [dst, src]));
-          cc.addNode(InstNode(X86InstId.kRcpps, [dst, dst]));
+        if (src is X86Mem) {
+          _emitX86(X86InstId.kMovq, [dst, src]);
+          src = dst;
         }
-        break;
-      case UniOpVV.cvtI32ToF32:
-        cc.addNode(InstNode(
-            hasAvx ? X86InstId.kVcvtdq2ps : X86InstId.kCvtdq2ps, [dst, src]));
-        break;
-      case UniOpVV.cvtF32LoToF64:
-        cc.addNode(InstNode(
-            hasAvx ? X86InstId.kVcvtps2pd : X86InstId.kCvtps2pd, [dst, src]));
-        break;
-      case UniOpVV.cvtTruncF32ToI32:
-        cc.addNode(InstNode(
-            hasAvx ? X86InstId.kVcvttps2dq : X86InstId.kCvttps2dq, [dst, src]));
-        break;
+        final cvt = switch (cvtOp) {
+          UniOpVV.cvtI8LoToI16 => _kI8ToI16,
+          UniOpVV.cvtU8LoToU16 => _kU8ToU16,
+          UniOpVV.cvtI16LoToI32 => _kI16ToI32,
+          UniOpVV.cvtU16LoToU32 => _kU16ToU32,
+          UniOpVV.cvtI32LoToI64 => _kI32ToI64,
+          _ => _kU32ToU64,
+        };
+        _sseIntWidenX86(dst, src as BaseReg, cvt);
+        return;
+
       case UniOpVV.truncF32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVroundps, [dst, src, Imm(3)]));
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kRoundps, [dst, src, Imm(3)]));
-        } else {
-          throw _requiresX86(op, 'SSE4.1');
-        }
-        break;
       case UniOpVV.truncF64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVroundpd, [dst, src, Imm(3)]));
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kRoundpd, [dst, src, Imm(3)]));
-        } else {
-          throw _requiresX86(op, 'SSE4.1');
-        }
-        break;
       case UniOpVV.floorF32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVroundps, [dst, src, Imm(1)]));
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kRoundps, [dst, src, Imm(1)]));
-        } else {
-          throw _requiresX86(op, 'SSE4.1');
-        }
-        break;
       case UniOpVV.floorF64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVroundpd, [dst, src, Imm(1)]));
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kRoundpd, [dst, src, Imm(1)]));
-        } else {
-          throw _requiresX86(op, 'SSE4.1');
-        }
-        break;
       case UniOpVV.ceilF32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVroundps, [dst, src, Imm(2)]));
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kRoundps, [dst, src, Imm(2)]));
-        } else {
-          throw _requiresX86(op, 'SSE4.1');
-        }
-        break;
       case UniOpVV.ceilF64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVroundpd, [dst, src, Imm(2)]));
-        } else if (hasSse41) {
-          cc.addNode(InstNode(X86InstId.kRoundpd, [dst, src, Imm(2)]));
-        } else {
-          throw _requiresX86(op, 'SSE4.1');
-        }
-        break;
-      case UniOpVV.negF32:
-        {
-          Operand mask = (this as UniCompiler).simdConst(
-              VecConstTable.p_8000000080000000, Bcst.kNA_Unique, VecWidth.k128);
-          // XOR is commutative. Ensure first operand is Reg.
-          // If src is Reg: dst = src ^ mask (mask can be Mem)
-          // If src is Mem: dst = mask ^ src (mask must be loaded to dst first)
-          if (src is BaseReg) {
-            _vXorX86(dst, src, mask);
+      case UniOpVV.roundEvenF32:
+      case UniOpVV.roundEvenF64:
+      case UniOpVV.truncF32S:
+      case UniOpVV.truncF64S:
+      case UniOpVV.floorF32S:
+      case UniOpVV.floorF64S:
+      case UniOpVV.ceilF32S:
+      case UniOpVV.ceilF64S:
+      case UniOpVV.roundEvenF32S:
+      case UniOpVV.roundEvenF64S:
+        // Native operation requires SSE4.1.
+        if (hasSse41) {
+          if (!_isScalarFm(fm)) {
+            _emitX86(instId, [dst, src, Imm(info.imm)]);
           } else {
-            _vMovX86(dst, mask);
-            _vXorX86(dst, dst, src);
+            _sseFmovX86(dst, src, fm);
+            _emitX86(instId, [dst, dst, Imm(info.imm)]);
           }
+          return;
         }
-        break;
-      case UniOpVV.negF64:
-        {
-          Operand mask = (this as UniCompiler).simdConst(
-              VecConstTable.p_8000000000000000, Bcst.kNA_Unique, VecWidth.k128);
-          if (src is BaseReg) {
-            _vXorX86(dst, src, mask);
-          } else {
-            _vMovX86(dst, mask);
-            _vXorX86(dst, dst, src);
-          }
-        }
-        break;
+        _sseRoundX86(dst, src, fm, info.imm & 0x7);
+        return;
+
+      case UniOpVV.roundHalfAwayF32S:
+      case UniOpVV.roundHalfAwayF64S:
+      case UniOpVV.roundHalfAwayF32:
+      case UniOpVV.roundHalfAwayF64:
+        final fi = _sseFloatInst[fm];
+        final half = _fopHalfMinus1UlpX86(dst, fm);
+        final msb = _fopMsbBitX86(dst, fm);
+        final tmp = _newSimilarRegX86(dst, '@tmp');
+        _sseFmovX86(dst, src, fm);
+        _sseMovX86(tmp, msb);
+        _emitX86(fi.fand, [tmp, dst]);
+        _emitX86(fi.for_, [tmp, half]);
+        _emitX86(fi.fadd, [dst, tmp]);
+        _sseRoundX86(dst, dst, fm, info.imm & 0x7);
+        return;
+
+      case UniOpVV.roundHalfUpF32S:
+      case UniOpVV.roundHalfUpF64S:
+      case UniOpVV.roundHalfUpF32:
+      case UniOpVV.roundHalfUpF64:
+        final fi = _sseFloatInst[fm];
+        final half = _fopHalfMinus1UlpX86(dst, fm);
+        _sseFmovX86(dst, src, fm);
+        _emitX86(fi.fadd, [dst, half]);
+        _sseRoundX86(dst, dst, fm, info.imm & 0x7);
+        return;
+
+      case UniOpVV.absF32S:
+      case UniOpVV.absF64S:
       case UniOpVV.absF32:
-        {
-          Operand mask = (this as UniCompiler).simdConst(
-              VecConstTable.p_7FFFFFFF7FFFFFFF, Bcst.kNA_Unique, VecWidth.k128);
-          if (src is BaseReg) {
-            _vAndX86(dst, src, mask);
-          } else {
-            _vMovX86(dst, mask);
-            _vAndX86(dst, dst, src);
-          }
-        }
-        break;
       case UniOpVV.absF64:
-        {
-          Operand mask = (this as UniCompiler).simdConst(
-              VecConstTable.p_7FFFFFFFFFFFFFFF, Bcst.kNA_Unique, VecWidth.k128);
-          if (src is BaseReg) {
-            _vAndX86(dst, src, mask);
-          } else {
-            _vMovX86(dst, mask);
-            _vAndX86(dst, dst, src);
-          }
+      case UniOpVV.negF32S:
+      case UniOpVV.negF64S:
+      case UniOpVV.negF32:
+      case UniOpVV.negF64:
+        final msk =
+            _simdConstX86(_absNegMaskX86(op), _bcstOf(info.broadcastSize), dst);
+        _sseFmovX86(dst, src, fm);
+        _emitX86(instId, [dst, msk]);
+        return;
+
+      case UniOpVV.rcpF32:
+      case UniOpVV.rcpF64:
+        final f32 = op == UniOpVV.rcpF32;
+        final one = _simdConstX86(
+            f32 ? VecConstTable.f32_1 : VecConstTable.f64_1,
+            f32 ? Bcst.k32 : Bcst.k64,
+            dst);
+        final div = f32 ? X86InstId.kDivps : X86InstId.kDivpd;
+        if (_isSameVecX86(dst, src)) {
+          final tmp = _newSimilarRegX86(dst, '@tmp');
+          _sseMovX86(tmp, one);
+          _emitX86(div, [tmp, src]);
+          _sseMovX86(dst, tmp);
+        } else {
+          _sseMovX86(dst, one);
+          _emitX86(div, [dst, src]);
         }
-        break;
+        return;
+
+      case UniOpVV.sqrtF32S:
+      case UniOpVV.sqrtF64S:
+        _sseMovX86(dst, src);
+        _emitX86(instId, [dst, dst]);
+        return;
+
+      case UniOpVV.cvtF32ToF64S:
+      case UniOpVV.cvtF64ToF32S:
+        if (_isSameVecX86(dst, src)) {
+          _emitX86(instId, [dst, src]);
+        } else {
+          _emitX86(X86InstId.kXorps, [dst, dst]);
+          _emitX86(instId, [dst, src]);
+        }
+        return;
+
+      case UniOpVV.cvtF32HiToF64:
+      case UniOpVV.cvtI32HiToF64:
+        if (src is X86Mem) {
+          _emitX86(instId, [dst, src.withDisplacement(src.displacement + 8)]);
+        } else {
+          if (_isSameVecX86(dst, src)) {
+            _emitX86(X86InstId.kMovhlps, [dst, src]);
+          } else {
+            _emitX86(X86InstId.kPshufd, [dst, src, Imm(_shufImm4(3, 2, 3, 2))]);
+          }
+          _emitX86(instId, [dst, dst]);
+        }
+        return;
+
+      case UniOpVV.cvtF64ToF32Hi:
+      case UniOpVV.cvtTruncF64ToI32Hi:
+      case UniOpVV.cvtRoundF64ToI32Hi:
+        final tmp = newVecWithWidth(VecWidth.k128, '@tmp');
+        if (src is X86Mem) src = src.withSize(dst.size);
+        _emitX86(instId, [tmp, src]);
+        _emitX86(X86InstId.kUnpcklpd, [dst, tmp]);
+        return;
+
       default:
-        throw UnimplementedError('_emit2vX86: $op not implemented');
+        throw _requiresX86(op, info.sseExt.name.substring(1));
     }
   }
 
@@ -1069,17 +1717,6 @@ mixin UniCompilerX86 on UniCompilerBase {
     } else {
       cc.addNode(InstNode(legacyId, [dst, src, Imm(imm)]));
     }
-  }
-
-  /// Two-operand form (`cvtps2dq dst, src`): legacy or VEX (no vvvv).
-  void _sse2OpX86(int legacyId, BaseReg dst, Operand src) {
-    cc.addNode(InstNode(hasAvx ? _vexIdX86(legacyId) : legacyId, [dst, src]));
-  }
-
-  BaseReg _zeroX86() {
-    final t = _tmpVecX86();
-    _sseOpX86(X86InstId.kPxor, t, t);
-    return t;
   }
 
   Operand _constX86(VecConst c) =>
@@ -1294,217 +1931,6 @@ mixin UniCompilerX86 on UniCompilerBase {
     _emitX86(correction, [t2, t3]);
     _emitX86(fi.fandn, [t1, t2]);
     _emitX86(fi.for_, [dst, t1]);
-  }
-
-  /// Rounding ops of `emit_2v()` (unicompiler_x86.cpp): (float mode, imm).
-  static const Map<UniOpVV, (int, int)> _roundOps = {
-    UniOpVV.truncF32S: (0, 0x0B),
-    UniOpVV.truncF64S: (1, 0x0B),
-    UniOpVV.truncF32: (2, 0x0B),
-    UniOpVV.truncF64: (3, 0x0B),
-    UniOpVV.floorF32S: (0, 0x09),
-    UniOpVV.floorF64S: (1, 0x09),
-    UniOpVV.floorF32: (2, 0x09),
-    UniOpVV.floorF64: (3, 0x09),
-    UniOpVV.ceilF32S: (0, 0x0A),
-    UniOpVV.ceilF64S: (1, 0x0A),
-    UniOpVV.ceilF32: (2, 0x0A),
-    UniOpVV.ceilF64: (3, 0x0A),
-    UniOpVV.roundEvenF32S: (0, 0x08),
-    UniOpVV.roundEvenF64S: (1, 0x08),
-    UniOpVV.roundEvenF32: (2, 0x08),
-    UniOpVV.roundEvenF64: (3, 0x08),
-  };
-
-  /// Port of the rounding / reciprocal cases of `emit_2v()`.
-  bool _emit2vRoundX86(UniOpVV op, BaseReg dst, Operand src) {
-    final r = _roundOps[op];
-    if (r != null) {
-      final (fm, imm) = r;
-      if (hasAvx) {
-        final vid = _vexIdX86(_sseFloatInst[fm].fround);
-        final s = src is BaseReg ? src : _copyVecX86(src);
-        _emitX86(
-            vid, _isScalarFm(fm) ? [dst, s, s, Imm(imm)] : [dst, s, Imm(imm)]);
-      } else if (hasSse41) {
-        _sseFmovX86(dst, src, fm);
-        _emitX86(_sseFloatInst[fm].fround, [dst, dst, Imm(imm)]);
-      } else {
-        _sseRoundX86(dst, src, fm, imm & 7);
-      }
-      return true;
-    }
-
-    final halfUp = const {
-      UniOpVV.roundHalfUpF32S: 0,
-      UniOpVV.roundHalfUpF64S: 1,
-      UniOpVV.roundHalfUpF32: 2,
-      UniOpVV.roundHalfUpF64: 3,
-    }[op];
-    if (halfUp != null) {
-      final fm = halfUp;
-      final half = _constX86(_isF32Fm(fm)
-          ? VecConstTable.f32_0_5_minus_1ulp
-          : VecConstTable.f64_0_5_minus_1ulp);
-      if (hasAvx) {
-        const add = [
-          UniOpVVV.addF32S,
-          UniOpVVV.addF64S,
-          UniOpVVV.addF32,
-          UniOpVVV.addF64
-        ];
-        const floor = [
-          UniOpVV.floorF32S,
-          UniOpVV.floorF64S,
-          UniOpVV.floorF32,
-          UniOpVV.floorF64
-        ];
-        final s = src is BaseReg ? src : _copyVecX86(src);
-        _emit3vX86(add[fm], dst, s, half);
-        _emit2vX86(floor[fm], dst, dst);
-      } else {
-        _sseFmovX86(dst, src, fm);
-        _emitX86(_sseFloatInst[fm].fadd, [dst, half]);
-        _sseRoundX86(dst, dst, fm, 0x09 & 7);
-      }
-      return true;
-    }
-
-    if (op == UniOpVV.rcpF32 || op == UniOpVV.rcpF64) {
-      final f32 = op == UniOpVV.rcpF32;
-      final one = _constX86(f32 ? VecConstTable.f32_1 : VecConstTable.f64_1);
-      final div = f32 ? X86InstId.kDivps : X86InstId.kDivpd;
-      if (hasAvx) {
-        final o = _copyVecX86(one);
-        _emitX86(_vexIdX86(div), [dst, o, src]);
-      } else if (src is BaseReg && src.id == dst.id) {
-        final tmp = _copyVecX86(one);
-        _emitX86(div, [tmp, src]);
-        _vMovX86(dst, tmp);
-      } else {
-        _vMovX86(dst, one);
-        _emitX86(div, [dst, src]);
-      }
-      return true;
-    }
-    return false;
-  }
-
-  /// UniOpVV lowerings that need SSE2 sequences (or were not ported yet).
-  /// Returns false when the regular lowering in [_emit2vX86] applies.
-  bool _emit2vEmulatedX86(UniOpVV op, BaseReg dst, Operand src) {
-    final name = op.name;
-
-    // Integer widening conversions (SSE2 unpacks; SSE4.1 pmov* only for the
-    // low forms, handled by the regular lowering when available).
-    final cvt = RegExp(r'^cvt([IU])(8|16|32)(Lo|Hi)?To[IU](16|32|64)$')
-        .firstMatch(name);
-    if (cvt != null) {
-      final signed = cvt.group(1) == 'I';
-      final from = int.parse(cvt.group(2)!);
-      final to = int.parse(cvt.group(4)!);
-      final hi = cvt.group(3) == 'Hi';
-      if (cvt.group(3) == 'Lo' && (hasSse41 || hasAvx)) return false;
-      final r = _copyVecX86(src);
-      final steps = <(int, int)>[];
-      for (int w = from; w < to; w *= 2) {
-        steps.add((w, w * 2));
-      }
-      for (int i = 0; i < steps.length; i++) {
-        final w = steps[i].$1;
-        final unpack = hi && i == 0
-            ? {
-                8: X86InstId.kPunpckhbw,
-                16: X86InstId.kPunpckhwd,
-                32: X86InstId.kPunpckhdq
-              }[w]!
-            : {
-                8: X86InstId.kPunpcklbw,
-                16: X86InstId.kPunpcklwd,
-                32: X86InstId.kPunpckldq
-              }[w]!;
-        if (!signed) {
-          _sseOpX86(unpack, r, _zeroX86());
-        } else if (w < 32) {
-          _sseOpX86(unpack, r, r); // duplicate, then arithmetic shift below
-        } else {
-          final s = _copyVecX86(r);
-          _sseShiftImmX86(X86InstId.kPsrad, s, 31);
-          _sseOpX86(unpack, r, s);
-        }
-      }
-      if (signed && to <= 32) {
-        // Elements were duplicated by the unpacks: shift the copies out.
-        _sseShiftImmX86(
-            to == 16 ? X86InstId.kPsraw : X86InstId.kPsrad, r, to - from);
-      }
-      _vMovX86(dst, r);
-      return true;
-    }
-
-    switch (op) {
-      case UniOpVV.movU64:
-        cc.addNode(
-            InstNode(hasAvx ? X86InstId.kVmovq : X86InstId.kMovq, [dst, src]));
-        return true;
-
-      case UniOpVV.absI8 when !hasSsse3 && !hasAvx:
-      case UniOpVV.absI16 when !hasSsse3 && !hasAvx:
-        // |x| = umin8(x, -x) / smax16(x, -x).
-        final n = _zeroX86();
-        _sseOpX86(
-            op == UniOpVV.absI8 ? X86InstId.kPsubb : X86InstId.kPsubw, n, src);
-        final r = _copyVecX86(src);
-        _sseOpX86(
-            op == UniOpVV.absI8 ? X86InstId.kPminub : X86InstId.kPmaxsw, r, n);
-        _vMovX86(dst, r);
-        return true;
-
-      case UniOpVV.absI32 when !hasSsse3 && !hasAvx:
-        // |x| = (x ^ s) - s with s = x >> 31.
-        final sgn = _copyVecX86(src);
-        _sseShiftImmX86(X86InstId.kPsrad, sgn, 31);
-        final r = _copyVecX86(src);
-        _sseOpX86(X86InstId.kPxor, r, sgn);
-        _sseOpX86(X86InstId.kPsubd, r, sgn);
-        _vMovX86(dst, r);
-        return true;
-
-      case UniOpVV.cvtRoundF32ToI32:
-        _sse2OpX86(X86InstId.kCvtps2dq, dst, src);
-        return true;
-
-      case UniOpVV.cvtF64ToF32Lo:
-        _sse2OpX86(X86InstId.kCvtpd2ps, dst, src);
-        return true;
-
-      case UniOpVV.sqrtF32S:
-      case UniOpVV.sqrtF64S:
-        final id =
-            op == UniOpVV.sqrtF32S ? X86InstId.kSqrtss : X86InstId.kSqrtsd;
-        final r = _copyVecX86(src);
-        _sseOpX86(id, r, src);
-        _vMovX86(dst, r);
-        return true;
-
-      case UniOpVV.absF32S:
-      case UniOpVV.absF64S:
-        _emit2vX86(
-            op == UniOpVV.absF32S ? UniOpVV.absF32 : UniOpVV.absF64, dst, src);
-        return true;
-
-      case UniOpVV.negF32S:
-      case UniOpVV.negF64S:
-        _emit2vX86(
-            op == UniOpVV.negF32S ? UniOpVV.negF32 : UniOpVV.negF64, dst, src);
-        return true;
-
-      default:
-        break;
-    }
-
-    if (_emit2vRoundX86(op, dst, src)) return true;
-    return false;
   }
 
   /// Port of the kLoadInsert* cases of `UniCompiler::emit_vm()`

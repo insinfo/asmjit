@@ -20,14 +20,15 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 | Core (CodeHolder, Buffer, Runtime) | ✅ Funcional | x64: **1000 passando** (Win64 AVX2, SysV/Rosetta); arm64: 288 |
 | Runtime JIT AArch64 (macOS/Linux) | ✅ MAP_JIT + flush de icache | `a64_jit_execution_test` |
 | RAPass | ✅ Neutro de arquitetura (`RAArch`: `X86RAArch`, `A64RAArch`) | spills, callee-saved, laços (A64 e x64) |
-| x86 Encoder SIMD | ✅ Tabela `x86_simd_ops.dart` (legado + VEX) | 723 formas idênticas ao LLVM |
+| x86 Encoder SIMD | ✅ Tabela `x86_simd_ops.dart` (legado + VEX) | 747 formas idênticas ao LLVM |
 | x86 Encoder GP (ALU) | ✅ ADD/OR/AND/SUB/XOR/CMP/TEST/IMUL e MOV mem,imm respeitam o tamanho (8/16/32/64) | 215 formas idênticas ao LLVM |
 | A64 Encoder | ✅ load/store, SIMD three-same/different, permute, narrow corrigidos | goldens LLVM (ldst + SIMD) |
 | Dispatchers x86/A64 | ✅ Escritos à mão, **fail-loud** (instrução sem bytes = erro) | |
 | Bancos de instruções | ✅ Gerados e indexados por id | `inst_db_consistency_test` |
 | **UJIT emit_3v (x86 e A64)** | ✅ Port fiel de `emit_3v` + tabela `opcode_info_3v` do x86; **todas as 179 ops comuns** validadas em runtime com 4 layouts de operandos | `ujit_vvv_ops_test`: SSE2, SSE4.1, host (AVX2 no Windows) e AArch64 |
 | **UJIT emit_2vi (x86 e A64)** | ✅ Port fiel (tabela `opcode_info_2vi`, `emit_swizzle32_impl` + `swizzle_32_data`); imediatos `Swizzle2`/`Swizzle4` como no upstream | `ujit_vvi_ops_test`: os 256 swizzles de 32/16 bits, os 4 de 64 bits e shifts nos limites |
-| UJIT emit_2v / 3vi / 4v | ✅ casos validados em runtime | `ujit_vvv_semantics_test` |
+| **UJIT emit_2v (x86)** | ✅ Port fiel (tabela `opcode_info_2v`, `sse_int_widen`, `avx_fmov`); A64 já conferia com a referência | `ujit_vv_ops_test`: todas as ops de 128 bits, inclusive broadcast de GP |
+| UJIT 3vi / 4v | ✅ casos validados em runtime | `ujit_vvv_semantics_test` |
 | **Constantes vetoriais (tabela local)** | ✅ Corrigidas (antes eram lidas do próprio código) | `ujit_const_runtime_test` |
 | **ChaCha20 otimizado** | ✅ x64 e AArch64 | `chacha20_verify_test` |
 | AVX-512 no UJIT | ⛔ Desativado (encodings EVEX não portados/validados); hosts AVX-512 usam as lowerings AVX2 | |
@@ -68,9 +69,15 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - Removidos `permuteU*`/`shufI8` de `UniOpVVI`: não existem no upstream e `shufI8` emitia `pshufb` com imediato (instrução inexistente).
 - Desvios provados executando o upstream A64: `kSllbU128` por 0 gera `ext ..., #16` (InvalidImmediate) e `kSrl*/kSra*` por 0 geram `ushr/sshr #0` (InvalidImmediate), enquanto o x86 aceita; o port emite um move.
 
+### `emit_2v` x86 portado fielmente
+- Tabela `opcode_info_2v` (93 entradas; o upstream tem os comentários `kAbsU32/kAbsU64` nas linhas que, por posição, são `kNotF32/kNotF64`).
+- `emit_2v()` completo (AVX e SSE): broadcasts (de vetor, memória e GP, incl. o truque `imul` sem AVX2), `abs*` SSE2, conversões de largura com `sse_int_widen`, `roundHalfAway/HalfUp`, `sqrt`, `rcp`, conversões int/float e as "Hi" que preservam a metade baixa do destino. Substitui `_emit2vEmulatedX86`/`_emit2vRoundX86`.
+- Tabela SIMD: `movss`/`movsd` (registrador, carga e store), `cvtss2sd`/`cvtsd2ss`, `cvtdq2pd`, `vbroadcastss` — conferidos com o LLVM.
+- `test/asmjit/ujit_vv_ops_test.dart`: todas as ops de 128 bits com referência (empates e −0.0 nos arredondamentos, `abs` de INT_MIN, conversões com arredondamento), 3 layouts + broadcast de GP. Resultado: arm64 **6436**, Windows AVX2 **19176** testes.
+
 ### Próximos passos
-1. Portar fielmente o `emit_2v` x86 (`sse_int_widen`, abs, conversões) e o `loadCvt` genérico, e conferir 3vi/4v (FMA) contra o upstream.
-2. Teste abrangente de `emit_2v` como o de 3v/2vi.
+1. Conferir 3vi/4v (FMA, `mAdd/mSub`) e o `loadCvt` genérico contra o upstream, com teste abrangente.
+2. Grupos de memória (`emit_vm`/`emit_mv`) com teste abrangente.
 
 ## ✅ Progresso Recente (02/11/2026 - RA multiarquitetura, UJIT A64, x86 SIMD)
 

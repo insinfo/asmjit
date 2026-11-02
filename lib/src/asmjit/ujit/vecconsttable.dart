@@ -80,6 +80,8 @@ class VecConstTable {
       _register(VecConst.splat64(0x0F0F0F0F0F0F0F0F));
   static final VecConst p_1010101010101010 =
       _register(VecConst.splat64(0x1010101010101010));
+  static final VecConst p_0100010001000100 =
+      _register(VecConst.splat64(0x0100010001000100));
 
   // Float32 Neg/Abs
   static final VecConst p_8000000080000000 =
