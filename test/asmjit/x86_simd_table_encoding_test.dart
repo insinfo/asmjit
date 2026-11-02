@@ -32,6 +32,8 @@ Map<String, String> _encodeAll() {
   }
 
   String memSize(String n) {
+    if (n == 'cvtss2sd') return 'dword ptr';
+    if (n == 'cvtsd2ss') return 'qword ptr';
     if (n.endsWith('ss')) return 'dword ptr';
     if (n.endsWith('sd') && n != 'pminsd' && n != 'pmaxsd') return 'qword ptr';
     return 'xmmword ptr';
@@ -39,6 +41,13 @@ Map<String, String> _encodeAll() {
 
   const memText = '[r9 + 2*rax + 64]';
   kX86SimdOps.forEach((key, op) {
+    if (key.endsWith('_m')) {
+      final n = key.substring(0, key.length - 2);
+      final sz = n.endsWith('ss') ? 'dword' : 'qword';
+      emit('$n xmm1, $sz ptr $memText', n, [x1, mem]);
+      emit('v$n xmm9, $sz ptr $memText', 'v$n', [x9, mem]);
+      return;
+    }
     if (key.endsWith('_i')) {
       final n = key.substring(0, key.length - 2);
       emit('$n xmm9, 3', n, [x9, 3]);
@@ -91,8 +100,9 @@ Map<String, String> _encodeAll() {
         break;
       case X86SimdKind.mr:
         final base = n.substring(0, n.length - 3); // strip '_st'
-        emit('$base qword ptr $memText, xmm9', base, [mem, x9]);
-        emit('v$base qword ptr $memText, xmm1', 'v$base', [mem, x1]);
+        final sz = base.endsWith('ss') ? 'dword' : 'qword';
+        emit('$base $sz ptr $memText, xmm9', base, [mem, x9]);
+        emit('v$base $sz ptr $memText, xmm1', 'v$base', [mem, x1]);
       case X86SimdKind.mri:
         final sz = const {
           'pextrb': 'byte',
@@ -112,6 +122,11 @@ Map<String, String> _encodeAll() {
         emit('v$n ymm9, ymm10, ymm2, ymm11', 'v$n', [y9, y10, y2, X86Ymm(11)]);
     }
   });
+  // Memory forms of two-operand entries.
+  for (final (n, sz) in [('cvtdq2pd', 'qword'), ('broadcastss', 'dword')]) {
+    emit('$n xmm1, $sz ptr $memText', n, [x1, mem]);
+    emit('v$n xmm1, $sz ptr $memText', 'v$n', [x1, mem]);
+  }
   return out;
 }
 
@@ -839,6 +854,30 @@ const _expected = <String, String>{
   'vhaddpd xmm9, xmm10, xmm2': 'c5297cca',
   'vhaddpd xmm1, xmm10, xmmword ptr [r9 + 2*rax + 64]': 'c4c1297c4c4140',
   'vhaddpd ymm9, ymm10, ymm2': 'c52d7cca',
+  'movss xmm9, xmm2': 'f3440f10ca',
+  'vmovss xmm9, xmm10, xmm2': 'c52a10ca',
+  'movsd xmm1, qword ptr [r9 + 2*rax + 64]': 'f2410f104c4140',
+  'vmovsd xmm9, qword ptr [r9 + 2*rax + 64]': 'c4417b104c4140',
+  'movss xmm1, dword ptr [r9 + 2*rax + 64]': 'f3410f104c4140',
+  'vmovss xmm9, dword ptr [r9 + 2*rax + 64]': 'c4417a104c4140',
+  'movsd qword ptr [r9 + 2*rax + 64], xmm9': 'f2450f114c4140',
+  'vmovsd qword ptr [r9 + 2*rax + 64], xmm1': 'c4c17b114c4140',
+  'movss dword ptr [r9 + 2*rax + 64], xmm9': 'f3450f114c4140',
+  'vmovss dword ptr [r9 + 2*rax + 64], xmm1': 'c4c17a114c4140',
+  'cvtss2sd xmm9, xmm2': 'f3440f5aca',
+  'cvtss2sd xmm1, dword ptr [r9 + 2*rax + 64]': 'f3410f5a4c4140',
+  'vcvtss2sd xmm9, xmm10, xmm2': 'c52a5aca',
+  'vcvtss2sd xmm1, xmm10, dword ptr [r9 + 2*rax + 64]': 'c4c12a5a4c4140',
+  'cvtsd2ss xmm9, xmm2': 'f2440f5aca',
+  'cvtsd2ss xmm1, qword ptr [r9 + 2*rax + 64]': 'f2410f5a4c4140',
+  'vcvtsd2ss xmm9, xmm10, xmm2': 'c52b5aca',
+  'vcvtsd2ss xmm1, xmm10, qword ptr [r9 + 2*rax + 64]': 'c4c12b5a4c4140',
+  'cvtdq2pd xmm9, xmm2': 'f3440fe6ca',
+  'vcvtdq2pd xmm9, xmm2': 'c57ae6ca',
+  'vbroadcastss xmm9, xmm2': 'c4627918ca',
+  'cvtdq2pd xmm1, qword ptr [r9 + 2*rax + 64]': 'f3410fe64c4140',
+  'vcvtdq2pd xmm1, qword ptr [r9 + 2*rax + 64]': 'c4c17ae64c4140',
+  'vbroadcastss xmm1, dword ptr [r9 + 2*rax + 64]': 'c4c279184c4140',
 };
 
 void main() {

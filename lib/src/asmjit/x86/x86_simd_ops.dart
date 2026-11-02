@@ -266,6 +266,17 @@ const Map<String, X86SimdOp> kX86SimdOps = {
   'movlps': X86SimdOp(0, 1, 0x12, memOnly: true),
   'movhlps': X86SimdOp(0, 1, 0x12, regOnly: true),
   'movsd': X86SimdOp(_F2, 1, 0x10, regOnly: true),
+  'movss': X86SimdOp(_F3, 1, 0x10, regOnly: true),
+  // Loads of the scalar moves (`vmovss xmm, m32` has no second source).
+  'movsd_m': X86SimdOp(_F2, 1, 0x10, kind: _rm2, memOnly: true),
+  'movss_m': X86SimdOp(_F3, 1, 0x10, kind: _rm2, memOnly: true),
+  'movsd_st': X86SimdOp(_F2, 1, 0x11, kind: X86SimdKind.mr),
+  'movss_st': X86SimdOp(_F3, 1, 0x11, kind: X86SimdKind.mr),
+  'cvtss2sd': X86SimdOp(_F3, 1, 0x5A),
+  'cvtsd2ss': X86SimdOp(_F2, 1, 0x5A),
+  'cvtdq2pd': X86SimdOp(_F3, 1, 0xE6, kind: _rm2),
+  // VEX only (VBROADCASTSS; the register source form needs AVX2).
+  'broadcastss': X86SimdOp(_66, 2, 0x18, kind: _rm2),
   'haddpd': X86SimdOp(_66, 1, 0x7C),
   'movhps': X86SimdOp(0, 1, 0x16, memOnly: true),
   'movlpd': X86SimdOp(_66, 1, 0x12, memOnly: true),

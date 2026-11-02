@@ -1584,6 +1584,10 @@ bool _dispatchSimd(X86Assembler asm, int instId, List<Object> ops) {
     return false;
   }
   if (!_isVecOp(ops[0])) return false;
+  if (op.regOnly && ops.last is X86Mem) {
+    // Memory form with another operand count (`vmovss xmm, m32`).
+    op = kX86SimdOps['${name}_m'] ?? op;
+  }
   if (ops.last is int) {
     // Shifts by immediate use the group opcodes (0F 71/72/73 /ext ib).
     op = kX86SimdOps['${name}_i'] ?? op;
