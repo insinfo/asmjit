@@ -386,21 +386,26 @@ class BaseCompiler extends BaseBuilder {
     return addFuncNode(func);
   }
 
+  /// Adds [func] (`add_func_node()`): the function node, its entry block,
+  /// its exit label and its end sentinel; the cursor is left after the entry
+  /// block, so the body goes between the entry and the exit label.
   FuncNode addFuncNode(FuncNode func) {
+    _func = func;
     addNode(func);
 
     // Create and add entry block
     final entryBlock = BlockNode(newLabel());
     addNode(entryBlock);
 
-    // Add logic to insert ExitLabel and EndFunc
     final exitNode = LabelNode(newLabel());
     final endNode = SentinelNode(SentinelType.funcEnd);
-
     func.exitNode = exitNode;
     func.end = endNode;
 
-    _func = func;
+    final prev = cursor;
+    addNode(exitNode); // Function exit label.
+    addNode(endNode); // Function end sentinel.
+    setCursor(prev);
     return func;
   }
 
@@ -434,26 +439,26 @@ class BaseCompiler extends BaseBuilder {
     }
   }
 
+  /// Ends the current function (`end_func()`); the cursor moves to its end
+  /// sentinel.
   AsmJitError endFunc() {
-    if (_func == null) return AsmJitError.invalidState;
+    final func = _func;
+    if (func == null) return AsmJitError.invalidState;
 
     // Upstream emits the epilog once, at the exit label, so a function whose
     // body can fall through its end returns there; the port emits the epilog
     // at each return, so such a function gets an explicit return.
-    final last = nodes.last;
+    final exitNode = func.exitNode!;
+    final last = exitNode.prev;
     final analyzer = instructionAnalyzer;
     final fallsThrough = !(last is FuncRetNode ||
         (last is InstNode &&
             analyzer != null &&
             (analyzer.isUnconditionalJump(last) || analyzer.isReturn(last))));
-    if (fallsThrough) addNode(FuncRetNode(const []));
-
-    // Add exit label
-    addNode(_func!.exitNode!);
-    // Add sentinel
-    addNode(_func!.end!);
+    if (fallsThrough) nodes.insertBefore(FuncRetNode(const []), exitNode);
 
     _func = null;
+    setCursor(func.end);
     return AsmJitError.ok;
   }
 
