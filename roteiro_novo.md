@@ -30,6 +30,7 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 | **UJIT emit_2v (x86)** | ✅ Port fiel (tabela `opcode_info_2v`, `sse_int_widen`, `avx_fmov`); A64 já conferia com a referência | `ujit_vv_ops_test`: todas as ops de 128 bits, inclusive broadcast de GP |
 | **UJIT emit_3vi / emit_4v (x86 e A64)** | ✅ Port fiel (`interleaved_shuffle32_ops` do A64, FMA 132/213/231, `nmAdd/nmSub`) | `ujit_vvvi_ops_test` (256 shuffles x 5 layouts), `ujit_vvvv_ops_test` (6 layouts, AVX2 com e sem FMA) |
 | RA x86: acesso de operandos | ✅ Gerado de `isa_x86.json` (`W:`/`X:`/`w:`) em vez de "3 operandos = AVX" | |
+| **UJIT emit_vm / emit_mv (x86)** | ✅ Port fiel (`opcode_info_2vm`/`opcode_info_2mv`); `storeCvt*` ainda não existem no upstream x86 | `ujit_vm_mv_ops_test`: cargas/stores de 128 bits, endereços alinhados e desalinhados |
 | **Constantes vetoriais (tabela local)** | ✅ Corrigidas (antes eram lidas do próprio código) | `ujit_const_runtime_test` |
 | **ChaCha20 otimizado** | ✅ x64 e AArch64 | `chacha20_verify_test` |
 | AVX-512 no UJIT | ⛔ Desativado (encodings EVEX não portados/validados); hosts AVX-512 usam as lowerings AVX2 | |
@@ -86,8 +87,15 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - Operandos: qualquer instrução com 3 operandos era tratada como "AVX não destrutivo" (destino só escrita), mas `shufps/palignr/pinsrw/pblendw/roundss/cmpps xmm, xmm, imm` e `pblendvb xmm, xmm, <xmm0>` leem o destino. O gerador do banco agora emite o acesso do operando 0 por número de operandos (`op0Access`, de `isa_x86.json`), e RW segue o asmjit (`kRW | kUse`, reescrito no registrador de uso).
 - Registrador fixo (`fixedUseId`) entra na máscara `used` da instrução, como no `RAInstBuilder::add()`; sem isso, o destino podia ficar no mesmo registrador fixo da máscara (XMM0) ou da contagem de shift (CL).
 
+### `emit_vm` / `emit_mv` x86 portados fielmente
+- Tabelas `opcode_info_2vm`/`opcode_info_2mv` e as funções do upstream; substituem as tabelas manuais. O `load8` SSE2 usava `pinsrb` (SSE4.1).
+- Bugs do upstream provados pelo log da geração: `kLoad16_U16` com AVX emite também `vmovsh` (AVX512-FP16, falta um `return`); `kLoadCvt16_U8ToU64` com SSE4.1 emite `vpmovzxbq` (VEX) e, sem SSE4.1, `pinsrw xmm, [src+1], 4` (lê dois bytes da memória em vez do byte estendido); `kLoadCvt32_*` usa `vmovd` (VEX) no caminho SSE.
+- `loadDup16/32/64` (extras do Dart) agora rebaixam para `broadcastU16/32/64` do `emit_2v` nas duas arquiteturas; no A64 emitiam `ld1r` com deslocamento, que não existe.
+- `Alignment.none` (padrão da API Dart) é tratado como não alinhado; no upstream, os chamadores sempre informam o alinhamento.
+- Resultado: arm64 **9351**, Windows AVX2 **28033**, x64 Rosetta **27919** testes.
+
 ### Próximos passos
-1. Grupos de memória (`emit_vm`/`emit_mv`, `loadCvt` genérico) conferidos contra o upstream, com teste abrangente.
+1. `storeCvt*` (estão comentados no upstream x86; conferir o A64 do upstream).
 2. Avaliar acesso de outros operandos além do 0 (xadd/cmpxchg) a partir do banco.
 
 ## ✅ Progresso Recente (02/11/2026 - RA multiarquitetura, UJIT A64, x86 SIMD)

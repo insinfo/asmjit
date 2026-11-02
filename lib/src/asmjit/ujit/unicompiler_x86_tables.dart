@@ -1,7 +1,8 @@
 /// x86 lowering tables for UniCompiler.
 ///
 /// Ported from `opcode_info_2v`, `opcode_info_2vi`, `opcode_info_3v`,
-/// `opcode_info_3vi` and `opcode_info_4v` in asmjit's
+/// `opcode_info_3vi`, `opcode_info_4v`, `opcode_info_2vm` and
+/// `opcode_info_2mv` in asmjit's
 /// `ujit/unicompiler_x86.cpp`; one entry per [UniOpVV] / [UniOpVVI] /
 /// [UniOpVVV] / [UniOpVVVI] / [UniOpVVVV] value
 /// shared by all architectures, in enum order (upstream's x86-only
@@ -740,4 +741,126 @@ const List<X86UniOpVInfo> kX86OpcodeInfo4v = [
       0), // nmSubF32
   _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x03, 3, 3, 8,
       0), // nmSubF64
+];
+
+/// `UniOpVMInfo` (`opcode_info_2vm` / `opcode_info_2mv`) of the x86 backend.
+class X86UniOpVMInfo {
+  final int sseInstId;
+  final int avxInstId;
+
+  /// `WideningOp` of the load conversions (`sse_int_widen()`).
+  final int cvt;
+  final int memSize;
+  final int memSizeShift;
+
+  const X86UniOpVMInfo(this.sseInstId, this.avxInstId, this.cvt, this.memSize,
+      this.memSizeShift);
+}
+
+typedef _VM = X86UniOpVMInfo;
+
+const List<X86UniOpVMInfo> kX86OpcodeInfo2vm = [
+  _VM(-1, -1, 0, 1, 0), // load8
+  _VM(-1, X86InstId.kVmovsh, 0, 2, 0), // load16U16
+  _VM(X86InstId.kMovd, X86InstId.kVmovd, 0, 4, 0), // load32U32
+  _VM(X86InstId.kMovss, X86InstId.kVmovss, 0, 4, 0), // load32F32
+  _VM(X86InstId.kMovq, X86InstId.kVmovq, 0, 8, 0), // load64U32
+  _VM(X86InstId.kMovq, X86InstId.kVmovq, 0, 8, 0), // load64U64
+  _VM(X86InstId.kMovq, X86InstId.kVmovq, 0, 8, 0), // load64F32
+  _VM(X86InstId.kMovsd, X86InstId.kVmovsd, 0, 8, 0), // load64F64
+  _VM(-1, -1, 0, 16, 0), // load128U32
+  _VM(-1, -1, 0, 16, 0), // load128U64
+  _VM(-1, -1, 0, 16, 0), // load128F32
+  _VM(-1, -1, 0, 16, 0), // load128F64
+  _VM(-1, -1, 0, 32, 0), // load256U32
+  _VM(-1, -1, 0, 32, 0), // load256U64
+  _VM(-1, -1, 0, 32, 0), // load256F32
+  _VM(-1, -1, 0, 32, 0), // load256F64
+  _VM(-1, -1, 0, 64, 0), // load512U32
+  _VM(-1, -1, 0, 64, 0), // load512U64
+  _VM(-1, -1, 0, 64, 0), // load512F32
+  _VM(-1, -1, 0, 64, 0), // load512F64
+  _VM(-1, -1, 0, 0, 0), // loadNU32
+  _VM(-1, -1, 0, 0, 0), // loadNU64
+  _VM(-1, -1, 0, 0, 0), // loadNF32
+  _VM(-1, -1, 0, 0, 0), // loadNF64
+  _VM(X86InstId.kPmovzxbq, X86InstId.kVpmovzxbq, 5, 2, 3), // loadCvt16U8ToU64
+  _VM(X86InstId.kPmovzxbq, X86InstId.kVpmovzxbq, 5, 4, 3), // loadCvt32U8ToU64
+  _VM(X86InstId.kPmovzxbq, X86InstId.kVpmovzxbq, 5, 8, 3), // loadCvt64U8ToU64
+  _VM(X86InstId.kPmovsxbw, X86InstId.kVpmovsxbw, 1, 4, 1), // loadCvt32I8ToI16
+  _VM(X86InstId.kPmovzxbw, X86InstId.kVpmovzxbw, 2, 4, 1), // loadCvt32U8ToU16
+  _VM(X86InstId.kPmovsxbd, X86InstId.kVpmovsxbd, 3, 4, 2), // loadCvt32I8ToI32
+  _VM(X86InstId.kPmovzxbd, X86InstId.kVpmovzxbd, 4, 4, 2), // loadCvt32U8ToU32
+  _VM(X86InstId.kPmovsxwd, X86InstId.kVpmovsxwd, 6, 4, 1), // loadCvt32I16ToI32
+  _VM(X86InstId.kPmovzxwd, X86InstId.kVpmovzxwd, 7, 4, 1), // loadCvt32U16ToU32
+  _VM(X86InstId.kPmovsxdq, X86InstId.kVpmovsxdq, 8, 4, 1), // loadCvt32I32ToI64
+  _VM(X86InstId.kPmovzxdq, X86InstId.kVpmovzxdq, 9, 4, 1), // loadCvt32U32ToU64
+  _VM(X86InstId.kPmovsxbw, X86InstId.kVpmovsxbw, 1, 8, 1), // loadCvt64I8ToI16
+  _VM(X86InstId.kPmovzxbw, X86InstId.kVpmovzxbw, 2, 8, 1), // loadCvt64U8ToU16
+  _VM(X86InstId.kPmovsxbd, X86InstId.kVpmovsxbd, 3, 8, 2), // loadCvt64I8ToI32
+  _VM(X86InstId.kPmovzxbd, X86InstId.kVpmovzxbd, 4, 8, 2), // loadCvt64U8ToU32
+  _VM(X86InstId.kPmovsxwd, X86InstId.kVpmovsxwd, 6, 8, 1), // loadCvt64I16ToI32
+  _VM(X86InstId.kPmovzxwd, X86InstId.kVpmovzxwd, 7, 8, 1), // loadCvt64U16ToU32
+  _VM(X86InstId.kPmovsxdq, X86InstId.kVpmovsxdq, 8, 8, 1), // loadCvt64I32ToI64
+  _VM(X86InstId.kPmovzxdq, X86InstId.kVpmovzxdq, 9, 8, 1), // loadCvt64U32ToU64
+  _VM(-1, X86InstId.kVpmovsxbw, 1, 16, 3), // loadCvt128I8ToI16
+  _VM(-1, X86InstId.kVpmovzxbw, 2, 16, 3), // loadCvt128U8ToU16
+  _VM(-1, X86InstId.kVpmovsxbd, 3, 16, 2), // loadCvt128I8ToI32
+  _VM(-1, X86InstId.kVpmovzxbd, 4, 16, 2), // loadCvt128U8ToU32
+  _VM(-1, X86InstId.kVpmovsxwd, 6, 16, 1), // loadCvt128I16ToI32
+  _VM(-1, X86InstId.kVpmovzxwd, 7, 16, 1), // loadCvt128U16ToU32
+  _VM(-1, X86InstId.kVpmovsxdq, 8, 16, 1), // loadCvt128I32ToI64
+  _VM(-1, X86InstId.kVpmovzxdq, 9, 16, 1), // loadCvt128U32ToU64
+  _VM(-1, X86InstId.kVpmovsxbw, 1, 32, 1), // loadCvt256I8ToI16
+  _VM(-1, X86InstId.kVpmovzxbw, 2, 32, 1), // loadCvt256U8ToU16
+  _VM(-1, X86InstId.kVpmovsxwd, 6, 32, 1), // loadCvt256I16ToI32
+  _VM(-1, X86InstId.kVpmovzxwd, 7, 32, 1), // loadCvt256U16ToU32
+  _VM(-1, X86InstId.kVpmovsxdq, 8, 32, 1), // loadCvt256I32ToI64
+  _VM(-1, X86InstId.kVpmovzxdq, 9, 32, 1), // loadCvt256U32ToU64
+  _VM(X86InstId.kPmovzxbq, X86InstId.kVpmovzxbq, 5, 0, 3), // loadCvtNU8ToU64
+  _VM(X86InstId.kPmovsxbw, X86InstId.kVpmovsxbw, 1, 0, 1), // loadCvtNI8ToI16
+  _VM(X86InstId.kPmovzxbw, X86InstId.kVpmovzxbw, 2, 0, 1), // loadCvtNU8ToU16
+  _VM(X86InstId.kPmovsxbd, X86InstId.kVpmovsxbd, 3, 0, 2), // loadCvtNI8ToI32
+  _VM(X86InstId.kPmovzxbd, X86InstId.kVpmovzxbd, 4, 0, 2), // loadCvtNU8ToU32
+  _VM(X86InstId.kPmovsxwd, X86InstId.kVpmovsxwd, 6, 0, 1), // loadCvtNI16ToI32
+  _VM(X86InstId.kPmovzxwd, X86InstId.kVpmovzxwd, 7, 0, 1), // loadCvtNU16ToU32
+  _VM(X86InstId.kPmovsxdq, X86InstId.kVpmovsxdq, 8, 0, 1), // loadCvtNI32ToI64
+  _VM(X86InstId.kPmovzxdq, X86InstId.kVpmovzxdq, 9, 0, 1), // loadCvtNU32ToU64
+  _VM(X86InstId.kPinsrb, X86InstId.kVpinsrb, 0, 1, 0), // loadInsertU8
+  _VM(X86InstId.kPinsrw, X86InstId.kVpinsrw, 0, 2, 0), // loadInsertU16
+  _VM(X86InstId.kPinsrd, X86InstId.kVpinsrd, 0, 4, 0), // loadInsertU32
+  _VM(X86InstId.kPinsrq, X86InstId.kVpinsrq, 0, 8, 0), // loadInsertU64
+  _VM(X86InstId.kInsertps, X86InstId.kVinsertps, 0, 4, 0), // loadInsertF32
+  _VM(-1, -1, 0, 8, 0), // loadInsertF32x2
+  _VM(-1, -1, 0, 8, 0), // loadInsertF64
+];
+
+const List<X86UniOpVMInfo> kX86OpcodeInfo2mv = [
+  _VM(-1, -1, 0, 1, 0), // store8
+  _VM(-1, -1, 0, 2, 0), // store16U16
+  _VM(X86InstId.kMovd, X86InstId.kVmovd, 0, 4, 0), // store32U32
+  _VM(X86InstId.kMovss, X86InstId.kVmovss, 0, 4, 0), // store32F32
+  _VM(X86InstId.kMovq, X86InstId.kVmovq, 0, 8, 0), // store64U32
+  _VM(X86InstId.kMovq, X86InstId.kVmovq, 0, 8, 0), // store64U64
+  _VM(X86InstId.kMovq, X86InstId.kVmovq, 0, 8, 0), // store64F32
+  _VM(X86InstId.kMovsd, X86InstId.kVmovsd, 0, 8, 0), // store64F64
+  _VM(-1, -1, 0, 16, 0), // store128U32
+  _VM(-1, -1, 0, 16, 0), // store128U64
+  _VM(-1, -1, 0, 16, 0), // store128F32
+  _VM(-1, -1, 0, 16, 0), // store128F64
+  _VM(-1, -1, 0, 32, 0), // store256U32
+  _VM(-1, -1, 0, 32, 0), // store256U64
+  _VM(-1, -1, 0, 32, 0), // store256F32
+  _VM(-1, -1, 0, 32, 0), // store256F64
+  _VM(-1, -1, 0, 64, 0), // store512U32
+  _VM(-1, -1, 0, 64, 0), // store512U64
+  _VM(-1, -1, 0, 64, 0), // store512F32
+  _VM(-1, -1, 0, 64, 0), // store512F64
+  _VM(-1, -1, 0, 0, 0), // storeNU32
+  _VM(-1, -1, 0, 0, 0), // storeNU64
+  _VM(-1, -1, 0, 0, 0), // storeNF32
+  _VM(-1, -1, 0, 0, 0), // storeNF64
+  _VM(X86InstId.kPextrw, X86InstId.kVpextrw, 0, 2, 0), // storeExtractU16
+  _VM(X86InstId.kPextrd, X86InstId.kVpextrd, 0, 4, 0), // storeExtractU32
+  _VM(X86InstId.kPextrq, X86InstId.kVpextrq, 0, 8, 0), // storeExtractU64
 ];

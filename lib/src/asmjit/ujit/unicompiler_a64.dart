@@ -131,18 +131,18 @@ mixin UniCompilerA64 on UniCompilerBase {
       return;
     }
 
+    // Dart conveniences (not upstream ops): broadcast loads, lowered like
+    // upstream's `v_broadcast_u16/u32/u64(dst, mem)`. (LD1R has no offset
+    // addressing mode.)
     switch (op) {
       case UniOpVM.loadDup16:
-        cc.addNode(
-            InstNode(A64InstId.kLd1r, [_toA64Vec(dst, A64Layout.h8), src]));
+        _emit2vA64(UniOpVV.broadcastU16, dst, src);
         return;
       case UniOpVM.loadDup32:
-        cc.addNode(
-            InstNode(A64InstId.kLd1r, [_toA64Vec(dst, A64Layout.s4), src]));
+        _emit2vA64(UniOpVV.broadcastU32, dst, src);
         return;
       case UniOpVM.loadDup64:
-        cc.addNode(
-            InstNode(A64InstId.kLd1r, [_toA64Vec(dst, A64Layout.d2), src]));
+        _emit2vA64(UniOpVV.broadcastU64, dst, src);
         return;
       default:
         throw UnimplementedError('_emitVMA64: $op not implemented');

@@ -468,102 +468,71 @@ mixin UniCompilerX86 on UniCompilerBase {
   // [X86 Internal Dispatchers]
   // ============================================================================
 
+  /// `Alignment` of `emit_vm()`/`emit_mv()`: upstream callers always pass it
+  /// (1 for unaligned, 16 for aligned data) and 0 selects aligned moves.
+  /// [Alignment.none], the default of the Dart API, means unknown alignment
+  /// and is treated as unaligned.
+  static bool _isAlignedX86(Alignment alignment, int size) =>
+      alignment.size != 0 && alignment.size >= size;
+
+  /// Port of `emit_vm()` (ujit/unicompiler_x86.cpp).
   void _emitVMX86(
       UniOpVM op, BaseReg dst, X86Mem src, Alignment alignment, int idx) {
-    final info = _getUniOpVMInfo(op);
-    if (info == null) {
-      // loadInsert*: port of the kLoadInsert* cases of emit_vm()
-      // (unicompiler_x86.cpp).
-      if (op.name.startsWith('loadInsert')) {
+    // Dart conveniences (not upstream ops): broadcast loads, lowered like
+    // upstream's `v_broadcast_u16/u32/u64(dst, mem)`.
+    switch (op) {
+      case UniOpVM.loadDup16:
+        _emit2vX86(UniOpVV.broadcastU16, dst, src);
+        return;
+      case UniOpVM.loadDup32:
+        _emit2vX86(UniOpVV.broadcastU32, dst, src);
+        return;
+      case UniOpVM.loadDup64:
+        _emit2vX86(UniOpVV.broadcastU64, dst, src);
+        return;
+      case UniOpVM.loadInsertU8:
+      case UniOpVM.loadInsertU16:
+      case UniOpVM.loadInsertU32:
+      case UniOpVM.loadInsertU64:
+      case UniOpVM.loadInsertF32:
+      case UniOpVM.loadInsertF32x2:
+      case UniOpVM.loadInsertF64:
         _loadInsertX86(op, dst, src, idx);
         return;
-      }
-
-      // loadCvt*: load exactly the source bytes, then widen in registers.
-      final cvt =
-          RegExp(r'^loadCvt(16|32|64|N)([IU])(8|16|32)To[IU](16|32|64)$')
-              .firstMatch(op.name);
-      if (cvt != null) {
-        final memBits = cvt.group(1) == 'N' ? 64 : int.parse(cvt.group(1)!);
-        (this as UniCompiler).emitVM(
-            const {
-              16: UniOpVM.load16U16,
-              32: UniOpVM.load32U32,
-              64: UniOpVM.load64U64
-            }[memBits]!,
-            dst,
-            src);
-        final sign = cvt.group(2)!;
-        for (int w = int.parse(cvt.group(3)!);
-            w < int.parse(cvt.group(4)!);
-            w *= 2) {
-          (this as UniCompiler).emit2v(
-              UniOpVV.values.byName('cvt$sign${w}LoTo$sign${w * 2}'), dst, dst);
-        }
-        return;
-      }
-      // Manual handling for complex operations not fitting single-instruction mapping
-      if (op == UniOpVM.loadDup32) {
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVbroadcastss, [dst, src.withSize(4)]));
-        } else {
-          _vLoad32X86(dst, src); // movd
-          cc.addNode(InstNode(X86InstId.kPshufd, [dst, dst, Imm(0)]));
-        }
-        return;
-      }
-      if (op == UniOpVM.loadDup64) {
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVbroadcastsd, [dst, src.withSize(8)]));
-        } else if (hasSse3) {
-          cc.addNode(InstNode(X86InstId.kMovddup, [dst, src.withSize(8)]));
-        } else {
-          _vLoad64X86(dst, src); // movq
-          // punpcklqdq xmm, xmm -> duplicates lo qword to hi
-          cc.addNode(InstNode(X86InstId.kPunpcklqdq, [dst, dst]));
-        }
-        return;
-      }
-      if (op == UniOpVM.loadDup16) {
-        if (hasAvx2) {
-          cc.addNode(InstNode(X86InstId.kVpbroadcastw, [dst, src.withSize(2)]));
-        } else {
-          // SSE2 sequence
-          _vZeroX86(dst); // Break dependency
-          cc.addNode(
-              InstNode(X86InstId.kPinsrw, [dst, src.withSize(2), Imm(0)]));
-          cc.addNode(InstNode(X86InstId.kPshuflw, [dst, dst, Imm(0)]));
-          cc.addNode(InstNode(X86InstId.kPunpcklqdq, [dst, dst]));
-        }
-        return;
-      }
-      throw UnimplementedError('UniOpVM $op not implemented for X86');
+      default:
+        break;
     }
 
+    final info = kX86OpcodeInfo2vm[op.index];
+    final xmm = X86Xmm(dst.id);
+
     if (hasAvx) {
+      // AVX Implementation
+      // ------------------
       switch (op) {
-        // NOTE: uses the SSE forms — the encoder has no VEX pinsrb/pinsrw
-        // yet. The destination was just zeroed, so this is functionally
-        // equivalent (only a potential SSE/AVX transition penalty).
         case UniOpVM.load8:
-          _vZeroX86(dst);
-          cc.addNode(
-              InstNode(X86InstId.kPinsrb, [dst, src.withSize(1), Imm(0)]));
+          _avxZeroX86(xmm);
+          _emitX86(X86InstId.kVpinsrb, [xmm, xmm, src.withSize(1), Imm(0)]);
           return;
+
         case UniOpVM.load16U16:
-          _vZeroX86(dst);
-          cc.addNode(
-              InstNode(X86InstId.kPinsrw, [dst, src.withSize(2), Imm(0)]));
+          // Deviation from upstream: without AVX512-FP16 it falls through
+          // after VPINSRW and also emits `op_info.avx_inst_id`, VMOVSH, an
+          // AVX512-FP16 instruction (its log shows `vpinsrw xmm0, xmm0,
+          // [rdi+32], 0; vmovsh xmm0, word ptr [rdi+32]`).
+          _avxZeroX86(xmm);
+          _emitX86(X86InstId.kVpinsrw, [xmm, xmm, src.withSize(2), Imm(0)]);
           return;
+
         case UniOpVM.load32U32:
         case UniOpVM.load32F32:
         case UniOpVM.load64U32:
         case UniOpVM.load64U64:
         case UniOpVM.load64F32:
         case UniOpVM.load64F64:
-          cc.addNode(
-              InstNode(info.avxInstId, [dst, src.withSize(info.memSize)]));
+          _emitX86(info.avxInstId, [xmm, src.withSize(info.memSize)]);
           return;
+
         case UniOpVM.load128U32:
         case UniOpVM.load128U64:
         case UniOpVM.load128F32:
@@ -572,105 +541,230 @@ mixin UniCompilerX86 on UniCompilerBase {
         case UniOpVM.load256U64:
         case UniOpVM.load256F32:
         case UniOpVM.load256F64:
-          final mem = src.withSize(info.memSize);
-          bool aligned = alignment.size != 0 && alignment.size >= info.memSize;
-          // Force floating point moves for AVX to avoid vmovdqu issues
-          int instId = (aligned ? X86InstId.kVmovaps : X86InstId.kVmovups);
+        case UniOpVM.loadNU32:
+        case UniOpVM.loadNU64:
+        case UniOpVM.loadNF32:
+        case UniOpVM.loadNF64:
+          final d = info.memSize == 16
+              ? xmm
+              : info.memSize == 32
+                  ? X86Ymm(dst.id)
+                  : dst;
+          _emitX86(
+              _isAlignedX86(alignment, d.size)
+                  ? X86InstId.kVmovaps
+                  : X86InstId.kVmovups,
+              [d, src.withSize(d.size)]);
+          return;
 
-          // Fix: Ensure we use the correct register width for the operation
-          var target = dst;
-          if (info.memSize == 16 && dst is X86Vec) {
-            target = dst.xmm;
-          }
+        case UniOpVM.loadCvt16U8ToU64:
+        case UniOpVM.loadCvtNU8ToU64:
+          _emitX86(info.avxInstId, [dst, src.withSize(dst.size ~/ 8)]);
+          return;
 
-          cc.addNode(InstNode(instId, [target, mem]));
+        case UniOpVM.loadCvt32I8ToI32:
+        case UniOpVM.loadCvt32U8ToU32:
+        case UniOpVM.loadCvt64I8ToI32:
+        case UniOpVM.loadCvt64U8ToU32:
+        case UniOpVM.loadCvtNI8ToI32:
+        case UniOpVM.loadCvtNU8ToU32:
+          final d = info.memSize == 8 ? X86Ymm(dst.id) : dst;
+          _emitX86(info.avxInstId, [d, src.withSize(d.size ~/ 4)]);
           return;
+
+        case UniOpVM.loadCvt32I8ToI16:
+        case UniOpVM.loadCvt32U8ToU16:
+        case UniOpVM.loadCvt32I16ToI32:
+        case UniOpVM.loadCvt32U16ToU32:
+        case UniOpVM.loadCvt32I32ToI64:
+        case UniOpVM.loadCvt32U32ToU64:
+          _emitX86(X86InstId.kVmovd, [xmm, src.withSize(4)]);
+          _emitX86(info.avxInstId, [xmm, xmm]);
+          return;
+
+        case UniOpVM.loadCvt64I8ToI16:
+        case UniOpVM.loadCvt64U8ToU16:
+        case UniOpVM.loadCvt64I16ToI32:
+        case UniOpVM.loadCvt64U16ToU32:
+        case UniOpVM.loadCvt64I32ToI64:
+        case UniOpVM.loadCvt64U32ToU64:
+        case UniOpVM.loadCvt128I8ToI16:
+        case UniOpVM.loadCvt128U8ToU16:
+        case UniOpVM.loadCvt128I16ToI32:
+        case UniOpVM.loadCvt128U16ToU32:
+        case UniOpVM.loadCvt128I32ToI64:
+        case UniOpVM.loadCvt128U32ToU64:
+        case UniOpVM.loadCvtNI8ToI16:
+        case UniOpVM.loadCvtNU8ToU16:
+        case UniOpVM.loadCvtNI16ToI32:
+        case UniOpVM.loadCvtNU16ToU32:
+        case UniOpVM.loadCvtNI32ToI64:
+        case UniOpVM.loadCvtNU32ToU64:
+          final d = info.memSize == 8
+              ? xmm
+              : info.memSize == 16
+                  ? X86Ymm(dst.id)
+                  : dst;
+          _emitX86(info.avxInstId, [d, src.withSize(d.size ~/ 2)]);
+          return;
+
         default:
-          if (info.avxInstId != 0) {
-            cc.addNode(
-                InstNode(info.avxInstId, [dst, src.withSize(info.memSize)]));
-            return;
-          }
-      }
-    } else {
-      switch (op) {
-        case UniOpVM.load8:
-          _vZeroX86(dst);
-          cc.addNode(
-              InstNode(X86InstId.kPinsrb, [dst, src.withSize(1), Imm(0)]));
-          return;
-        case UniOpVM.load16U16:
-          _vZeroX86(dst);
-          cc.addNode(
-              InstNode(X86InstId.kPinsrw, [dst, src.withSize(2), Imm(0)]));
-          return;
-        case UniOpVM.load32U32:
-        case UniOpVM.load32F32:
-        case UniOpVM.load64U32:
-        case UniOpVM.load64U64:
-        case UniOpVM.load64F32:
-        case UniOpVM.load64F64:
-          cc.addNode(
-              InstNode(info.sseInstId, [dst, src.withSize(info.memSize)]));
-          return;
-        case UniOpVM.load128U32:
-        case UniOpVM.load128U64:
-        case UniOpVM.load128F32:
-        case UniOpVM.load128F64:
-          final mem = src.withSize(info.memSize);
-          bool aligned = alignment.size != 0 && alignment.size >= info.memSize;
-          int instId = (op.name.contains('F'))
-              ? (aligned ? X86InstId.kMovaps : X86InstId.kMovups)
-              : (aligned ? X86InstId.kMovdqa : X86InstId.kMovdqu);
-          cc.addNode(InstNode(instId, [dst, mem]));
-          return;
-        default:
-          if (info.sseInstId != 0) {
-            cc.addNode(
-                InstNode(info.sseInstId, [dst, src.withSize(info.memSize)]));
-            return;
-          }
+          // 512-bit loads and conversions need AVX-512.
+          throw _requiresX86(op, 'AVX512');
       }
     }
 
-    // Falling through would silently drop the load and execute garbage.
-    throw UnimplementedError(
-        '_emitVMX86: $op not implemented (hasAvx=$hasAvx)');
+    // SSE Implementation
+    // ------------------
+    switch (op) {
+      case UniOpVM.load8:
+        if (hasSse41) {
+          _emitX86(X86InstId.kXorps, [dst, dst]);
+          _emitX86(X86InstId.kPinsrb, [dst, src.withSize(1), Imm(0)]);
+        } else {
+          final tmp = (this as UniCompiler).newGp32('@tmp');
+          _emitX86(X86InstId.kMovzx, [tmp, src.withSize(1)]);
+          _emitX86(X86InstId.kMovd, [dst, tmp]);
+        }
+        return;
+
+      case UniOpVM.load16U16:
+        _emitX86(X86InstId.kXorps, [dst, dst]);
+        _emitX86(X86InstId.kPinsrw, [dst, src.withSize(2), Imm(0)]);
+        return;
+
+      case UniOpVM.load32U32:
+      case UniOpVM.load32F32:
+      case UniOpVM.load64U32:
+      case UniOpVM.load64U64:
+      case UniOpVM.load64F32:
+      case UniOpVM.load64F64:
+        _emitX86(info.sseInstId, [dst, src.withSize(info.memSize)]);
+        return;
+
+      case UniOpVM.load128U32:
+      case UniOpVM.load128U64:
+      case UniOpVM.load128F32:
+      case UniOpVM.load128F64:
+      case UniOpVM.loadNU32:
+      case UniOpVM.loadNU64:
+      case UniOpVM.loadNF32:
+      case UniOpVM.loadNF64:
+        _emitX86(
+            _isAlignedX86(alignment, 16)
+                ? X86InstId.kMovaps
+                : X86InstId.kMovups,
+            [dst, src.withSize(16)]);
+        return;
+
+      case UniOpVM.loadCvt16U8ToU64:
+      case UniOpVM.loadCvtNU8ToU64:
+        if (hasSse41) {
+          // Deviation from upstream, which emits `op_info.avx_inst_id`
+          // (VPMOVZXBQ, a VEX instruction) on SSE4.1 targets; its log shows
+          // `vpmovzxbq xmm0, word ptr [rdi+32]` without AVX.
+          _emitX86(info.sseInstId, [dst, src.withSize(2)]);
+        } else {
+          // Deviation from upstream, which inserts the memory word at
+          // [src + 1] (`pinsrw xmm0, [rdi+33], 4`, two bytes) instead of the
+          // zero extended byte loaded into the temporary.
+          final tmp = (this as UniCompiler).newGp32('@tmp');
+          _emitX86(X86InstId.kMovzx, [tmp, src.withSize(1)]);
+          _emitX86(X86InstId.kMovd, [dst, tmp]);
+          _emitX86(X86InstId.kMovzx,
+              [tmp, src.withDisplacement(src.displacement + 1).withSize(1)]);
+          _emitX86(X86InstId.kPinsrw, [dst, tmp, Imm(4)]);
+        }
+        return;
+
+      case UniOpVM.loadCvt32I8ToI32:
+      case UniOpVM.loadCvt32U8ToU32:
+      case UniOpVM.loadCvtNI8ToI32:
+      case UniOpVM.loadCvtNU8ToU32:
+      case UniOpVM.loadCvt32I8ToI16:
+      case UniOpVM.loadCvt32U8ToU16:
+      case UniOpVM.loadCvt32I16ToI32:
+      case UniOpVM.loadCvt32U16ToU32:
+      case UniOpVM.loadCvt32I32ToI64:
+      case UniOpVM.loadCvt32U32ToU64:
+        final toI32 = op == UniOpVM.loadCvt32I8ToI32 ||
+            op == UniOpVM.loadCvt32U8ToU32 ||
+            op == UniOpVM.loadCvtNI8ToI32 ||
+            op == UniOpVM.loadCvtNU8ToU32;
+        if (toI32 && hasSse41) {
+          _emitX86(info.sseInstId, [dst, src.withSize(4)]);
+          return;
+        }
+        // Deviation from upstream, which loads with VMOVD (a VEX
+        // instruction) in this SSE path (its SSE2 log shows `vmovd xmm0,
+        // dword ptr [rdi+32]`).
+        _emitX86(X86InstId.kMovd, [dst, src.withSize(4)]);
+        _sseIntWidenX86(dst, dst, info.cvt);
+        return;
+
+      case UniOpVM.loadCvt64I8ToI16:
+      case UniOpVM.loadCvt64U8ToU16:
+      case UniOpVM.loadCvt64I16ToI32:
+      case UniOpVM.loadCvt64U16ToU32:
+      case UniOpVM.loadCvt64I32ToI64:
+      case UniOpVM.loadCvt64U32ToU64:
+      case UniOpVM.loadCvtNI8ToI16:
+      case UniOpVM.loadCvtNU8ToU16:
+      case UniOpVM.loadCvtNI16ToI32:
+      case UniOpVM.loadCvtNU16ToU32:
+      case UniOpVM.loadCvtNI32ToI64:
+      case UniOpVM.loadCvtNU32ToU64:
+        if (hasSse41) {
+          _emitX86(info.sseInstId, [dst, src.withSize(8)]);
+        } else {
+          _emitX86(X86InstId.kMovq, [dst, src.withSize(8)]);
+          _sseIntWidenX86(dst, dst, info.cvt);
+        }
+        return;
+
+      default:
+        // 256/512-bit loads and conversions need AVX.
+        throw _requiresX86(op, 'AVX');
+    }
   }
 
+  /// Port of `emit_mv()` (ujit/unicompiler_x86.cpp).
   void _emitMVX86(
       UniOpMV op, X86Mem dst, BaseReg src, Alignment alignment, int idx) {
-    // Narrow scalar stores extract the low element (mirrors C++ emit_mv).
-    // Uses the SSE forms; correct under AVX as well.
-    if (op == UniOpMV.store8 || op == UniOpMV.store16U16) {
-      final s = src is X86Vec ? src.xmm : src;
-      final isByte = op == UniOpMV.store8;
-      cc.addNode(InstNode(isByte ? X86InstId.kPextrb : X86InstId.kPextrw,
-          [dst.withSize(isByte ? 1 : 2), s, Imm(0)]));
-      return;
-    }
-
-    final info = _getUniOpMVInfo(op);
-    if (info == null) {
-      // storeExtract*: port of the kStoreExtract* cases of emit_mv().
-      if (op.name.startsWith('storeExtract')) {
+    switch (op) {
+      case UniOpMV.storeExtractU16:
+      case UniOpMV.storeExtractU32:
+      case UniOpMV.storeExtractU64:
         _storeExtractX86(op, dst, src, idx);
         return;
-      }
-      throw UnimplementedError('UniOpMV $op not implemented for X86');
+      default:
+        break;
     }
 
+    final info = kX86OpcodeInfo2mv[op.index];
+    final xmm = X86Xmm(src.id);
+
     if (hasAvx) {
+      // AVX Implementation
+      // ------------------
       switch (op) {
+        case UniOpMV.store8:
+          _emitX86(X86InstId.kVpextrb, [dst.withSize(1), xmm, Imm(0)]);
+          return;
+
+        case UniOpMV.store16U16:
+          _emitX86(X86InstId.kVpextrw, [dst.withSize(2), xmm, Imm(0)]);
+          return;
+
         case UniOpMV.store32U32:
         case UniOpMV.store32F32:
         case UniOpMV.store64U32:
         case UniOpMV.store64U64:
         case UniOpMV.store64F32:
         case UniOpMV.store64F64:
-          cc.addNode(
-              InstNode(info.avxInstId, [dst.withSize(info.memSize), src]));
+          _emitX86(info.avxInstId, [dst.withSize(info.memSize), xmm]);
           return;
+
         case UniOpMV.store128U32:
         case UniOpMV.store128U64:
         case UniOpMV.store128F32:
@@ -679,52 +773,77 @@ mixin UniCompilerX86 on UniCompilerBase {
         case UniOpMV.store256U64:
         case UniOpMV.store256F32:
         case UniOpMV.store256F64:
-          final mem = dst.withSize(info.memSize);
-          bool aligned = alignment.size != 0 && alignment.size >= info.memSize;
-          // Force floating point moves for AVX to avoid vmovdqu issues
-          int instId = (aligned ? X86InstId.kVmovaps : X86InstId.kVmovups);
+        case UniOpMV.storeNU32:
+        case UniOpMV.storeNU64:
+        case UniOpMV.storeNF32:
+        case UniOpMV.storeNF64:
+          final s = info.memSize == 16
+              ? xmm
+              : info.memSize == 32
+                  ? X86Ymm(src.id)
+                  : src;
+          _emitX86(
+              _isAlignedX86(alignment, s.size)
+                  ? X86InstId.kVmovaps
+                  : X86InstId.kVmovups,
+              [dst.withSize(s.size), s]);
+          return;
 
-          // Fix: Ensure we use the correct register width for the operation
-          var source = src;
-          if (info.memSize == 16 && src is X86Vec) {
-            source = src.xmm;
-          }
-
-          cc.addNode(InstNode(instId, [mem, source]));
-          return;
         default:
-          break;
-      }
-    } else {
-      switch (op) {
-        case UniOpMV.store32U32:
-        case UniOpMV.store32F32:
-        case UniOpMV.store64U32:
-        case UniOpMV.store64U64:
-        case UniOpMV.store64F32:
-        case UniOpMV.store64F64:
-          cc.addNode(
-              InstNode(info.sseInstId, [dst.withSize(info.memSize), src]));
-          return;
-        case UniOpMV.store128U32:
-        case UniOpMV.store128U64:
-        case UniOpMV.store128F32:
-        case UniOpMV.store128F64:
-          final mem = dst.withSize(info.memSize);
-          bool aligned = alignment.size != 0 && alignment.size >= info.memSize;
-          int instId = (op.name.contains('F'))
-              ? (aligned ? X86InstId.kMovaps : X86InstId.kMovups)
-              : (aligned ? X86InstId.kMovdqa : X86InstId.kMovdqu);
-          cc.addNode(InstNode(instId, [mem, src]));
-          return;
-        default:
-          break;
+          throw _requiresX86(op, 'AVX512');
       }
     }
 
-    // Falling through would silently drop the store (data never written).
-    throw UnimplementedError(
-        '_emitMVX86: $op not implemented (hasAvx=$hasAvx)');
+    // SSE Implementation
+    // ------------------
+    switch (op) {
+      case UniOpMV.store8:
+        if (hasSse41) {
+          _emitX86(X86InstId.kPextrb, [dst.withSize(1), src, Imm(0)]);
+        } else {
+          final tmp = (this as UniCompiler).newGp32('@tmp');
+          _emitX86(X86InstId.kMovd, [tmp, src]);
+          _emitX86(X86InstId.kMov, [dst.withSize(1), X86Gp.r8(tmp.id)]);
+        }
+        return;
+
+      case UniOpMV.store16U16:
+        if (hasSse41) {
+          _emitX86(X86InstId.kPextrw, [dst.withSize(2), src, Imm(0)]);
+        } else {
+          final tmp = (this as UniCompiler).newGp32('@tmp');
+          _emitX86(X86InstId.kMovd, [tmp, src]);
+          _emitX86(X86InstId.kMov, [dst.withSize(2), X86Gp.r16(tmp.id)]);
+        }
+        return;
+
+      case UniOpMV.store32U32:
+      case UniOpMV.store32F32:
+      case UniOpMV.store64U32:
+      case UniOpMV.store64U64:
+      case UniOpMV.store64F32:
+      case UniOpMV.store64F64:
+        _emitX86(info.sseInstId, [dst.withSize(info.memSize), src]);
+        return;
+
+      case UniOpMV.store128U32:
+      case UniOpMV.store128U64:
+      case UniOpMV.store128F32:
+      case UniOpMV.store128F64:
+      case UniOpMV.storeNU32:
+      case UniOpMV.storeNU64:
+      case UniOpMV.storeNF32:
+      case UniOpMV.storeNF64:
+        _emitX86(
+            _isAlignedX86(alignment, 16)
+                ? X86InstId.kMovaps
+                : X86InstId.kMovups,
+            [dst.withSize(16), src]);
+        return;
+
+      default:
+        throw _requiresX86(op, 'AVX');
+    }
   }
 
   /// `avx_fmov()`.
@@ -4169,212 +4288,6 @@ mixin UniCompilerX86 on UniCompilerBase {
         return X86InstId.kCmovnp;
       default:
         throw ArgumentError('Unsupported condition for CMOV: $cond');
-    }
-  }
-
-  UniOpVMInfo? _getUniOpVMInfo(UniOpVM op) {
-    switch (op) {
-      case UniOpVM.load32U32:
-        return const UniOpVMInfo(
-            sseInstId: X86InstId.kMovd,
-            avxInstId: X86InstId.kVmovd,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 4,
-            memSizeShift: 0);
-      case UniOpVM.load32F32:
-        return const UniOpVMInfo(
-            sseInstId: X86InstId.kMovss,
-            avxInstId: X86InstId.kVmovss,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 4,
-            memSizeShift: 0);
-      case UniOpVM.load64U32:
-      case UniOpVM.load64U64:
-      case UniOpVM.load64F32:
-        return const UniOpVMInfo(
-            sseInstId: X86InstId.kMovq,
-            avxInstId: X86InstId.kVmovq,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 8,
-            memSizeShift: 0);
-      case UniOpVM.load64F64:
-        return const UniOpVMInfo(
-            sseInstId: X86InstId.kMovsd,
-            avxInstId: X86InstId.kVmovsd,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 8,
-            memSizeShift: 0);
-      case UniOpVM.load128U32:
-      case UniOpVM.load128U64:
-      case UniOpVM.load128F32:
-      case UniOpVM.load128F64:
-        return const UniOpVMInfo(
-            sseInstId: 0,
-            avxInstId: 0,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 16,
-            memSizeShift: 0);
-      case UniOpVM.load256U32:
-      case UniOpVM.load256U64:
-      case UniOpVM.load256F32:
-      case UniOpVM.load256F64:
-        return const UniOpVMInfo(
-            sseInstId: 0,
-            avxInstId: 0,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 32,
-            memSizeShift: 0);
-      case UniOpVM.loadCvt32I8ToI32:
-        return const UniOpVMInfo(
-            sseInstId: X86InstId.kPmovsxbd,
-            avxInstId: X86InstId.kVpmovsxbd,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 4,
-            memSizeShift: 2);
-      case UniOpVM.loadCvt32U8ToU32:
-        return const UniOpVMInfo(
-            sseInstId: X86InstId.kPmovzxbd,
-            avxInstId: X86InstId.kVpmovzxbd,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 4,
-            memSizeShift: 2);
-      case UniOpVM.loadCvt64I16ToI32:
-        return const UniOpVMInfo(
-            sseInstId: X86InstId.kPmovsxwd,
-            avxInstId: X86InstId.kVpmovsxwd,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 8,
-            memSizeShift: 1);
-      case UniOpVM.loadCvt64U16ToU32:
-        return const UniOpVMInfo(
-            sseInstId: X86InstId.kPmovzxwd,
-            avxInstId: X86InstId.kVpmovzxwd,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 8,
-            memSizeShift: 1);
-      case UniOpVM.loadCvt64I32ToI64:
-        return const UniOpVMInfo(
-            sseInstId: X86InstId.kPmovsxdq,
-            avxInstId: X86InstId.kVpmovsxdq,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 8,
-            memSizeShift: 1);
-      case UniOpVM.loadCvt64U32ToU64:
-        return const UniOpVMInfo(
-            sseInstId: X86InstId.kPmovzxdq,
-            avxInstId: X86InstId.kVpmovzxdq,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 8,
-            memSizeShift: 1);
-      case UniOpVM.load8:
-        return const UniOpVMInfo(
-            sseInstId: X86InstId.kPmovzxbd,
-            avxInstId: X86InstId.kVpmovzxbd,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 1,
-            memSizeShift: 0);
-      case UniOpVM.load16U16:
-        return const UniOpVMInfo(
-            sseInstId: X86InstId.kPmovzxwd,
-            avxInstId: X86InstId.kVpmovzxwd,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 2,
-            memSizeShift: 0);
-      default:
-        return null;
-    }
-  }
-
-  UniOpVMInfo? _getUniOpMVInfo(UniOpMV op) {
-    switch (op) {
-      case UniOpMV.store32U32:
-        return const UniOpVMInfo(
-            sseInstId: X86InstId.kMovd,
-            avxInstId: X86InstId.kVmovd,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 4,
-            memSizeShift: 0);
-      case UniOpMV.store32F32:
-        return const UniOpVMInfo(
-            sseInstId: X86InstId.kMovss,
-            avxInstId: X86InstId.kVmovss,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 4,
-            memSizeShift: 0);
-      case UniOpMV.store64U32:
-      case UniOpMV.store64U64:
-      case UniOpMV.store64F32:
-        return const UniOpVMInfo(
-            sseInstId: X86InstId.kMovq,
-            avxInstId: X86InstId.kVmovq,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 8,
-            memSizeShift: 0);
-      case UniOpMV.store64F64:
-        return const UniOpVMInfo(
-            sseInstId: X86InstId.kMovsd,
-            avxInstId: X86InstId.kVmovsd,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 8,
-            memSizeShift: 0);
-      case UniOpMV.store128U32:
-      case UniOpMV.store128U64:
-      case UniOpMV.store128F32:
-      case UniOpMV.store128F64:
-        return const UniOpVMInfo(
-            sseInstId: 0,
-            avxInstId: 0,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 16,
-            memSizeShift: 0);
-      case UniOpMV.store256U32:
-      case UniOpMV.store256U64:
-      case UniOpMV.store256F32:
-      case UniOpMV.store256F64:
-        return const UniOpVMInfo(
-            sseInstId: 0,
-            avxInstId: 0,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 32,
-            memSizeShift: 0);
-      case UniOpMV.store8:
-        return const UniOpVMInfo(
-            sseInstId: X86InstId.kPextrb,
-            avxInstId: X86InstId.kVpextrb,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 1,
-            memSizeShift: 0);
-      case UniOpMV.store16U16:
-        return const UniOpVMInfo(
-            sseInstId: X86InstId.kPextrw,
-            avxInstId: X86InstId.kVpextrw,
-            asimdInstId: 0,
-            narrowingOp: 0,
-            memSize: 2,
-            memSizeShift: 0);
-      default:
-        return null;
     }
   }
 }
