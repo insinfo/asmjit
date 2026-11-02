@@ -2,6 +2,8 @@ import 'dart:ffi';
 import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
 
+import '../support/host.dart';
+
 typedef SimpleAddFunc = Int32 Function(Int32, Int32);
 typedef SimpleAddDart = int Function(int, int);
 
@@ -110,5 +112,5 @@ void main() {
         rt.dispose();
       }
     });
-  });
+  }, skip: skipUnlessX64Host);
 }

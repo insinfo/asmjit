@@ -3,6 +3,8 @@ import 'package:ffi/ffi.dart' as ffi;
 import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
 
+import '../support/host.dart';
+
 typedef SimdFunc = Void Function(Pointer<Void>, Pointer<Void>, Pointer<Void>);
 typedef SimdDart = void Function(Pointer<Void>, Pointer<Void>, Pointer<Void>);
 
@@ -169,5 +171,5 @@ void main() {
       ffi.calloc.free(dst);
       ffi.calloc.free(src);
     });
-  });
+  }, skip: skipUnlessX64Host);
 }

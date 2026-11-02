@@ -32,7 +32,8 @@ void main() {
         }
         node = node.next;
       }
-      expect(foundTbl, isTrue, reason: "TBL instruction should be emitted for shuffle");
+      expect(foundTbl, isTrue,
+          reason: "TBL instruction should be emitted for shuffle");
     });
   });
 }

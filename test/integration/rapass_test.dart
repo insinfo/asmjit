@@ -52,12 +52,12 @@ void main() {
     });
 
     test('Argumento spillado com newStack e recarregado', () {
-      final code = CodeHolder(env: Environment.host());
+      final code = CodeHolder(env: Environment.x64Windows());
       final compiler =
           X86Compiler(env: code.env, labelManager: code.labelManager);
 
-      final sig =
-          FuncSignature.build([TypeId.intPtr], TypeId.intPtr, CallConvId.x64Windows);
+      final sig = FuncSignature.build(
+          [TypeId.intPtr], TypeId.intPtr, CallConvId.x64Windows);
       final funcNode = compiler.addFunc(sig);
 
       final arg = compiler.newGpPtr('arg');
@@ -93,7 +93,10 @@ void main() {
         if (ops.length < 2) return false;
         final dst = ops[0];
         final src = ops[1];
-        return dst is BaseReg && dst.isPhysical && src is X86Mem && _isFrameBase(src);
+        return dst is BaseReg &&
+            dst.isPhysical &&
+            src is X86Mem &&
+            _isFrameBase(src);
       });
 
       expect(hasStore, isTrue, reason: 'arg deve ser salvo em stack');

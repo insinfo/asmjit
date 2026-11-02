@@ -7,7 +7,7 @@ void main() {
     late UniCompiler cc;
 
     setUp(() {
-      code = CodeHolder(env: Environment.host());
+      code = CodeHolder(env: Environment.x64Windows());
       final compiler =
           X86Compiler(env: code.env, labelManager: code.labelManager);
       cc = UniCompiler(compiler);

@@ -29,12 +29,11 @@ void main() {
       cc.setArg(0, ptr);
 
       // Store zero to memory
-      cc.emitM(
-          UniOpM.storeZeroU8,
-          X86Mem.ptr(ptr,
-              0)); // Mem operand type depends on arch, but X86Mem.ptr helper usually generic enough for logic if wrapped
-      // Wait, A64 requires A64Mem.
-      // I should use helper 'mem(ptr, offset)'
+      if (rt.environment.arch == Arch.x64) {
+        cc.emitM(UniOpM.storeZeroU8, X86Mem.ptr(ptr));
+      } else {
+        cc.emitM(UniOpM.storeZeroU8, A64Mem.baseOffset(ptr as A64Gp, 0));
+      }
 
       cc.ret();
       cc.endFunc();

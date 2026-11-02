@@ -7,8 +7,7 @@ import 'support.dart';
 
 /// Architecture-specific constraints used by the register allocator.
 class RAConstraints {
-  final List<RegMask> _availableRegs =
-      List.filled(Globals.numVirtGroups, 0);
+  final List<RegMask> _availableRegs = List.filled(Globals.numVirtGroups, 0);
 
   /// Returns the available registers for [group].
   RegMask availableRegs(RegGroup group) => _availableRegs[group.index];
@@ -27,8 +26,7 @@ class RAConstraints {
         return AsmJitError.ok;
 
       case Arch.aarch64:
-        _availableRegs[RegGroup.gp.index] =
-            0xFFFFFFFF & ~bitMaskRange(18, 14);
+        _availableRegs[RegGroup.gp.index] = 0xFFFFFFFF & ~bitMaskRange(18, 14);
         _availableRegs[RegGroup.vec.index] = 0xFFFFFFFF;
         _availableRegs[RegGroup.mask.index] = 0;
         _availableRegs[RegGroup.extra.index] = 0;

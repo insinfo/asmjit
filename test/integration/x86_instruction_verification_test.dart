@@ -3,6 +3,8 @@ import 'package:ffi/ffi.dart' as ffi;
 import 'package:test/test.dart';
 import 'package:asmjit/asmjit.dart';
 
+import '../support/host.dart';
+
 typedef SimdFunc = Void Function(Pointer<Void>, Pointer<Void>, Pointer<Void>);
 typedef SimdDart = void Function(Pointer<Void>, Pointer<Void>, Pointer<Void>);
 
@@ -370,5 +372,5 @@ void main() {
         useAvx: true);
     testShuffle('AVX VPSHUFD Rot 3', 0x93, [0, 1, 2, 3], [3, 0, 1, 2],
         useAvx: true);
-  });
+  }, skip: skipUnlessX64Host);
 }

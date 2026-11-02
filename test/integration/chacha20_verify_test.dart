@@ -3,6 +3,8 @@ import 'package:test/test.dart';
 import '../../benchmark/asmjit/chacha20_impl/chacha20_baseline.dart';
 import '../../benchmark/asmjit/chacha20_impl/chacha20_asmjit_optimized.dart';
 
+import '../support/host.dart';
+
 void main() {
   group('ChaCha20 Verification', () {
     test('Optimized AsmJit matches Baseline (20 rounds)', () {
@@ -32,7 +34,8 @@ void main() {
 
     test('Counter increment apenas na lane0 (2 blocos)', () {
       final key = Uint8List.fromList(List.generate(32, (i) => i ^ 0xAA));
-      final nonce = Uint8List.fromList(List.generate(12, (i) => (i * 7) & 0xFF));
+      final nonce =
+          Uint8List.fromList(List.generate(12, (i) => (i * 7) & 0xFF));
       final data = Uint8List(128); // dois blocos
 
       final baseline =
@@ -40,8 +43,7 @@ void main() {
       final expected = Uint8List(data.length);
       baseline.cryptInto(data, expected);
 
-      final optimized =
-          ChaCha20AsmJitOptimized(key, nonce, initialCounter: 1);
+      final optimized = ChaCha20AsmJitOptimized(key, nonce, initialCounter: 1);
       final actual = Uint8List(data.length);
       optimized.cryptInto(data, actual);
 
@@ -52,5 +54,5 @@ void main() {
         }
       }
     });
-  });
+  }, skip: skipUnlessX64Host);
 }

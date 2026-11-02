@@ -3,6 +3,8 @@ import 'package:ffi/ffi.dart' as pkgffi;
 import 'package:asmjit/asmjit.dart';
 import 'package:test/test.dart';
 
+import '../support/host.dart';
+
 void main() {
   group('UJIT Constant Tests', () {
     test('X86 Vector Constants', () {
@@ -25,7 +27,7 @@ void main() {
       code.finalize();
 
       expect(code.isFinalized, isTrue);
-    });
+    }, skip: skipUnlessX64Host);
 
     test('A64 Vector Constants & MinI64', () {
       // Simulate A64 environment
@@ -92,7 +94,8 @@ void main() {
           X86Compiler(env: code.env, labelManager: code.labelManager);
       final cc = UniCompiler(compiler);
 
-      cc.addFunc(FuncSignature.build([TypeId.uintPtr], TypeId.void_, CallConvId.x64Windows));
+      cc.addFunc(FuncSignature.build(
+          [TypeId.uintPtr], TypeId.void_, CallConvId.x64Windows));
 
       final dstPtr = cc.newGpPtr('dst');
       cc.setArg(0, dstPtr);
@@ -106,7 +109,7 @@ void main() {
         return A64Mem.baseOffset(base as A64Gp, disp);
       }
 
-        final vConst = cc.simdConst(
+      final vConst = cc.simdConst(
           VecConstTable.p_0000000000000000, Bcst.kNA_Unique, VecWidth.k128);
 
       // Cria muitos vetores para forçar spill/reload da constante
@@ -124,7 +127,8 @@ void main() {
         gpTemps.add(g);
         // Initialize g to avoid using uninitialized register
         compiler.mov(g, Imm(i));
-        cc.emitRRI(UniOpRRR.add, g, g, i); // depende de valor inicial dos args (0), apenas para manter vivo
+        cc.emitRRI(UniOpRRR.add, g, g,
+            i); // depende de valor inicial dos args (0), apenas para manter vivo
       }
 
       cc.emitMV(UniOpMV.store128U32, mem128(dstPtr, 0), temps.first);
@@ -137,14 +141,14 @@ void main() {
       final assembler = X86Assembler(code);
       cc.serializeToAssembler(assembler);
 
-        final fn = rt.add(code);
-        final dst = pkgffi.calloc<ffi.Uint8>(32);
+      final fn = rt.add(code);
+      final dst = pkgffi.calloc<ffi.Uint8>(32);
 
-        final exec = fn.pointer
+      final exec = fn.pointer
           .cast<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>()
           .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
 
-        exec(dst.cast());
+      exec(dst.cast());
 
       for (int i = 0; i < 32; i++) {
         expect(dst[i], equals(0x00), reason: 'Const byte mismatch at $i');
@@ -153,6 +157,6 @@ void main() {
       pkgffi.calloc.free(dst);
       fn.dispose();
       rt.dispose();
-    });
+    }, skip: skipUnlessX64Host);
   });
 }

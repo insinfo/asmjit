@@ -83,7 +83,9 @@ class X86EmitHelper extends BaseEmitHelper {
     final dstReg = _asReg(dst);
     switch (RegUtils.groupOf(dst.regType)) {
       case RegGroup.gp:
-        return dstReg is X86Gp ? _moveToGp(dstReg, src) : AsmJitError.invalidState;
+        return dstReg is X86Gp
+            ? _moveToGp(dstReg, src)
+            : AsmJitError.invalidState;
       case RegGroup.vec:
         return _moveToVec(dstReg, src);
       case RegGroup.mask:

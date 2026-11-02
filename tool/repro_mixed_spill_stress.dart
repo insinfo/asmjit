@@ -14,14 +14,16 @@ Future<void> main(List<String> args) async {
   final iters = args.isNotEmpty ? int.tryParse(args[0]) ?? 50 : 50;
   final workers = args.length > 1 ? int.tryParse(args[1]) ?? 4 : 4;
 
-  stdout.writeln('Running $iters iterations per worker across $workers workers...');
+  stdout.writeln(
+      'Running $iters iterations per worker across $workers workers...');
 
   await Future.wait(List.generate(workers, (idx) {
     final dump = idx == 0; // dump code from first worker for disassembly.
     return Isolate.run(() => _runWorker(idx, iters, dumpOnce: dump));
   }));
 
-  stdout.writeln('Done. If a crash did not occur, try increasing iters/workers.');
+  stdout
+      .writeln('Done. If a crash did not occur, try increasing iters/workers.');
 }
 
 Future<void> _runWorker(int id, int iterations, {bool dumpOnce = false}) async {

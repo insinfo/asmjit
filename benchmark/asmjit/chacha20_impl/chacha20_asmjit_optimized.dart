@@ -198,10 +198,7 @@ class ChaCha20AsmJitOptimized {
     cc.emit2v(UniOpVV.mov, input, inputArg);
     cc.emit2v(UniOpVV.mov, len, lenArg);
 
-    // Use the physical ctx argument register directly to avoid allocator reload bugs.
-    final ctx = cc.isX86Family
-      ? (Platform.isWindows ? X86Gp.r9 : X86Gp.rcx)
-      : ctxArg;
+    final ctx = ctxArg;
 
     final v0 = _asXmm(cc.newVecWithWidth(VecWidth.k128, 'v0'));
     final v1 = _asXmm(cc.newVecWithWidth(VecWidth.k128, 'v1'));

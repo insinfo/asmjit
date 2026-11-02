@@ -202,8 +202,7 @@ int bitMaskRange(int hi, int lo) {
     return -1 & ~lowerMask;
   }
   final width = hi - lo + 1;
-  final mask =
-      width >= 64 ? -1 : ((1 << width) - 1); // width <= 64 here
+  final mask = width >= 64 ? -1 : ((1 << width) - 1); // width <= 64 here
   return mask << lo;
 }
 

@@ -1,4 +1,3 @@
-
 // Verifica que no Windows x64 o JIT preserva XMM6..XMM15 (callee-saved).
 import 'dart:ffi' as ffi;
 
@@ -82,12 +81,12 @@ void main() {
     final callerFn = rt.add(callerCode);
 
     final callerPtr = ffi.Pointer<
-      ffi.NativeFunction<
-        ffi.Void Function(ffi.Pointer<ffi.Uint8>, ffi.Pointer<ffi.Uint8>,
-          ffi.Pointer<ffi.Uint8>)>>.fromAddress(callerFn.address);
+        ffi.NativeFunction<
+            ffi.Void Function(ffi.Pointer<ffi.Uint8>, ffi.Pointer<ffi.Uint8>,
+                ffi.Pointer<ffi.Uint8>)>>.fromAddress(callerFn.address);
     final callerFnDart = callerPtr.asFunction<
-      void Function(ffi.Pointer<ffi.Uint8>, ffi.Pointer<ffi.Uint8>,
-        ffi.Pointer<ffi.Uint8>)>();
+        void Function(ffi.Pointer<ffi.Uint8>, ffi.Pointer<ffi.Uint8>,
+            ffi.Pointer<ffi.Uint8>)>();
 
     final outBeforeBuf = pkgffi.calloc<ffi.Uint8>(160);
     final outAfterBuf = pkgffi.calloc<ffi.Uint8>(160);

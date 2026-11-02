@@ -1,6 +1,8 @@
 import 'package:asmjit/asmjit.dart';
 import 'package:test/test.dart';
 
+import '../support/host.dart';
+
 void main() {
   group('UJIT General Tests (Host)', () {
     late JitRuntime rt;
@@ -14,7 +16,7 @@ void main() {
     });
 
     test('Conditional Ops (Compare/Jump/Set)', () {
-      final code = CodeHolder(env: rt.environment);
+      final code = CodeHolder(env: x64TestEnv());
       // Ensure we create an X86Compiler if on X86, effectively.
       // But UniCompiler takes BaseCompiler. CodeHolder doesn't create compiler.
       // We must create it.
@@ -95,7 +97,7 @@ void main() {
     });
 
     test('RM/MR Ops (Load/Store)', () {
-      final code = CodeHolder(env: rt.environment);
+      final code = CodeHolder(env: x64TestEnv());
       final compiler =
           X86Compiler(env: code.env, labelManager: code.labelManager);
       final cc = UniCompiler(compiler);

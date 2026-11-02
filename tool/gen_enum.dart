@@ -14,8 +14,7 @@ void main(List<String> args) async {
   }
 
   final inputPath = args[0];
-  final outputPath =
-      args.length > 1 ? args[1] : 'tool/generated_enum.g.dart';
+  final outputPath = args.length > 1 ? args[1] : 'tool/generated_enum.g.dart';
 
   final content = await File(inputPath).readAsString();
   final enumMap = _parseEnum(content);
@@ -37,9 +36,8 @@ Map<String, int> _parseEnum(String content) {
   var current = -1;
 
   // Muito simples: split por vírgula e chaves; não trata macros complexas.
-  final enumBody = RegExp(r'enum\s+[^{]*\{([\s\S]*?)\}')
-      .firstMatch(content)
-      ?.group(1);
+  final enumBody =
+      RegExp(r'enum\s+[^{]*\{([\s\S]*?)\}').firstMatch(content)?.group(1);
   if (enumBody == null) {
     throw StateError('No enum found in $content');
   }
@@ -76,8 +74,5 @@ int _evalExpression(String expr) {
     return int.parse(term);
   }
 
-  return expr
-      .split('|')
-      .map((t) => evalTerm(t.trim()))
-      .reduce((a, b) => a | b);
+  return expr.split('|').map((t) => evalTerm(t.trim())).reduce((a, b) => a | b);
 }

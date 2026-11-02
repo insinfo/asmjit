@@ -1,16 +1,16 @@
-
 import 'dart:ffi';
 import 'package:asmjit/asmjit.dart';
 import 'package:test/test.dart';
 import 'package:ffi/ffi.dart' as pkgffi;
 
+import '../support/host.dart';
+
 // Helper to run JIT code
-void runJitTest(
-    void Function(JitRuntime runtime, UniCompiler cc) generator,
+void runJitTest(void Function(JitRuntime runtime, UniCompiler cc) generator,
     void Function(JitFunction fn) verifier) {
   final runtime = JitRuntime();
   final code = CodeHolder(env: runtime.environment);
-  
+
   // Setup compiler
   BaseCompiler archCompiler;
   if (code.env.arch == Arch.x64) {
@@ -20,13 +20,13 @@ void runJitTest(
   } else {
     throw UnsupportedError('Unsupported architecture');
   }
-  
+
   final cc = UniCompiler(archCompiler);
-  
+
   generator(runtime, cc);
-  
+
   archCompiler.finalize();
-  
+
   if (code.env.arch == Arch.x64) {
     final assembler = X86Assembler(code);
     archCompiler.serializeToAssembler(assembler);
@@ -34,7 +34,7 @@ void runJitTest(
     final assembler = A64Assembler(code);
     archCompiler.serializeToAssembler(assembler);
   }
-  
+
   final fn = runtime.add(code);
   try {
     verifier(fn);
@@ -51,7 +51,7 @@ void main() {
         cc.addFunc(FuncSignature.build(
             [TypeId.intPtr, TypeId.intPtr, TypeId.intPtr, TypeId.intPtr],
             TypeId.intPtr,
-            CallConvId.x64Windows)); // Use host convention
+            CallConvId.cdecl)); // Host convention (Win64 or SysV)
 
         final a = cc.newGpPtr('a');
         final b = cc.newGpPtr('b');
@@ -72,7 +72,11 @@ void main() {
         cc.ret([sum]);
         cc.endFunc();
       }, (fn) {
-        final func = fn.pointer.cast<NativeFunction<IntPtr Function(IntPtr, IntPtr, IntPtr, IntPtr)>>().asFunction<int Function(int, int, int, int)>();
+        final func = fn.pointer
+            .cast<
+                NativeFunction<
+                    IntPtr Function(IntPtr, IntPtr, IntPtr, IntPtr)>>()
+            .asFunction<int Function(int, int, int, int)>();
         expect(func(10, 20, 30, 40), equals(100));
         expect(func(1, 1, 1, 1), equals(4));
         expect(func(-1, -1, -1, -1), equals(-4));
@@ -87,7 +91,7 @@ void main() {
         cc.addFunc(FuncSignature.build(
             [TypeId.float64, TypeId.intPtr, TypeId.float64],
             TypeId.float64,
-            CallConvId.x64Windows));
+            CallConvId.cdecl));
 
         final a = cc.newVec('a'); // double
         final b = cc.newGpPtr('b'); // int
@@ -109,20 +113,20 @@ void main() {
         cc.ret([tmp]);
         cc.endFunc();
       }, (fn) {
-        final func = fn.pointer.cast<NativeFunction<Double Function(Double, IntPtr, Double)>>().asFunction<double Function(double, int, double)>();
+        final func = fn.pointer
+            .cast<NativeFunction<Double Function(Double, IntPtr, Double)>>()
+            .asFunction<double Function(double, int, double)>();
         expect(func(10.5, 20, 30.5), closeTo(61.0, 0.001));
       });
     });
-    
+
     test('Function Arguments - Pointer Access (Context)', () {
       // Simulates the ChaCha20 context access pattern that crashed
       runJitTest((runtime, cc) {
         // void updateCtx(int* ctx, int val)
         // ctx[0] = val
         cc.addFunc(FuncSignature.build(
-            [TypeId.intPtr, TypeId.intPtr],
-            TypeId.void_,
-            CallConvId.x64Windows));
+            [TypeId.intPtr, TypeId.intPtr], TypeId.void_, CallConvId.cdecl));
 
         final ctx = cc.newGpPtr('ctx');
         final val = cc.newGpPtr('val');
@@ -132,7 +136,7 @@ void main() {
 
         // Store val to [ctx]
         cc.emitMR(UniOpMR.storeU32, _mem(cc, ctx, 0), val);
-        
+
         // Store val+1 to [ctx + 4]
         cc.emitRRI(UniOpRRR.add, val, val, 1);
         cc.emitMR(UniOpMR.storeU32, _mem(cc, ctx, 4), val);
@@ -140,7 +144,9 @@ void main() {
         cc.ret();
         cc.endFunc();
       }, (fn) {
-        final func = fn.pointer.cast<NativeFunction<Void Function(Pointer<Int32>, IntPtr)>>().asFunction<void Function(Pointer<Int32>, int)>();
+        final func = fn.pointer
+            .cast<NativeFunction<Void Function(Pointer<Int32>, IntPtr)>>()
+            .asFunction<void Function(Pointer<Int32>, int)>();
         final mem = pkgffi.calloc<Int32>(2);
         try {
           func(mem, 42);
@@ -158,7 +164,7 @@ void main() {
         cc.addFunc(FuncSignature.build(
             [TypeId.float64, TypeId.intPtr, TypeId.float64],
             TypeId.float64,
-            CallConvId.x64Windows));
+            CallConvId.cdecl));
 
         final a = cc.newVec('a');
         final b = cc.newGpPtr('b');
@@ -205,7 +211,7 @@ void main() {
         expect(func(a, b, c), closeTo(expected, 0.0001));
       });
     });
-  });
+  }, skip: skipUnlessX64Host);
 }
 
 // Helper for memory operand creation in tests
