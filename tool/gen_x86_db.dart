@@ -291,9 +291,13 @@ class X86DbGenerator {
 
     // Generate instruction table
     buffer.writeln('/// x86 instruction database.');
+    // Indexed by instruction id (`kX86InstDb[X86InstId.kMov]`), so the list
+    // must follow id order, not the alphabetical order of the constants.
     buffer.writeln('const kX86InstDb = <X86InstInfo>[');
 
-    for (final inst in sorted) {
+    final byId = _instructions.values.toList()
+      ..sort((a, b) => a.id.compareTo(b.id));
+    for (final inst in byId) {
       final flags = <String>[];
       if (inst.forms.any((f) => f.hasLock)) {
         flags.add('X86InstFlags.kLockable');

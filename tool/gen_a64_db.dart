@@ -208,9 +208,10 @@ class A64DbGenerator {
     buffer.writeln('}');
     buffer.writeln('');
 
+    // Indexed by instruction id, so emit in id order (not alphabetical).
     buffer.writeln('const kA64InstDb = <A64InstInfo>[');
 
-    for (final inst in sorted) {
+    for (final inst in [...sorted]..sort((a, b) => a.id.compareTo(b.id))) {
       buffer.writeln("  A64InstInfo(id: ${inst.id}, name: '${inst.name}'),");
     }
 
