@@ -1548,8 +1548,11 @@ bool _isVecOp(Object o) =>
 bool _isVecOrMem(Object o) => _isVecOp(o) || o is X86Mem;
 
 /// Whether [o] is an acceptable r/m source for [op].
-bool _rmOk(X86SimdOp op, Object o) =>
-    op.memOnly ? o is X86Mem : (_isVecOrMem(o) || (op.rmGp && o is X86Gp));
+bool _rmOk(X86SimdOp op, Object o) => op.memOnly
+    ? o is X86Mem
+    : op.regOnly
+        ? _isVecOp(o)
+        : (_isVecOrMem(o) || (op.rmGp && o is X86Gp));
 
 /// Encodes [instId] through [kX86SimdOps] when the operands match one of the
 /// table forms; returns false to let the hand-written cases handle the rest

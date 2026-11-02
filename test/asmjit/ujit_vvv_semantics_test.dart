@@ -3,16 +3,13 @@
 // Each case JIT-compiles `dst = op(a, b)` for 128-bit vectors loaded from
 // memory, runs it on the host (x86-64 or AArch64) and compares every byte
 // with a Dart reference implementation, so both backends must agree.
-import 'dart:ffi';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:asmjit/asmjit.dart';
-import 'package:ffi/ffi.dart' as pkgffi;
 import 'package:test/test.dart';
 
-typedef _FnNative = Void Function(Pointer<Uint8>);
-typedef _FnDart = void Function(Pointer<Uint8>);
+import '../support/ujit_run.dart';
 
 /// Reference: computes the expected 16 result bytes from the inputs.
 typedef _Ref = Uint8List Function(Uint8List a, Uint8List b);
@@ -43,60 +40,17 @@ Uint8List _runEmit(
 
 /// Like [_runEmit] with a third input vector `c`.
 Uint8List _runEmit3(
-    void Function(UniCompiler cc, BaseReg d, BaseReg a, BaseReg b, BaseReg c)
-        emit,
-    Uint8List a,
-    Uint8List b,
-    Uint8List c,
-    {CpuFeatures? features}) {
-  final rt = JitRuntime();
-  try {
-    final code = CodeHolder(env: rt.environment);
-    final isA64 = code.env.arch == Arch.aarch64;
-    final BaseCompiler archCc = isA64
-        ? A64Compiler(env: code.env, labelManager: code.labelManager)
-        : X86Compiler(env: code.env, labelManager: code.labelManager);
-    final cc = UniCompiler(archCc, features: features);
-    BaseMem mem(BaseReg p, int off) => p is A64Gp
-        ? A64Mem.baseOffset(p, off)
-        : X86Mem.baseDisp(p as X86Gp, off);
-
-    cc.addFunc(
-        FuncSignature.build([TypeId.intPtr], TypeId.void_, CallConvId.cdecl));
-    final p = cc.newGpPtr('p');
-    cc.setArg(0, p);
-    final va = cc.newVec('a');
-    final vb = cc.newVec('b');
-    final vc = cc.newVec('c');
-    final vd = cc.newVec('d');
-    cc.emitVM(UniOpVM.load128U32, va, mem(p, 0));
-    cc.emitVM(UniOpVM.load128U32, vb, mem(p, 16));
-    cc.emitVM(UniOpVM.load128U32, vc, mem(p, 32));
-    _scratchMem = mem(p, 32);
-    emit(cc, vd, va, vb, vc);
-    cc.emitMV(UniOpMV.store128U32, mem(p, 48), vd);
-    cc.ret();
-    cc.endFunc();
-    archCc.finalize();
-    archCc
-        .serializeToAssembler(isA64 ? A64Assembler(code) : X86Assembler(code));
-
-    final fn = rt.add(code);
-    final buf = pkgffi.calloc<Uint8>(64);
-    try {
-      buf.asTypedList(64)
-        ..setAll(0, a)
-        ..setAll(16, b)
-        ..setAll(32, c);
-      fn.pointer.cast<NativeFunction<_FnNative>>().asFunction<_FnDart>()(buf);
-      return Uint8List.fromList(buf.asTypedList(64).sublist(48, 64));
-    } finally {
-      pkgffi.calloc.free(buf);
-    }
-  } finally {
-    rt.dispose();
-  }
-}
+        void Function(
+                UniCompiler cc, BaseReg d, BaseReg a, BaseReg b, BaseReg c)
+            emit,
+        Uint8List a,
+        Uint8List b,
+        Uint8List c,
+        {CpuFeatures? features}) =>
+    runUjit((cc, d, x, y, z, m) {
+      _scratchMem = m;
+      emit(cc, d, x, y, z);
+    }, a, b, c, features: features);
 
 // --- reference helpers -------------------------------------------------------
 

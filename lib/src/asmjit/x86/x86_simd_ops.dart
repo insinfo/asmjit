@@ -56,6 +56,11 @@ class X86SimdOp {
   /// instruction, e.g. `movlps xmm, xmm` would be MOVHLPS).
   final bool memOnly;
 
+  /// The r/m operand must be a register (the memory form is another
+  /// instruction or has another operand count, e.g. `movhlps xmm, m64` would
+  /// be MOVLPS and `vmovsd xmm, m64` takes no second source).
+  final bool regOnly;
+
   /// The r/m operand may be a general purpose register (`pinsrd xmm, r32`,
   /// `pextrd r32, xmm`).
   final bool rmGp;
@@ -65,6 +70,7 @@ class X86SimdOp {
       this.regExt = 0,
       this.w = false,
       this.memOnly = false,
+      this.regOnly = false,
       this.rmGp = false});
 
   /// VEX.pp encoding of [prefix].
@@ -258,6 +264,9 @@ const Map<String, X86SimdOp> kX86SimdOps = {
 
   // 64-bit half loads (rm, memory only) and stores (`*_st`, mr).
   'movlps': X86SimdOp(0, 1, 0x12, memOnly: true),
+  'movhlps': X86SimdOp(0, 1, 0x12, regOnly: true),
+  'movsd': X86SimdOp(_F2, 1, 0x10, regOnly: true),
+  'haddpd': X86SimdOp(_66, 1, 0x7C),
   'movhps': X86SimdOp(0, 1, 0x16, memOnly: true),
   'movlpd': X86SimdOp(_66, 1, 0x12, memOnly: true),
   'movhpd': X86SimdOp(_66, 1, 0x16, memOnly: true),

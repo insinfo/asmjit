@@ -20,17 +20,49 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 | Core (CodeHolder, Buffer, Runtime) | ✅ Funcional | x64: **1000 passando** (Win64 AVX2, SysV/Rosetta); arm64: 288 |
 | Runtime JIT AArch64 (macOS/Linux) | ✅ MAP_JIT + flush de icache | `a64_jit_execution_test` |
 | RAPass | ✅ Neutro de arquitetura (`RAArch`: `X86RAArch`, `A64RAArch`) | spills, callee-saved, laços (A64 e x64) |
-| x86 Encoder SIMD | ✅ Tabela `x86_simd_ops.dart` (legado + VEX) | 655 formas idênticas ao LLVM |
+| x86 Encoder SIMD | ✅ Tabela `x86_simd_ops.dart` (legado + VEX) | 723 formas idênticas ao LLVM |
+| x86 Encoder GP (ALU) | ✅ ADD/OR/AND/SUB/XOR/CMP/TEST/IMUL e MOV mem,imm respeitam o tamanho (8/16/32/64) | 215 formas idênticas ao LLVM |
 | A64 Encoder | ✅ load/store, SIMD three-same/different, permute, narrow corrigidos | goldens LLVM (ldst + SIMD) |
 | Dispatchers x86/A64 | ✅ Escritos à mão, **fail-loud** (instrução sem bytes = erro) | |
 | Bancos de instruções | ✅ Gerados e indexados por id | `inst_db_consistency_test` |
-| **UJIT emit_3v / 2v / 2vi** | ✅ 97 casos validados em runtime contra referência Dart | SSE2, SSE4.2, AVX2 e AArch64 |
+| **UJIT emit_3v (x86 e A64)** | ✅ Port fiel de `emit_3v` + tabela `opcode_info_3v` do x86; **todas as 179 ops comuns** validadas em runtime com 4 layouts de operandos | `ujit_vvv_ops_test`: SSE2, SSE4.1, host (AVX2 no Windows) e AArch64 |
+| UJIT emit_2v / 2vi / 3vi / 4v | ✅ casos validados em runtime | `ujit_vvv_semantics_test` |
 | **Constantes vetoriais (tabela local)** | ✅ Corrigidas (antes eram lidas do próprio código) | `ujit_const_runtime_test` |
 | **ChaCha20 otimizado** | ✅ x64 e AArch64 | `chacha20_verify_test` |
-| UJIT 3vi/4v e grupos de memória com conversão | ⚠️ Parcial | próximo passo |
+| AVX-512 no UJIT | ⛔ Desativado (encodings EVEX não portados/validados); hosts AVX-512 usam as lowerings AVX2 | |
 | **CI GitHub** | ✅ linux x64/arm64, windows x64, macos arm64/x64 | |
 
 ---
+
+## ✅ Progresso Recente (02/11/2026 - Port fiel do emit_3v x86, A64 completo, ALU GP)
+
+### UJIT x86: `emit_3v` portado fielmente
+- `unicompiler_x86_tables.dart`: tabela `opcode_info_3v` do x86 convertida do C++ (179 entradas comuns, conferidas nome a nome com o enum Dart; as `kPermute*` do upstream exigem AVX-512).
+- `_emit3vX86` reescrito como port direto de `emit_3v()` (ramos AVX e SSE dirigidos pela tabela, com `sse_mov`, `sse_bit_not`, `sse_msb_flip`, `sse_cmp_gt_i64/u64`, `sse_select`, `avx_bit_not`, `avx_isign_flip`, `cmp_min_max`). Substitui o switch escrito à mão e os fallbacks "inventados" (`_emit3vEmulatedX86`, `_cmpGtX86`, `_selectX86`...).
+- **AVX-512 desativado no UJIT**: os ramos EVEX do upstream (k-registers, `vpternlog`, compares EVEX) precisariam de encodings que o port ainda não tem validados; hosts AVX-512 agora usam as lowerings AVX2 (antes caíam em caminhos sem teste).
+- Tabela SIMD: `movhlps`, `movsd` (formas só-registrador, nova flag `regOnly`) e `haddpd` — conferidas com o LLVM.
+
+### Bugs do upstream provados (executando o asmjit C++) e desvios no port
+- `kModF32`/`kModF64` (x86): `translate_op(op, kModF32S, kTruncF32)` usa a base errada, e o mod vetorial vira `kFloorF32S` escalar. Executado: `modF32({7.5,-7.5,10,5.25},{2,2,3,1.5})` dá `{1.5,0,0,0}` em SSE2, SSE4.1 e AVX. O backend A64 do upstream usa `kTruncF32S`; o port usa a base correta.
+- `kSwizzlev_U8` sem SSSE3: o upstream carrega a máscara com `vmovaps` (VEX) no caminho só-SSE2 (log: `vmovaps xmm0, [rax+256]`), o que gera #UD em toda CPU que usa esse caminho; o port usa `movaps`. O merge via registrador de byte alto (`mov ah, [m]`) virou shift+or (o RA não restringe a AL..BL).
+
+### UJIT A64: `emit_3v` completo
+- Portados `kMod*`, `kMulU64`, `kMulhI16/U16`, `kMulU64_LoU32`, `kMHAddI16_I32`, `kCombineHiLo*`.
+- Encoder: FCMEQ/FCMGE/FCMGT **escalares** (antes saíam como vetor `.1d`, instrução ilegal → SIGILL em `cmp*F64S`), FMIN/FMAX/FMINNM/FMAXNM escalares no dispatcher, UADDLP — goldens LLVM.
+
+### Correções fora do UJIT
+- **ALU GP x86**: `sub/or/xor/cmp/test/imul` (reg, imm e mem) eram sempre 64 bits — `cmp r32` com valores negativos dava resultado errado. Agora respeitam o tamanho e escolhem a forma como o assembler do upstream (imm8 primeiro; forma curta AL/AX/EAX/RAX). O teste "subset" tinha expectativas que não vinham do upstream (`cmp rcx, 1` é `4883F901` no `asmjit_test_assembler_x64.cpp`). `mov [mem], imm` respeita o tamanho da memória.
+- **RAPass**: áreas de `newStack(size, align)` recebiam o tamanho de spill (8 bytes), sem alinhamento — `newStack(64, 16)` ficava em `[rbp-8]` invadindo o frame do chamador. Agora usam tamanho/alinhamento do `VirtReg` (até 16).
+
+### Testes
+- `test/asmjit/ujit_vvv_ops_test.dart`: todas as ops 3v comuns contra modelo de referência Dart, com `dst` distinto, `dst == src1`, `dst == src2` e `src2` em memória (x64: SSE2, SSE4.1 e host; A64). Harness compartilhado em `test/support/ujit_run.dart`.
+- `test/asmjit/x86_gp_alu_encoding_test.dart` (215 formas LLVM).
+- Resultado: arm64 2003, Windows x64 AVX2 **5889** testes passando. Sob Rosetta, a suíte x64 concorrente tem falhas aleatórias de JIT que não ocorrem em hardware x64 real nem com `-j 1` (artefato do tradutor).
+
+### Próximos passos
+1. `emit_2vi` swizzles: o port usa a codificação de imm do `pshufd`, e não `Swizzle2`/`Swizzle4` do upstream (`swizzle(...).value`); alinhar API, backends e benchmark.
+2. Portar fielmente o `emit_2v` x86 (`sse_int_widen`, abs, conversões) e o `loadCvt` genérico, e conferir 3vi/4v (FMA) contra o upstream.
+3. A64 `swizzleU32x4` via `emit_swizzle32_impl`.
 
 ## ✅ Progresso Recente (02/11/2026 - RA multiarquitetura, UJIT A64, x86 SIMD)
 

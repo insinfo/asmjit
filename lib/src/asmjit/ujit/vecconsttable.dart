@@ -56,6 +56,18 @@ class VecConstTable {
   static final VecConst p_0000000000000000 = _register(VecConst.splat64(0));
   static final VecConst p_FFFFFFFFFFFFFFFF = _register(VecConst.splat64(-1));
 
+  // Sign bits of 8/16-bit elements and integer helpers.
+  static final VecConst p_8080808080808080 =
+      _register(VecConst.splat64(0x8080808080808080));
+  static final VecConst p_8000800080008000 =
+      _register(VecConst.splat64(0x8000800080008000));
+  static final VecConst p_0000800000008000 =
+      _register(VecConst.splat64(0x0000800000008000));
+  static final VecConst p_0F0F0F0F0F0F0F0F =
+      _register(VecConst.splat64(0x0F0F0F0F0F0F0F0F));
+  static final VecConst p_1010101010101010 =
+      _register(VecConst.splat64(0x1010101010101010));
+
   // Float32 Neg/Abs
   static final VecConst p_8000000080000000 =
       _register(VecConst.splat64(0x8000000080000000));

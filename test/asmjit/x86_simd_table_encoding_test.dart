@@ -53,6 +53,9 @@ Map<String, String> _encodeAll() {
       case X86SimdKind.rm when op.memOnly:
         emit('$n xmm1, qword ptr $memText', n, [x1, mem]);
         emit('v$n xmm9, xmm10, qword ptr $memText', 'v$n', [x9, x10, mem]);
+      case X86SimdKind.rm when op.regOnly:
+        emit('$n xmm9, xmm2', n, [x9, x2]);
+        emit('v$n xmm9, xmm10, xmm2', 'v$n', [x9, x10, x2]);
       case X86SimdKind.rm:
         emit('$n xmm9, xmm2', n, [x9, x2]);
         emit('$n xmm1, ${memSize(n)} $memText', n, [x1, mem]);
@@ -827,6 +830,15 @@ const _expected = <String, String>{
   'vcvtpd2dq xmm9, xmm2': 'c57be6ca',
   'cvttpd2dq xmm9, xmm2': '66440fe6ca',
   'vcvttpd2dq xmm9, xmm2': 'c579e6ca',
+  'movhlps xmm9, xmm2': '440f12ca',
+  'vmovhlps xmm9, xmm10, xmm2': 'c52812ca',
+  'movsd xmm9, xmm2': 'f2440f10ca',
+  'vmovsd xmm9, xmm10, xmm2': 'c52b10ca',
+  'haddpd xmm9, xmm2': '66440f7cca',
+  'haddpd xmm1, xmmword ptr [r9 + 2*rax + 64]': '66410f7c4c4140',
+  'vhaddpd xmm9, xmm10, xmm2': 'c5297cca',
+  'vhaddpd xmm1, xmm10, xmmword ptr [r9 + 2*rax + 64]': 'c4c1297c4c4140',
+  'vhaddpd ymm9, ymm10, ymm2': 'c52d7cca',
 };
 
 void main() {

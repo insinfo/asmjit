@@ -600,6 +600,8 @@ mixin UniCompilerA64 on UniCompilerBase {
   ];
 
   /// View of [reg] with element size [el] (0..3), optionally the low half.
+  void _a64(int instId, List<Operand> ops) => cc.addNode(InstNode(instId, ops));
+
   A64Vec _vArr(BaseReg reg, int el, {bool lo = false}) =>
       A64Vec(reg.id, lo ? 64 : 128, (lo ? _loLayouts : _fullLayouts)[el]);
 
@@ -677,6 +679,92 @@ mixin UniCompilerA64 on UniCompilerBase {
     }
 
     switch (op) {
+      // dst = a - (trunc(a / b) * b).
+      case UniOpVVV.modF32S:
+      case UniOpVVV.modF64S:
+      case UniOpVVV.modF32:
+      case UniOpVVV.modF64:
+        final src2 = _asVecA64(src2_, dst, info.floatMode);
+        final tmp = newVecWithWidth(VecWidth.k128, '@tmp1');
+        final off = op.index - UniOpVVV.modF32S.index;
+        _emit3vA64(
+            UniOpVVV.values[UniOpVVV.divF32S.index + off], tmp, src1, src2);
+        _emit2vA64(UniOpVV.values[UniOpVV.truncF32S.index + off], tmp, tmp);
+        _emit3vA64(
+            UniOpVVV.values[UniOpVVV.mulF32S.index + off], tmp, tmp, src2);
+        _emit3vA64(
+            UniOpVVV.values[UniOpVVV.subF32S.index + off], dst, src1, tmp);
+        return;
+
+      case UniOpVVV.mulU64:
+        final src2 = _asVecA64(src2_, dst, kFmNone);
+        final tmp1 = newVecWithWidth(VecWidth.k128, '@tmp1');
+        final tmp2 = newVecWithWidth(VecWidth.k128, '@tmp2');
+        final tmp3 = newVecWithWidth(VecWidth.k128, '@tmp3');
+        _a64(A64InstId.kRev64, [_vArr(tmp1, 2), _vArr(src1, 2)]);
+        _a64(A64InstId.kXtn, [_vArr(tmp2, 2, lo: true), _vArr(src1, 3)]);
+        _a64(A64InstId.kMul, [_vArr(tmp1, 2), _vArr(tmp1, 2), _vArr(src2, 2)]);
+        _a64(A64InstId.kXtn, [_vArr(tmp3, 2, lo: true), _vArr(src2, 3)]);
+        _a64(A64InstId.kUaddlp, [_vArr(tmp1, 3), _vArr(tmp1, 2)]);
+        _a64(A64InstId.kShl, [_vArr(dst, 3), _vArr(tmp1, 3), Imm(32)]);
+        _a64(A64InstId.kUmlal, [
+          _vArr(dst, 3),
+          _vArr(tmp2, 2, lo: true),
+          _vArr(tmp3, 2, lo: true)
+        ]);
+        return;
+
+      case UniOpVVV.mulhI16:
+      case UniOpVVV.mulhU16:
+        final src2 = _asVecA64(src2_, dst, kFmNone);
+        final tmp = newVecWithWidth(VecWidth.k128, '@tmp');
+        final signed = op == UniOpVVV.mulhI16;
+        _a64(signed ? A64InstId.kSmull : A64InstId.kUmull, [
+          _vArr(tmp, 2),
+          _vArr(src1, 1, lo: true),
+          _vArr(src2, 1, lo: true)
+        ]);
+        _a64(signed ? A64InstId.kSmull2 : A64InstId.kUmull2,
+            [_vArr(dst, 2), _vArr(src1, 1), _vArr(src2, 1)]);
+        _a64(A64InstId.kUzp2, [_vArr(dst, 1), _vArr(tmp, 1), _vArr(dst, 1)]);
+        return;
+
+      case UniOpVVV.mulU64LoU32:
+        final src2 = _asVecA64(src2_, dst, kFmNone);
+        final tmp1 = newVecWithWidth(VecWidth.k128, '@tmp1');
+        final tmp2 = newVecWithWidth(VecWidth.k128, '@tmp2');
+        final tmp3 = dst.id == src1.id || dst.id == src2.id
+            ? newVecWithWidth(VecWidth.k128, '@tmp3')
+            : dst;
+        _a64(A64InstId.kXtn, [_vArr(tmp1, 2, lo: true), _vArr(src1, 3)]);
+        _a64(A64InstId.kShl, [_vArr(tmp3, 3), _vArr(src2, 3), Imm(32)]);
+        _a64(A64InstId.kXtn, [_vArr(tmp2, 2, lo: true), _vArr(src2, 3)]);
+        _a64(A64InstId.kMul, [_vArr(dst, 2), _vArr(tmp3, 2), _vArr(src1, 2)]);
+        _a64(A64InstId.kUmlal, [
+          _vArr(dst, 3),
+          _vArr(tmp1, 2, lo: true),
+          _vArr(tmp2, 2, lo: true)
+        ]);
+        return;
+
+      case UniOpVVV.mHAddI16I32:
+        final src2 = _asVecA64(src2_, dst, kFmNone);
+        final al = newVecWithWidth(VecWidth.k128, '@al');
+        final ah = newVecWithWidth(VecWidth.k128, '@ah');
+        final bl = newVecWithWidth(VecWidth.k128, '@bl');
+        final bh = newVecWithWidth(VecWidth.k128, '@bh');
+        _a64(A64InstId.kXtn, [_vArr(al, 1, lo: true), _vArr(src1, 2)]);
+        _a64(A64InstId.kXtn, [_vArr(bl, 1, lo: true), _vArr(src2, 2)]);
+        _a64(
+            A64InstId.kShrn, [_vArr(ah, 1, lo: true), _vArr(src1, 2), Imm(16)]);
+        _a64(
+            A64InstId.kShrn, [_vArr(bh, 1, lo: true), _vArr(src2, 2), Imm(16)]);
+        _a64(A64InstId.kSmull,
+            [_vArr(dst, 2), _vArr(al, 1, lo: true), _vArr(bl, 1, lo: true)]);
+        _a64(A64InstId.kSmlal,
+            [_vArr(dst, 2), _vArr(ah, 1, lo: true), _vArr(bh, 1, lo: true)]);
+        return;
+
       case UniOpVVV.minI64:
       case UniOpVVV.minU64:
       case UniOpVVV.maxI64:
@@ -754,6 +842,23 @@ mixin UniCompilerA64 on UniCompilerBase {
         final src2 = _asVecA64(src2_, dst, kFmNone);
         cc.addNode(InstNode(A64InstId.kExt,
             [_vArr(dst, 0), _vArr(src2, 0), _vArr(src1, 0), Imm(8)]));
+        return;
+
+      case UniOpVVV.combineHiLoU64:
+      case UniOpVVV.combineHiLoF64:
+        // dst = {src1.u64[1], src2.u64[0]}.
+        final src2 = _asVecA64(src2_, dst, kFmNone);
+        void movD0(BaseReg to, BaseReg from, int i) => _a64(
+            A64InstId.kMov, [_vArr(to, 3), Imm(i), _vArr(from, 3), Imm(i)]);
+        if (dst.id == src1.id) {
+          if (dst.id == src2.id) return;
+          movD0(dst, src2, 0);
+        } else if (dst.id == src2.id) {
+          movD0(dst, src1, 1);
+        } else {
+          _vMovA64(dst, src1);
+          movD0(dst, src2, 0);
+        }
         return;
 
       case UniOpVVV.packsI16I8:
