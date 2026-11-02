@@ -354,7 +354,7 @@ class RAPass extends CompilerPass {
   }
 
   void _analyzeInstLiveness(InstNode node, RABlockData data) {
-    final flags = _arch.preciseLiveness ? _arch.operandFlags(node) : null;
+    final flags = _arch.preciseLiveness ? _operandFlags(node) : null;
     final writes = <int>[];
 
     for (int i = 0; i < node.opCount; i++) {
@@ -528,7 +528,7 @@ class RAPass extends CompilerPass {
       } else if (node is InstNode && currentBlock != null) {
         // Process Inst
         if (_arch.preciseLiveness) {
-          final flags = _arch.operandFlags(node);
+          final flags = _operandFlags(node);
           // 1. Uses (registers read and every memory base/index).
           for (int i = 0; i < node.opCount; i++) {
             final op = node.operands[i];
@@ -1197,7 +1197,7 @@ class RAPass extends CompilerPass {
     if (node.hasNoOperands) return;
 
     final opCount = node.opCount;
-    final opFlags = _arch.operandFlags(node);
+    final opFlags = _operandFlags(node);
 
     for (int i = 0; i < opCount; i++) {
       final op = node.operands[i];
@@ -1215,7 +1215,6 @@ class RAPass extends CompilerPass {
         }
 
         final workReg = _allocator.workRegById(workId);
-        final tied = RATiedReg();
 
         // Check for Last Use (Kill)
         if ((currentFlags & RATiedFlags.kRead) != 0) {
@@ -1228,9 +1227,8 @@ class RAPass extends CompilerPass {
         int useId = _arch.fixedUseId(node, i);
         if (useId != RAAssignment.kPhysNone) useMask = 1 << useId;
 
-        tied.init(workReg, currentFlags, useMask, useId, 0, 0xFFFFFFFF,
-            RAAssignment.kPhysNone, 0);
-        tiedRegs.add(tied);
+        _tie(tiedRegs, workReg, currentFlags, useMask, useId, 0xFFFFFFFF,
+            RAAssignment.kPhysNone);
       } else if (op is BaseMem) {
         // Base/index of a memory operand are always read, even when the
         // instruction writes to memory (MOV [rax], rbx reads rax).
@@ -1276,7 +1274,6 @@ class RAPass extends CompilerPass {
           }
 
           final workReg = _allocator.workRegById(workId);
-          final tied = RATiedReg();
 
           // Use | Read | UseFixed
           int flags =
@@ -1285,12 +1282,36 @@ class RAPass extends CompilerPass {
             flags |= RATiedFlags.kKill;
           }
 
-          tied.init(workReg, flags, (1 << physId), physId, 0, 0,
-              RAAssignment.kPhysNone, 0);
-          tiedRegs.add(tied);
+          _tie(tiedRegs, workReg, flags, 1 << physId, physId, 0,
+              RAAssignment.kPhysNone);
         }
       }
     }
+  }
+
+  /// Operand read/write flags of [node]. Function return operands are
+  /// always uses (their instruction id is not a real instruction).
+  List<int> _operandFlags(InstNode node) {
+    if (node is FuncRetNode) {
+      return List<int>.filled(
+          node.opCount, RATiedFlags.kUse | RATiedFlags.kRead);
+    }
+    return _arch.operandFlags(node);
+  }
+
+  /// Adds a tied register, merging with an existing tie of the same work
+  /// register in this instruction (as `RAInstBuilder::add()` does).
+  void _tie(List<RATiedReg> tiedRegs, RAWorkReg workReg, int flags, int useMask,
+      int useId, int outMask, int outId) {
+    for (final t in tiedRegs) {
+      if (identical(t.workReg, workReg)) {
+        t.merge(flags, useMask, useId, outMask, outId);
+        return;
+      }
+    }
+    final tied = RATiedReg();
+    tied.init(workReg, flags, useMask, useId, 0, outMask, outId, 0);
+    tiedRegs.add(tied);
   }
 
   void _addImplicitUse(BaseReg reg, List<RATiedReg> tiedRegs, int pos) {
@@ -1303,16 +1324,14 @@ class RAPass extends CompilerPass {
       _virtIdToWorkId[reg.id] = workId;
     }
     final workReg = _allocator.workRegById(workId);
-    final tied = RATiedReg();
     int flags = RATiedFlags.kRead | RATiedFlags.kUse;
 
     if (_lastUsePos[reg.id] == pos) {
       flags |= RATiedFlags.kKill;
     }
 
-    tied.init(workReg, flags, 0xFFFFFFFF, RAAssignment.kPhysNone, 0, 0xFFFFFFFF,
-        RAAssignment.kPhysNone, 0);
-    tiedRegs.add(tied);
+    _tie(tiedRegs, workReg, flags, 0xFFFFFFFF, RAAssignment.kPhysNone,
+        0xFFFFFFFF, RAAssignment.kPhysNone);
   }
 
   void _rewriteInstruction(InstNode node, List<RATiedReg> tiedRegs) {
@@ -1320,20 +1339,32 @@ class RAPass extends CompilerPass {
     // todo virtual (incluindo bases/índices de memória) vire o registrador
     // físico correto, evitando perda de base ou conversão incorreta para
     // RIP-relative.
-    int tiedIdx = 0;
+    // Ties are merged per work register, so look them up by register rather
+    // than by operand position. Like asmjit's rewriter, an operand that is
+    // written uses the tie's output register and a read-only operand (or a
+    // memory base/index) its input register.
+    final opFlags = _operandFlags(node);
+    int physOf(BaseReg reg, {bool write = false}) {
+      final workId = _virtIdToWorkId[reg.id];
+      if (workId == null) return RAAssignment.kPhysNone;
+      for (final t in tiedRegs) {
+        if (t.workReg.workId != workId) continue;
+        if (write && t.isOut && t.outId != RAAssignment.kPhysNone) {
+          return t.outId;
+        }
+        if (t.isUse && t.useId != RAAssignment.kPhysNone) return t.useId;
+        final id = _resolvePhysId(t);
+        if (id != RAAssignment.kPhysNone) return id;
+      }
+      return _allocator.curAssignment.workToPhysId(reg.group, workId);
+    }
+
     for (int i = 0; i < node.opCount; i++) {
       final op = node.operands[i];
       if (op is BaseReg && !op.isPhysical && !op.isNone) {
-        int physId = RAAssignment.kPhysNone;
-        if (tiedIdx < tiedRegs.length) {
-          physId = _resolvePhysId(tiedRegs[tiedIdx++]);
-        }
-        if (physId == RAAssignment.kPhysNone) {
-          final workId = _virtIdToWorkId[op.id];
-          if (workId != null) {
-            physId = _allocator.curAssignment.workToPhysId(op.group, workId);
-          }
-        }
+        final f = i < opFlags.length ? opFlags[i] : 0;
+        final physId = physOf(op,
+            write: (f & (RATiedFlags.kOut | RATiedFlags.kWrite)) != 0);
         if (physId != RAAssignment.kPhysNone) {
           node.operands[i] = op.toPhys(physId);
         }
@@ -1348,17 +1379,7 @@ class RAPass extends CompilerPass {
             if (workReg.isStackSlot) {
               BaseReg? newIndex = op.index;
               if (op.index != null && !op.index!.isPhysical) {
-                int physId = RAAssignment.kPhysNone;
-                if (tiedIdx < tiedRegs.length) {
-                  physId = _resolvePhysId(tiedRegs[tiedIdx++]);
-                }
-                if (physId == RAAssignment.kPhysNone) {
-                  final idxWorkId = _virtIdToWorkId[op.index!.id];
-                  if (idxWorkId != null) {
-                    physId = _allocator.curAssignment
-                        .workToPhysId(op.index!.group, idxWorkId);
-                  }
-                }
+                final physId = physOf(op.index!);
                 if (physId != RAAssignment.kPhysNone) {
                   newIndex = op.index!.toPhys(physId);
                 }
@@ -1379,34 +1400,14 @@ class RAPass extends CompilerPass {
         BaseReg? newIndex = op.index;
 
         if (op.base != null && !op.base!.isPhysical) {
-          int physId = RAAssignment.kPhysNone;
-          if (tiedIdx < tiedRegs.length) {
-            physId = _resolvePhysId(tiedRegs[tiedIdx++]);
-          }
-          if (physId == RAAssignment.kPhysNone) {
-            final workId = _virtIdToWorkId[op.base!.id];
-            if (workId != null) {
-              physId =
-                  _allocator.curAssignment.workToPhysId(op.base!.group, workId);
-            }
-          }
+          final physId = physOf(op.base!);
           if (physId != RAAssignment.kPhysNone) {
             newBase = op.base!.toPhys(physId);
           }
         }
 
         if (op.index != null && !op.index!.isPhysical) {
-          int physId = RAAssignment.kPhysNone;
-          if (tiedIdx < tiedRegs.length) {
-            physId = _resolvePhysId(tiedRegs[tiedIdx++]);
-          }
-          if (physId == RAAssignment.kPhysNone) {
-            final workId = _virtIdToWorkId[op.index!.id];
-            if (workId != null) {
-              physId = _allocator.curAssignment
-                  .workToPhysId(op.index!.group, workId);
-            }
-          }
+          final physId = physOf(op.index!);
           if (physId != RAAssignment.kPhysNone) {
             newIndex = op.index!.toPhys(physId);
           }

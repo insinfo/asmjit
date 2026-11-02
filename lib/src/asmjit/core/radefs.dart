@@ -523,6 +523,18 @@ class RATiedReg {
   bool hasFlag(int flag) => (_flags & flag) != 0;
   void addFlags(int flags) => _flags |= flags;
 
+  /// Merges another reference to the same work register within one
+  /// instruction (`RAInstBuilder::add()` when the register is already tied):
+  /// flags are combined, register masks intersected and fixed ids kept.
+  void merge(int flags, int useRegMask, int useId, int outRegMask, int outId) {
+    _flags |= flags;
+    _refCount++;
+    _useRegMask &= useRegMask;
+    _outRegMask &= outRegMask;
+    if (useId != RAAssignment.kPhysNone) _useId = useId;
+    if (outId != RAAssignment.kPhysNone) _outId = outId;
+  }
+
   bool get isRead => hasFlag(RATiedFlags.kRead);
   bool get isWrite => hasFlag(RATiedFlags.kWrite);
   bool get isReadOnly => (_flags & RATiedFlags.kRW) == RATiedFlags.kRead;
