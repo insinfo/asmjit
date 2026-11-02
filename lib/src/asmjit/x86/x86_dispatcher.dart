@@ -19,7 +19,23 @@ import '../core/operand.dart' show Imm, LabelOp, BaseReg;
 /// Dispatches instruction ID to Assembler method for implemented ops.
 /// Unsupported IDs throw [UnsupportedError]: silently dropping an
 /// instruction produces corrupt machine code that crashes at runtime.
+///
+/// Every x86 instruction encodes to at least one byte: if nothing was emitted
+/// the operand combination is unsupported, and silently dropping it would
+/// produce wrong machine code.
 void x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
+  final start = asm.offset;
+  _x86Dispatch(asm, instId, ops);
+  if (asm.offset == start) {
+    final name = instId >= 0 && instId < kX86InstDb.length
+        ? kX86InstDb[instId].name
+        : '#$instId';
+    throw UnsupportedError(
+        'x86 dispatcher: unsupported operands for "$name": $ops');
+  }
+}
+
+void _x86Dispatch(X86Assembler asm, int instId, List<Object> ops) {
   if (_dispatchSimd(asm, instId, ops)) return;
   switch (instId) {
     case X86InstId.kAdd:

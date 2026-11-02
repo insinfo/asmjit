@@ -121,9 +121,21 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - O RA do port não é um port fiel do upstream (alocação global por bundles + correções locais). Exemplo: no Win64 um argumento em RCX que precisa liberar CL é spillado e recarregado em vez de movido; prólogo Win64 salva todos os callee-saved (GP e XMM6–15) de forma conservadora. Avaliar port do `RALocalAllocator`/`RAPass` do upstream.
 - `emitCV`/`UniOpCV` é invenção do Dart; o upstream usa `emit_2vs` com `UniOpVR` (`s_cvt_int_to_f32`...). Portar e remover.
 
+### Goldens do assembler upstream (`asmjit-testing`)
+- `tool/convert_asmjit_assembler_tests.dart` extrai os `TEST_INSTRUCTION` de `asmjit_test_assembler_{x64,a64}.cpp` para `test/data/` (o `referencias/` não é versionado): 17891 casos x64 e 3992 A64.
+- `test/support/cpp_expr.dart` interpreta a expressão C++ (`add(rcx, qword_ptr(rdx, rbx, 0, 128))`, `ldr(x0, ptr(x1, 8))`, `cset(x1, CondCode::kEQ)`); `asmjit_assembler_{x64,a64}_goldens_test.dart` emitem pelo caminho genérico `emit(instId, ops)` (o mesmo do compiler) e comparam byte a byte.
+- **Catraca**: `test/data/asmjit_assembler_<arch>.unsupported` lista o que ainda não bate; todo o resto tem que bater, e um caso listado que passa a bater falha até sair da lista. Regenerar com `UPDATE_GOLDENS=1 dart test <arquivo>` (`GOLDENS_REPORT=<arquivo>` grava o motivo de cada falha).
+- `x86Dispatch` agora é fail-loud em qualquer chamada (antes só via serializer; `X86Assembler.emit` descartava em silêncio formas não suportadas).
+- **Situação inicial**: x64 **2674/17891** (base GP 497/1433, base_ext 64/462, mmx_sse 596/1145, avx 1057/1544, fma 216/288, xop/fma4 0, AVX-512 ~200/12346 — EVEX não portado); A64 **860/3992**.
+- Bugs reais revelados (bytes diferentes do upstream), por exemplo:
+  - x86: tamanhos 8/16/32 de `inc/dec/neg/not/mov/shl/rol/setcc`, registradores altos (`ch` virava `cl`), `lea ecx`/`movzx`/`movsx`/`movsxd` com REX.W indevido, `push 1` sem imm8, `cvtsi2ss xmm, r32` com REX.W, `test ah, imm`.
+  - A64: `crc32x` sem `sf`, `ldrsb/ldrsh w` com opc de x, `ngc/ngcs`, escalares `d` de `add/cmeq/abs...` saindo como vetor, meia precisão como simples, `cmp sp` como `xzr` (o port não distingue SP de ZR: os dois são id 31), `lsl/lsr/asr #imm` via `orr/eor` em vez de UBFM/SBFM.
+- Conclusão: os dois assemblers escritos à mão estão longe da paridade. O caminho fiel é portar o encoder do upstream (`x86assembler.cpp` dirigido pelas tabelas do `x86instdb`; `a64assembler.cpp` + `a64instdb`) usando os goldens como critério.
+
 ### Próximos passos
-1. Portar os testes de `referencias/asmjit-master/asmjit-testing` (goldens `TEST_INSTRUCTION` de x64/x86/a64 via conversor com lista explícita de não suportados; `asmjit_test_unicompiler*.cpp`; testes do compiler).
-2. `emit_2vs` (UniOpVR) no lugar de `emitCV`.
+1. Port fiel dos assemblers (x86 e A64) a partir do upstream, guiado pelos goldens (meta: zerar o `.unsupported` não-EVEX), e distinguir SP de ZR no A64 como o upstream.
+2. Portar `asmjit_test_unicompiler*.cpp` e os testes do compiler.
+3. `emit_2vs` (UniOpVR) no lugar de `emitCV`.
 3. Avaliar acesso de outros operandos além do 0 (xadd/cmpxchg) a partir do banco.
 4. AVX-512/EVEX, validado no runner linux-x64 do CI (tem AVX-512F).
 
