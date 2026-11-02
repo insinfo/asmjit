@@ -27,6 +27,11 @@ Uint8List _run(UniOpVVV op, Uint8List a, Uint8List b,
     _runEmit((cc, d, x, y) => cc.emit3v(op, d, x, sameSrc ? x : y), a, b,
         features: features);
 
+/// Memory operand of the `c` input slot (offset 32 of the argument buffer),
+/// used as scratch by memory-load cases.
+BaseMem _scratch(UniCompiler cc) => _scratchMem!;
+BaseMem? _scratchMem;
+
 /// JIT-compiles `emit(cc, dst, a, b)` on 128-bit vectors and runs it.
 Uint8List _runEmit(
         void Function(UniCompiler cc, BaseReg d, BaseReg a, BaseReg b) emit,
@@ -67,6 +72,7 @@ Uint8List _runEmit3(
     cc.emitVM(UniOpVM.load128U32, va, mem(p, 0));
     cc.emitVM(UniOpVM.load128U32, vb, mem(p, 16));
     cc.emitVM(UniOpVM.load128U32, vc, mem(p, 32));
+    _scratchMem = mem(p, 32);
     emit(cc, vd, va, vb, vc);
     cc.emitMV(UniOpMV.store128U32, mem(p, 48), vd);
     cc.ret();
@@ -634,6 +640,45 @@ void main() {
     ),
   };
 
+  // emitVM load-and-convert cases: (op, reference on the 16 source bytes).
+  Uint8List widen(Uint8List src, int count, int from, int to, bool signed) {
+    final o = ByteData(16), d = ByteData.sublistView(src);
+    for (int i = 0; i < count; i++) {
+      final v = switch (from) {
+        1 => signed ? d.getInt8(i) : d.getUint8(i),
+        2 => signed
+            ? d.getInt16(i * 2, Endian.little)
+            : d.getUint16(i * 2, Endian.little),
+        _ => signed
+            ? d.getInt32(i * 4, Endian.little)
+            : d.getUint32(i * 4, Endian.little),
+      };
+      switch (to) {
+        case 2:
+          o.setUint16(i * 2, v & 0xFFFF, Endian.little);
+        case 4:
+          o.setUint32(i * 4, v & 0xFFFFFFFF, Endian.little);
+        default:
+          o.setInt64(i * 8, v, Endian.little);
+      }
+    }
+    return o.buffer.asUint8List();
+  }
+
+  final vmCases = <UniOpVM, Uint8List Function(Uint8List)>{
+    UniOpVM.loadCvt32U8ToU32: (a) => widen(a, 4, 1, 4, false),
+    UniOpVM.loadCvt32I8ToI32: (a) => widen(a, 4, 1, 4, true),
+    UniOpVM.loadCvt32U8ToU16: (a) => widen(a, 4, 1, 2, false),
+    UniOpVM.loadCvt64U8ToU16: (a) => widen(a, 8, 1, 2, false),
+    UniOpVM.loadCvt64I8ToI16: (a) => widen(a, 8, 1, 2, true),
+    UniOpVM.loadCvt64U16ToU32: (a) => widen(a, 4, 2, 4, false),
+    UniOpVM.loadCvt64I16ToI32: (a) => widen(a, 4, 2, 4, true),
+    UniOpVM.loadCvt64U32ToU64: (a) => widen(a, 2, 4, 8, false),
+    UniOpVM.loadCvt64I32ToI64: (a) => widen(a, 2, 4, 8, true),
+    UniOpVM.loadCvtNU8ToU16: (a) => widen(a, 8, 1, 2, false),
+    UniOpVM.loadCvt16U8ToU64: (a) => widen(a, 2, 1, 8, false),
+  };
+
   for (final fs in _featureSets.entries) {
     group('UniOpVVV semantics (${fs.key})', () {
       final f = fs.value;
@@ -675,6 +720,17 @@ void main() {
         test(name, () {
           expect(_runEmit3(c.$1, c.$2, c.$3, c.$4, features: f),
               c.$5(c.$2, c.$3, c.$4));
+        });
+      });
+      vmCases.forEach((op, ref) {
+        test(op.name, () {
+          // Loads from memory (the 16 bytes of `ia`) and converts.
+          final r = _runEmit3((cc, d, x, y, z) {
+            final p = cc;
+            p.emitMV(UniOpMV.store128U32, _scratch(cc), x); // spill a to mem
+            p.emitVM(op, d, _scratch(cc));
+          }, ia, ib, ib, features: f);
+          expect(r, ref(ia));
         });
       });
       test('same source register shortcuts', () {

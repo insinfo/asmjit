@@ -493,6 +493,29 @@ mixin UniCompilerX86 on UniCompilerBase {
       UniOpVM op, BaseReg dst, X86Mem src, Alignment alignment, int idx) {
     final info = _getUniOpVMInfo(op);
     if (info == null) {
+      // loadCvt*: load exactly the source bytes, then widen in registers.
+      final cvt =
+          RegExp(r'^loadCvt(16|32|64|N)([IU])(8|16|32)To[IU](16|32|64)$')
+              .firstMatch(op.name);
+      if (cvt != null) {
+        final memBits = cvt.group(1) == 'N' ? 64 : int.parse(cvt.group(1)!);
+        (this as UniCompiler).emitVM(
+            const {
+              16: UniOpVM.load16U16,
+              32: UniOpVM.load32U32,
+              64: UniOpVM.load64U64
+            }[memBits]!,
+            dst,
+            src);
+        final sign = cvt.group(2)!;
+        for (int w = int.parse(cvt.group(3)!);
+            w < int.parse(cvt.group(4)!);
+            w *= 2) {
+          (this as UniCompiler).emit2v(
+              UniOpVV.values.byName('cvt$sign${w}LoTo$sign${w * 2}'), dst, dst);
+        }
+        return;
+      }
       // Manual handling for complex operations not fitting single-instruction mapping
       if (op == UniOpVM.loadDup32) {
         if (hasAvx) {

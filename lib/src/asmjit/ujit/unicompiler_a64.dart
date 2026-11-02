@@ -92,6 +92,27 @@ mixin UniCompilerA64 on UniCompilerBase {
       return;
     }
 
+    // loadCvt*: load exactly the source bytes, then widen in registers
+    // (vec_load_mem + emit_2v(cvt) in unicompiler_a64.cpp).
+    final cvt =
+        RegExp(r'^loadCvt(16|32|64|128|N)([IU])(8|16|32)To[IU](16|32|64)$')
+            .firstMatch(op.name);
+    if (cvt != null) {
+      final memBits = cvt.group(1) == 'N' ? 64 : int.parse(cvt.group(1)!);
+      if (memBits > 64) {
+        throw UnimplementedError('_emitVMA64: $op (NEON vectors are 128-bit)');
+      }
+      cc.addNode(InstNode(A64InstId.kLdr, [_vecView(dst, memBits), src]));
+      final sign = cvt.group(2)!;
+      for (int w = int.parse(cvt.group(3)!);
+          w < int.parse(cvt.group(4)!);
+          w *= 2) {
+        (this as UniCompiler).emit2v(
+            UniOpVV.values.byName('cvt$sign${w}LoTo$sign${w * 2}'), dst, dst);
+      }
+      return;
+    }
+
     switch (op) {
       case UniOpVM.loadDup16:
         cc.addNode(
