@@ -56,3 +56,6 @@ codigo.bin
 # Native crash dumps are local diagnostics and exceed GitHub's file limit.
 core.dump
 *.dmp
+
+# Upstream C++ sources used only as porting reference (asmjit, asmtk, blend2d)
+/referencias/
