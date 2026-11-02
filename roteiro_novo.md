@@ -223,6 +223,10 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
   - AVX, `extract_u64` com índice 1: gera `vmovq rax, xmm0` (elemento 0), enquanto o caminho SSE4.1 gera `pextrq rax, xmm0, 1`. O port só usa `vmovq` no índice 0.
 - `test/asmjit/ujit_vr_ops_test.dart`: todas as `UniOpVR` em todos os índices (SSE2, SSE4.1 e host no x86; AArch64).
 
+### UJIT com vetores de 256 bits (AVX2)
+- `runUjit()` aceita a largura do vetor (cargas/stores de 256 bits, buffers alinhados a 32). As ops do UniCompiler a 256 bits trabalham por faixa de 128 bits (como as referências do teste do upstream), então `ujit_vvv_ops_test` e `ujit_vvvv_ops_test` rodam todas as `UniOpVVV`/`UniOpVVVV` a 256 bits em hosts AVX2 (com e sem FMA), comparando cada faixa com a referência de 128 bits: todos os 1548 + 228 casos passam (Windows AVX2).
+- `vv`/`vvi` ficam de fora: no upstream as conversões lo/hi e os broadcasts a 256 bits cruzam faixas e precisam de referências próprias.
+
 ### Próximos passos
 1. Port de `asmjit_test_compiler_x86.cpp` (em andamento, num agente) e `InvokeNode` no RA.
 2. `JitAllocator` do upstream no `JitRuntime` (em andamento, num agente).
