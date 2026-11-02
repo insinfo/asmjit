@@ -1999,8 +1999,14 @@ class A64Encoder {
   }
 
   /// DUP (element).
+  ///
+  /// A destination without arrangement (`d0`, `s0`, ...) selects the scalar
+  /// form (`DUP <V><d>, <Vn>.<T>[index]`, alias `MOV`).
   void dup(A64Vec rd, A64Vec rn, int index) {
-    final rawSz = _vecElemSizeBits(rd);
+    final scalar = rd.layout == A64Layout.none;
+    final rawSz = scalar
+        ? switch (rd.sizeBits) { 8 => 0, 16 => 1, 32 => 2, _ => 3 }
+        : _vecElemSizeBits(rd);
     int imm5 = 0;
     if (rawSz == 0)
       imm5 = (index << 1) | 1;
@@ -2011,10 +2017,8 @@ class A64Encoder {
     else if (rawSz == 3) imm5 = (index << 4) | 8;
 
     final q = rd.sizeBits == 128 ? 1 : 0;
-    final inst = (q << 30) |
-        (0x0E << 24) |
+    final inst = (scalar ? 0x5E000400 : (q << 30) | 0x0E000400) |
         (imm5 << 16) |
-        (1 << 10) |
         (_encVec(rn) << 5) |
         _encVec(rd);
     emit32(inst);

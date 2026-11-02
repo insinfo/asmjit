@@ -24,6 +24,14 @@ int _word(void Function(A64Assembler a) emit) {
 
 void main() {
   final cases = <String, (void Function(A64Assembler), int)>{
+    'mov d0, v1.d[1]': ((a) => a.dup(A64Vec(0, 64), v(1, d2), 1), 0x5E180420),
+    'mov s2, v3.s[3]': ((a) => a.dup(A64Vec(2, 32), v(3, s4), 3), 0x5E1C0462),
+    'dup v4.4s, v5.s[2]': ((a) => a.dup(v(4, s4), v(5, s4), 2), 0x4E1404A4),
+    'dup v6.2d, v7.d[1]': ((a) => a.dup(v(6, d2), v(7, d2), 1), 0x4E1804E6),
+    'tbl v1.16b, {v2.16b}, v3.16b': (
+      (a) => a.tbl(v(1, b16), v(2, b16), v(3, b16)),
+      0x4E030041
+    ),
     'fcmeq s0, s1, s2': (
       (a) => a.fcmeq(A64Vec(0, 32), A64Vec(1, 32), A64Vec(2, 32)),
       0x5E22E420
