@@ -1,0 +1,825 @@
+// Port of `a64::Assembler::_emit()` (asmjit/arm/a64assembler.cpp).
+//
+// As in x86_emit.dart, the `goto`-based switch of upstream is a state
+// machine: every case and label is a state of [_S] and `goto X` is
+// `s = _S.X; continue loop;`. The body was translated mechanically from
+// upstream and then fixed by hand; keep it close to upstream so it can be
+// diffed against it.
+//
+// The encoder works with upstream instruction ids (a64_encoding_data.g.dart);
+// [A64Emitter.emit] maps the port's ids (and the vector `_v` variants that
+// upstream selects by overloads) and adapts the operands with [_Op].
+
+// ignore_for_file: dead_code, non_constant_identifier_names, constant_identifier_names, unused_local_variable, unnecessary_parenthesis, curly_braces_in_flow_control_structures, unused_element, prefer_final_locals, no_leading_underscores_for_local_identifiers, unnecessary_null_comparison, unnecessary_non_null_assertion, unused_field, dead_code_on_catch_subtype
+import 'dart:math' as math;
+import 'dart:typed_data';
+
+import '../core/code_buffer.dart';
+import '../core/code_holder.dart';
+import '../core/labels.dart';
+import '../core/operand.dart' show Imm, LabelOp;
+import 'a64.dart';
+import 'a64_encoder.dart' show A64Encoder;
+import 'a64_encoding_data.g.dart';
+import 'a64_inst_db.g.dart';
+import 'a64_instdb.dart';
+
+/// Upstream `RegType` values used by the AArch64 encoder.
+abstract final class _RT {
+  static const int kNone = 0;
+  static const int kLabelTag = 1;
+  static const int kGp32 = 5;
+  static const int kGp64 = 6;
+  static const int kVec8 = 7;
+  static const int kVec16 = 8;
+  static const int kVec32 = 9;
+  static const int kVec64 = 10;
+  static const int kVec128 = 11;
+}
+
+/// `VecElementType`.
+abstract final class _ET {
+  static const int kNone = 0;
+  static const int kB = 1;
+  static const int kH = 2;
+  static const int kS = 3;
+  static const int kD = 4;
+  static const int kB4 = 5;
+  static const int kH2 = 6;
+}
+
+/// `ShiftOp` (asmjit/core/archcommons.h).
+abstract final class _ShiftOp {
+  static const int kLSL = 0x00;
+  static const int kLSR = 0x01;
+  static const int kASR = 0x02;
+  static const int kROR = 0x03;
+  static const int kRRX = 0x04;
+  static const int kMSL = 0x05;
+  static const int kUXTB = 0x06;
+  static const int kUXTH = 0x07;
+  static const int kUXTW = 0x08;
+  static const int kUXTX = 0x09;
+  static const int kSXTB = 0x0A;
+  static const int kSXTH = 0x0B;
+  static const int kSXTW = 0x0C;
+  static const int kSXTX = 0x0D;
+}
+
+/// Upstream `CondCode` values (archcommons.h): `kAL` = 0, `kEQ` = 2...
+abstract final class _CC {
+  static const int kAL = 0x00;
+  static const int kEQ = 0x02;
+  static const int kNE = 0x03;
+  static const int kCS = 0x04;
+  static const int kLO = 0x05;
+  static const int kMI = 0x06;
+  static const int kPL = 0x07;
+  static const int kVS = 0x08;
+  static const int kVC = 0x09;
+  static const int kHI = 0x0A;
+  static const int kLS = 0x0B;
+  static const int kGE = 0x0C;
+  static const int kLT = 0x0D;
+  static const int kGT = 0x0E;
+  static const int kLE = 0x0F;
+}
+
+/// Upstream `CondCode` of an [A64Cond] (`kAL` = 0, `kNA` = 1, `kEQ` = 2...).
+int _condCode(A64Cond c) => c == A64Cond.al
+    ? _CC.kAL
+    : c == A64Cond.nv
+        ? 1
+        : c.encoding + 2;
+
+/// `arm::OffsetMode`.
+const int _kOffsetFixed = 0, _kOffsetPreIndex = 1, _kOffsetPostIndex = 2;
+
+/// Upstream operand types.
+const int _kOpNone = 0, _kOpReg = 1, _kOpMem = 2, _kOpImm = 4, _kOpLabel = 5;
+
+const int _kIdSp = 31;
+const int _kIdZr = 63;
+
+/// Operand in upstream's terms.
+final class _Op {
+  final int opType;
+
+  // Register.
+  final int regType;
+  final int _id;
+  final int elementType;
+  final int elementIndex; // -1 = none
+
+  // Immediate (`Imm`, shifts and conditions are immediates with a predicate).
+  final int imm;
+  final double? immDouble;
+  final int predicate;
+
+  // Memory.
+  final int baseType;
+  final int baseId;
+  final int indexType;
+  final int indexId;
+  final int offset;
+  final int offsetMode;
+  final int shiftOp;
+  final int shift;
+
+  final Label? label;
+
+  const _Op._({
+    this.opType = _kOpNone,
+    this.regType = _RT.kNone,
+    int id = 0,
+    this.elementType = _ET.kNone,
+    this.elementIndex = -1,
+    this.imm = 0,
+    this.immDouble,
+    this.predicate = 0,
+    this.baseType = _RT.kNone,
+    this.baseId = 0,
+    this.indexType = _RT.kNone,
+    this.indexId = 0,
+    this.offset = 0,
+    this.offsetMode = _kOffsetFixed,
+    this.shiftOp = 0,
+    this.shift = 0,
+    this.label,
+  }) : _id = id;
+
+  static const none = _Op._();
+
+  static int _vecType(int bits) => switch (bits) {
+        8 => _RT.kVec8,
+        16 => _RT.kVec16,
+        32 => _RT.kVec32,
+        64 => _RT.kVec64,
+        _ => _RT.kVec128,
+      };
+
+  static int _layoutElement(A64Layout l) => switch (l) {
+        A64Layout.b8 || A64Layout.b16 => _ET.kB,
+        A64Layout.h4 || A64Layout.h8 => _ET.kH,
+        A64Layout.s2 || A64Layout.s4 => _ET.kS,
+        A64Layout.d1 || A64Layout.d2 => _ET.kD,
+        _ => _ET.kNone,
+      };
+
+  static int _shiftOpOf(A64Shift s) => s.encoding;
+
+  factory _Op.of(Object? o) {
+    switch (o) {
+      case null:
+        return none;
+      case int():
+        return _Op._(opType: _kOpImm, imm: o);
+      case double():
+        return _Op._(opType: _kOpImm, imm: 0, immDouble: o);
+      case Imm():
+        return _Op._(opType: _kOpImm, imm: o.value);
+      case A64ShiftOp():
+        return _Op._(
+            opType: _kOpImm, imm: o.amount, predicate: _shiftOpOf(o.shift));
+      case A64Cond():
+        return _Op._(opType: _kOpImm, imm: _condCode(o));
+      case A64CondOp():
+        return _Op._(opType: _kOpImm, imm: _condCode(o.cond));
+      case Label():
+        return _Op._(opType: _kOpLabel, label: o, id: o.id);
+      case LabelOp():
+        return _Op._(opType: _kOpLabel, label: o.label, id: o.label.id);
+      case A64Gp():
+        return _Op._(
+            opType: _kOpReg,
+            regType: o.is64Bit ? _RT.kGp64 : _RT.kGp32,
+            id: o.id);
+      case A64Vec():
+        return _Op._(
+            opType: _kOpReg,
+            regType: _vecType(o.sizeBits),
+            id: o.id,
+            elementType: o.elementType ?? _layoutElement(o.layout),
+            elementIndex: o.elementIndex);
+      case A64Mem():
+        final base = o.base, index = o.index;
+        return _Op._(
+          opType: _kOpMem,
+          baseType: o.label != null
+              ? _RT.kLabelTag
+              : base == null
+                  ? _RT.kNone
+                  : (base.is64Bit ? _RT.kGp64 : _RT.kGp32),
+          baseId: o.label?.id ?? base?.id ?? 0,
+          indexType: index == null
+              ? _RT.kNone
+              : (index.is64Bit ? _RT.kGp64 : _RT.kGp32),
+          indexId: index?.id ?? 0,
+          offset: o.displacement,
+          offsetMode: switch (o.addrMode) {
+            A64AddrMode.preIndex => _kOffsetPreIndex,
+            A64AddrMode.postIndex => _kOffsetPostIndex,
+            _ => _kOffsetFixed,
+          },
+          shiftOp: o.extend ?? _ShiftOp.kLSL,
+          shift: o.shift,
+          label: o.label,
+        );
+      default:
+        throw ArgumentError('a64: unsupported operand $o');
+    }
+  }
+
+  int get id => opType == _kOpMem ? baseId : _id;
+
+  bool isNone() => opType == _kOpNone;
+  bool isReg() => opType == _kOpReg;
+  bool isMem() => opType == _kOpMem;
+  bool isImm() => opType == _kOpImm;
+  bool isLabel() => opType == _kOpLabel;
+
+  // Register.
+  bool isGp() => isReg() && (regType == _RT.kGp32 || regType == _RT.kGp64);
+  bool isGp32([int? id]) =>
+      isReg() && regType == _RT.kGp32 && (id == null || _id == id);
+  bool isGp64([int? id]) =>
+      isReg() && regType == _RT.kGp64 && (id == null || _id == id);
+  bool isSp() => isGp() && _id == _kIdSp;
+  bool isZr() => isGp() && _id == _kIdZr;
+  bool isVec() => isReg() && regType >= _RT.kVec8 && regType <= _RT.kVec128;
+  bool isVec32() => isReg() && regType == _RT.kVec32;
+  bool isVec64() => isReg() && regType == _RT.kVec64;
+  bool isVec128() => isReg() && regType == _RT.kVec128;
+  bool isVecS4() => isVec128() && elementType == _ET.kS;
+  /// Upstream `is_vec_d1()`: a 64-bit vector without element type.
+  bool isVecD1() => isVec64() && elementType == _ET.kNone;
+  bool isVecD2() => isVec128() && elementType == _ET.kD;
+  bool isVecB16() => isVec128() && elementType == _ET.kB;
+  bool hasElementType() => elementType != _ET.kNone;
+  bool hasElementIndex() => elementIndex >= 0;
+  bool hasElementTypeOrIndex() => hasElementType() || hasElementIndex();
+
+  /// Upstream `OperandSignature` bits of a register (op type, register type,
+  /// group, size, element type, element index).
+  int get signature {
+    if (!isReg()) return opType;
+    final group = isGp() ? 0 : 1;
+    final size = switch (regType) {
+      _RT.kGp32 => 4,
+      _RT.kGp64 => 8,
+      _RT.kVec8 => 1,
+      _RT.kVec16 => 2,
+      _RT.kVec32 => 4,
+      _RT.kVec64 => 8,
+      _RT.kVec128 => 16,
+      _ => 0,
+    };
+    var sig = _kOpReg | (regType << 3) | (group << 8) | (size << 24);
+    sig |= elementType << 12;
+    if (hasElementIndex()) sig |= (1 << 15) | (elementIndex << 16);
+    return sig;
+  }
+
+  // Immediate.
+  int get immU32 => imm & 0xFFFFFFFF;
+  int get immI32 => (imm & 0xFFFFFFFF).toSigned(32);
+  bool isInt32() => immDouble == null && imm >= -0x80000000 && imm <= 0x7FFFFFFF;
+  bool isDouble() => immDouble != null;
+  double get immAsDouble => immDouble ?? imm.toDouble();
+
+  // Memory.
+  bool hasBaseReg() => baseType != _RT.kNone && baseType != _RT.kLabelTag;
+  bool hasIndex() => indexType != _RT.kNone;
+  bool hasOffset() => offset != 0;
+  bool isPreIndex() => offsetMode == _kOffsetPreIndex;
+  bool isPostIndex() => offsetMode == _kOffsetPostIndex;
+  bool isPreOrPost() => offsetMode != _kOffsetFixed;
+  bool isFixedOffset() => offsetMode == _kOffsetFixed;
+  /// `BaseMem::is_offset_64bit()`: no base register, the offset uses the
+  /// base field too (absolute address).
+  bool isOffset64bit() => baseType == _RT.kNone;
+  int get offsetLo32 => (offset & 0xFFFFFFFF).toSigned(32);
+}
+
+/// `RegTraits<T>::kSignature`.
+int _sigOf(int regType) => _Op._(opType: _kOpReg, regType: regType).signature;
+
+int _u32(Object v) => (v is bool ? (v ? 1 : 0) : v as int) & 0xFFFFFFFF;
+int _i32(int v) => (v & 0xFFFFFFFF).toSigned(32);
+bool _isIntN(int n, int v) => v >= -(1 << (n - 1)) && v < (1 << (n - 1));
+bool _isUintN(int n, int v) => v >= 0 && (n >= 64 || v < (1 << n));
+bool _bitTest(int x, int n) => n >= 0 && n < 64 && ((x >> n) & 1) != 0;
+int _lsbMask(int n) => n >= 64 ? -1 : (1 << n) - 1;
+int _bitMask(int n) => 1 << n;
+int _B(int index) => 1 << index;
+int _diff(int a, int b) => (a - b) & 0xFFFFFFFF;
+int _neg(int v) => (-v) & 0xFFFFFFFF;
+/// `Support::shl()` on the 32-bit signed values the encoder uses.
+int _shl(int v, int n) => _i32(v << n);
+int _ctz(int v) {
+  var n = 0;
+  while (v & 1 == 0 && n < 64) {
+    v >>>= 1;
+    n++;
+  }
+  return n;
+}
+
+bool _isPowerOf2(int v) => v > 0 && (v & (v - 1)) == 0;
+
+int condCodeToOpcodeField(int cond) => (cond - 2) & 0xF;
+
+/// `shift_op_to_ld_st_opt_map`.
+int shiftOpToLdStOptMap(int index) => switch (index) {
+      _ShiftOp.kUXTW => 2,
+      _ShiftOp.kLSL => 3,
+      _ShiftOp.kSXTW => 6,
+      _ShiftOp.kSXTX => 7,
+      _ => 0xFF,
+    };
+
+/// `extend_option_to_reg_type()`.
+int extendOptionToRegType(int option) =>
+    (option & 0x3) == 0x3 ? _RT.kGp64 : _RT.kGp32;
+
+/// `SizeOp`.
+final class SizeOp {
+  static const int k128BitShift = 0;
+  static const int kScalarShift = 1;
+  static const int kSizeShift = 2;
+  static const int kQ = 1 << k128BitShift;
+  static const int kS = 1 << kScalarShift;
+  static const int k00 = 0 << kSizeShift;
+  static const int k01 = 1 << kSizeShift;
+  static const int k10 = 2 << kSizeShift;
+  static const int k11 = 3 << kSizeShift;
+  static const int k00Q = k00 | kQ;
+  static const int k01Q = k01 | kQ;
+  static const int k10Q = k10 | kQ;
+  static const int k11Q = k11 | kQ;
+  static const int k00S = k00 | kS;
+  static const int k01S = k01 | kS;
+  static const int k10S = k10 | kS;
+  static const int k11S = k11 | kS;
+  static const int kInvalid = 0xFF;
+  static const int kSzQ = (0x3 << kSizeShift) | kQ;
+  static const int kSzS = (0x3 << kSizeShift) | kS;
+  static const int kSzQS = (0x3 << kSizeShift) | kQ | kS;
+
+  int value;
+  SizeOp(this.value);
+
+  bool isValid() => value != kInvalid;
+  void makeInvalid() => value = kInvalid;
+  int q() => (value >> k128BitShift) & 0x1;
+  int qs() => ((value >> k128BitShift) | (value >> kScalarShift)) & 0x1;
+  int scalar() => (value >> kScalarShift) & 0x1;
+  int size() => (value >> kSizeShift) & 0x3;
+  void decrementSize() => value = (value - (1 << kSizeShift)) & 0xFF;
+}
+
+int _sizeOpIndex(int regType, int elementType) =>
+    ((regType - _RT.kVec8) << 3) | elementType;
+
+/// `size_op_table` (kTableBin, kTableAny): 40 entries each, laid out
+/// back to back as in upstream (an index past the first table reads the
+/// second one).
+final List<int> _sizeOpTables = [
+  for (var x = 0; x < 40; x++)
+    x == _sizeOpIndex(_RT.kVec64, _ET.kNone)
+        ? SizeOp.k00
+        : x == _sizeOpIndex(_RT.kVec128, _ET.kNone)
+            ? SizeOp.k00Q
+            : x == _sizeOpIndex(_RT.kVec64, _ET.kB)
+                ? SizeOp.k00
+                : x == _sizeOpIndex(_RT.kVec128, _ET.kB)
+                    ? SizeOp.k00Q
+                    : SizeOp.kInvalid,
+  for (var x = 0; x < 40; x++)
+    {
+          _sizeOpIndex(_RT.kVec8, _ET.kNone): SizeOp.k00S,
+          _sizeOpIndex(_RT.kVec16, _ET.kNone): SizeOp.k01S,
+          _sizeOpIndex(_RT.kVec32, _ET.kNone): SizeOp.k10S,
+          _sizeOpIndex(_RT.kVec64, _ET.kNone): SizeOp.k11S,
+          _sizeOpIndex(_RT.kVec64, _ET.kB): SizeOp.k00,
+          _sizeOpIndex(_RT.kVec128, _ET.kB): SizeOp.k00Q,
+          _sizeOpIndex(_RT.kVec64, _ET.kH): SizeOp.k01,
+          _sizeOpIndex(_RT.kVec128, _ET.kH): SizeOp.k01Q,
+          _sizeOpIndex(_RT.kVec64, _ET.kS): SizeOp.k10,
+          _sizeOpIndex(_RT.kVec128, _ET.kS): SizeOp.k10Q,
+          _sizeOpIndex(_RT.kVec64, _ET.kD): SizeOp.k11S,
+          _sizeOpIndex(_RT.kVec128, _ET.kD): SizeOp.k11Q,
+        }[x] ??
+        SizeOp.kInvalid,
+];
+
+/// `size_op_map` (table id, size op mask, accept mask), indexed by `kVO_*`.
+final List<(int, int, int)> _sizeOpMap = [
+  (0, SizeOp.kQ, _B(SizeOp.k00) | _B(SizeOp.k00Q)), // kVO_V_B
+  (1, SizeOp.kSzQS, _B(SizeOp.k00) | _B(SizeOp.k00Q) | _B(SizeOp.k01) | _B(SizeOp.k01Q)), // kVO_V_BH
+  (1, SizeOp.kSzQS, _B(SizeOp.k00) | _B(SizeOp.k00Q) | _B(SizeOp.k01) | _B(SizeOp.k01Q) | _B(SizeOp.k10Q)), // kVO_V_BH_4S
+  (1, SizeOp.kSzQS, _B(SizeOp.k00) | _B(SizeOp.k00Q) | _B(SizeOp.k01) | _B(SizeOp.k01Q) | _B(SizeOp.k10) | _B(SizeOp.k10Q)), // kVO_V_BHS
+  (1, SizeOp.kSzQS, _B(SizeOp.k00) | _B(SizeOp.k00Q) | _B(SizeOp.k01) | _B(SizeOp.k01Q) | _B(SizeOp.k10) | _B(SizeOp.k10Q) | _B(SizeOp.k11Q)), // kVO_V_BHS_D2
+  (1, SizeOp.kSzQS, _B(SizeOp.k01) | _B(SizeOp.k01Q) | _B(SizeOp.k10) | _B(SizeOp.k10Q)), // kVO_V_HS
+  (1, SizeOp.kQ, _B(SizeOp.k10) | _B(SizeOp.k10Q)), // kVO_V_S
+  (1, SizeOp.kSzQS, _B(SizeOp.k00) | _B(SizeOp.k01)), // kVO_V_B8H4
+  (1, SizeOp.kSzQS, _B(SizeOp.k00) | _B(SizeOp.k01) | _B(SizeOp.k10)), // kVO_V_B8H4S2
+  (1, SizeOp.kSzQ, _B(SizeOp.k00) | _B(SizeOp.k11S)), // kVO_V_B8D1
+  (1, SizeOp.kSzQS, _B(SizeOp.k01) | _B(SizeOp.k10)), // kVO_V_H4S2
+  (0, SizeOp.kQ, _B(SizeOp.k00Q)), // kVO_V_B16
+  (1, SizeOp.kSzQS, _B(SizeOp.k00Q) | _B(SizeOp.k01Q)), // kVO_V_B16H8
+  (1, SizeOp.kSzQS, _B(SizeOp.k00Q) | _B(SizeOp.k01Q) | _B(SizeOp.k10Q)), // kVO_V_B16H8S4
+  (1, SizeOp.kSzQS, _B(SizeOp.k00Q) | _B(SizeOp.k11Q)), // kVO_V_B16D2
+  (1, SizeOp.kSzQS, _B(SizeOp.k01Q) | _B(SizeOp.k10Q)), // kVO_V_H8S4
+  (1, 0, _B(SizeOp.k10Q)), // kVO_V_S4
+  (1, 0, _B(SizeOp.k11Q)), // kVO_V_D2
+  (1, SizeOp.kSzQS, _B(SizeOp.k00) | _B(SizeOp.k00Q) | _B(SizeOp.k00S) | _B(SizeOp.k01) | _B(SizeOp.k01Q) | _B(SizeOp.k01S) | _B(SizeOp.k10) | _B(SizeOp.k10Q) | _B(SizeOp.k10S)), // kVO_SV_BHS
+  (1, SizeOp.kSzQS, _B(SizeOp.k00) | _B(SizeOp.k00S) | _B(SizeOp.k01) | _B(SizeOp.k01S) | _B(SizeOp.k10) | _B(SizeOp.k10S)), // kVO_SV_B8H4S2
+  (1, SizeOp.kSzQS, _B(SizeOp.k01) | _B(SizeOp.k01Q) | _B(SizeOp.k01S) | _B(SizeOp.k10) | _B(SizeOp.k10Q) | _B(SizeOp.k10S)), // kVO_SV_HS
+  (1, SizeOp.kSzQS, _B(SizeOp.k00) | _B(SizeOp.k00Q) | _B(SizeOp.k01) | _B(SizeOp.k01Q) | _B(SizeOp.k10) | _B(SizeOp.k10Q) | _B(SizeOp.k11S) | _B(SizeOp.k11Q)), // kVO_V_Any
+  (1, SizeOp.kSzQS, _B(SizeOp.k00) | _B(SizeOp.k00Q) | _B(SizeOp.k00S) | _B(SizeOp.k01) | _B(SizeOp.k01Q) | _B(SizeOp.k01S) | _B(SizeOp.k10) | _B(SizeOp.k10Q) | _B(SizeOp.k10S) | _B(SizeOp.k11) | _B(SizeOp.k11Q) | _B(SizeOp.k11S)), // kVO_SV_Any
+];
+
+_Op significantSimdOp(_Op o0, _Op o1, int instFlags) =>
+    (instFlags & kInstFlagLong) == 0 ? o0 : o1;
+
+/// `element_type_to_size_op()`.
+SizeOp elementTypeToSizeOp(int vecOpType, int regType, int elementType) {
+  final (tableId, sizeOpMask, acceptMask) = _sizeOpMap[vecOpType];
+  final index = (math.min(_diff(regType, _RT.kVec8), _diff(_RT.kVec128, _RT.kVec8) + 1) << 3) |
+      elementType;
+  final i = tableId * 40 + index;
+  final op = i < _sizeOpTables.length ? _sizeOpTables[i] : SizeOp.kInvalid;
+  final modified = SizeOp(op & sizeOpMask);
+  if (!_bitTest(acceptMask, op)) modified.makeInvalid();
+  return modified;
+}
+
+/// `LMHImm` / `encode_lmh()`.
+final class LMHImm {
+  int lm = 0, h = 0, max_rm_id = 0;
+}
+
+bool encodeLmh(int sizeField, int elementIndex, LMHImm out) {
+  if (sizeField != 1 && sizeField != 2) return false;
+  final hShift = 3 - sizeField;
+  final lmShift = sizeField - 1;
+  final maxElementIndex = 15 >> sizeField;
+  out.h = elementIndex >> hShift;
+  out.lm = (elementIndex << lmShift) & 0x3;
+  out.max_rm_id = (8 << sizeField) - 1;
+  return elementIndex <= maxElementIndex;
+}
+
+/// `Opcode` (a64assembler.cpp).
+final class Opcode {
+  static const int kN = 1 << 22;
+  static const int kQ = 1 << 30;
+  static const int kX = 1 << 31;
+
+  int v = 0;
+
+  int get() => v;
+  void reset(int value) => v = value & 0xFFFFFFFF;
+  bool hasQ() => (v & kQ) != 0;
+  bool hasX() => (v & kX) != 0;
+  void addImm(Object value, int bitIndex) =>
+      v = (v | (_u32(value) << bitIndex)) & 0xFFFFFFFF;
+  void xorImm(Object value, int bitIndex) =>
+      v = (v ^ (_u32(value) << bitIndex)) & 0xFFFFFFFF;
+  void addIf(int value, bool condition) => v |= condition ? value : 0;
+  void addLogicalImm(LogicalImm l) {
+    addImm(l.n, 22);
+    addImm(l.r, 16);
+    addImm(l.s, 10);
+  }
+
+  void addReg(Object op, int bitIndex) {
+    final id = op is _Op ? op.id : op as int;
+    v = (v | ((id & 31) << bitIndex)) & 0xFFFFFFFF;
+  }
+}
+
+/// `Utils::LogicalImm` (n:immr:imms).
+final class LogicalImm {
+  int n = 0, s = 0, r = 0;
+}
+
+/// `Utils::encode_logical_imm()`.
+bool encodeLogicalImm(int imm, int width, LogicalImm out) {
+  final enc = A64Encoder.encodeLogicalImm(imm, width);
+  if (enc == null) return false;
+  out.n = (enc >> 12) & 1;
+  out.r = (enc >> 6) & 0x3F;
+  out.s = enc & 0x3F;
+  return true;
+}
+
+/// `match_signature(o0, o1[, o2[, o3]], inst_flags)`.
+bool matchSignature(_Op o0, _Op o1, Object a, [Object? b, Object? c]) {
+  final ops = [o0, o1, for (final x in [a, b, c]) if (x is _Op) x];
+  final instFlags = [a, b, c].whereType<int>().first;
+  final ok = (instFlags & (kInstFlagLong | kInstFlagNarrow)) == 0
+      ? o0.signature == o1.signature
+      : true;
+  if (!ok) return false;
+  for (var i = 2; i < ops.length; i++) {
+    if (ops[i - 1].signature != ops[i].signature) return false;
+  }
+  return true;
+}
+
+bool checkMemBaseIndexRel(_Op mem) {
+  final kBaseMask = _B(0) | _B(_RT.kLabelTag) | _B(_RT.kGp64);
+  final kIndexMask = _B(0) | _B(_RT.kGp32) | _B(_RT.kGp64);
+  final baseType = mem.baseType;
+  final indexType = mem.indexType;
+  if (!_bitTest(kBaseMask, baseType)) return false;
+  if (baseType > _RT.kLabelTag) {
+    if (!_bitTest(kIndexMask, indexType)) return false;
+    if (indexType == _RT.kNone) return true;
+    return !mem.hasOffset();
+  }
+  return indexType == _RT.kNone;
+}
+
+/// `pick_fp_opcode()`; [szOut] receives the size field.
+bool pickFpOpcode(_Op reg, int sOp, int sHf, int vOp, int vHf, Opcode opcode,
+    [List<int>? szOut]) {
+  const kQBitIndex = 30;
+  const szBitsTable = <(int, List<int>)>[
+    ((1 << 2) | (1 << 1), [0, 0, 1 << 22]),
+    ((1 << 2) | (1 << 1) | 1, [0, 0, 0]),
+    ((1 << 2) | (1 << 1) | 1, [(1 << 23) | (1 << 22), 0, 1 << 22]),
+    ((1 << 2) | (1 << 1) | 1, [(1 << 22) | (1 << 20) | (1 << 19), 0, 1 << 22]),
+    ((1 << 2) | (1 << 1) | 1, [(1 << 22) | (1 << 21) | (1 << 15) | (1 << 14), 0, 1 << 22]),
+    ((1 << 2) | (1 << 1) | 1, [1 << 23, 0, 1 << 22]),
+  ];
+  if (!reg.hasElementType()) {
+    final sz = _diff(reg.regType, _RT.kVec16);
+    if (sz > 2 || !_bitTest(szBitsTable[sHf].$1, sz)) return false;
+    opcode.reset(szBitsTable[sHf].$2[sz] ^ sOp);
+    szOut?[0] = sz;
+    return sOp != 0;
+  } else {
+    final q = _diff(reg.regType, _RT.kVec64);
+    final sz = _diff(reg.elementType, _ET.kH);
+    if (q > 1 || sz > 2 || !_bitTest(szBitsTable[vHf].$1, sz)) return false;
+    opcode.reset(szBitsTable[vHf].$2[sz] ^ (vOp | (q << kQBitIndex)));
+    szOut?[0] = sz;
+    return vOp != 0;
+  }
+}
+
+bool checkSignature(_Op o0, _Op o1, [_Op? o2, _Op? o3]) =>
+    o0.signature == o1.signature &&
+    (o2 == null || o1.signature == o2.signature) &&
+    (o3 == null || o2!.signature == o3.signature);
+
+/// `check_gp_type()`; [x] receives `reg_type - kGp32` masked by [allowed].
+bool checkGpType(_Op op, int allowed, [List<int>? x]) {
+  final type = op.regType;
+  x?[0] = _diff(type, _RT.kGp32) & allowed;
+  return _bitTest(allowed << _RT.kGp32, type);
+}
+
+bool checkGpType2(_Op o0, _Op o1, int allowed, List<int> x) =>
+    checkGpType(o0, allowed, x) && checkSignature(o0, o1);
+
+bool checkGpType3(_Op o0, _Op o1, _Op o2, int allowed, List<int> x) =>
+    checkGpType(o0, allowed, x) && checkSignature(o0, o1, o2);
+
+bool _gpIdOk(_Op o, int hiId) => o.id < 31 || o.id == hiId;
+
+bool checkGpId(_Op o0, [Object? o1OrHiId, Object? o2OrHiId, int? hiId3]) {
+  // check_gp_id(op, hi_id = kZR), (o0, o1, hi_id = kZR), (o0, o1, o2, hi_id).
+  final ops = <_Op>[o0];
+  var hiId = _kIdZr;
+  for (final a in [o1OrHiId, o2OrHiId]) {
+    if (a is _Op) ops.add(a);
+    if (a is int) hiId = a;
+  }
+  if (hiId3 != null) hiId = hiId3;
+  return ops.every((o) => _gpIdOk(o, hiId));
+}
+
+bool checkVecId(_Op o0, [_Op? o1]) =>
+    ((o0.id | (o1?.id ?? 0)) & 0xFFFFFFFF) <= 31;
+
+bool checkMemBase(_Op mem) => mem.baseType == _RT.kGp64 && mem.baseId <= 31;
+
+bool checkEven(_Op o0, _Op o1) => ((o0.id | o1.id) & 1) == 0;
+
+bool checkConsecutive(_Op o0, _Op o1, [_Op? o2, _Op? o3]) =>
+    ((o0.id + 1) & 0x1F) == o1.id &&
+    (o2 == null || ((o0.id + 2) & 0x1F) == o2.id) &&
+    (o3 == null || ((o0.id + 3) & 0x1F) == o3.id);
+
+int _commonHiRegIdOfType(int t) => switch (t) {
+      _RT.kGp32 || _RT.kGp64 => _kIdZr,
+      _RT.kVec8 || _RT.kVec16 || _RT.kVec32 || _RT.kVec64 || _RT.kVec128 => 31,
+      _ => 0,
+    };
+
+bool checkValidRegs(_Op o0, [_Op? o1, _Op? o2, _Op? o3]) => [o0, o1, o2, o3]
+    .whereType<_Op>()
+    .every((o) => o.id < 31 || o.id == _commonHiRegIdOfType(o.regType));
+
+/// `OffsetFormat` (asmjit/core/fixup.h) as used by the AArch64 encoder.
+final class OffsetFormat {
+  int _type = 0;
+  int _valueSize = 0;
+  int _immBitShift = 0;
+  int _immBitCount = 0;
+  int _imm_discard_lsb = 0;
+
+  void resetToImmValue(int type, int valueSize, int immBitShift,
+      int immBitCount, int immDiscardLsb) {
+    _type = type;
+    _valueSize = valueSize;
+    _immBitShift = immBitShift;
+    _immBitCount = immBitCount;
+    _imm_discard_lsb = immDiscardLsb;
+  }
+
+  int type() => _type;
+  int immBitShift() => _immBitShift;
+  int immBitCount() => _immBitCount;
+  int immDiscardLsb() => _imm_discard_lsb;
+}
+
+/// `EmitterUtils::is_encodable_offset_64()`.
+bool isEncodableOffset64(int offset, int nBits) {
+  final nRev = 64 - nBits;
+  return ((offset << nRev) >> nRev) == offset;
+}
+
+/// `Utils::is_byte_mask_imm()`.
+bool isByteMaskImm(int imm) {
+  for (var i = 0; i < 8; i++) {
+    final b = (imm >> (i * 8)) & 0xFF;
+    if (b != 0 && b != 0xFF) return false;
+  }
+  return true;
+}
+
+/// `Utils::encode_imm64_byte_mask_to_imm8()`.
+int encodeImm64ByteMaskToImm8(int imm) =>
+    ((imm >>> 7) & 0x03) |
+    ((imm >>> (23 - 2)) & 0x0C) |
+    ((imm >>> (39 - 4)) & 0x30) |
+    ((imm >>> (55 - 6)) & 0xC0);
+
+/// `Utils::is_fp64_imm8()`: `aBbbbbbb_bbcdefgh_000...` (fmov immediate).
+bool isFp64Imm8(int bits) {
+  final b = (bits >>> 54) & 0xFF;
+  return (bits & 0xFFFFFFFFFFFF) == 0 && (b == 0x00 || b == 0xFF) &&
+      false == false && _isFp64Imm8(bits);
+}
+
+bool _isFp64Imm8(int bits) {
+  // asmjit: is_fp_imm8_generic<uint64_t, 8, 6, 48>: lower 48 bits zero,
+  // bits [61:54] all equal to the inverse of bit 62.
+  if ((bits & ((1 << 48) - 1)) != 0) return false;
+  final b6 = (bits >>> 54) & 0xFF; // bits 54..61
+  final b62 = (bits >>> 62) & 1;
+  return b6 == (b62 == 1 ? 0x00 : 0xFF);
+}
+
+/// `Utils::encode_fp64_to_imm8()`.
+int encodeFp64ToImm8(int bits) =>
+    (((bits >>> 56) & 0x80) | ((bits >>> 48) & 0x7F)) & 0xFF;
+
+int doubleBits(double v) {
+  final b = ByteData(8)..setFloat64(0, v, Endian.little);
+  return b.getInt64(0, Endian.little);
+}
+
+/// The CodeBuffer writer.
+final class _Writer {
+  final CodeBuffer buf;
+  _Writer(this.buf);
+  int get cursor => buf.length;
+  int offsetFrom(Object? _) => buf.length;
+  void emit32uLe(int v) => buf.emit32(v & 0xFFFFFFFF);
+}
+
+/// Encodes AArch64 instructions as upstream `a64::Assembler::_emit()`.
+final class A64Emitter {
+  final CodeHolder code;
+  final CodeBuffer buffer;
+
+  /// `inst_options()` of the next instruction.
+  int instOptions = 0;
+
+  A64Emitter(this.code, this.buffer);
+
+  static final Map<String, int> _upIds = {
+    for (final (i, n) in kA64UpInstNames.indexed)
+      if (n.isNotEmpty) n: i
+  };
+
+  /// Upstream id (and its vector `_v` variant, 0 if none) of each of the
+  /// port's instruction ids.
+  static final List<(int, int)> _toUpIds = [
+    for (final info in kA64InstDb) _upIdsOf(info.name),
+  ];
+
+  static (int, int) _upIdsOf(String name) {
+    for (final n in name.split('|')) {
+      final base = _upIds[n] ?? 0;
+      final vec = _upIds['${n}_v'] ?? 0;
+      if (base != 0 || vec != 0) return (base, vec);
+    }
+    return (0, 0);
+  }
+
+  /// Emits [instId] (the port's id) with [operands]; throws
+  /// [A64EmitError] if the instruction cannot be encoded.
+  void emit(int instId, List<Object> operands) {
+    var ops = operands;
+    var instCc = _CC.kAL;
+    // `b.cond label` is upstream `B` with an embedded condition code.
+    if (instId == A64InstId.kB_cond) {
+      final cond = ops.whereType<A64Cond>().firstOrNull ??
+          ops.whereType<A64CondOp>().firstOrNull?.cond;
+      if (cond == null) throw A64EmitError('InvalidInstruction', 'b.cond');
+      instCc = _condCode(cond);
+      ops = [for (final o in ops) if (o is! A64Cond && o is! A64CondOp) o];
+      instId = A64InstId.kB;
+    }
+    final (base, vec) = instId >= 0 && instId < _toUpIds.length
+        ? _toUpIds[instId]
+        : (0, 0);
+    final useVec = vec != 0 &&
+        (base == 0 ||
+            ops.any((o) => o is A64Vec) ||
+            (ops.isNotEmpty && ops.first is A64Vec));
+    final upId = useVec ? vec : base;
+
+    // Upstream `EmitterExplicitT::ret()` is `ret(x30)`.
+    if (instId == A64InstId.kRet && ops.isEmpty) ops = const [x30];
+
+    final opArray = [for (final o in ops) _Op.of(o)];
+    while (opArray.length < 6) {
+      opArray.add(_Op.none);
+    }
+    final start = buffer.length;
+    try {
+      _emit(upId, instCc, opArray);
+    } catch (_) {
+      buffer.truncate(start);
+      rethrow;
+    } finally {
+      instOptions = 0;
+    }
+  }
+
+  void _emit(int instId, int instCc, List<_Op> opArray) {
+    final o0 = opArray[0], o1 = opArray[1], o2 = opArray[2];
+    final opExt = opArray;
+    final o3 = opArray[3];
+
+    final _w = _Writer(buffer);
+    var options = (instId == 0 ? 1 : 0) | instOptions;
+
+    if (instId < 0 || instId >= kA64UpInstInfo.length) instId = 0;
+    var instInfo = kA64UpInstInfo[instId];
+    var encodingIndex = instInfo.encodingDataIndex;
+
+    final opcode = Opcode();
+    int isign4;
+    int instFlags;
+    _Op? rmRel;
+
+    // `uint32_t x` of the cases that call `check_gp_type(..., &x)`.
+    var x = 0;
+    bool checkGpTypeX(_Op o0, Object a1, [Object? a2, Object? a3]) {
+      final ops = [o0, for (final a in [a1, a2, a3]) if (a is _Op) a];
+      final allowed = [a1, a2, a3].whereType<int>().first;
+      final r = [0];
+      final ok = checkGpType(o0, allowed, r);
+      x = r[0];
+      if (!ok) return false;
+      return ops.length == 1 ||
+          checkSignature(ops[0], ops[1], ops.length > 2 ? ops[2] : null);
+    }
+
+    final multipleOpData = <int>[];
+    var multipleOpCount = 0;
+
+    final offsetFormat = OffsetFormat();
+    var offsetValue = 0;
+
+    if (instId == 0) _fail('InvalidInstruction', instId);
+    if (instCc != _CC.kAL && instId != _upIds['b']) {
+      _fail('InvalidInstruction', instId);
+    }
+
+    isign4 = o0.opType + (o1.opType << 3) + (o2.opType << 6) + (o3.opType << 9);
+    instFlags = instInfo.flags;
+
+    var state = _encodingStates[instInfo.encoding];
+    loop:
+    while (true) {
+      switch (state) {

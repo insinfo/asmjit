@@ -8,13 +8,15 @@ import 'package:asmjit/asmjit.dart';
 import '../support/host.dart';
 
 void main() {
-  test('host() falls back to the baseline on non-x86-64 hosts', () {
+  test('host() has no x86 features on non-x86-64 hosts', () {
     // The CPUID helper is x86-64 machine code; running it in an ia32 (or
     // non-x86) process would crash the VM, so detection must not execute it.
     final info = CpuInfo.host();
     expect(info.vendor, equals('Unknown'));
     expect(info.brand, equals('Unknown'));
     expect(info.logicalProcessors, greaterThan(0));
+    expect(info.features.sse2, isFalse);
+    expect(info.features.x64, isFalse);
   }, skip: hostIsX64 ? 'x86-64 hosts run the CPUID detection' : false);
 
   // Executes (or assumes) x86-64 code: skipped on ia32 and non-x86 hosts.

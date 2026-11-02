@@ -7294,11 +7294,27 @@ final class A64Emitter {
           }
 
           if (rmRel!.isImm()) {
-            // Upstream records an AbsToRel relocation (the port's CodeHolder has no
-            // base address); not supported yet.
-            {
-              state = _S.InvalidDisplacement;
-              continue loop;
+            final baseAddress = code.baseAddress;
+            final targetOffset = rmRel!.imm;
+            final codeOffset = _w.cursor;
+
+            if (baseAddress == null) {
+              // Upstream records an AbsToRel relocation here; the port's
+              // relocations can't express it yet.
+              {
+                state = _S.InvalidDisplacement;
+                continue loop;
+              }
+            } else {
+              var pc = baseAddress + codeOffset;
+              if (offsetFormat.type() == A64OffsetType.kAArch64_ADRP) {
+                pc &= ~(4096 - 1);
+              }
+              offsetValue = targetOffset - pc;
+              {
+                state = _S.EmitOp_DispImm;
+                continue loop;
+              }
             }
           }
 

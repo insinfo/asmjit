@@ -37,6 +37,11 @@ class X86Mem extends BaseMem {
   /// AVX-512 embedded broadcast ([X86Broadcast], `Mem::Broadcast`).
   final int broadcast;
 
+  /// Addressing of an absolute address (`Mem::AddrType`): 0 = default (the
+  /// encoder decides), 1 = absolute (`ptr_abs`), 2 = RIP-relative
+  /// (`ptr_rel`).
+  final int addrType;
+
   const X86Mem({
     this.base,
     this.index,
@@ -46,7 +51,16 @@ class X86Mem extends BaseMem {
     this.segment,
     this.label,
     this.broadcast = X86Broadcast.kNone,
+    this.addrType = 0,
   });
+
+  /// `x86::ptr_abs()`: absolute address encoded as `[disp32]`.
+  const X86Mem.ptrAbs(int address, {int size = 0})
+      : this(displacement: address, size: size, addrType: 1);
+
+  /// `x86::ptr_rel()`: absolute address encoded RIP-relative.
+  const X86Mem.ptrRel(int address, {int size = 0})
+      : this(displacement: address, size: size, addrType: 2);
 
   /// Creates a memory operand from a pointer (base register + displacement).
   static X86Mem ptr(BaseReg base, [int disp = 0]) =>
@@ -114,6 +128,7 @@ class X86Mem extends BaseMem {
         size: newSize,
         segment: segment,
         label: label,
+        addrType: addrType,
         broadcast: broadcast,
       );
 
@@ -126,6 +141,7 @@ class X86Mem extends BaseMem {
         size: size,
         segment: segment,
         label: label,
+        addrType: addrType,
         broadcast: broadcast,
       );
 
@@ -139,6 +155,7 @@ class X86Mem extends BaseMem {
         size: size,
         segment: segment,
         label: label,
+        addrType: addrType,
         broadcast: bcst,
       );
 
@@ -221,11 +238,12 @@ class X86Mem extends BaseMem {
           other.size == size &&
           other.segment == segment &&
           other.label == label &&
-          other.broadcast == broadcast;
+          other.broadcast == broadcast &&
+          other.addrType == addrType;
 
   @override
-  int get hashCode => Object.hash(
-      base, index, scale, displacement, size, segment, label, broadcast);
+  int get hashCode => Object.hash(base, index, scale, displacement, size,
+      segment, label, broadcast, addrType);
 }
 
 /// `x86::Mem::Broadcast`: AVX-512 embedded broadcast of a memory operand.
@@ -341,11 +359,19 @@ class X86RipMem extends BaseMem {
   @override
   final int size;
 
+  /// AVX-512 embedded broadcast ([X86Broadcast]).
+  final int broadcast;
+
   const X86RipMem({
     this.label,
     this.displacement = 0,
     this.size = 0,
+    this.broadcast = X86Broadcast.kNone,
   });
+
+  /// Copy with an embedded broadcast (`_1to2()` ... `_1to32()`).
+  X86RipMem withBroadcast(int bcst) => X86RipMem(
+      label: label, displacement: displacement, size: size, broadcast: bcst);
 
   /// Creates a RIP-relative reference to a label.
   const X86RipMem.label(Label label, {int size = 0})

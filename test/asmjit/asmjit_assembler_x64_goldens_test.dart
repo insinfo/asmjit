@@ -134,12 +134,16 @@ Object _operand(CppExpr e) {
       return 'rip';
     case CppIdent(:final name):
       return _regs[name] ?? (throw GoldenUnsupported('operand $name'));
+    case CppCall(receiver: null, name: 'ptr_abs', :final args)
+        when args.length == 1 && args[0] is CppNum:
+      return X86Mem.ptrAbs((args[0] as CppNum).value);
     case CppCall(receiver: null, :final name, :final args)
         when _memSizes.containsKey(name):
       return _mem(_memSizes[name]!, args.map(_operand).toList());
     case CppCall(:final receiver?, :final name, args: [])
         when _broadcasts.containsKey(name):
       final m = _operand(receiver);
+      if (m is X86RipMem) return m.withBroadcast(_broadcasts[name]!);
       if (m is! X86Mem) throw GoldenUnsupported('broadcast of $m');
       return m.withBroadcast(_broadcasts[name]!);
     case CppCall():
@@ -150,6 +154,16 @@ Object _operand(CppExpr e) {
 BaseMem _mem(int size, List<Object> a) {
   if (a.length == 1 && a[0] is int) {
     return X86Mem.abs(a[0] as int, size: size);
+  }
+  // `ptr(address, index[, shift[, offset]])`: no base register (VSIB).
+  if (a.length >= 2 && a[0] is int && a[1] is BaseReg) {
+    final shift = a.length > 2 ? a[2] as int : 0;
+    final disp = a.length > 3 ? a[3] as int : 0;
+    return X86Mem(
+        index: a[1] as BaseReg,
+        scale: 1 << shift,
+        displacement: (a[0] as int) + disp,
+        size: size);
   }
   if (a.isNotEmpty && a[0] == 'rip') {
     return X86RipMem(displacement: a.length > 1 ? a[1] as int : 0, size: size);
@@ -177,7 +191,8 @@ BaseMem _mem(int size, List<Object> a) {
 List<int> _assemble(String expr) {
   final e = parseCppExpr(expr);
   if (e is! CppCall) throw GoldenUnsupported('not a call');
-  final code = CodeHolder(env: Environment.x64SysV());
+  // The upstream tester uses `code.init(env, 0)`.
+  final code = CodeHolder(env: Environment.x64SysV(), baseAddress: 0);
   final a = X86Assembler(code);
 
   // Prefix chain: `k(k1).z().vaddpd(...)`.

@@ -57,6 +57,7 @@ export 'src/asmjit/x86/x86_serializer.dart';
 export 'src/asmjit/arm/a64.dart' hide sp;
 export 'src/asmjit/arm/a64_assembler.dart';
 export 'src/asmjit/arm/a64_emit.dart' show A64EmitError;
+export 'src/asmjit/arm/a64_predicate.dart';
 export 'src/asmjit/arm/a64_compiler.dart';
 export 'src/asmjit/arm/a64_code_builder.dart';
 export 'src/asmjit/arm/a64_func.dart';

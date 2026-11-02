@@ -52,6 +52,7 @@ abstract class A64InstId {
   static const int kAxflag = 216;
   static const int kB = 11;
   static const int kB_cond = 12;
+  static const int kBc = 1347;
   static const int kBc_cond = 228;
   static const int kBcax = 1061;
   static const int kBdep = 1342;
@@ -361,6 +362,8 @@ abstract class A64InstId {
   static const int kFcvtpu = 784;
   static const int kFcvtx = 785;
   static const int kFcvtx2 = 786;
+  static const int kFcvtxn = 1348;
+  static const int kFcvtxn2 = 1349;
   static const int kFcvtxnt = 1240;
   static const int kFcvtzs = 787;
   static const int kFcvtzu = 788;
@@ -1352,7 +1355,7 @@ abstract class A64InstId {
   static const int kZip1 = 996;
   static const int kZip2 = 997;
 
-  static const int kCount = 1347;
+  static const int kCount = 1350;
 }
 
 class A64InstInfo {
@@ -2713,6 +2716,9 @@ const kA64InstDb = <A64InstInfo>[
   A64InstInfo(id: 1344, name: 'bgrp'),
   A64InstInfo(id: 1345, name: 'smstart'),
   A64InstInfo(id: 1346, name: 'smstop'),
+  A64InstInfo(id: 1347, name: 'bc'),
+  A64InstInfo(id: 1348, name: 'fcvtxn'),
+  A64InstInfo(id: 1349, name: 'fcvtxn2'),
 ];
 
 A64InstInfo? a64InstByName(String name) {

@@ -230,6 +230,7 @@ final class _Op {
           offset: o.displacement,
           memSize: o.size,
           segmentId: o.segment == null ? 0 : o.segment!.index + 1,
+          addrType: o.addrType,
           broadcast: o.broadcast,
           label: label,
         );
@@ -240,6 +241,7 @@ final class _Op {
           baseId: o.label?.id ?? 0,
           offset: o.displacement,
           memSize: o.size,
+          broadcast: o.broadcast,
           label: o.label,
         );
       default:
@@ -677,14 +679,27 @@ final class X86Emitter {
                 X86Avx512Flags.kB64)) !=
         0;
 
-    // `x86_should_use_movabs()` (64-bit; no base address is known).
+    // `x86_get_movabs_inst_size_64bit()` + `x86_should_use_movabs()` (64-bit).
     bool _shouldUseMovabs(int registerSize, int options, _Op rmRel) {
       if (rmRel.addrType == _Addr.kRel ||
           _test(options, _IO.kX86_ModMR | _IO.kX86_ModRM)) {
         return false;
       }
       final addrValue = rmRel.offset;
-      if (_isIntN(32, addrValue)) return false;
+      final baseAddress = code.baseAddress;
+      if (rmRel.addrType == _Addr.kDefault &&
+          baseAddress != null &&
+          !rmRel.hasSegment()) {
+        final instructionSize = (rmRel.segmentId != 0 ? 1 : 0) +
+            (registerSize == 2 ? 1 : 0) +
+            (registerSize == 8 || _test(options, _IO.kX86_Rex) ? 1 : 0) +
+            1 +
+            8;
+        final rip64 = baseAddress + buffer.length + instructionSize;
+        if (_isIntN(32, addrValue - rip64)) return false;
+      } else {
+        if (_isIntN(32, addrValue)) return false;
+      }
       return addrValue < 0 || addrValue > 0xFFFFFFFF;
     }
 
@@ -5802,21 +5817,59 @@ final class X86Emitter {
               } else {
                 var is_offset_int32 = rmRel!.offsetHi32 == (relOffset >> 31);
                 var is_offset_uint32 = rmRel!.offsetHi32 == 0;
+                final baseAddress = code.baseAddress;
 
                 // If relative addressing was not explicitly set then we can try to guess. By guessing we check some
                 // properties of the memory operand and try to base the decision on the segment prefix and the address type.
                 if (addr_type == _Addr.kDefault) {
-                  // Prefer absolute addressing mode if the offset is 32-bit.
-                  addr_type = is_offset_int32 || is_offset_uint32
-                      ? _Addr.kAbs
-                      : _Addr.kRel;
+                  if (baseAddress == null) {
+                    // Prefer absolute addressing mode if the offset is 32-bit.
+                    addr_type = is_offset_int32 || is_offset_uint32
+                        ? _Addr.kAbs
+                        : _Addr.kRel;
+                  } else {
+                    // Prefer absolute addressing mode if FS|GS segment override is present.
+                    var has_fs_gs = rmRel!.segmentId >= _kSegFs;
+                    // Prefer absolute addressing mode if this is LEA with 32-bit immediate.
+                    var is_lea_32 = (instId == X86InstId.kLea) &&
+                        (is_offset_int32 || is_offset_uint32);
+
+                    addr_type =
+                        has_fs_gs || is_lea_32 ? _Addr.kAbs : _Addr.kRel;
+                  }
                 }
 
                 if (addr_type == _Addr.kRel) {
-                  // Upstream records an AbsToRel relocation; not supported by the port.
-                  {
-                    s = _S.InvalidAddress;
-                    continue loop;
+                  var kModRel32Size = 5;
+                  var virtualOffset = _w.cursor + immSize + kModRel32Size;
+
+                  if (baseAddress == null) {
+                    // Upstream records an AbsToRel relocation here; the port's
+                    // relocations can't express it yet.
+                    {
+                      s = _S.InvalidAddress;
+                      continue loop;
+                    }
+                  } else {
+                    var rip64 = baseAddress + virtualOffset;
+                    var rel64 = rmRel!.offset - rip64;
+
+                    if (_isIntN(32, rel64)) {
+                      _w.emit8(encodeMod(0, opReg, 5));
+                      _w.emit32uLe(_u32(rel64 & 0xFFFFFFFF));
+                      _w.emitImmediate(immValue, immSize);
+                      {
+                        s = _S.EmitDone;
+                        continue loop;
+                      }
+                    } else {
+                      // We must check the original address type as we have modified
+                      // `addr_type`. We failed if the original address type is 'rel'.
+                      if (rmRel!.isAddrRel()) {
+                        s = _S.InvalidAddress;
+                        continue loop;
+                      }
+                    }
                   }
                 }
 
@@ -6455,7 +6508,31 @@ final class X86Emitter {
             }
 
             if (rmRel!.isImm()) {
-              // Upstream records an AbsToRel relocation; not supported by the port.
+              final baseAddress = code.baseAddress;
+              var jump_address = rmRel!.imm;
+
+              // If the base-address is known calculate a relative displacement and check if it fits in 32 bits (which is
+              // always true in 32-bit mode). Emit relative displacement as it was a bound label if all checks are ok.
+              if (baseAddress != null) {
+                var rel64 = jump_address - (ip + baseAddress) - inst32_size;
+                if (_isIntN(32, rel64)) {
+                  rel32 = _u32(rel64 & 0xFFFFFFFF);
+                  {
+                    s = _S.EmitJmpCallRel;
+                    continue loop;
+                  }
+                } else {
+                  // Relative displacement exceeds 32-bits - relocator can only insert trampoline for jmp/call, but not
+                  // for jcc/jecxz.
+                  if (!isJmpOrCall(instId)) {
+                    s = _S.InvalidDisplacement;
+                    continue loop;
+                  }
+                }
+              }
+
+              // Upstream records an AbsToRel relocation (X64AddressEntry for
+              // jmp/call); the port's relocations can't express it yet.
               {
                 s = _S.InvalidDisplacement;
                 continue loop;

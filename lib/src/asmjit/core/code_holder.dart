@@ -152,7 +152,14 @@ class CodeHolder {
   FinalizedCode? _finalizedCode;
 
   /// Creates a new code holder.
-  CodeHolder({Environment? env}) : env = env ?? Environment.host() {
+  /// Base address of the code (`CodeHolder::init(env, base_address)`), or
+  /// null when unknown (`Globals::kNoBaseAddress`). When known, encoders
+  /// resolve absolute targets (x86 `[abs]`/`jmp imm`, AArch64 `adr`/`b imm`)
+  /// relative to it at assembly time.
+  final int? baseAddress;
+
+  CodeHolder({Environment? env, this.baseAddress})
+      : env = env ?? Environment.host() {
     text = Section.text();
     _sections.add(text);
   }

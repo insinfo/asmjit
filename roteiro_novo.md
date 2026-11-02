@@ -20,9 +20,9 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 | Core (CodeHolder, Buffer, Runtime) | ✅ Funcional | x64: **1000 passando** (Win64 AVX2, SysV/Rosetta); arm64: 288 |
 | Runtime JIT AArch64 (macOS/Linux) | ✅ MAP_JIT + flush de icache | `a64_jit_execution_test` |
 | RAPass | ✅ Neutro de arquitetura (`RAArch`: `X86RAArch`, `A64RAArch`) | spills, callee-saved, laços (A64 e x64) |
-| **x86 Assembler (`_emit`)** | ✅ Port fiel de `x86assembler.cpp` dirigido pelas tabelas do `x86instdb` | **17886/17891 goldens do upstream** (x64), 873 formas SIMD idênticas ao LLVM |
+| **x86 Assembler (`_emit`)** | ✅ Port fiel de `x86assembler.cpp` dirigido pelas tabelas do `x86instdb` | **17891/17891 goldens do upstream** (x64), 873 formas SIMD idênticas ao LLVM |
 | x86 Encoder GP (ALU) | ✅ ADD/OR/AND/SUB/XOR/CMP/TEST/IMUL e MOV mem,imm respeitam o tamanho (8/16/32/64) | 215 formas idênticas ao LLVM |
-| **A64 Assembler (`_emit`)** | ✅ Port fiel de `a64assembler.cpp` dirigido pelas tabelas do `a64instdb` | **3970/3992 goldens do upstream** |
+| **A64 Assembler (`_emit`)** | ✅ Port fiel de `a64assembler.cpp` dirigido pelas tabelas do `a64instdb` | **3992/3992 goldens do upstream** |
 | Dispatchers x86/A64 | ✅ Escritos à mão, **fail-loud** (instrução sem bytes = erro) | |
 | Bancos de instruções | ✅ Gerados e indexados por id | `inst_db_consistency_test` |
 | **UJIT emit_3v (x86 e A64)** | ✅ Port fiel de `emit_3v` + tabela `opcode_info_3v` do x86; **todas as 179 ops comuns** validadas em runtime com 4 layouts de operandos | `ujit_vvv_ops_test`: SSE2, SSE4.1, host (AVX2 no Windows) e AArch64 |
@@ -155,8 +155,18 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 ### CI multiarquitetura
 - Jobs com QEMU (linux-arm32, linux-riscv64) e ia32 nativo (`continue-on-error`): o asmjit só gera código x86-64/AArch64, então nesses hosts rodam os testes que não executam JIT (encoding, goldens, IR/RA). Correções feitas para eles: `CpuInfo` só executa CPUID em x86-64 e testes dependentes do host passaram a usar ambiente explícito/skip.
 
+### Goldens completos (x64 17891/17891, A64 3992/3992)
+- `CodeHolder.baseAddress` (`CodeHolder::init(env, base_address)`; null = `kNoBaseAddress`): os encoders resolvem endereços absolutos relativos a ele (x86 `[abs]` RIP-relativo, `jmp/call imm`, heurística do `movabs`; A64 `adr/adrp/b imm`). Sem base address, os casos que no upstream geram relocação AbsToRel ainda dão erro.
+- `X86Mem.addrType` (`ptrAbs`/`ptrRel`), broadcast em `X86RipMem`.
+- `a64_predicate.dart`: namespace `Predicate` do upstream (AT, BTI, DB, DC, IC, ISB, PRFOp, PSB, TLBI, TSB, PState, SysReg — 948 constantes, `kA64Predicates` por nome).
+- O banco A64 do Dart inclui as instruções da tabela do upstream que faltavam no `isa_aarch64.json` (`fcvtxn`...).
+- `CpuInfo.host()` sem features x86 fora de x86-64.
+- Scripts do port mecânico em `tool/upstream_port/`.
+- Suítes: arm64 17750, Rosetta 44636, Windows AVX2 44750.
+
 ### Próximos passos
-1. Portar os enums `Predicate` do A64 (PRFOp, SysReg, AT/DC/IC/TLBI, BTI) e suporte a base address no `CodeHolder` (relocações AbsToRel do x86 e do A64).
+1. Relocação AbsToRel (endereço absoluto sem base address conhecido) no `CodeHolder`.
+2. Reescrever os métodos de conveniência do `X86Assembler`/`A64Assembler` sobre `emit()` e remover os encoders escritos à mão.
 2. Reescrever os métodos de conveniência do `X86Assembler` (`addRR`, `movRI`...) sobre `emit()` e remover o `X86Encoder` escrito à mão.
 3. Portar `asmjit_test_unicompiler*.cpp` e os testes do compiler.
 4. `emit_2vs` (UniOpVR) no lugar de `emitCV`.

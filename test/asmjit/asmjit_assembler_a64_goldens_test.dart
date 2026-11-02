@@ -69,6 +69,9 @@ Object _operand(CppExpr e) {
       // The serializer passes conditions to the dispatcher as A64Cond.
       return A64Cond.values.firstWhere((v) => v.name == c,
           orElse: () => throw GoldenUnsupported('condition $name'));
+    case CppIdent(:final name) when name.startsWith('Predicate::'):
+      return kA64Predicates[name.substring('Predicate::'.length)] ??
+          (throw GoldenUnsupported('operand $name'));
     case CppIdent(name: 'L0'):
       // The upstream tester binds L0 at the instruction.
       return _label!;
@@ -148,7 +151,8 @@ List<int> _assemble(String expr) {
   }
   var name =
       e.name.endsWith('_') ? e.name.substring(0, e.name.length - 1) : e.name;
-  final code = CodeHolder(env: Environment.aarch64());
+  // The upstream tester uses `code.init(env, 0)`.
+  final code = CodeHolder(env: Environment.aarch64(), baseAddress: 0);
   _label = code.newLabel();
   code.bind(_label!);
   final ops = e.args.map(_operand).toList();

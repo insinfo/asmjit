@@ -1,7 +1,2 @@
 # Upstream x64 assembler cases the port does not encode yet
 # (see test/support/asm_goldens.dart).
-test_x64_assembler_extra	89042544332211	mov(ptr_abs(0x11223344), eax)
-test_x64_assembler_extra	891C2544332211	mov(ptr_abs(0x11223344), ebx)
-test_x64_assembler_extra	A38877665544332211	mov(ptr_abs(0x1122334455667788), eax)
-test_x64_assembler_extra	C4E2FD91040500000000	vpgatherqq(ymm0, ptr(0, ymm0), ymm0)
-test_x64_assembler_extra	62F24730683500000000	vp2intersectd(k6, k7, ymm23, dword_ptr(rip)._1to8())

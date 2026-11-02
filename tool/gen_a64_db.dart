@@ -23,6 +23,7 @@ Future<void> main(List<String> args) async {
 /// Gera IDs e tabela de instruções AArch64 a partir do `isa_aarch64.json`.
 Future<void> generateA64Db({
   String jsonPath = 'assets/db/isa_aarch64.json',
+  String instdbPath = 'assets/db/a64_instdb.txt',
   String instOutputPath = 'lib/src/asmjit/arm/a64_inst_db.g.dart',
 }) async {
   print('=== AsmJit AArch64 Instruction DB Generator ===');
@@ -33,6 +34,7 @@ Future<void> generateA64Db({
   final generator = A64DbGenerator();
   await generator.loadFromFile(jsonPath);
   generator.analyze();
+  generator.addUpstreamInstructions(instdbPath);
   generator.generateInstDb(instOutputPath);
 
   print('');
@@ -90,6 +92,25 @@ class A64DbGenerator {
     final content = await file.readAsString();
     _json = json.decode(content) as Map<String, dynamic>;
     print('Loaded JSON: ${content.length} bytes');
+  }
+
+  /// Adds the instructions of the upstream table (assets/db/a64_instdb.txt,
+  /// see tool/vendor_a64_instdb.dart) that isa_aarch64.json lacks, so every
+  /// instruction the encoder supports has an id (`fcvtxn`...). The vector
+  /// variants (`add_v`) share the id of their name.
+  void addUpstreamInstructions(String path) {
+    final known = {
+      for (final name in _instructions.keys) ...name.split('|'),
+    };
+    for (final line in File(path).readAsLinesSync()) {
+      if (line.startsWith('#') || line.isEmpty) continue;
+      var name = line.split(';').first.toLowerCase();
+      if (name == 'none') continue;
+      if (name.endsWith('_v')) name = name.substring(0, name.length - 2);
+      if (known.add(name)) {
+        _instructions[name] = InstInfo(_nextId++, name);
+      }
+    }
   }
 
   void analyze() {

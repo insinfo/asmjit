@@ -228,10 +228,11 @@ class CpuInfo {
 
   /// Detects the host CPU features.
   static CpuInfo _detectHost() {
-    // If not x86-64, return baseline
+    // Not x86-64: no x86 feature is available (as upstream, whose x86
+    // feature set stays empty on other hosts).
     if (!_isX86_64()) {
       return CpuInfo._(
-        features: const CpuFeatures.baseline(),
+        features: const CpuFeatures(),
         vendor: 'Unknown',
         brand: 'Unknown',
         logicalProcessors: Platform.numberOfProcessors,
