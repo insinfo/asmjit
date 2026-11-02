@@ -397,4 +397,37 @@ void main() {
       }, skip: skipUnlessJitHost);
     }
   }
+
+  // 256-bit vectors (AVX2): UniCompiler ops work on each 128-bit lane, so the
+  // expected result is the reference of each lane. The lanes get different
+  // data: A = a|b and B = b|a (for swizzlevU8 B = b|b: B holds the indices,
+  // which the reference requires to be in range).
+  final host = hostIsX64 ? CpuInfo.host().features : null;
+  for (final layout in _layouts.entries) {
+    group('UniOpVVV avx2-256 ${layout.key}', () {
+      for (final c in cases) {
+        final name = '${c.op.name} ${_hex(c.a)} ${_hex(c.b)}';
+        test(name, () {
+          final hi = c.op == UniOpVVV.swizzlevU8 ? c.b : c.a;
+          final a = Uint8List.fromList([...c.a, ...c.b]);
+          final b = Uint8List.fromList([...c.b, ...hi]);
+          final r = runUjit(
+              (cc, d, va, vb, vc, m) =>
+                  layout.value(cc, c.op, d, va, vb, vc, m),
+              a,
+              b,
+              b,
+              features: host,
+              width: VecWidth.k256);
+          final expected = [...c.ref(c.a, c.b), ...c.ref(c.b, hi)];
+          if (c.bytes < 16) {
+            expect(_hex(r.sublist(0, c.bytes)),
+                _hex(Uint8List.fromList(expected.sublist(0, c.bytes))));
+          } else {
+            expect(_hex(r), _hex(Uint8List.fromList(expected)));
+          }
+        });
+      }
+    }, skip: host == null || !host.avx2 ? 'needs an AVX2 host' : null);
+  }
 }
