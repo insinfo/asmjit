@@ -2237,6 +2237,17 @@ mixin UniCompilerX86 on UniCompilerBase {
       throw ArgumentError('SIMD operands must be registers');
     }
     switch (op) {
+      case UniOpVVVI.interleaveShuffleU32x4:
+      case UniOpVVVI.interleaveShuffleF32x4:
+      case UniOpVVVI.interleaveShuffleU64x2:
+      case UniOpVVVI.interleaveShuffleF64x2:
+        // SHUFPS/SHUFPD: low half from src1, high half from src2.
+        final ps = op == UniOpVVVI.interleaveShuffleU32x4 ||
+            op == UniOpVVVI.interleaveShuffleF32x4;
+        final r = _copyVecX86(src1);
+        _sseOpImmX86(ps ? X86InstId.kShufps : X86InstId.kShufpd, r, src2, imm);
+        _vMovX86(dst, r);
+        break;
       case UniOpVVVI.alignrU128 when !hasAvx && !hasSsse3:
         // SSE2: dst = (src2 >> imm bytes) | (src1 << (16 - imm) bytes).
         if (imm == 0) {
@@ -2277,8 +2288,48 @@ mixin UniCompilerX86 on UniCompilerBase {
       case UniOpVVVV.blendvU8:
         _vBlendVX86(dst, src1, src2, src3);
         break;
-      default:
-        throw UnimplementedError('_emit4vX86: $op not implemented');
+      case UniOpVVVV.mAddU16:
+      case UniOpVVVV.mAddU32:
+        // dst = a * b + c (no FMA for integers).
+        final r = _tmpVecX86();
+        if (op == UniOpVVVV.mAddU16) {
+          _vMovX86(r, src1);
+          _sseOpX86(X86InstId.kPmullw, r, src2);
+          _sseOpX86(X86InstId.kPaddw, r, src3);
+        } else {
+          _emit3vX86(UniOpVVV.mulU32, r, src1, src2);
+          _sseOpX86(X86InstId.kPaddd, r, src3);
+        }
+        _vMovX86(dst, r);
+        break;
+      case UniOpVVVV.mAddF32:
+      case UniOpVVVV.mAddF64:
+      case UniOpVVVV.mSubF32:
+      case UniOpVVVV.mSubF64:
+      case UniOpVVVV.mAddF32S:
+      case UniOpVVVV.mAddF64S:
+      case UniOpVVVV.mSubF32S:
+      case UniOpVVVV.mSubF64S:
+        // dst = a * b +/- c (separate multiply and add; no FMA encoding yet).
+        final n = op.name;
+        final f64 = n.contains('F64');
+        final scalar = n.endsWith('S');
+        final isSub = n.startsWith('mSub');
+        final mul = scalar
+            ? (f64 ? X86InstId.kMulsd : X86InstId.kMulss)
+            : (f64 ? X86InstId.kMulpd : X86InstId.kMulps);
+        final addSub = scalar
+            ? (f64
+                ? (isSub ? X86InstId.kSubsd : X86InstId.kAddsd)
+                : (isSub ? X86InstId.kSubss : X86InstId.kAddss))
+            : (f64
+                ? (isSub ? X86InstId.kSubpd : X86InstId.kAddpd)
+                : (isSub ? X86InstId.kSubps : X86InstId.kAddps));
+        final r = _copyVecX86(src1);
+        _sseOpX86(mul, r, src2);
+        _sseOpX86(addSub, r, src3);
+        _vMovX86(dst, r);
+        break;
     }
   }
 

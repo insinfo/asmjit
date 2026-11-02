@@ -24,6 +24,11 @@ enum X86SimdKind {
   /// Shift by immediate: `op xmm, imm8` with an opcode extension in ModRM.reg
   /// (legacy: dst is the r/m operand; VEX: `vpsllw dst(vvvv), src(rm), imm8`).
   shiftImm,
+
+  /// VEX-only four operand form with the fourth register in imm8[7:4]
+  /// (`vpblendvb dst, src1, src2/m, mask`). The legacy SSE4.1 form takes the
+  /// mask implicitly in XMM0 and is not encoded through the table.
+  is4,
 }
 
 class X86SimdOp {
@@ -173,6 +178,9 @@ const Map<String, X86SimdOp> kX86SimdOps = {
   'pblendw': X86SimdOp(_66, 3, 0x0E, kind: _rmi),
   'blendps': X86SimdOp(_66, 3, 0x0C, kind: _rmi),
   'blendpd': X86SimdOp(_66, 3, 0x0D, kind: _rmi),
+  'pblendvb': X86SimdOp(_66, 3, 0x4C, kind: X86SimdKind.is4),
+  'blendvps': X86SimdOp(_66, 3, 0x4A, kind: X86SimdKind.is4),
+  'blendvpd': X86SimdOp(_66, 3, 0x4B, kind: X86SimdKind.is4),
   'roundps': X86SimdOp(_66, 3, 0x08, kind: _rm2i),
   'roundpd': X86SimdOp(_66, 3, 0x09, kind: _rm2i),
   'roundss': X86SimdOp(_66, 3, 0x0A, kind: _rmi),

@@ -71,6 +71,9 @@ Map<String, String> _encodeAll() {
         emit('v$n xmm9, xmm2, 5', 'v$n', [x9, x2, 5]);
       case X86SimdKind.shiftImm:
         break;
+      case X86SimdKind.is4:
+        emit('v$n xmm9, xmm10, xmm2, xmm3', 'v$n', [x9, x10, x2, X86Xmm(3)]);
+        emit('v$n ymm9, ymm10, ymm2, ymm11', 'v$n', [y9, y10, y2, X86Ymm(11)]);
     }
   });
   return out;
@@ -532,6 +535,12 @@ const _expected = <String, String>{
   'vblendps xmm9, xmm10, xmm2, 5': 'c463290cca05',
   'blendpd xmm9, xmm2, 5': '66440f3a0dca05',
   'vblendpd xmm9, xmm10, xmm2, 5': 'c463290dca05',
+  'vpblendvb xmm9, xmm10, xmm2, xmm3': 'c463294cca30',
+  'vpblendvb ymm9, ymm10, ymm2, ymm11': 'c4632d4ccab0',
+  'vblendvps xmm9, xmm10, xmm2, xmm3': 'c463294aca30',
+  'vblendvps ymm9, ymm10, ymm2, ymm11': 'c4632d4acab0',
+  'vblendvpd xmm9, xmm10, xmm2, xmm3': 'c463294bca30',
+  'vblendvpd ymm9, ymm10, ymm2, ymm11': 'c4632d4bcab0',
   'roundps xmm9, xmm2, 5': '66440f3a08ca05',
   'vroundps xmm9, xmm2, 5': 'c4637908ca05',
   'roundpd xmm9, xmm2, 5': '66440f3a09ca05',

@@ -671,6 +671,42 @@ void _dispatch(A64Assembler asm, int instId, List<Object> ops) {
     case A64InstId.kFcvt:
       _v2(asm, ops, asm.fcvt);
       break;
+    case A64InstId.kFmla:
+      _v3(asm, ops, asm.fmlaVec);
+      break;
+    case A64InstId.kFmls:
+      _v3(asm, ops, asm.fmlsVec);
+      break;
+    case A64InstId.kMla:
+      _v3(asm, ops, asm.mlaVec);
+      break;
+    case A64InstId.kMls:
+      _v3(asm, ops, asm.mlsVec);
+      break;
+    case A64InstId.kFmadd:
+      if (ops.length == 4 && ops.every((o) => o is A64Vec)) {
+        asm.fmadd(ops[0] as A64Vec, ops[1] as A64Vec, ops[2] as A64Vec,
+            ops[3] as A64Vec);
+      }
+      break;
+    case A64InstId.kFmsub:
+      if (ops.length == 4 && ops.every((o) => o is A64Vec)) {
+        asm.fmsub(ops[0] as A64Vec, ops[1] as A64Vec, ops[2] as A64Vec,
+            ops[3] as A64Vec);
+      }
+      break;
+    case A64InstId.kFnmadd:
+      if (ops.length == 4 && ops.every((o) => o is A64Vec)) {
+        asm.fnmadd(ops[0] as A64Vec, ops[1] as A64Vec, ops[2] as A64Vec,
+            ops[3] as A64Vec);
+      }
+      break;
+    case A64InstId.kFnmsub:
+      if (ops.length == 4 && ops.every((o) => o is A64Vec)) {
+        asm.fnmsub(ops[0] as A64Vec, ops[1] as A64Vec, ops[2] as A64Vec,
+            ops[3] as A64Vec);
+      }
+      break;
     default:
       break;
   }

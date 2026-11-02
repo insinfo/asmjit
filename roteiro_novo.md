@@ -24,9 +24,10 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 | A64 Encoder | ✅ load/store, SIMD three-same/different, permute, narrow corrigidos | goldens LLVM (ldst + SIMD) |
 | Dispatchers x86/A64 | ✅ Escritos à mão, **fail-loud** (instrução sem bytes = erro) | |
 | Bancos de instruções | ✅ Gerados e indexados por id | `inst_db_consistency_test` |
-| **UJIT emit_3v** | ✅ 58 ops validadas em runtime contra referência Dart | SSE2, SSE4.2, AVX2 e AArch64 |
-| UJIT A64 demais grupos | ⚠️ Parcial (2v/vi/3vi/4v, intrínsecas) | ChaCha20 ainda não compila no ARM |
-| UJIT x86 demais grupos | ⚠️ Parcial; ops sem fallback lançam erro em vez de sumir | |
+| **UJIT emit_3v / 2v / 2vi** | ✅ 97 casos validados em runtime contra referência Dart | SSE2, SSE4.2, AVX2 e AArch64 |
+| **Constantes vetoriais (tabela local)** | ✅ Corrigidas (antes eram lidas do próprio código) | `ujit_const_runtime_test` |
+| **ChaCha20 otimizado** | ✅ x64 e AArch64 | `chacha20_verify_test` |
+| UJIT 3vi/4v e grupos de memória com conversão | ⚠️ Parcial | próximo passo |
 | **CI GitHub** | ✅ linux x64/arm64, windows x64, macos arm64/x64 | |
 
 ---
@@ -40,9 +41,9 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - **Bancos de instruções** não eram indexados por id (`kX86InstDb[kMov]` era `bound`), o que afetava a detecção de VEX no RA do Win64.
 
 ### Próximos passos
-1. UJIT A64: grupos 2v/vi (shifts/rotates, swizzle, conversões), 3vi/4v e as intrínsecas restantes — meta: ChaCha20 e o pipeline do Blend2D no ARM.
-2. UJIT x86: demais grupos com o mesmo teste de semântica (2v, vi, vm/mv com conversões).
-3. Estender `ujit_vvv_semantics_test` para os outros grupos de operações.
+1. UJIT 3vi/4v (interleaveShuffle, blendv, madd...) nas duas arquiteturas, validando no teste de semântica.
+2. vm/mv com conversões (loadCvt*, storeCvt*) e loads com inserção.
+3. RoundHalfUp/Rcp no A64 (constantes FP já disponíveis).
 
 ## ✅ Progresso Recente (02/11/2026 - Produção / multiplataforma)
 

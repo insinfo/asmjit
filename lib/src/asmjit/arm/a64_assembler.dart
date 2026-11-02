@@ -770,6 +770,18 @@ class A64Assembler extends BaseEmitter {
   void fcmeqVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.fcmeqVec(rd, rn, rm);
   void fcmgeVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.fcmgeVec(rd, rn, rm);
   void fcmgtVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.fcmgtVec(rd, rn, rm);
+  void fmadd(A64Vec rd, A64Vec rn, A64Vec rm, A64Vec ra) =>
+      _enc.fmadd(rd, rn, rm, ra);
+  void fmsub(A64Vec rd, A64Vec rn, A64Vec rm, A64Vec ra) =>
+      _enc.fmsub(rd, rn, rm, ra);
+  void fnmadd(A64Vec rd, A64Vec rn, A64Vec rm, A64Vec ra) =>
+      _enc.fnmadd(rd, rn, rm, ra);
+  void fnmsub(A64Vec rd, A64Vec rn, A64Vec rm, A64Vec ra) =>
+      _enc.fnmsub(rd, rn, rm, ra);
+  void fmlaVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.fmlaVec(rd, rn, rm);
+  void fmlsVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.fmlsVec(rd, rn, rm);
+  void mlaVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.mlaVec(rd, rn, rm);
+  void mlsVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.mlsVec(rd, rn, rm);
   void sqaddVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.sqaddVec(rd, rn, rm);
   void uqaddVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.uqaddVec(rd, rn, rm);
   void sqsubVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.sqsubVec(rd, rn, rm);

@@ -1575,6 +1575,8 @@ bool _dispatchSimd(X86Assembler asm, int instId, List<Object> ops) {
       case X86SimdKind.shiftImm:
         if (n != 2 || ops[1] is! int) return false;
         asm.simdLegacy(op, op.regExt, dst, imm8: ops[1] as int);
+      case X86SimdKind.is4:
+        return false; // Implicit XMM0 mask: not table-encoded.
     }
     return true;
   }
@@ -1602,6 +1604,15 @@ bool _dispatchSimd(X86Assembler asm, int instId, List<Object> ops) {
     case X86SimdKind.shiftImm:
       if (n != 3 || !_isVecOp(ops[1]) || ops[2] is! int) return false;
       asm.simdVex(op, op.regExt, dst.id, ops[1], l: l, imm8: ops[2] as int);
+    case X86SimdKind.is4:
+      if (n != 4 ||
+          !_isVecOp(ops[1]) ||
+          !_isVecOrMem(ops[2]) ||
+          !_isVecOp(ops[3])) {
+        return false;
+      }
+      asm.simdVex(op, dst.id, (ops[1] as BaseReg).id, ops[2],
+          l: l, imm8: (ops[3] as BaseReg).id << 4);
   }
   return true;
 }

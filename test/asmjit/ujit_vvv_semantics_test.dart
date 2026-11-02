@@ -29,9 +29,20 @@ Uint8List _run(UniOpVVV op, Uint8List a, Uint8List b,
 
 /// JIT-compiles `emit(cc, dst, a, b)` on 128-bit vectors and runs it.
 Uint8List _runEmit(
-    void Function(UniCompiler cc, BaseReg d, BaseReg a, BaseReg b) emit,
+        void Function(UniCompiler cc, BaseReg d, BaseReg a, BaseReg b) emit,
+        Uint8List a,
+        Uint8List b,
+        {CpuFeatures? features}) =>
+    _runEmit3((cc, d, x, y, z) => emit(cc, d, x, y), a, b, Uint8List(16),
+        features: features);
+
+/// Like [_runEmit] with a third input vector `c`.
+Uint8List _runEmit3(
+    void Function(UniCompiler cc, BaseReg d, BaseReg a, BaseReg b, BaseReg c)
+        emit,
     Uint8List a,
     Uint8List b,
+    Uint8List c,
     {CpuFeatures? features}) {
   final rt = JitRuntime();
   try {
@@ -51,11 +62,13 @@ Uint8List _runEmit(
     cc.setArg(0, p);
     final va = cc.newVec('a');
     final vb = cc.newVec('b');
+    final vc = cc.newVec('c');
     final vd = cc.newVec('d');
     cc.emitVM(UniOpVM.load128U32, va, mem(p, 0));
     cc.emitVM(UniOpVM.load128U32, vb, mem(p, 16));
-    emit(cc, vd, va, vb);
-    cc.emitMV(UniOpMV.store128U32, mem(p, 32), vd);
+    cc.emitVM(UniOpVM.load128U32, vc, mem(p, 32));
+    emit(cc, vd, va, vb, vc);
+    cc.emitMV(UniOpMV.store128U32, mem(p, 48), vd);
     cc.ret();
     cc.endFunc();
     archCc.finalize();
@@ -63,13 +76,14 @@ Uint8List _runEmit(
         .serializeToAssembler(isA64 ? A64Assembler(code) : X86Assembler(code));
 
     final fn = rt.add(code);
-    final buf = pkgffi.calloc<Uint8>(48);
+    final buf = pkgffi.calloc<Uint8>(64);
     try {
-      buf.asTypedList(48)
+      buf.asTypedList(64)
         ..setAll(0, a)
-        ..setAll(16, b);
+        ..setAll(16, b)
+        ..setAll(32, c);
       fn.pointer.cast<NativeFunction<_FnNative>>().asFunction<_FnDart>()(buf);
-      return Uint8List.fromList(buf.asTypedList(48).sublist(32, 48));
+      return Uint8List.fromList(buf.asTypedList(64).sublist(48, 64));
     } finally {
       pkgffi.calloc.free(buf);
     }
@@ -142,6 +156,10 @@ int _mask(bool c, int bytes) =>
     c ? (bytes == 8 ? -1 : (1 << (bytes * 8)) - 1) : 0;
 
 Uint8List _bytes(List<int> v) => Uint8List.fromList(v);
+
+extension<T> on T {
+  R let<R>(R Function(T) f) => f(this);
+}
 
 /// x86 lowering variants: SSE2 baseline (no features) and the host CPU.
 final _featureSets = <String, CpuFeatures?>{
@@ -511,6 +529,111 @@ void main() {
     ),
   };
 
+  Uint8List w32(Uint8List v, int i) => v.sublist(i * 4, i * 4 + 4);
+  Uint8List w64(Uint8List v, int i) => v.sublist(i * 8, i * 8 + 8);
+  final fa4 = Float32List.fromList([1.5, -2.0, 4.0, 0.5]).buffer.asUint8List();
+  final fb4 = Float32List.fromList([2.0, 3.0, -0.25, 8.0]).buffer.asUint8List();
+  final fc4 = Float32List.fromList([0.5, 1.0, 2.0, -3.0]).buffer.asUint8List();
+  final da2 = Float64List.fromList([1.5, -2.0]).buffer.asUint8List();
+  final db2 = Float64List.fromList([4.0, 0.25]).buffer.asUint8List();
+  final dc2 = Float64List.fromList([-1.0, 3.0]).buffer.asUint8List();
+  final mask = _bytes([for (int i = 0; i < 16; i++) i % 3 == 0 ? 0xFF : 0x00]);
+  List<double> f4(Uint8List b) =>
+      Float32List.view(b.buffer, b.offsetInBytes, 4);
+  List<double> f2(Uint8List b) =>
+      Float64List.view(b.buffer, b.offsetInBytes, 2);
+
+  // emit3vi / emit4v cases: (emit, a, b, c, reference).
+  final vvvCases = <String,
+      (
+    void Function(UniCompiler, BaseReg, BaseReg, BaseReg, BaseReg),
+    Uint8List,
+    Uint8List,
+    Uint8List,
+    Uint8List Function(Uint8List, Uint8List, Uint8List)
+  )>{
+    'interleaveShuffleU32x4 [1,3 | 0,2]': (
+      (cc, d, a, b, c) => cc.emit3vi(UniOpVVVI.interleaveShuffleU32x4, d, a, b,
+          1 | (3 << 2) | (0 << 4) | (2 << 6)),
+      ia,
+      ib,
+      ia,
+      (a, b, c) =>
+          _bytes([...w32(a, 1), ...w32(a, 3), ...w32(b, 0), ...w32(b, 2)])
+    ),
+    'interleaveShuffleF32x4 [0,0 | 3,1]': (
+      (cc, d, a, b, c) => cc.emit3vi(UniOpVVVI.interleaveShuffleF32x4, d, a, b,
+          0 | (0 << 2) | (3 << 4) | (1 << 6)),
+      ia,
+      ib,
+      ia,
+      (a, b, c) =>
+          _bytes([...w32(a, 0), ...w32(a, 0), ...w32(b, 3), ...w32(b, 1)])
+    ),
+    'interleaveShuffleU64x2 [1 | 0]': (
+      (cc, d, a, b, c) =>
+          cc.emit3vi(UniOpVVVI.interleaveShuffleU64x2, d, a, b, 1),
+      ia,
+      ib,
+      ia,
+      (a, b, c) => _bytes([...w64(a, 1), ...w64(b, 0)])
+    ),
+    'blendvU8 (mask ? b : a)': (
+      (cc, d, a, b, c) => cc.emit4v(UniOpVVVV.blendvU8, d, a, b, c),
+      ia,
+      ib,
+      mask,
+      (a, b, m) =>
+          _bytes([for (int i = 0; i < 16; i++) m[i] != 0 ? b[i] : a[i]])
+    ),
+    'mAddU16 (a * b + c)': (
+      (cc, d, a, b, c) => cc.emit4v(UniOpVVVV.mAddU16, d, a, b, c),
+      ia,
+      ib,
+      ia,
+      (a, b, c) => _lanes(2, false, (x, y) => x * y)(a, b)
+          .let((ab) => _lanes(2, false, (x, y) => x + y)(ab, c))
+    ),
+    'mAddU32 (a * b + c)': (
+      (cc, d, a, b, c) => cc.emit4v(UniOpVVVV.mAddU32, d, a, b, c),
+      ia,
+      ib,
+      ib,
+      (a, b, c) => _lanes(4, false, (x, y) => x * y)(a, b)
+          .let((ab) => _lanes(4, false, (x, y) => x + y)(ab, c))
+    ),
+    'mAddF32 (a * b + c)': (
+      (cc, d, a, b, c) => cc.emit4v(UniOpVVVV.mAddF32, d, a, b, c),
+      fa4,
+      fb4,
+      fc4,
+      (a, b, c) => Float32List.fromList(
+              [for (int i = 0; i < 4; i++) f4(a)[i] * f4(b)[i] + f4(c)[i]])
+          .buffer
+          .asUint8List()
+    ),
+    'mSubF32 (a * b - c)': (
+      (cc, d, a, b, c) => cc.emit4v(UniOpVVVV.mSubF32, d, a, b, c),
+      fa4,
+      fb4,
+      fc4,
+      (a, b, c) => Float32List.fromList(
+              [for (int i = 0; i < 4; i++) f4(a)[i] * f4(b)[i] - f4(c)[i]])
+          .buffer
+          .asUint8List()
+    ),
+    'mAddF64 (a * b + c)': (
+      (cc, d, a, b, c) => cc.emit4v(UniOpVVVV.mAddF64, d, a, b, c),
+      da2,
+      db2,
+      dc2,
+      (a, b, c) => Float64List.fromList(
+              [for (int i = 0; i < 2; i++) f2(a)[i] * f2(b)[i] + f2(c)[i]])
+          .buffer
+          .asUint8List()
+    ),
+  };
+
   for (final fs in _featureSets.entries) {
     group('UniOpVVV semantics (${fs.key})', () {
       final f = fs.value;
@@ -546,6 +669,12 @@ void main() {
           final r = _runEmit((cc, d, x, y) => cc.emit2v(c.$1, d, x), c.$2, c.$2,
               features: f);
           expect(r.sublist(0, c.$4), c.$3(c.$2).sublist(0, c.$4));
+        });
+      });
+      vvvCases.forEach((name, c) {
+        test(name, () {
+          expect(_runEmit3(c.$1, c.$2, c.$3, c.$4, features: f),
+              c.$5(c.$2, c.$3, c.$4));
         });
       });
       test('same source register shortcuts', () {

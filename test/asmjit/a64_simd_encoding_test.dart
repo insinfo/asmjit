@@ -424,6 +424,36 @@ void main() {
       (a) => a.dupGp(vv(1, A64Layout.s2, 64), A64Gp(5, 32)),
       0x0E040CA1
     ),
+    'fmla v1.4s, v2.4s, v3.4s': (
+      (a) => a.fmlaVec(
+          vv(1, A64Layout.s4), vv(2, A64Layout.s4), vv(3, A64Layout.s4)),
+      0x4E23CC41
+    ),
+    'fmla v1.2d, v2.2d, v3.2d': (
+      (a) => a.fmlaVec(
+          vv(1, A64Layout.d2), vv(2, A64Layout.d2), vv(3, A64Layout.d2)),
+      0x4E63CC41
+    ),
+    'fmls v1.4s, v2.4s, v3.4s': (
+      (a) => a.fmlsVec(
+          vv(1, A64Layout.s4), vv(2, A64Layout.s4), vv(3, A64Layout.s4)),
+      0x4EA3CC41
+    ),
+    'mla v1.8h, v2.8h, v3.8h': (
+      (a) => a.mlaVec(
+          vv(1, A64Layout.h8), vv(2, A64Layout.h8), vv(3, A64Layout.h8)),
+      0x4E639441
+    ),
+    'mla v1.4s, v2.4s, v3.4s': (
+      (a) => a.mlaVec(
+          vv(1, A64Layout.s4), vv(2, A64Layout.s4), vv(3, A64Layout.s4)),
+      0x4EA39441
+    ),
+    'mls v1.16b, v2.16b, v3.16b': (
+      (a) => a.mlsVec(
+          vv(1, A64Layout.b16), vv(2, A64Layout.b16), vv(3, A64Layout.b16)),
+      0x6E239441
+    ),
   };
 
   group('A64 Advanced SIMD encoding', () {

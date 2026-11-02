@@ -346,14 +346,6 @@ mixin UniCompilerA64 on UniCompilerBase {
     }
   }
 
-  // Helper for FMLA (Fused Multiply Add)
-  void _vFmlaA64(BaseReg dst, BaseReg src1, BaseReg src2, A64Layout layout) {
-    final d = _toA64Vec(dst, layout);
-    final s1 = _toA64Vec(src1, layout);
-    final s2 = _toA64Vec(src2, layout);
-    cc.addNode(InstNode(A64InstId.kFmla, [d, s1, s2]));
-  }
-
   // TBL (Table Lookup for Shuffle)
   // ZIP1/ZIP2 (Interleave)
   // SQXTN (Signed Saturating Narrow) - for Packing
@@ -924,24 +916,61 @@ mixin UniCompilerA64 on UniCompilerBase {
     _vOrA64(d, d, tmp);
   }
 
+  /// Port of `UniCompiler::emit_4v()` (unicompiler_a64.cpp).
   void _emit4vA64(
-      UniOpVVVV op, Operand dst, Operand src1, Operand src2, Operand src3) {
-    final d = dst as BaseReg;
-    final s1 = src1 as BaseReg;
-    final s2 = src2 as BaseReg;
-    final s3 = src3 as BaseReg;
+      UniOpVVVV op, Operand dst_, Operand src1_, Operand src2_, Operand src3_) {
+    final dst = dst_ as BaseReg;
+    final s1 = _asVecA64(src1_, dst, kFmNone);
+    final s2 = _asVecA64(src2_, dst, kFmNone);
+    final s3 = _asVecA64(src3_, dst, kFmNone);
 
     switch (op) {
+      case UniOpVVVV.blendvU8:
+        _blendvU8A64(dst, s1, s2, s3);
+        return;
+
+      case UniOpVVVV.mAddF32S:
+      case UniOpVVVV.mAddF64S:
+      case UniOpVVVV.mSubF32S:
+      case UniOpVVVV.mSubF64S:
+        final bits = op.name.contains('F32') ? 32 : 64;
+        final isSub = op.name.startsWith('mSub');
+        cc.addNode(InstNode(isSub ? A64InstId.kFnmsub : A64InstId.kFmadd, [
+          A64Vec(dst.id, bits),
+          A64Vec(s1.id, bits),
+          A64Vec(s2.id, bits),
+          A64Vec(s3.id, bits)
+        ]));
+        return;
+
+      case UniOpVVVV.mAddU16:
+      case UniOpVVVV.mAddU32:
       case UniOpVVVV.mAddF32:
-        if (d.id != s3.id) _vMovA64(d, s3);
-        _vFmlaA64(d, s1, s2, A64Layout.s4);
-        return;
       case UniOpVVVV.mAddF64:
-        if (d.id != s3.id) _vMovA64(d, s3);
-        _vFmlaA64(d, s1, s2, A64Layout.d2);
+      case UniOpVVVV.mSubF32:
+      case UniOpVVVV.mSubF64:
+        final (int el, bool fp) = switch (op) {
+          UniOpVVVV.mAddU16 => (1, false),
+          UniOpVVVV.mAddU32 => (2, false),
+          UniOpVVVV.mAddF32 || UniOpVVVV.mSubF32 => (2, true),
+          _ => (3, true),
+        };
+        final isSub = op == UniOpVVVV.mSubF32 || op == UniOpVVVV.mSubF64;
+        // The accumulator must not alias a multiplicand.
+        final acc = (dst.id == s1.id || dst.id == s2.id)
+            ? newVecWithWidth(VecWidth.k128, '@acc')
+            : dst;
+        if (isSub) {
+          // a * b - c = (-c) + a * b
+          cc.addNode(
+              InstNode(A64InstId.kFneg, [_vArr(acc, el), _vArr(s3, el)]));
+        } else if (acc.id != s3.id) {
+          _vMovA64(acc, s3);
+        }
+        cc.addNode(InstNode(fp ? A64InstId.kFmla : A64InstId.kMla,
+            [_vArr(acc, el), _vArr(s1, el), _vArr(s2, el)]));
+        if (acc.id != dst.id) _vMovA64(dst, acc);
         return;
-      default:
-        throw UnimplementedError('_emit4vA64: $op');
     }
   }
 

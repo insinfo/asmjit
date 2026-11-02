@@ -1653,6 +1653,48 @@ class A64Encoder {
   void fcmgtVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
       _vec3SameFp(1, 1, 0x1C, rd, rn, rm);
 
+  /// FP data-processing (3 source), scalar:
+  /// `0|0|0|11111|type|o1|Rm|o0|Ra|Rn|Rd`.
+  void _fp3Src(int o1, int o0, A64Vec rd, A64Vec rn, A64Vec rm, A64Vec ra) {
+    final type = rd.sizeBits == 64 ? 1 : 0;
+    emit32(0x1F000000 |
+        (type << 22) |
+        (o1 << 21) |
+        (_encVec(rm) << 16) |
+        (o0 << 15) |
+        (_encVec(ra) << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd));
+  }
+
+  /// FMADD: rd = ra + rn * rm.
+  void fmadd(A64Vec rd, A64Vec rn, A64Vec rm, A64Vec ra) =>
+      _fp3Src(0, 0, rd, rn, rm, ra);
+
+  /// FMSUB: rd = ra - rn * rm.
+  void fmsub(A64Vec rd, A64Vec rn, A64Vec rm, A64Vec ra) =>
+      _fp3Src(0, 1, rd, rn, rm, ra);
+
+  /// FNMADD: rd = -ra - rn * rm.
+  void fnmadd(A64Vec rd, A64Vec rn, A64Vec rm, A64Vec ra) =>
+      _fp3Src(1, 0, rd, rn, rm, ra);
+
+  /// FNMSUB: rd = rn * rm - ra.
+  void fnmsub(A64Vec rd, A64Vec rn, A64Vec rm, A64Vec ra) =>
+      _fp3Src(1, 1, rd, rn, rm, ra);
+
+  /// FMLA / FMLS (vector): rd += / -= rn * rm (fused).
+  void fmlaVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameFp(0, 0, 0x19, rd, rn, rm);
+  void fmlsVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameFp(0, 1, 0x19, rd, rn, rm);
+
+  /// MLA / MLS (vector, integer): rd += / -= rn * rm.
+  void mlaVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameInt(0x0E, 0x12, rd, rn, rm);
+  void mlsVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameInt(0x2E, 0x12, rd, rn, rm);
+
   // Integer three-same: base 0x0E (U=0) / 0x2E (U=1), 5-bit opcode.
   void sqaddVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
       _vec3SameInt(0x0E, 0x01, rd, rn, rm);
