@@ -392,6 +392,7 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
 
   /// Creates a vector register with the current SIMD width.
   BaseReg newVec([String? name]) {
+    if (isArm64) return newVecWithWidth(_vecWidth, name);
     switch (_vecWidth) {
       case VecWidth.k128:
         return newXmm(name);
@@ -983,7 +984,7 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
 
   /// Emit unconditional jump.
   void emitJ(Operand target) {
-    cc.addNode(InstNode(X86InstId.kJmp, [target]));
+    cc.addNode(InstNode(isArm64 ? A64InstId.kB : X86InstId.kJmp, [target]));
   }
 
   /// Emit conditional jump based on UniCondition.

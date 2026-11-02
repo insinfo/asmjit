@@ -6,6 +6,8 @@ import '../core/environment.dart';
 import 'a64_inst_db.g.dart';
 import 'a64.dart';
 import '../core/reg_type.dart';
+import '../core/type.dart';
+import '../core/reg_utils.dart';
 import '../core/builder.dart' as ir;
 import 'a64_serializer.dart';
 import 'a64_rapass.dart';
@@ -22,6 +24,7 @@ class A64InstructionAnalyzer extends InstructionAnalyzer {
   bool isJump(ir.InstNode node) {
     final id = node.instId;
     return id == A64InstId.kB ||
+        id == A64InstId.kB_cond ||
         id == A64InstId.kBl ||
         id == A64InstId.kBr ||
         id == A64InstId.kBlr ||
@@ -116,15 +119,18 @@ class A64Compiler extends BaseCompiler {
 
   A64Compiler({Environment? env, LabelManager? labelManager})
       : super(env: env, labelManager: labelManager) {
-    // addPass(CFGBuilder(this, A64InstructionAnalyzer()));
+    addPass(CFGBuilder(this, A64InstructionAnalyzer()));
     addPass(RAPass(this));
   }
 
   A64Gp newGp(RegType type, [String? name]) {
-    final id = newVirtId();
-    if (type == RegType.gp32) return A64Gp(id, 32);
-    if (type == RegType.gp64) return A64Gp(id, 64);
-    return A64Gp(id, 64);
+    final is32 = type == RegType.gp32;
+    final vreg = newVirtReg(
+        is32 ? TypeId.int32 : TypeId.int64,
+        OperandSignature.fromRegTypeAndGroup(
+            is32 ? RegType.gp32 : RegType.gp64, RegGroup.gp),
+        name);
+    return A64Gp(vreg.id, is32 ? 32 : 64);
   }
 
   A64Gp newGp32([String? name]) => newGp(RegType.gp32, name);
@@ -133,14 +139,22 @@ class A64Compiler extends BaseCompiler {
   // AArch64 usually uses 64-bit pointers
   A64Gp newGpPtr([String? name]) => newGp(RegType.gp64, name);
 
-  A64Vec newVec(int size, [String? name]) => A64Vec(newVirtId(), size);
+  /// New virtual SIMD&FP register. The allocator always treats it as a full
+  /// 128-bit register; [size] only selects the default view.
+  A64Vec newVec(int size, [String? name]) {
+    final vreg = newVirtReg(
+        TypeId.int8x16,
+        OperandSignature.fromRegTypeAndGroup(RegType.vec128, RegGroup.vec),
+        name);
+    return A64Vec(vreg.id, size);
+  }
 
   // Aliases for typed vectors
-  A64Vec newVecB([String? name]) => A64Vec(newVirtId(), 8);
-  A64Vec newVecH([String? name]) => A64Vec(newVirtId(), 16);
-  A64Vec newVecS([String? name]) => A64Vec(newVirtId(), 32);
-  A64Vec newVecD([String? name]) => A64Vec(newVirtId(), 64);
-  A64Vec newVecQ([String? name]) => A64Vec(newVirtId(), 128);
+  A64Vec newVecB([String? name]) => newVec(8, name);
+  A64Vec newVecH([String? name]) => newVec(16, name);
+  A64Vec newVecS([String? name]) => newVec(32, name);
+  A64Vec newVecD([String? name]) => newVec(64, name);
+  A64Vec newVecQ([String? name]) => newVec(128, name);
 
   void mov(Operand dst, Operand src) => inst(A64InstId.kMov, [dst, src]);
   void ldr(Operand rt, Operand rn, [Operand? offset]) =>

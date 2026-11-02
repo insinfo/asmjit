@@ -85,6 +85,9 @@ abstract class RAArch {
   /// Exchanges two physical registers of the same group.
   List<InstNode> swap(BaseReg a, BaseReg b);
 
+  /// Bytes reserved when spilling the virtual register [reg].
+  int spillSize(BaseReg reg) => reg.size;
+
   /// Memory operand of a spill slot that starts [offset] bytes into the
   /// spill area and is [size] bytes long.
   BaseMem spillSlot(BaseCompiler cc, int offset, int size);

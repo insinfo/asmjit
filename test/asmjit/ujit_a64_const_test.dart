@@ -19,7 +19,7 @@ void main() {
 
       // Load from SP
       final mem = A64Mem.base(a64.sp);
-      cc.emitRM(UniOpRM.loadU32, v0, mem);
+      cc.emitVM(UniOpVM.load32U32, v0, mem);
 
       cc.endFunc();
 

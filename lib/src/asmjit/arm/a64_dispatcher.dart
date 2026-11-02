@@ -57,6 +57,9 @@ void _dispatch(A64Assembler asm, int instId, List<Object> ops) {
     case A64InstId.kB:
       _b(asm, ops);
       break;
+    case A64InstId.kB_cond:
+      _bCond(asm, ops);
+      break;
     case A64InstId.kBfc:
       if (ops.length == 3 && ops[0] is A64Gp && ops[1] is int && ops[2] is int)
         asm.bfc(ops[0] as A64Gp, ops[1] as int, ops[2] as int);
@@ -208,7 +211,7 @@ void _dispatch(A64Assembler asm, int instId, List<Object> ops) {
       _vec2(asm, ops, (rd, rn) => asm.fabs(rd, rn));
       break;
     case A64InstId.kFadd:
-      _vec3(asm, ops, (rd, rn, rm) => asm.fadd(rd, rn, rm));
+      _fp3(asm, ops, asm.fadd, asm.faddVec);
       break;
     case A64InstId.kFaddp:
       _vec3(asm, ops, (rd, rn, rm) => asm.faddp(rd, rn, rm));
@@ -220,22 +223,22 @@ void _dispatch(A64Assembler asm, int instId, List<Object> ops) {
       _fcsel(asm, ops);
       break;
     case A64InstId.kFdiv:
-      _vec3(asm, ops, (rd, rn, rm) => asm.fdiv(rd, rn, rm));
+      _fp3(asm, ops, asm.fdiv, asm.fdivVec);
       break;
     case A64InstId.kFmax:
-      _vec3(asm, ops, (rd, rn, rm) => asm.fmaxVec(rd, rn, rm));
+      _fp3(asm, ops, null, asm.fmaxVec);
       break;
     case A64InstId.kFmaxnm:
-      _vec3(asm, ops, (rd, rn, rm) => asm.fmaxnmVec(rd, rn, rm));
+      _fp3(asm, ops, null, asm.fmaxnmVec);
       break;
     case A64InstId.kFmin:
-      _vec3(asm, ops, (rd, rn, rm) => asm.fminVec(rd, rn, rm));
+      _fp3(asm, ops, null, asm.fminVec);
       break;
     case A64InstId.kFminnm:
-      _vec3(asm, ops, (rd, rn, rm) => asm.fminnmVec(rd, rn, rm));
+      _fp3(asm, ops, null, asm.fminnmVec);
       break;
     case A64InstId.kFmul:
-      _vec3(asm, ops, (rd, rn, rm) => asm.fmul(rd, rn, rm));
+      _fp3(asm, ops, asm.fmul, asm.fmulVec);
       break;
     case A64InstId.kFneg:
       _vec2(asm, ops, (rd, rn) => asm.fneg(rd, rn));
@@ -244,7 +247,7 @@ void _dispatch(A64Assembler asm, int instId, List<Object> ops) {
       _vec2(asm, ops, (rd, rn) => asm.fsqrt(rd, rn));
       break;
     case A64InstId.kFsub:
-      _vec3(asm, ops, (rd, rn, rm) => asm.fsub(rd, rn, rm));
+      _fp3(asm, ops, asm.fsub, asm.fsubVec);
       break;
     case A64InstId.kIsb:
       if (ops.length == 1 && ops[0] is int) asm.isb(ops[0] as int);
@@ -624,6 +627,50 @@ void _b(A64Assembler asm, List<Object> ops) {
   }
 }
 
+/// Whether [v] carries a vector arrangement (`.4S`, `.2D`, ...) rather than
+/// being a scalar view (`s0`, `d0`).
+bool _hasArrangement(A64Vec v) => v.layout != A64Layout.none;
+
+/// Whether the arrangement uses the full 128-bit register (Q=1).
+bool _isWideArrangement(A64Vec v) =>
+    v.layout == A64Layout.b16 ||
+    v.layout == A64Layout.h8 ||
+    v.layout == A64Layout.s4 ||
+    v.layout == A64Layout.d2;
+
+/// FP three-operand op: vector form when the destination has an arrangement,
+/// scalar form otherwise.
+void _fp3(
+    A64Assembler asm,
+    List<Object> ops,
+    void Function(A64Vec, A64Vec, A64Vec)? scalar,
+    void Function(A64Vec, A64Vec, A64Vec, {bool wide}) vector) {
+  if (ops.length != 3 ||
+      ops[0] is! A64Vec ||
+      ops[1] is! A64Vec ||
+      ops[2] is! A64Vec) {
+    return;
+  }
+  final rd = ops[0] as A64Vec, rn = ops[1] as A64Vec, rm = ops[2] as A64Vec;
+  if (_hasArrangement(rd)) {
+    vector(rd, rn, rm, wide: _isWideArrangement(rd));
+  } else if (scalar != null) {
+    scalar(rd, rn, rm);
+  }
+}
+
+/// B.cond: operands are `[label, cond]` (cond as [A64Cond] or its encoding).
+void _bCond(A64Assembler asm, List<Object> ops) {
+  if (ops.length != 2 || ops[0] is! Label) return;
+  final c = ops[1];
+  final cond = c is A64Cond
+      ? c
+      : c is int
+          ? A64Cond.values.firstWhere((e) => e.encoding == c)
+          : null;
+  if (cond != null) asm.bCond(cond, ops[0] as Label);
+}
+
 void _bl(A64Assembler asm, List<Object> ops) {
   if (ops.length == 1 && ops[0] is Label) {
     asm.bl(ops[0] as Label);
@@ -691,6 +738,18 @@ void _str(A64Assembler asm, List<Object> ops) {
   }
 }
 
+/// Offset of a `[base, #offset]` operand if it fits the scaled unsigned
+/// 12-bit form for an access of [bytes] bytes, otherwise null.
+int? _scaledOffset(A64Mem mem, int bytes) {
+  if (mem.base == null ||
+      mem.index != null ||
+      mem.addrMode != A64AddrMode.offset) {
+    return null;
+  }
+  final off = mem.displacement;
+  return (off >= 0 && off % bytes == 0 && off ~/ bytes <= 0xFFF) ? off : null;
+}
+
 /// LDR/STR of a GP or SIMD&FP register through a `[base, #offset]` operand.
 /// Uses the scaled unsigned-offset form when possible, otherwise LDUR/STUR.
 void _ldStMem(A64Assembler asm, Object reg, A64Mem mem, {required bool load}) {
@@ -721,42 +780,77 @@ void _ldStMem(A64Assembler asm, Object reg, A64Mem mem, {required bool load}) {
 void _ldrb(A64Assembler asm, List<Object> ops) {
   if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int) {
     asm.ldrb(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int);
+  } else if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Mem) {
+    final off = _scaledOffset(ops[1] as A64Mem, 1);
+    if (off != null) {
+      asm.ldrb(ops[0] as A64Gp, (ops[1] as A64Mem).base!, off);
+    }
   }
 }
 
 void _ldrh(A64Assembler asm, List<Object> ops) {
   if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int) {
     asm.ldrh(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int);
+  } else if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Mem) {
+    final off = _scaledOffset(ops[1] as A64Mem, 2);
+    if (off != null) {
+      asm.ldrh(ops[0] as A64Gp, (ops[1] as A64Mem).base!, off);
+    }
   }
 }
 
 void _ldrsb(A64Assembler asm, List<Object> ops) {
   if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int) {
     asm.ldrsb(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int);
+  } else if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Mem) {
+    final off = _scaledOffset(ops[1] as A64Mem, 1);
+    if (off != null) {
+      asm.ldrsb(ops[0] as A64Gp, (ops[1] as A64Mem).base!, off);
+    }
   }
 }
 
 void _ldrsh(A64Assembler asm, List<Object> ops) {
   if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int) {
     asm.ldrsh(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int);
+  } else if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Mem) {
+    final off = _scaledOffset(ops[1] as A64Mem, 2);
+    if (off != null) {
+      asm.ldrsh(ops[0] as A64Gp, (ops[1] as A64Mem).base!, off);
+    }
   }
 }
 
 void _ldrsw(A64Assembler asm, List<Object> ops) {
   if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int) {
     asm.ldrsw(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int);
+  } else if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Mem) {
+    final off = _scaledOffset(ops[1] as A64Mem, 4);
+    if (off != null) {
+      asm.ldrsw(ops[0] as A64Gp, (ops[1] as A64Mem).base!, off);
+    }
   }
 }
 
 void _strb(A64Assembler asm, List<Object> ops) {
   if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int) {
     asm.strb(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int);
+  } else if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Mem) {
+    final off = _scaledOffset(ops[1] as A64Mem, 1);
+    if (off != null) {
+      asm.strb(ops[0] as A64Gp, (ops[1] as A64Mem).base!, off);
+    }
   }
 }
 
 void _strh(A64Assembler asm, List<Object> ops) {
   if (ops.length == 3 && ops[0] is A64Gp && ops[1] is A64Gp && ops[2] is int) {
     asm.strh(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int);
+  } else if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Mem) {
+    final off = _scaledOffset(ops[1] as A64Mem, 2);
+    if (off != null) {
+      asm.strh(ops[0] as A64Gp, (ops[1] as A64Mem).base!, off);
+    }
   }
 }
 

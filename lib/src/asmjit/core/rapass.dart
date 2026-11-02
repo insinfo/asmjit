@@ -1460,7 +1460,7 @@ class RAPass extends CompilerPass {
     // Stack allocation using FuncFrame logic
     if (workReg.stackOffset == 0 &&
         !workReg.hasFlag(RAWorkRegFlags.kStackUsed)) {
-      final size = workReg.virtReg.size;
+      final size = _arch.spillSize(workReg.virtReg);
       final frame = _func!.frame;
 
       // Simple stack bump allocation with alignment
@@ -1485,7 +1485,8 @@ class RAPass extends CompilerPass {
       workReg.addFlags(RAWorkRegFlags.kStackUsed);
     }
 
-    return _arch.spillSlot(compiler, workReg.stackOffset, workReg.virtReg.size);
+    return _arch.spillSlot(
+        compiler, workReg.stackOffset, _arch.spillSize(workReg.virtReg));
   }
 
   int _spillStackSize = 0;

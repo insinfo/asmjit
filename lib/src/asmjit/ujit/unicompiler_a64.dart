@@ -46,142 +46,177 @@ mixin UniCompilerA64 on UniCompilerBase {
     }
   }
 
+  /// Vector view of [reg] with exactly [bits] bits (keeps the register id).
+  A64Vec _vecView(BaseReg reg, int bits) => A64Vec(reg.id, bits);
+
+  /// Memory access size in bits of plain vector loads (`vec_load_mem`).
+  static int? _vmLoadBits(UniOpVM op) {
+    switch (op) {
+      case UniOpVM.load8:
+        return 8;
+      case UniOpVM.load16U16:
+        return 16;
+      case UniOpVM.load32U32:
+      case UniOpVM.load32F32:
+        return 32;
+      case UniOpVM.load64U32:
+      case UniOpVM.load64U64:
+      case UniOpVM.load64F32:
+      case UniOpVM.load64F64:
+        return 64;
+      case UniOpVM.load128U32:
+      case UniOpVM.load128U64:
+      case UniOpVM.load128F32:
+      case UniOpVM.load128F64:
+      case UniOpVM.loadNU32:
+      case UniOpVM.loadNU64:
+      case UniOpVM.loadNF32:
+      case UniOpVM.loadNF64:
+        return 128;
+      default:
+        return null;
+    }
+  }
+
   void _emitVMA64(
       UniOpVM op, BaseReg dst, A64Mem src, Alignment alignment, int idx) {
-    if (dst.isVec) {
-      // Map UniOpVM to A64 Load instructions
-      switch (op) {
-        // Standard Loads (128-bit usually for A64Vec)
-        case UniOpVM.load128U32:
-        case UniOpVM.load128U64:
-        case UniOpVM.load128F32:
-        case UniOpVM.load128F64:
-          cc.addNode(InstNode(A64InstId.kLdr, [dst, src]));
-          return;
+    if (!dst.isVec) {
+      throw ArgumentError('_emitVMA64 expects a vector destination: $dst');
+    }
 
-        // Broadcast Loads
-        case UniOpVM.loadDup16:
-          if (dst is A64Vec) {
-            cc.addNode(InstNode(A64InstId.kLd1r, [dst.h8, src]));
-          } else {
-            final v = _toA64Vec(dst, A64Layout.h8);
-            cc.addNode(InstNode(A64InstId.kLd1r, [v, src]));
-          }
-          return;
-        case UniOpVM.loadDup32:
-          if (dst is A64Vec) {
-            cc.addNode(InstNode(A64InstId.kLd1r, [dst.s4, src]));
-          } else {
-            final v = _toA64Vec(dst, A64Layout.s4);
-            cc.addNode(InstNode(A64InstId.kLd1r, [v, src]));
-          }
-          return;
-        case UniOpVM.loadDup64:
-          if (dst is A64Vec) {
-            cc.addNode(InstNode(A64InstId.kLd1r, [dst.d2, src]));
-          } else {
-            final v = _toA64Vec(dst, A64Layout.d2);
-            cc.addNode(InstNode(A64InstId.kLd1r, [v, src]));
-          }
-          return;
-
-        // Unaligned/Packed Loads - mapped to standard loads
-        // A64 handles unaligned loads by default
-
-        default:
-          if (op.toString().contains('load')) {
-            cc.addNode(InstNode(A64InstId.kLdr, [dst, src]));
-            return;
-          }
-      }
-    } else if (dst is A64Gp) {
-      cc.addNode(InstNode(A64InstId.kLdr, [dst, src]));
+    // Plain loads read exactly the access size (narrow loads zero the rest),
+    // mirroring `vec_load_mem()` in unicompiler_a64.cpp.
+    final bits = _vmLoadBits(op);
+    if (bits != null) {
+      cc.addNode(InstNode(A64InstId.kLdr, [_vecView(dst, bits), src]));
       return;
     }
 
-    throw UnimplementedError('_emitVMA64: $op not implemented');
+    switch (op) {
+      case UniOpVM.loadDup16:
+        cc.addNode(
+            InstNode(A64InstId.kLd1r, [_toA64Vec(dst, A64Layout.h8), src]));
+        return;
+      case UniOpVM.loadDup32:
+        cc.addNode(
+            InstNode(A64InstId.kLd1r, [_toA64Vec(dst, A64Layout.s4), src]));
+        return;
+      case UniOpVM.loadDup64:
+        cc.addNode(
+            InstNode(A64InstId.kLd1r, [_toA64Vec(dst, A64Layout.d2), src]));
+        return;
+      default:
+        throw UnimplementedError('_emitVMA64: $op not implemented');
+    }
   }
 
   void _emitMVA64(
       UniOpMV op, A64Mem dst, BaseReg src, Alignment alignment, int idx) {
-    if (src.isVec) {
-      // Simplify default handling for now - all verify as STR
-      cc.addNode(InstNode(A64InstId.kStr, [dst, src]));
-      return;
-    } else if (src is A64Gp) {
-      cc.addNode(InstNode(A64InstId.kStr, [dst, src]));
-      return;
+    if (!src.isVec) {
+      throw ArgumentError('_emitMVA64 expects a vector source: $src');
     }
-    throw UnimplementedError('_emitMVA64: $op not implemented');
+    // Stores write exactly the access size (emit_mv in unicompiler_a64.cpp).
+    final int bits;
+    switch (op) {
+      case UniOpMV.store8:
+        bits = 8;
+      case UniOpMV.store16U16:
+        bits = 16;
+      case UniOpMV.store32U32:
+      case UniOpMV.store32F32:
+        bits = 32;
+      case UniOpMV.store64U32:
+      case UniOpMV.store64U64:
+      case UniOpMV.store64F32:
+      case UniOpMV.store64F64:
+        bits = 64;
+      case UniOpMV.store128U32:
+      case UniOpMV.store128U64:
+      case UniOpMV.store128F32:
+      case UniOpMV.store128F64:
+      case UniOpMV.storeNU32:
+      case UniOpMV.storeNU64:
+      case UniOpMV.storeNF32:
+      case UniOpMV.storeNF64:
+        bits = 128;
+      default:
+        throw UnimplementedError('_emitMVA64: $op not implemented');
+    }
+    cc.addNode(InstNode(A64InstId.kStr, [_vecView(src, bits), dst]));
   }
 
+  /// Port of `UniCompiler::emit_rm()` (unicompiler_a64.cpp).
   void _emitRMA64(UniOpRM op, BaseReg dst, A64Mem src) {
-    if (dst.isVec) {
-      // Vector loads
-      cc.addNode(InstNode(A64InstId.kLdr, [dst, src]));
-      return;
-    } else if (dst is A64Gp) {
-      // GP loads
-      switch (op) {
-        case UniOpRM.loadU8:
-          cc.addNode(InstNode(A64InstId.kLdrb, [dst.w, src]));
-          break;
-        case UniOpRM.loadI8:
-          cc.addNode(InstNode(A64InstId.kLdrsb, [dst.w, src]));
-          break;
-        case UniOpRM.loadU16:
-          cc.addNode(InstNode(A64InstId.kLdrh, [dst.w, src]));
-          break;
-        case UniOpRM.loadI16:
-          cc.addNode(InstNode(A64InstId.kLdrsh, [dst.w, src]));
-          break;
-        case UniOpRM.loadU32:
-        case UniOpRM.loadI32:
-          cc.addNode(InstNode(A64InstId.kLdr, [dst.w, src]));
-          break;
-        case UniOpRM.loadU64:
-        case UniOpRM.loadI64:
-          cc.addNode(InstNode(A64InstId.kLdr, [dst.x, src]));
-          break;
-        case UniOpRM.loadReg:
-          cc.addNode(InstNode(A64InstId.kLdr, [dst, src]));
-          break;
-        default:
-          throw UnimplementedError('_emitRMA64: GP load $op not implemented');
-      }
-      return;
+    if (dst is! A64Gp) {
+      throw ArgumentError('_emitRMA64 expects a GP destination: $dst');
     }
-    throw UnimplementedError('_emitRMA64: $op not implemented');
+    switch (op) {
+      case UniOpRM.loadReg:
+        cc.addNode(InstNode(A64InstId.kLdr, [dst, src]));
+      case UniOpRM.loadI8:
+        cc.addNode(InstNode(A64InstId.kLdrsb, [dst, src]));
+      case UniOpRM.loadU8:
+        cc.addNode(InstNode(A64InstId.kLdrb, [dst.w, src]));
+      case UniOpRM.loadI16:
+        cc.addNode(InstNode(A64InstId.kLdrsh, [dst, src]));
+      case UniOpRM.loadU16:
+        cc.addNode(InstNode(A64InstId.kLdrh, [dst.w, src]));
+      case UniOpRM.loadI32:
+        cc.addNode(InstNode(
+            dst.is64Bit ? A64InstId.kLdrsw : A64InstId.kLdr, [dst, src]));
+      case UniOpRM.loadU32:
+        cc.addNode(InstNode(A64InstId.kLdr, [dst.w, src]));
+      case UniOpRM.loadI64:
+      case UniOpRM.loadU64:
+        cc.addNode(InstNode(A64InstId.kLdr, [dst.x, src]));
+      case UniOpRM.loadShiftU8:
+      case UniOpRM.loadShiftU16:
+      case UniOpRM.loadMergeU8:
+      case UniOpRM.loadMergeU16:
+        final isU8 = op == UniOpRM.loadShiftU8 || op == UniOpRM.loadMergeU8;
+        final tmp = (cc as A64Compiler).newGp(dst.type, '@tmp');
+        cc.addNode(
+            InstNode(isU8 ? A64InstId.kLdrb : A64InstId.kLdrh, [tmp.w, src]));
+        if (op == UniOpRM.loadShiftU8 || op == UniOpRM.loadShiftU16) {
+          // dst = tmp | (dst << size)
+          cc.addNode(InstNode(A64InstId.kLsl, [dst, dst, Imm(isU8 ? 8 : 16)]));
+        }
+        cc.addNode(InstNode(A64InstId.kOrr, [dst, dst, tmp]));
+    }
   }
 
+  /// Port of `UniCompiler::emit_mr()` (unicompiler_a64.cpp).
   void _emitMRA64(UniOpMR op, A64Mem dst, BaseReg src) {
-    if (src.isVec) {
-      // Vector store
-      cc.addNode(InstNode(A64InstId.kStr, [dst, src]));
-      return;
-    } else if (src is A64Gp) {
-      switch (op) {
-        case UniOpMR.storeU8:
-          cc.addNode(InstNode(A64InstId.kStrb, [dst, src.w]));
-          break;
-        case UniOpMR.storeU16:
-          cc.addNode(InstNode(A64InstId.kStrh, [dst, src.w]));
-          break;
-        case UniOpMR.storeU32:
-          cc.addNode(InstNode(A64InstId.kStr, [dst, src.w]));
-          break;
-        case UniOpMR.storeU64:
-          cc.addNode(InstNode(A64InstId.kStr, [dst, src.x]));
-          break;
-        case UniOpMR.storeReg:
-          cc.addNode(InstNode(A64InstId.kStr, [dst, src]));
-          break;
-        default:
-          throw UnimplementedError('_emitMRA64: GP store $op not implemented');
-      }
+    if (src is! A64Gp) {
+      throw ArgumentError('_emitMRA64 expects a GP source: $src');
+    }
+    final (int storeId, int size, bool add) = switch (op) {
+      UniOpMR.storeReg => (A64InstId.kStr, 0, false),
+      UniOpMR.storeU8 => (A64InstId.kStrb, 1, false),
+      UniOpMR.storeU16 => (A64InstId.kStrh, 2, false),
+      UniOpMR.storeU32 => (A64InstId.kStr, 4, false),
+      UniOpMR.storeU64 => (A64InstId.kStr, 8, false),
+      UniOpMR.addReg => (A64InstId.kStr, 0, true),
+      UniOpMR.addU8 => (A64InstId.kStrb, 1, true),
+      UniOpMR.addU16 => (A64InstId.kStrh, 2, true),
+      UniOpMR.addU32 => (A64InstId.kStr, 4, true),
+      UniOpMR.addU64 => (A64InstId.kStr, 8, true),
+    };
+    final r = (size >= 1 && size <= 4) ? src.w : (size == 8 ? src.x : src);
+
+    if (!add) {
+      cc.addNode(InstNode(storeId, [r, dst]));
       return;
     }
-    throw UnimplementedError('_emitMRA64: $op not implemented');
+    final tmp = (cc as A64Compiler).newGp(r.type, '@tmp');
+    final loadId = switch (size) {
+      1 => A64InstId.kLdrb,
+      2 => A64InstId.kLdrh,
+      _ => A64InstId.kLdr,
+    };
+    cc.addNode(InstNode(loadId, [tmp, dst]));
+    cc.addNode(InstNode(A64InstId.kAdd, [tmp, tmp, r]));
+    cc.addNode(InstNode(storeId, [tmp, dst]));
   }
 
   void _emitMA64(UniOpM op, A64Mem dst) {
@@ -200,16 +235,16 @@ mixin UniCompilerA64 on UniCompilerBase {
 
     switch (op) {
       case UniOpM.storeZeroU8:
-        cc.addNode(InstNode(A64InstId.kStrb, [dst, wzr]));
+        cc.addNode(InstNode(A64InstId.kStrb, [wzr, dst]));
         break;
       case UniOpM.storeZeroU16:
-        cc.addNode(InstNode(A64InstId.kStrh, [dst, wzr]));
+        cc.addNode(InstNode(A64InstId.kStrh, [wzr, dst]));
         break;
       case UniOpM.storeZeroU32:
-        cc.addNode(InstNode(A64InstId.kStr, [dst, wzr]));
+        cc.addNode(InstNode(A64InstId.kStr, [wzr, dst]));
         break;
       case UniOpM.storeZeroU64:
-        cc.addNode(InstNode(A64InstId.kStr, [dst, xzr]));
+        cc.addNode(InstNode(A64InstId.kStr, [xzr, dst]));
         break;
       case UniOpM.prefetch:
         // Default prefetch PLDL1KEEP (0) ? or passed in op?

@@ -132,17 +132,26 @@ class A64RAArch extends RAArch {
     return flags;
   }
 
+  /// The allocator moves, spills and reloads whole registers (X / Q): the
+  /// operand that introduced a virtual register may be a narrower view
+  /// (`w0`, `s0`) of a value that is wider elsewhere.
+  static BaseReg _full(BaseReg reg) =>
+      reg is A64Vec ? A64Vec(reg.id, 128) : (reg as A64Gp).x;
+
+  @override
+  int spillSize(BaseReg reg) => reg is A64Vec ? 16 : 8;
+
   @override
   InstNode move(BaseReg dst, BaseReg src) =>
-      InstNode(A64InstId.kMov, [dst, src]);
+      InstNode(A64InstId.kMov, [_full(dst), _full(src)]);
 
   @override
   InstNode load(BaseReg dst, BaseMem src) =>
-      InstNode(A64InstId.kLdr, [dst, src]);
+      InstNode(A64InstId.kLdr, [_full(dst), src]);
 
   @override
   InstNode save(BaseMem dst, BaseReg src) =>
-      InstNode(A64InstId.kStr, [src, dst]);
+      InstNode(A64InstId.kStr, [_full(src), dst]);
 
   @override
   List<InstNode> swap(BaseReg a, BaseReg b) {

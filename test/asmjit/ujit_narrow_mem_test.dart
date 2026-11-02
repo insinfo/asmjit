@@ -23,23 +23,29 @@ typedef _LoadDart = int Function(Pointer<Uint8>);
 JitFunction _compile(
     JitRuntime runtime, void Function(UniCompiler cc) generator) {
   final code = CodeHolder(env: runtime.environment);
-  final archCompiler =
-      X86Compiler(env: code.env, labelManager: code.labelManager);
+  final isA64 = code.env.arch == Arch.aarch64;
+  final BaseCompiler archCompiler = isA64
+      ? A64Compiler(env: code.env, labelManager: code.labelManager)
+      : X86Compiler(env: code.env, labelManager: code.labelManager);
   final cc = UniCompiler(archCompiler);
 
   generator(cc);
 
   archCompiler.finalize();
-  final assembler = X86Assembler(code);
-  archCompiler.serializeToAssembler(assembler);
+  archCompiler
+      .serializeToAssembler(isA64 ? A64Assembler(code) : X86Assembler(code));
   return runtime.add(code);
 }
 
-UniMem _mem(BaseReg base, int disp) =>
-    UniMem(X86Mem.baseDisp(base as X86Gp, disp));
+UniMem _mem(BaseReg base, int disp) => UniMem(base is A64Gp
+    ? A64Mem.baseOffset(base, disp)
+    : X86Mem.baseDisp(base as X86Gp, disp));
 
 void main() {
-  final hostIsX64 = Environment.host().arch == Arch.x64;
+  final host = Environment.host().arch;
+  final skip = host == Arch.x64 || host == Arch.aarch64
+      ? false
+      : 'requires an x86-64 or AArch64 host';
 
   group('UJIT narrow store safety', () {
     late JitRuntime runtime;
@@ -182,7 +188,7 @@ void main() {
         }
       }
     });
-  }, skip: hostIsX64 ? false : 'x64-only test');
+  }, skip: skip);
 
   group('UJIT memory add (UniOpMR.add*)', () {
     late JitRuntime runtime;
@@ -247,7 +253,7 @@ void main() {
         pkgffi.calloc.free(buf);
       }
     });
-  }, skip: hostIsX64 ? false : 'x64-only test');
+  }, skip: skip);
 
   group('UJIT narrow load correctness', () {
     late JitRuntime runtime;
@@ -325,7 +331,7 @@ void main() {
               .toSigned(64)
               .toInt()));
     });
-  }, skip: hostIsX64 ? false : 'x64-only test');
+  }, skip: skip);
 
   group('UJIT vector narrow load/store (UniOpVM/UniOpMV)', () {
     late JitRuntime runtime;
@@ -398,5 +404,10 @@ void main() {
       roundTrip(
           loadOp: UniOpVM.load64U64, storeOp: UniOpMV.store64U64, width: 8);
     });
-  }, skip: hostIsX64 ? false : 'x64-only test');
+
+    test('load128U32/store128U32 copies exactly 16 bytes', () {
+      roundTrip(
+          loadOp: UniOpVM.load128U32, storeOp: UniOpMV.store128U32, width: 16);
+    });
+  }, skip: skip);
 }
