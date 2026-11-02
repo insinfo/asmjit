@@ -1457,18 +1457,38 @@ class RAPass extends CompilerPass {
     }
   }
 
+  /// Size and alignment of the stack slot of [workReg].
+  ///
+  /// Stack areas created by newStack() have their own size and alignment;
+  /// the size is rounded up to the alignment so the slot is aligned both when
+  /// addressed upwards from the stack pointer (AArch64) and downwards from
+  /// the frame pointer (x86), which are 16-byte aligned.
+  (int, int) _stackSlotLayout(RAWorkReg workReg) {
+    final vIndex = workReg.virtReg.id - Globals.kMinVirtId;
+    if (workReg.isStackSlot &&
+        vIndex >= 0 &&
+        vIndex < compiler.virtRegs.length) {
+      final vr = compiler.virtRegs[vIndex];
+      if (vr.alignment > 16) {
+        throw UnsupportedError(
+            'stack area alignment ${vr.alignment} > 16 is not supported');
+      }
+      final align = vr.alignment < 4 ? 4 : vr.alignment;
+      return ((vr.size + align - 1) & ~(align - 1), align);
+    }
+    final size = _arch.spillSize(workReg.virtReg);
+    return (size, size > 4 ? size : 4);
+  }
+
   BaseMem _stackSlot(RAWorkReg workReg) {
+    final (size, align) = _stackSlotLayout(workReg);
     // Stack allocation using FuncFrame logic
     if (workReg.stackOffset == 0 &&
         !workReg.hasFlag(RAWorkRegFlags.kStackUsed)) {
-      final size = _arch.spillSize(workReg.virtReg);
       final frame = _func!.frame;
 
       // Simple stack bump allocation with alignment
       int offset = _spillStackSize;
-
-      // Align to 4 bytes minimally or size
-      final align = size > 4 ? size : 4;
       if (offset % align != 0) {
         offset += align - (offset % align);
       }
@@ -1486,8 +1506,7 @@ class RAPass extends CompilerPass {
       workReg.addFlags(RAWorkRegFlags.kStackUsed);
     }
 
-    return _arch.spillSlot(
-        compiler, workReg.stackOffset, _arch.spillSize(workReg.virtReg));
+    return _arch.spillSlot(compiler, workReg.stackOffset, size);
   }
 
   int _spillStackSize = 0;
