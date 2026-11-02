@@ -52,6 +52,11 @@ void main() {
       (a) => a.stpPre(x29, x30, _sp, -16),
       0xA9BF7BFD
     ),
+    // Not encodable as LDR (scaled unsigned offset): upstream emits LDUR.
+    'ldr q0, [x1, #8] (ldur)': (
+      (a) => a.ldrVec(A64Vec(0, 128), x1, 8),
+      0x3CC08020
+    ),
     'ldp x29, x30, [sp], #16': (
       (a) => a.ldpPost(x29, x30, _sp, 16),
       0xA8C17BFD
@@ -72,8 +77,6 @@ void main() {
     });
 
     test('rejects offsets that cannot be encoded', () {
-      expect(() => _word((a) => a.ldrVec(A64Vec(0, 128), x1, 8)),
-          throwsArgumentError);
       expect(() => _word((a) => a.ldrVecUnscaled(A64Vec(0, 128), x1, 256)),
           throwsArgumentError);
       expect(() => _word((a) => a.stp(x29, x30, _sp, 4)), throwsArgumentError);

@@ -18,15 +18,13 @@ void main() {
     }
 
     test('LD1R', () {
-      // ld1r v0.s4, [x0]
-      // Little Endian: 00 08 C0 4D
+      // ld1r {v0.4s}, [x0] = 0x4D40C800 (LLVM)
       a.ld1r(v0.s4, x0);
-      verifyBytes([0x00, 0x08, 0xC0, 0x4D]);
+      verifyBytes([0x00, 0xC8, 0x40, 0x4D]);
 
-      // ld1r v1.h8, [x1]
-      // Little Endian: 21 04 C0 4D
+      // ld1r {v1.8h}, [x1] = 0x4D40C421 (LLVM)
       a.ld1r(v1.h8, x1);
-      verifyBytes([0x21, 0x04, 0xC0, 0x4D]);
+      verifyBytes([0x21, 0xC4, 0x40, 0x4D]);
     });
 
     test('Permutations (TBL, ZIP, UZP, TRN)', () {

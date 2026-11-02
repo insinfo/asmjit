@@ -17,9 +17,10 @@ void main() {
 
     group('Widening Multiply', () {
       test('SMULL - signed multiply long (low)', () {
-        final v0 = A64Vec(0, 128);
-        final v1 = A64Vec(1, 64);
-        final v2 = A64Vec(2, 64);
+        // smull v0.4s, v1.4h, v2.4h
+        final v0 = A64Vec(0, 128, A64Layout.s4);
+        final v1 = A64Vec(1, 64, A64Layout.h4);
+        final v2 = A64Vec(2, 64, A64Layout.h4);
 
         a.smull(v0, v1, v2);
 
@@ -28,9 +29,10 @@ void main() {
       });
 
       test('UMULL - unsigned multiply long (low)', () {
-        final v0 = A64Vec(0, 128);
-        final v1 = A64Vec(1, 64);
-        final v2 = A64Vec(2, 64);
+        // umull v0.4s, v1.4h, v2.4h
+        final v0 = A64Vec(0, 128, A64Layout.s4);
+        final v1 = A64Vec(1, 64, A64Layout.h4);
+        final v2 = A64Vec(2, 64, A64Layout.h4);
 
         a.umull(v0, v1, v2);
 
@@ -41,8 +43,9 @@ void main() {
 
     group('Packing (Narrowing)', () {
       test('SQXTN - saturating narrow', () {
-        final v0 = A64Vec(0, 64);
-        final v1 = A64Vec(1, 128);
+        // sqxtn v0.4h, v1.4s
+        final v0 = A64Vec(0, 64, A64Layout.h4);
+        final v1 = A64Vec(1, 128, A64Layout.s4);
 
         a.sqxtn(v0, v1);
 
@@ -51,8 +54,9 @@ void main() {
       });
 
       test('XTN - extract narrow', () {
-        final v0 = A64Vec(0, 64);
-        final v1 = A64Vec(1, 128);
+        // xtn v0.4h, v1.4s
+        final v0 = A64Vec(0, 64, A64Layout.h4);
+        final v1 = A64Vec(1, 128, A64Layout.s4);
 
         a.xtn(v0, v1);
 
