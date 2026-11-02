@@ -2883,7 +2883,7 @@ mixin UniCompilerX86 on UniCompilerBase {
 
   /// `v_swap_f64()`: swaps the two f64 lanes.
   void _vSwapF64X86(BaseReg dst, BaseReg src) =>
-      _emit2viX86(UniOpVVI.swizzleF64x2, dst, src, 1);
+      _emit2viX86(UniOpVVI.swizzleF64x2, dst, src, swizzle2(0, 1).value);
 
   /// SSE2 emulation of `kSwizzlev_U8` (pshufb) from `emit_3v()`: the table
   /// and the clamped indices go through a stack buffer.
@@ -2954,106 +2954,285 @@ mixin UniCompilerX86 on UniCompilerBase {
       size: m.size,
       segment: m.segment);
 
-  void _emit2viX86(UniOpVVI op, Operand dst, Operand src, int imm) {
-    if (dst is! BaseReg || src is! BaseReg) {
-      throw ArgumentError('SIMD operands must be registers');
+  /// `shuf_imm4_from_swizzle(Swizzle4)`.
+  static int _shufImm4FromSwizzle4(int s) =>
+      _shufImm4((s >> 24) & 3, (s >> 16) & 3, (s >> 8) & 3, s & 3);
+
+  /// `shuf_imm4_from_swizzle(Swizzle2)`: PSHUFD selecting 64-bit lanes.
+  static int _shufImm4FromSwizzle2(int s) {
+    final imm0 = s & 1, imm1 = (s >> 8) & 1;
+    return _shufImm4(imm1 * 2 + 1, imm1 * 2, imm0 * 2 + 1, imm0 * 2);
+  }
+
+  /// `shuf_imm2_from_swizzle(Swizzle2)`: SHUFPD immediate.
+  static int _shufImm2FromSwizzle2(int s) => (((s >> 8) & 1) << 1) | (s & 1);
+
+  static final int _swz00 = swizzle2(0, 0).value;
+  static final int _swz10 = swizzle2(1, 0).value;
+  static final int _swz11 = swizzle2(1, 1).value;
+
+  /// Port of `emit_2vi()` (ujit/unicompiler_x86.cpp). Swizzle immediates are
+  /// [Swizzle2] / [Swizzle4] values, as in upstream.
+  void _emit2viX86(UniOpVVI op, Operand dst_, Operand src_, int imm) {
+    if (dst_ is! BaseReg) {
+      throw ArgumentError('SIMD destination must be a register');
     }
+    if (op.index >= kX86OpcodeInfo2vi.length) {
+      throw UnsupportedError('UniCompiler x86: $op is an AArch64 operation');
+    }
+    var dst = dst_;
+    var src = src_;
+    final info = kX86OpcodeInfo2vi[op.index];
+
+    if (hasAvx) {
+      // AVX Implementation
+      // ------------------
+      final instId = info.avxInstId;
+
+      if (hasAvxExt(info.avxExt)) {
+        _emitX86(instId, [dst, src, Imm(imm)]);
+        return;
+      }
+
+      switch (op) {
+        case UniOpVVI.sllU16:
+        case UniOpVVI.sllU32:
+        case UniOpVVI.sllU64:
+        case UniOpVVI.srlU16:
+        case UniOpVVI.srlU32:
+        case UniOpVVI.srlU64:
+        case UniOpVVI.sraI16:
+        case UniOpVVI.sraI32:
+        case UniOpVVI.sllbU128:
+        case UniOpVVI.srlbU128:
+          // This instruction requires AVX-512 if the source is a memory
+          // operand.
+          if (src is! BaseReg) {
+            _avxMovX86(dst, src);
+            _emitX86(instId, [dst, dst, Imm(imm)]);
+          } else {
+            _emitX86(instId, [dst, src, Imm(imm)]);
+          }
+          return;
+
+        case UniOpVVI.sraI64:
+          // Native operation requires AVX-512, which is not supported by the
+          // target.
+          if (imm == 0) {
+            _avxMovX86(dst, src);
+            return;
+          }
+          if (imm == 63) {
+            _emitX86(
+                X86InstId.kVpshufd, [dst, src, Imm(_shufImm4(3, 3, 1, 1))]);
+            _emitX86(X86InstId.kVpsrad, [dst, dst, Imm(31)]);
+            return;
+          }
+          final tmp = _newSimilarRegX86(dst, '@tmp');
+          if (src is! BaseReg) {
+            _avxMovX86(dst, src);
+            src = dst;
+          }
+          if (imm <= 32) {
+            _emitX86(X86InstId.kVpsrad, [tmp, src, Imm(math.min(imm, 31))]);
+            _emitX86(X86InstId.kVpsrlq, [dst, src, Imm(imm)]);
+            _emitX86(X86InstId.kVpblendw, [dst, dst, tmp, Imm(0xCC)]);
+            return;
+          }
+          _emitX86(X86InstId.kVpshufd, [tmp, src, Imm(_shufImm4(3, 3, 1, 1))]);
+          _emitX86(X86InstId.kVpsrad, [tmp, tmp, Imm(31)]);
+          _emitX86(X86InstId.kVpsrlq, [dst, src, Imm(imm)]);
+          _emitX86(X86InstId.kVpsllq, [tmp, tmp, Imm(64 - imm)]);
+          _emitX86(X86InstId.kVpor, [dst, dst, tmp]);
+          return;
+
+        case UniOpVVI.swizzleU16x4:
+          final shufImm = _shufImm4FromSwizzle4(imm);
+          _emitX86(X86InstId.kVpshuflw, [dst, src, Imm(shufImm)]);
+          _emitX86(X86InstId.kVpshufhw, [dst, dst, Imm(shufImm)]);
+          return;
+
+        case UniOpVVI.swizzleLoU16x4:
+        case UniOpVVI.swizzleHiU16x4:
+        case UniOpVVI.swizzleU32x4:
+          _emitX86(instId, [dst, src, Imm(_shufImm4FromSwizzle4(imm))]);
+          return;
+
+        case UniOpVVI.swizzleU64x2:
+          if (imm == _swz00) {
+            _emitX86(X86InstId.kVmovddup, [dst, src]);
+          } else if (imm == _swz11 && src is BaseReg) {
+            _emitX86(X86InstId.kVpunpckhqdq, [dst, src, src]);
+          } else {
+            _emitX86(X86InstId.kVpshufd,
+                [dst, src, Imm(_shufImm4FromSwizzle2(imm))]);
+          }
+          return;
+
+        case UniOpVVI.swizzleF32x4:
+          final shufImm = _shufImm4FromSwizzle4(imm);
+          if (src is BaseReg) {
+            _emitX86(X86InstId.kVshufps, [dst, src, src, Imm(shufImm)]);
+          } else {
+            _emitX86(X86InstId.kVpshufd, [dst, src, Imm(shufImm)]);
+          }
+          return;
+
+        case UniOpVVI.swizzleF64x2:
+          if (imm == _swz00) {
+            _emitX86(X86InstId.kVmovddup, [dst, src]);
+          } else if (imm == _swz11 && src is BaseReg) {
+            _emitX86(X86InstId.kVunpckhpd, [dst, src, src]);
+          } else if (src is BaseReg) {
+            const multipliers = [0x1, 0x5, 0x55];
+            final shufImm = _shufImm2FromSwizzle2(imm) *
+                multipliers[VecWidthUtils.vecWidthOf(dst).index];
+            _emitX86(X86InstId.kVshufpd, [dst, src, src, Imm(shufImm)]);
+          } else {
+            _emitX86(X86InstId.kVpshufd,
+                [dst, src, Imm(_shufImm4FromSwizzle2(imm))]);
+          }
+          return;
+
+        case UniOpVVI.swizzleF64x4:
+        case UniOpVVI.swizzleU64x4:
+          _emitX86(info.avxInstId, [dst, src, Imm(_shufImm4FromSwizzle4(imm))]);
+          return;
+
+        case UniOpVVI.extractV128I32:
+        case UniOpVVI.extractV128I64:
+        case UniOpVVI.extractV128F32:
+        case UniOpVVI.extractV128F64:
+          if (imm >= 4) throw ArgumentError('extractV128 index $imm');
+          dst = X86Xmm(dst.id);
+          if (src is X86Mem) {
+            _emitX86(X86InstId.kVmovdqu, [
+              dst,
+              src.withDisplacement(src.displacement + imm * 16).withSize(16)
+            ]);
+            return;
+          }
+          if (src is X86Ymm) {
+            if (imm >= 2) throw ArgumentError('extractV128 index $imm');
+            _emitX86(X86InstId.kVextractf128, [dst, src, Imm(imm)]);
+            return;
+          }
+          throw UnsupportedError('UniCompiler x86: $op of $src');
+
+        default:
+          // extractV256* needs a 512-bit source (AVX-512).
+          throw _requiresX86(op, info.avxExt.name.substring(1));
+      }
+    }
+
+    // SSE Implementation
+    // ------------------
+    final instId = info.sseInstId;
+
+    if (hasSseExt(info.sseExt)) {
+      if (info.sseOpCount == 2) {
+        _sseMovX86(dst, src);
+        _emitX86(instId, [dst, Imm(imm)]);
+        return;
+      }
+      if (info.sseOpCount == 3) {
+        _emitX86(instId, [dst, src, Imm(imm)]);
+        return;
+      }
+    }
+
     switch (op) {
-      case UniOpVVI.sllbU128:
-      case UniOpVVI.srlbU128:
-        final r = _copyVecX86(src);
-        _sseShiftImmX86(
-            op == UniOpVVI.sllbU128 ? X86InstId.kPslldq : X86InstId.kPsrldq,
-            r,
-            imm);
-        _vMovX86(dst, r);
-        break;
-      case UniOpVVI.swizzleU64x2:
-      case UniOpVVI.swizzleF64x2:
-        // Select qwords via PSHUFD on dword pairs.
-        final i0 = imm & 1, i1 = (imm >> 1) & 1;
-        final dw = (2 * i0) |
-            ((2 * i0 + 1) << 2) |
-            ((2 * i1) << 4) |
-            ((2 * i1 + 1) << 6);
-        cc.addNode(InstNode(hasAvx ? X86InstId.kVpshufd : X86InstId.kPshufd,
-            [dst, src, Imm(dw)]));
-        break;
-      case UniOpVVI.sllU16:
-        _vSllI16X86(dst, src, imm);
-        break;
-      case UniOpVVI.sllU32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpslld, [dst, src, Imm(imm)]));
-        } else {
-          if (dst.id != src.id) {
-            _vMovX86(dst, src);
-          }
-          cc.addNode(InstNode(X86InstId.kPslld, [dst, Imm(imm)]));
+      case UniOpVVI.sraI64:
+        // Intrinsic (SSE2).
+        if (imm == 0) {
+          _sseMovX86(dst, src);
+          return;
         }
-        break;
-      case UniOpVVI.sllU64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpsllq, [dst, src, Imm(imm)]));
-        } else {
-          if (dst.id != src.id) {
-            _vMovX86(dst, src);
-          }
-          cc.addNode(InstNode(X86InstId.kPsllq, [dst, Imm(imm)]));
+        if (imm == 63) {
+          _emitX86(X86InstId.kPshufd, [dst, src, Imm(_shufImm4(3, 3, 1, 1))]);
+          _emitX86(X86InstId.kPsrad, [dst, Imm(31)]);
+          return;
         }
-        break;
-      case UniOpVVI.srlU16:
-        _vSrlI16X86(dst, src, imm);
-        break;
-      case UniOpVVI.srlU32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpsrld, [dst, src, Imm(imm)]));
-        } else {
-          if (dst.id != src.id) {
-            _vMovX86(dst, src);
-          }
-          cc.addNode(InstNode(X86InstId.kPsrld, [dst, Imm(imm)]));
+        final tmp = _newSimilarRegX86(dst, '@tmp');
+        if (imm <= 32 && hasSse41) {
+          _sseMovX86(dst, src);
+          _sseMovX86(tmp, src is BaseReg ? src : dst);
+          _emitX86(X86InstId.kPsrad, [tmp, Imm(math.min(imm, 31))]);
+          _emitX86(X86InstId.kPsrlq, [dst, Imm(imm)]);
+          _emitX86(X86InstId.kPblendw, [dst, tmp, Imm(0xCC)]);
+          return;
         }
-        break;
-      case UniOpVVI.srlU64:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpsrlq, [dst, src, Imm(imm)]));
-        } else {
-          if (dst.id != src.id) {
-            _vMovX86(dst, src);
-          }
-          cc.addNode(InstNode(X86InstId.kPsrlq, [dst, Imm(imm)]));
-        }
-        break;
-      case UniOpVVI.sraI16:
-        _vSraI16X86(dst, src, imm);
-        break;
-      case UniOpVVI.sraI32:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpsrad, [dst, src, Imm(imm)]));
-        } else {
-          if (dst.id != src.id) {
-            _vMovX86(dst, src);
-          }
-          cc.addNode(InstNode(X86InstId.kPsrad, [dst, Imm(imm)]));
-        }
-        break;
-      case UniOpVVI.shufI8:
-        if (hasAvx) {
-          cc.addNode(InstNode(X86InstId.kVpshufb, [dst, src, Imm(imm)]));
-        } else if (hasSsse3) {
-          if (dst != src) _vMovX86(dst, src);
-          cc.addNode(InstNode(X86InstId.kPshufb, [dst, Imm(imm)]));
-        } else {
-          throw _requiresX86(op, 'SSSE3');
-        }
-        break;
+        _sseMovX86(dst, src);
+        _emitX86(X86InstId.kPshufd,
+            [tmp, src is BaseReg ? src : dst, Imm(_shufImm4(3, 3, 1, 1))]);
+        _emitX86(X86InstId.kPsrad, [tmp, Imm(31)]);
+        _emitX86(X86InstId.kPsrlq, [dst, Imm(imm)]);
+        _emitX86(X86InstId.kPsllq, [tmp, Imm(64 - imm)]);
+        _emitX86(X86InstId.kPor, [dst, tmp]);
+        return;
+
+      case UniOpVVI.swizzleU16x4:
+        // Intrinsic (SSE2).
+        final shufImm = _shufImm4FromSwizzle4(imm);
+        _emitX86(X86InstId.kPshuflw, [dst, src, Imm(shufImm)]);
+        _emitX86(X86InstId.kPshufhw, [dst, dst, Imm(shufImm)]);
+        return;
+
+      case UniOpVVI.swizzleLoU16x4:
+      case UniOpVVI.swizzleHiU16x4:
       case UniOpVVI.swizzleU32x4:
-        cc.addNode(InstNode(hasAvx ? X86InstId.kVpshufd : X86InstId.kPshufd,
-            [dst, src, Imm(imm)]));
-        break;
+        // Intrinsic (SSE2).
+        _emitX86(instId, [dst, src, Imm(_shufImm4FromSwizzle4(imm))]);
+        return;
+
+      case UniOpVVI.swizzleU64x2:
+        // Intrinsic (SSE2 | SSE3).
+        if (imm == _swz10) {
+          _sseMovX86(dst, src);
+        } else if (imm == _swz00 && hasSse3) {
+          _emitX86(X86InstId.kMovddup, [dst, src]);
+        } else if (imm == _swz00 && _isSameVecX86(dst, src)) {
+          _emitX86(X86InstId.kPunpcklqdq, [dst, src]);
+        } else if (imm == _swz11 && _isSameVecX86(dst, src)) {
+          _emitX86(X86InstId.kPunpckhqdq, [dst, src]);
+        } else {
+          _emitX86(
+              X86InstId.kPshufd, [dst, src, Imm(_shufImm4FromSwizzle2(imm))]);
+        }
+        return;
+
+      case UniOpVVI.swizzleF32x4:
+        // Intrinsic (SSE2).
+        final shufImm = _shufImm4FromSwizzle4(imm);
+        if (_isSameVecX86(dst, src)) {
+          _emitX86(X86InstId.kShufps, [dst, dst, Imm(shufImm)]);
+        } else {
+          _emitX86(X86InstId.kPshufd, [dst, src, Imm(shufImm)]);
+        }
+        return;
+
+      case UniOpVVI.swizzleF64x2:
+        // Intrinsic (SSE2 | SSE3).
+        if (imm == _swz10) {
+          _sseMovX86(dst, src);
+        } else if (imm == _swz00 && hasSse3) {
+          _emitX86(X86InstId.kMovddup, [dst, src]);
+        } else if (imm == _swz00 && _isSameVecX86(dst, src)) {
+          _emitX86(X86InstId.kUnpcklpd, [dst, src]);
+        } else if (imm == _swz11 && _isSameVecX86(dst, src)) {
+          _emitX86(X86InstId.kUnpckhpd, [dst, src]);
+        } else if (_isSameVecX86(dst, src)) {
+          _emitX86(
+              X86InstId.kShufpd, [dst, dst, Imm(_shufImm2FromSwizzle2(imm))]);
+        } else {
+          _emitX86(
+              X86InstId.kPshufd, [dst, src, Imm(_shufImm4FromSwizzle2(imm))]);
+        }
+        return;
+
       default:
-        throw UnimplementedError('_emit2viX86: $op not implemented');
+        // Not supported in SSE mode (256/512-bit swizzles and extracts).
+        throw _requiresX86(op, 'AVX');
     }
   }
 

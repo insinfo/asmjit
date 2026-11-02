@@ -371,12 +371,10 @@ class ChaCha20AsmJitOptimized {
     BaseReg tmp,
   ) {
     if (cc.isX86Family) {
-      int imm = 0;
-      for (int i = 0; i < 4; i++) {
-        final srcIdx = (i + count) & 3;
-        imm |= (srcIdx << (i * 2));
-      }
-      cc.emit2vi(UniOpVVI.swizzleU32x4, dst, src, imm);
+      // dst.s[i] = src.s[(i + count) & 3].
+      final swz = swizzle4(
+          (3 + count) & 3, (2 + count) & 3, (1 + count) & 3, count & 3);
+      cc.emit2vi(UniOpVVI.swizzleU32x4, dst, src, swz.value);
     } else {
       // EXT with the same source rotates bytes: dst.s[i] = src.s[(i + count) & 3],
       // matching the x86 swizzle above.

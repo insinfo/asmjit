@@ -948,64 +948,110 @@ mixin UniCompilerA64 on UniCompilerBase {
     }
   }
 
-  /// Port of `UniCompiler::emit_2vi()` (unicompiler_a64.cpp).
+  /// Port of `UniCompiler::emit_2vi()` (unicompiler_a64.cpp). Swizzle
+  /// immediates are [Swizzle2] / [Swizzle4] values, as in upstream.
   void _emit2viA64(UniOpVVI op, Operand dst_, Operand src_, int imm) {
     final dst = dst_ as BaseReg;
-    final src = _asVecA64(src_, dst, kFmNone);
 
     switch (op) {
       case UniOpVVI.sllbU128:
       case UniOpVVI.srlbU128:
         if (imm < 0 || imm > 15) throw ArgumentError('byte shift $imm');
-        if (imm == 0) {
+        final src = _asVecA64(src_, dst, kFmNone);
+
+        // If the shift is used to extract a high 64-bit element and zero the
+        // rest of the register.
+        if (op == UniOpVVI.srlbU128 && imm == 8) {
+          _a64(A64InstId.kDup, [A64Vec(dst.id, 64), _vArr(src, 3), Imm(1)]);
+          return;
+        }
+
+        // If the shift is used to extract the last 32-bit element and zero
+        // the rest of the register.
+        if (op == UniOpVVI.srlbU128 && imm == 12) {
+          _a64(A64InstId.kDup, [A64Vec(dst.id, 32), _vArr(src, 2), Imm(3)]);
+          return;
+        }
+
+        // Deviation from upstream, which emits `ext dst, zero, src, #16` for
+        // sllbU128 by 0 (running it reports InvalidImmediate).
+        if (op == UniOpVVI.sllbU128 && imm == 0) {
           _vMovA64(dst, src);
           return;
         }
+
         final zero = newVecWithWidth(VecWidth.k128, '@zero');
-        cc.addNode(InstNode(A64InstId.kMovi, [_vArr(zero, 0), Imm(0)]));
-        // EXT d, n, m, #i -> d = m:n >> (8 * i).
-        cc.addNode(InstNode(
-            A64InstId.kExt,
-            op == UniOpVVI.sllbU128
-                ? [_vArr(dst, 0), _vArr(zero, 0), _vArr(src, 0), Imm(16 - imm)]
-                : [_vArr(dst, 0), _vArr(src, 0), _vArr(zero, 0), Imm(imm)]));
+        _a64(A64InstId.kMovi, [_vArr(zero, 0), Imm(0)]);
+        // `EXT dst, a, b, #n` -> `dst = b:a >> #n*8`.
+        if (op == UniOpVVI.sllbU128) {
+          _a64(A64InstId.kExt,
+              [_vArr(dst, 0), _vArr(zero, 0), _vArr(src, 0), Imm(16 - imm)]);
+        } else {
+          _a64(A64InstId.kExt,
+              [_vArr(dst, 0), _vArr(src, 0), _vArr(zero, 0), Imm(imm)]);
+        }
+        return;
+
+      case UniOpVVI.swizzleU16x4:
+      case UniOpVVI.swizzleLoU16x4:
+      case UniOpVVI.swizzleHiU16x4:
+        final src = _asVecA64(src_, dst, kFmNone);
+        final pred = Uint8List.fromList(List.generate(16, (i) => i));
+        final d = (imm >> 23) & 6;
+        final c = (imm >> 15) & 6;
+        final b = (imm >> 7) & 6;
+        final a = (imm << 1) & 6;
+        if (op != UniOpVVI.swizzleHiU16x4) {
+          pred.setAll(0, [a, a + 1, b, b + 1, c, c + 1, d, d + 1]);
+        }
+        if (op != UniOpVVI.swizzleLoU16x4) {
+          pred.setAll(
+              8, [a + 8, a + 9, b + 8, b + 9, c + 8, c + 9, d + 8, d + 9]);
+        }
+        final predReg = (this as UniCompiler)
+            .simdVecConst(VecConst(16, pred), Bcst.kNA_Unique, VecWidth.k128);
+        _a64(A64InstId.kTbl, [_vArr(dst, 0), _vArr(src, 0), _vArr(predReg, 0)]);
         return;
 
       case UniOpVVI.swizzleU32x4:
       case UniOpVVI.swizzleF32x4:
-        // dst.s[i] = src.s[(imm >> 2i) & 3] (same encoding as PSHUFD).
-        final idx = [for (int i = 0; i < 4; i++) (imm >> (2 * i)) & 3];
-        if (idx[0] == 0 && idx[1] == 1 && idx[2] == 2 && idx[3] == 3) {
-          _vMovA64(dst, src);
-          return;
-        }
-        final out =
-            dst.id == src.id ? newVecWithWidth(VecWidth.k128, '@swz') : dst;
-        for (int i = 0; i < 4; i++) {
-          cc.addNode(InstNode(A64InstId.kMov,
-              [_vArr(out, 2), Imm(i), _vArr(src, 2), Imm(idx[i])]));
-        }
-        if (out.id != dst.id) _vMovA64(dst, out);
+        _emitSwizzle32A64(dst, _asVecA64(src_, dst, kFmNone), imm);
         return;
 
       case UniOpVVI.swizzleU64x2:
       case UniOpVVI.swizzleF64x2:
-        final i0 = imm & 1, i1 = (imm >> 1) & 1;
-        if (i0 == 0 && i1 == 1) {
-          _vMovA64(dst, src);
-        } else if (i0 == 1 && i1 == 0) {
-          cc.addNode(InstNode(A64InstId.kExt,
-              [_vArr(dst, 0), _vArr(src, 0), _vArr(src, 0), Imm(8)]));
-        } else {
-          final out =
-              dst.id == src.id ? newVecWithWidth(VecWidth.k128, '@swz') : dst;
-          cc.addNode(InstNode(
-              A64InstId.kMov, [_vArr(out, 3), Imm(0), _vArr(src, 3), Imm(i0)]));
-          cc.addNode(InstNode(
-              A64InstId.kMov, [_vArr(out, 3), Imm(1), _vArr(src, 3), Imm(i1)]));
-          if (out.id != dst.id) _vMovA64(dst, out);
+        final src = _asVecA64(src_, dst, kFmNone);
+        // Use `dup` to broadcast one 64-bit element.
+        if (imm == swizzle2(0, 0).value || imm == swizzle2(1, 1).value) {
+          _a64(A64InstId.kDup, [_vArr(dst, 3), _vArr(src, 3), Imm(imm & 1)]);
+          return;
         }
-        return;
+        // Use `ext` to swap two 64-bit elements.
+        if (imm == swizzle2(0, 1).value) {
+          _a64(A64InstId.kExt,
+              [_vArr(dst, 0), _vArr(src, 0), _vArr(src, 0), Imm(8)]);
+          return;
+        }
+        // NOP...
+        if (imm == swizzle2(1, 0).value) {
+          _vMovA64(dst, src);
+          return;
+        }
+        throw ArgumentError(
+            'invalid Swizzle2 value 0x${imm.toRadixString(16)}');
+
+      case UniOpVVI.swizzleF64x4:
+      case UniOpVVI.swizzleU64x4:
+      case UniOpVVI.extractV128I32:
+      case UniOpVVI.extractV128I64:
+      case UniOpVVI.extractV128F32:
+      case UniOpVVI.extractV128F64:
+      case UniOpVVI.extractV256I32:
+      case UniOpVVI.extractV256I64:
+      case UniOpVVI.extractV256F32:
+      case UniOpVVI.extractV256F64:
+        throw UnsupportedError(
+            'UniCompiler A64: $op (NEON has only 128-bit vectors)');
 
       default:
         if (op.index >= kA64OpcodeInfo2vi.length) {
@@ -1015,12 +1061,85 @@ mixin UniCompilerA64 on UniCompilerBase {
         if (!info.asimd || info.instId < 0) {
           throw UnimplementedError('_emit2viA64: $op');
         }
+        final src = _asVecA64(src_, dst, kFmNone);
+        // Deviation from upstream: USHR/SSHR cannot encode a shift by 0 and
+        // upstream reports InvalidImmediate (`ushr v0.4s, v0.4s, 0`) for an
+        // op the x86 backend accepts; a shift by 0 is a move.
+        if (imm == 0 &&
+            op.index >= UniOpVVI.srlU16.index &&
+            op.index <= UniOpVVI.sraI64.index) {
+          _vMovA64(dst, src);
+          return;
+        }
         // Narrowing shifts write the low (SHRN) or high (SHRN2) half.
         final d = _vArr(dst, info.dstElement,
             lo: info.dstPart == kPartLo ||
                 (info.srcPart == kPartLo && info.dstElement < info.srcElement));
         final s = _vArr(src, info.srcElement);
         cc.addNode(InstNode(info.instId, [d, s, Imm(imm)]));
+    }
+  }
+
+  /// Port of `emit_swizzle32_impl()` (unicompiler_a64.cpp): a 32-bit swizzle
+  /// as up to three moves, inserts, DUP, EXT, REV64 or ZIP/UZP/TRN
+  /// operations taken from [kA64Swizzle32Data].
+  void _emitSwizzle32A64(BaseReg dst, BaseReg src, int imm) {
+    if ((imm & 0xFCFCFCFC) != 0) {
+      throw ArgumentError('invalid Swizzle4 value 0x${imm.toRadixString(16)}');
+    }
+    final tableIndex = ((imm & 0x03000000) >> (24 - 6)) |
+        ((imm & 0x00030000) >> (16 - 4)) |
+        ((imm & 0x00000300) >> (8 - 2)) |
+        (imm & 0x00000003);
+    final swiz = kA64Swizzle32Data[tableIndex];
+
+    const zipUnzipInst = [
+      A64InstId.kZip1,
+      A64InstId.kZip2,
+      A64InstId.kUzp1,
+      A64InstId.kUzp2,
+      A64InstId.kTrn1,
+      A64InstId.kTrn2,
+    ];
+
+    final opSrc = [src, src];
+    for (var i = 0; i < 3; i++) {
+      final op = (swiz >> (i * 8)) & 0xFF;
+      final target = (swiz >> (24 + i * 2)) & 3;
+      if (op == 0) break;
+
+      final opDst = target == 0 ? dst : newVecWithWidth(VecWidth.k128, '@tmp');
+      switch (op & 0xF) {
+        case 1: // kMov
+          _vMovA64(opDst, opSrc[0]);
+        case 2: // kIns: always the last operation, on the destination only.
+          final srcLane = (op >> 4) & 3, dstLane = (op >> 6) & 3;
+          _a64(A64InstId.kMov,
+              [_vArr(opDst, 2), Imm(dstLane), _vArr(opDst, 2), Imm(srcLane)]);
+        case 3: // kDup: broadcast of a single element.
+          _a64(A64InstId.kDup,
+              [_vArr(opDst, 2), _vArr(opSrc[0], 2), Imm((op >> 4) & 3)]);
+        case 4: // kExt: rotation.
+          _a64(A64InstId.kExt, [
+            _vArr(opDst, 0),
+            _vArr(opSrc[0], 0),
+            _vArr(opSrc[1], 0),
+            Imm((op >> 2) & 0xC)
+          ]);
+        case 5: // kRev64: swaps lo/hi elements of 64-bit lanes.
+          _a64(A64InstId.kRev64, [_vArr(opDst, 2), _vArr(opSrc[0], 2)]);
+        case 7: // kZipUnzip
+          final instId = zipUnzipInst[(op >> 4) & 7];
+          final el = (op & 0x80) == 0 ? 2 : 3;
+          _a64(instId,
+              [_vArr(opDst, el), _vArr(opSrc[0], el), _vArr(opSrc[1], el)]);
+        default:
+          throw StateError(
+              'invalid swizzle operation 0x${op.toRadixString(16)}');
+      }
+
+      if ((target & 1) != 0) opSrc[0] = opDst;
+      if ((target & 2) != 0) opSrc[1] = opDst;
     }
   }
 

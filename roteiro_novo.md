@@ -26,7 +26,8 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 | Dispatchers x86/A64 | ✅ Escritos à mão, **fail-loud** (instrução sem bytes = erro) | |
 | Bancos de instruções | ✅ Gerados e indexados por id | `inst_db_consistency_test` |
 | **UJIT emit_3v (x86 e A64)** | ✅ Port fiel de `emit_3v` + tabela `opcode_info_3v` do x86; **todas as 179 ops comuns** validadas em runtime com 4 layouts de operandos | `ujit_vvv_ops_test`: SSE2, SSE4.1, host (AVX2 no Windows) e AArch64 |
-| UJIT emit_2v / 2vi / 3vi / 4v | ✅ casos validados em runtime | `ujit_vvv_semantics_test` |
+| **UJIT emit_2vi (x86 e A64)** | ✅ Port fiel (tabela `opcode_info_2vi`, `emit_swizzle32_impl` + `swizzle_32_data`); imediatos `Swizzle2`/`Swizzle4` como no upstream | `ujit_vvi_ops_test`: os 256 swizzles de 32/16 bits, os 4 de 64 bits e shifts nos limites |
+| UJIT emit_2v / 3vi / 4v | ✅ casos validados em runtime | `ujit_vvv_semantics_test` |
 | **Constantes vetoriais (tabela local)** | ✅ Corrigidas (antes eram lidas do próprio código) | `ujit_const_runtime_test` |
 | **ChaCha20 otimizado** | ✅ x64 e AArch64 | `chacha20_verify_test` |
 | AVX-512 no UJIT | ⛔ Desativado (encodings EVEX não portados/validados); hosts AVX-512 usam as lowerings AVX2 | |
@@ -57,12 +58,19 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 ### Testes
 - `test/asmjit/ujit_vvv_ops_test.dart`: todas as ops 3v comuns contra modelo de referência Dart, com `dst` distinto, `dst == src1`, `dst == src2` e `src2` em memória (x64: SSE2, SSE4.1 e host; A64). Harness compartilhado em `test/support/ujit_run.dart`.
 - `test/asmjit/x86_gp_alu_encoding_test.dart` (215 formas LLVM).
-- Resultado: arm64 2003, Windows x64 AVX2 **5889** testes passando. Sob Rosetta, a suíte x64 concorrente tem falhas aleatórias de JIT que não ocorrem em hardware x64 real nem com `-j 1` (artefato do tradutor).
+- Resultado (após o 2vi): arm64 **6043**, Windows x64 AVX2 **17999** testes passando. Sob Rosetta, a suíte x64 concorrente tem falhas aleatórias de JIT que não ocorrem em hardware x64 real nem com `-j 1` (artefato do tradutor).
+
+### `emit_2vi` portado fielmente (x86 e A64)
+- **Mudança de API**: os imediatos de `kSwizzle*` agora são valores `Swizzle2`/`Swizzle4` (`swizzle4(d, c, b, a).value`), como no upstream. Antes os dois backends usavam o formato do `pshufd`. Benchmark ChaCha20 e testes atualizados.
+- x86: tabela `opcode_info_2vi` + `emit_2vi()` (AVX e SSE, `sraI64` emulado, `movddup`/`unpck*`/`shufpd`/`pshufd` como no upstream).
+- A64: `emit_swizzle32_impl()` com a tabela `swizzle_32_data` (256 entradas convertidas por script, posição conferida com o índice `d c b a`), swizzles de 16 bits via TBL com constante de 16 bytes, `srlb` por 8/12 via `dup` escalar (encoder: DUP element escalar). Antes o swizzle de 32 bits eram 4 `ins` inventados.
+- `VecConst` compara por conteúdo (constantes criadas na emissão são compartilhadas, como `simd_const_16b`).
+- Removidos `permuteU*`/`shufI8` de `UniOpVVI`: não existem no upstream e `shufI8` emitia `pshufb` com imediato (instrução inexistente).
+- Desvios provados executando o upstream A64: `kSllbU128` por 0 gera `ext ..., #16` (InvalidImmediate) e `kSrl*/kSra*` por 0 geram `ushr/sshr #0` (InvalidImmediate), enquanto o x86 aceita; o port emite um move.
 
 ### Próximos passos
-1. `emit_2vi` swizzles: o port usa a codificação de imm do `pshufd`, e não `Swizzle2`/`Swizzle4` do upstream (`swizzle(...).value`); alinhar API, backends e benchmark.
-2. Portar fielmente o `emit_2v` x86 (`sse_int_widen`, abs, conversões) e o `loadCvt` genérico, e conferir 3vi/4v (FMA) contra o upstream.
-3. A64 `swizzleU32x4` via `emit_swizzle32_impl`.
+1. Portar fielmente o `emit_2v` x86 (`sse_int_widen`, abs, conversões) e o `loadCvt` genérico, e conferir 3vi/4v (FMA) contra o upstream.
+2. Teste abrangente de `emit_2v` como o de 3v/2vi.
 
 ## ✅ Progresso Recente (02/11/2026 - RA multiarquitetura, UJIT A64, x86 SIMD)
 

@@ -41,7 +41,20 @@ class VecConst {
     return VecConst(16, data.buffer.asUint8List());
   }
 
-  // TODO: Add more helpers as needed.
+  /// Constants are compared by content, so a constant built at emit time
+  /// (e.g. a TBL predicate) is shared like upstream's `simd_const_16b()`.
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! VecConst || other.width != width) return false;
+    for (var i = 0; i < data.length; i++) {
+      if (data[i] != other.data[i]) return false;
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => Object.hash(width, Object.hashAll(data));
 }
 
 /// A table of common vector constants.

@@ -404,14 +404,7 @@ enum UniOpVVI {
   srlnRndLoU32,
   srlnRndHiU32,
   srlnRndLoU64,
-  srlnRndHiU64,
-
-  // X86 extras
-  permuteU8,
-  permuteU16,
-  permuteU32,
-  permuteU64,
-  shufI8;
+  srlnRndHiU64;
 }
 
 /// Instruction with `[vec, vec, vec]` operands.

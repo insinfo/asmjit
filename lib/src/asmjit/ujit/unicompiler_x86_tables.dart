@@ -1,9 +1,10 @@
 /// x86 lowering tables for UniCompiler.
 ///
-/// Ported from `opcode_info_3v` in asmjit's `ujit/unicompiler_x86.cpp`; one
-/// entry per [UniOpVVV] value shared by all architectures, in enum order
-/// (upstream's x86-only `kPermute*` entries require AVX-512 and are not
-/// part of the Dart enum).
+/// Ported from `opcode_info_2vi` and `opcode_info_3v` in asmjit's
+/// `ujit/unicompiler_x86.cpp`; one entry per [UniOpVVI] / [UniOpVVV] value
+/// shared by all architectures, in enum order (upstream's x86-only
+/// `kPermute*` 3v entries require AVX-512 and are not part of the Dart
+/// enum).
 
 import '../x86/x86_inst_db.g.dart';
 import 'unicompiler.dart' show SSEExt, AVXExt;
@@ -419,4 +420,63 @@ const List<X86UniOpVInfo> kX86OpcodeInfo3v = [
       0, 0, 0, 0, 0x00, 4, 2, 0, 0), // packsI32U16
   _V(X86InstId.kPshufb, 2, SSEExt.kSSSE3, X86InstId.kVpshufb, AVXExt.kAVX, 0, 0,
       0, 0, 0x00, 4, 0, 0, 0), // swizzlevU8
+];
+
+const List<X86UniOpVInfo> kX86OpcodeInfo2vi = [
+  _V(X86InstId.kPsllw, 2, SSEExt.kSSE2, X86InstId.kVpsllw, AVXExt.kAVX512, 0, 0,
+      0, 0, 0x00, 4, 1, 0, 0), // sllU16
+  _V(X86InstId.kPslld, 2, SSEExt.kSSE2, X86InstId.kVpslld, AVXExt.kAVX512, 0, 0,
+      0, 0, 0x00, 4, 2, 4, 0), // sllU32
+  _V(X86InstId.kPsllq, 2, SSEExt.kSSE2, X86InstId.kVpsllq, AVXExt.kAVX512, 0, 0,
+      0, 0, 0x00, 4, 3, 8, 0), // sllU64
+  _V(X86InstId.kPsrlw, 2, SSEExt.kSSE2, X86InstId.kVpsrlw, AVXExt.kAVX512, 0, 0,
+      0, 0, 0x00, 4, 1, 0, 0), // srlU16
+  _V(X86InstId.kPsrld, 2, SSEExt.kSSE2, X86InstId.kVpsrld, AVXExt.kAVX512, 0, 0,
+      0, 0, 0x00, 4, 2, 4, 0), // srlU32
+  _V(X86InstId.kPsrlq, 2, SSEExt.kSSE2, X86InstId.kVpsrlq, AVXExt.kAVX512, 0, 0,
+      0, 0, 0x00, 4, 3, 8, 0), // srlU64
+  _V(X86InstId.kPsraw, 2, SSEExt.kSSE2, X86InstId.kVpsraw, AVXExt.kAVX512, 0, 0,
+      0, 0, 0x00, 4, 1, 0, 0), // sraI16
+  _V(X86InstId.kPsrad, 2, SSEExt.kSSE2, X86InstId.kVpsrad, AVXExt.kAVX512, 0, 0,
+      0, 0, 0x00, 4, 2, 4, 0), // sraI32
+  _V(-1, 0, SSEExt.kIntrin, X86InstId.kVpsraq, AVXExt.kAVX512, 0, 0, 0, 0, 0x00,
+      4, 3, 8, 0), // sraI64
+  _V(X86InstId.kPslldq, 2, SSEExt.kSSE2, X86InstId.kVpslldq, AVXExt.kAVX512, 0,
+      0, 0, 0, 0x00, 4, 0, 0, 0), // sllbU128
+  _V(X86InstId.kPsrldq, 2, SSEExt.kSSE2, X86InstId.kVpsrldq, AVXExt.kAVX512, 0,
+      0, 0, 0, 0x00, 4, 0, 0, 0), // srlbU128
+  _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 1, 0,
+      0), // swizzleU16x4
+  _V(X86InstId.kPshuflw, 3, SSEExt.kIntrin, X86InstId.kVpshuflw, AVXExt.kIntrin,
+      0, 0, 0, 0, 0x00, 4, 1, 0, 0), // swizzleLoU16x4
+  _V(X86InstId.kPshufhw, 3, SSEExt.kIntrin, X86InstId.kVpshufhw, AVXExt.kIntrin,
+      0, 0, 0, 0, 0x00, 4, 1, 0, 0), // swizzleHiU16x4
+  _V(X86InstId.kPshufd, 3, SSEExt.kIntrin, X86InstId.kVpshufd, AVXExt.kIntrin,
+      0, 0, 0, 0, 0x00, 4, 2, 0, 0), // swizzleU32x4
+  _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 3, 0,
+      0), // swizzleU64x2
+  _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 2, 2, 0,
+      0), // swizzleF32x4
+  _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 3, 3, 0,
+      0), // swizzleF64x2
+  _V(-1, 0, SSEExt.kIntrin, X86InstId.kVpermq, AVXExt.kIntrin, 0, 0, 0, 0, 0x00,
+      4, 3, 0, 0), // swizzleU64x4
+  _V(-1, 0, SSEExt.kIntrin, X86InstId.kVpermq, AVXExt.kIntrin, 0, 0, 0, 0, 0x00,
+      3, 3, 0, 0), // swizzleF64x4
+  _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 3, 0,
+      0), // extractV128I32
+  _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 3, 0,
+      0), // extractV128I64
+  _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 2, 3, 0,
+      0), // extractV128F32
+  _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 3, 3, 0,
+      0), // extractV128F64
+  _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 3, 0,
+      0), // extractV256I32
+  _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 3, 0,
+      0), // extractV256I64
+  _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 2, 3, 0,
+      0), // extractV256F32
+  _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 3, 3, 0,
+      0), // extractV256F64
 ];

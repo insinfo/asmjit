@@ -2,6 +2,7 @@
 ///
 /// Ported from asmjit/ujit/unicompiler.h
 
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:asmjit/src/asmjit/core/environment.dart';
 

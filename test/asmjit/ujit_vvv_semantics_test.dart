@@ -278,7 +278,7 @@ void main() {
     ),
     'swizzleU32x4 [2,0,3,1]': (
       UniOpVVI.swizzleU32x4,
-      2 | (0 << 2) | (3 << 4) | (1 << 6),
+      swizzle4(1, 3, 0, 2).value,
       (a) => _bytes([
             ...a.sublist(8, 12),
             ...a.sublist(0, 4),
@@ -288,12 +288,12 @@ void main() {
     ),
     'swizzleU32x4 rotate 1': (
       UniOpVVI.swizzleU32x4,
-      1 | (2 << 2) | (3 << 4) | (0 << 6),
+      swizzle4(0, 3, 2, 1).value,
       (a) => _bytes([...a.sublist(4), ...a.sublist(0, 4)])
     ),
     'swizzleU64x2 swap': (
       UniOpVVI.swizzleU64x2,
-      1,
+      swizzle2(0, 1).value,
       (a) => _bytes([...a.sublist(8), ...a.sublist(0, 8)])
     ),
   };
