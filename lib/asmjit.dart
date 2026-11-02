@@ -12,6 +12,7 @@ export 'src/asmjit/core/arch.dart';
 export 'src/asmjit/core/code_buffer.dart';
 export 'src/asmjit/core/code_holder.dart';
 export 'src/asmjit/core/code_writer.dart';
+export 'src/asmjit/core/fixup.dart';
 export 'src/asmjit/core/labels.dart';
 export 'src/asmjit/core/operand.dart';
 export 'src/asmjit/core/const_pool.dart';

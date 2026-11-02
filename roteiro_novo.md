@@ -137,7 +137,6 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - Tabelas: `assets/db/x86_instdb.txt` copia do `x86instdb.cpp` a tabela `INST(...)` mantida à mão no upstream (encoding, opcode principal/alternativo) e os flags da `InstCommonTable` (`tool/vendor_x86_instdb.dart`); o `tool/gen_x86_db.dart` gera `encoding`, `mainOpcode`, `altOpcode`, `dbFlags` e `avx512Flags` em `x86_inst_db.g.dart` (valores `Opcode` das macros `O()/V()/E()/O_FPU()`). `x86_opcode.dart` porta `x86opcode_p.h` e os enums `EncodingId`/`InstFlags`/`Avx512Flags`.
 - `X86Assembler.emit()` e o serializer (compiler/UJIT) usam o encoder portado; `instOptions` e `extraReg` como `inst_options()`/`extra_reg()` do upstream (`X86EmitOptions`: LOCK/REP, `{k}`, `{z}`, `{er}`/`{sae}`, VEX3/EVEX, short/long). O dispatcher x86 escrito à mão (`x86_dispatcher.dart`) foi removido.
 - API: `X86Mem.broadcast` (`X86Broadcast`, `withBroadcast()`), `X86Mem.withSize/withDisplacement` preservam o label, e os registradores do upstream que faltavam (`X86Mm`, `X86St`, `X86Bnd`, `X86SReg`, `X86CReg`, `X86DReg`, `X86Tmm`).
-- Diferenças conhecidas: endereço absoluto que exige relocação AbsToRel (e `jmp/call` para endereço absoluto sem base address) dá erro em vez de relocação.
 - **Goldens x64: 17886/17891** (antes 2674), todos os grupos, inclusive AVX-512; faltam `ptr_abs`, VSIB sem base e broadcast em `[rip]` (API). A tabela SIMD (873 formas LLVM) também bate.
 - Defeitos que o encoder antigo escondia, corrigidos: o UJIT montava a constante vetorial com tamanho de memória (`ymmword` para constantes de 32 bytes); o upstream usa `x86::ptr()` sem tamanho. Com o encoder fiel isso virava `vmovdqa ymm` (VEX.256) e falhava por alinhamento em hosts AVX. O `x86_avx512_test` usava `kAddps` (SSE) com ZMM; agora usa `kVaddps/kVaddpd` com bytes do LLVM.
 - Suítes: arm64 17749, Rosetta 44636, Windows AVX2 44750.
@@ -156,7 +155,7 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - Jobs com QEMU (linux-arm32, linux-riscv64) e ia32 nativo (`continue-on-error`): o asmjit só gera código x86-64/AArch64, então nesses hosts rodam os testes que não executam JIT (encoding, goldens, IR/RA). Correções feitas para eles: `CpuInfo` só executa CPUID em x86-64 e testes dependentes do host passaram a usar ambiente explícito/skip.
 
 ### Goldens completos (x64 17891/17891, A64 3992/3992)
-- `CodeHolder.baseAddress` (`CodeHolder::init(env, base_address)`; null = `kNoBaseAddress`): os encoders resolvem endereços absolutos relativos a ele (x86 `[abs]` RIP-relativo, `jmp/call imm`, heurística do `movabs`; A64 `adr/adrp/b imm`). Sem base address, os casos que no upstream geram relocação AbsToRel ainda dão erro.
+- `CodeHolder.baseAddress` (`CodeHolder::init(env, base_address)`; null = `kNoBaseAddress`): os encoders resolvem endereços absolutos relativos a ele (x86 `[abs]` RIP-relativo, `jmp/call imm`, heurística do `movabs`; A64 `adr/adrp/b imm`). Sem base address, geram `RelocEntry` (ver "Relocação de endereços absolutos").
 - `X86Mem.addrType` (`ptrAbs`/`ptrRel`), broadcast em `X86RipMem`.
 - `a64_predicate.dart`: namespace `Predicate` do upstream (AT, BTI, DB, DC, IC, ISB, PRFOp, PSB, TLBI, TSB, PState, SysReg — 948 constantes, `kA64Predicates` por nome).
 - O banco A64 do Dart inclui as instruções da tabela do upstream que faltavam no `isa_aarch64.json` (`fcvtxn`...).
@@ -173,8 +172,16 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - `emitPrologue/emitEpilogue` do A64 usavam `stp x29, x30, [sp]` sem writeback e `ldp [sp, #16]`, corrompendo o frame record; agora `stp ..., [sp, #-16]!` e `ldp ..., [sp], #16` (bytes do LLVM no `a64_ldst_encoding_test`).
 - **Bug do upstream provado** (executando o asmjit C++ arm64): a linha `strh` do `EncodingData` aceita registrador X (`kWX`, bit 30), e `strh(x1, ptr(x2, 2))` emite `0x39000441` = `strb w1, [x2, #1]` (store do tamanho errado, em silêncio). O LLVM rejeita `strh x1`, e o próprio upstream rejeita `strb x1`, `ldrh x1` e `sturh x1` (todos `kW`). Desvio aplicado em `tool/vendor_a64_instdb.dart` (linha passa a `kW`, falha se a linha mudar no upstream); teste no `a64_ldst_encoding_test`.
 
+### Relocação de endereços absolutos (`RelocEntry`, `relocate_to_base`)
+- `core/fixup.dart` porta `OffsetType`/`OffsetFormat` (`fixup.h`) e `CodeWriterUtils.encodeOffset32/64` + `writeOffset` foram para `core/code_writer.dart` (`codewriter.cpp`); o encoder A64 usa o `OffsetFormat` do core. Os formatos AArch32/Thumb não foram portados (não há backend ARM 32 bits).
+- `CodeHolder`: `RelocType`, `RelocEntry`, `newRelocEntry`, seção `.addrtab` (`ensureAddressTableSection`, `addAddressToAddressTable`), `Section.offset/virtualSize/order/realSize`, `flatten()`, `codeSize`, `relocateToBase(base)` (AbsToAbs, RelToAbs, AbsToRel, X64AddressEntry com trampolim `FF 15`/`FF 25` pela tabela de endereços) e `copyFlattenedData()`; port de `codeholder.cpp`.
+- Encoders sem base address agora registram a relocação como o upstream em vez de dar erro: x86 `[abs]` RIP-relativo, `jmp/call/jcc imm` (REX de preenchimento + entrada na `.addrtab` para jmp/call em 64 bits), A64 `b/bl/b.cond/cbz/tbz/adr/adrp imm`.
+- `JitRuntime.add()` segue o `JitRuntime::_add()`: `flatten` → aloca → `relocateToBase(endereço da alocação)` → copia a imagem (a `.addrtab` encolhe quando os alvos ficam a ±2GB). `CodeHolder.finalize()` recusa código que ainda precisa de relocação; `addCached` inclui as relocações na chave.
+- `test/asmjit/reloc_test.dart`: imagens relocadas idênticas às do upstream (programa C++ com `relocate_to_base`), erros iguais (jcc fora de ±2GB, `adrp` a distância não múltipla de 4096 — limitação do upstream, que rejeita em vez de errar —, `b` fora de ±128MB) e execução JIT de `jmp` para outra função JIT por endereço.
+- Pendente: `[LABEL|RIP]` em 32 bits (RelToAbs com fixup de label ligado à relocação) e `embedLabel`/`embedLabelDelta` (o serializer ignora `EmbedLabelNode`; o upstream usa RelToAbs), necessários para jump tables.
+
 ### Próximos passos
-1. Relocação AbsToRel/RelToAbs (endereço absoluto sem base address conhecido; `[LABEL|RIP]` em 32 bits) no `CodeHolder`.
+1. `embed_label`/`embed_label_delta` (RelToAbs) e jump tables; `[LABEL|RIP]` em 32 bits.
 2. `emit_2vs` (UniOpVR) no lugar de `emitCV`.
 3. Portar `asmjit_test_unicompiler*.cpp` e os testes do compiler.
 4. Acesso de outros operandos além do 0 (xadd/cmpxchg) a partir do banco.

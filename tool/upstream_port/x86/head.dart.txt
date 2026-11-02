@@ -16,6 +16,7 @@ import 'dart:math' as math;
 import '../core/arch.dart';
 import '../core/code_buffer.dart';
 import '../core/code_holder.dart';
+import '../core/fixup.dart';
 import '../core/emitter.dart' show EncodingOptions;
 import '../core/labels.dart';
 import '../core/operand.dart' show BaseReg, Imm, LabelOp;

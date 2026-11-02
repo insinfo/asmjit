@@ -159,6 +159,7 @@ def expr(l):
     l = re.sub(r'\bwriter\.(\w+)\(', lambda m: '_w.' + camel(m.group(1)) + '(', l)
     l = re.sub(r'\bopcode\.(\w+)\(', lambda m: 'opcode.' + camel(m.group(1)) + '(', l)
     l = re.sub(r'\boffset_format\.(\w+)\(', lambda m: 'offsetFormat.' + camel(m.group(1)) + '(', l)
+    l = re.sub(r'\boffset_format\._imm_discard_lsb = (\w+);', r'offsetFormat.setImmDiscardLsb(\1);', l)
     l = re.sub(r'\b(size_op|sz_op|sop|op)\.(\w+)\(', lambda m: m.group(1) + '.' + camel(m.group(2)) + '(', l)
     l = re.sub(r'\bop_data\.(\w+)\(\)', r'op_data.\1', l)
     l = re.sub(r'^(\s*)opcode = (.*);', r'\1opcode.reset(\2);', l)

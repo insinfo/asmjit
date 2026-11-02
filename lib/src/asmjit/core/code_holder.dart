@@ -6,9 +6,12 @@
 import 'dart:typed_data';
 
 import 'code_buffer.dart';
+import 'code_writer.dart';
 import 'environment.dart';
 import 'error.dart';
+import 'fixup.dart';
 import 'formatter.dart';
+import 'globals.dart';
 import 'labels.dart';
 
 /// A section of code or data.
@@ -36,11 +39,23 @@ class Section {
   /// Section alignment.
   final int alignment;
 
+  /// Order of the section in the flattened image (`Section::order()`).
+  final int order;
+
+  /// Offset of the section in the flattened image, assigned by
+  /// [CodeHolder.flatten] (`Section::offset()`).
+  int offset = 0;
+
+  /// Virtual size of the section (`Section::virtual_size()`): space that is
+  /// reserved but not backed by [buffer] (the address table).
+  int virtualSize = 0;
+
   Section._({
     required this.name,
     required this.id,
     required this.flags,
     this.alignment = 1,
+    this.order = 0,
   }) : buffer = CodeBuffer();
 
   /// Creates a text (code) section.
@@ -69,6 +84,9 @@ class Section {
 
   /// The current size of this section.
   int get size => buffer.length;
+
+  /// The greater of the buffer size and [virtualSize] (`real_size()`).
+  int get realSize => buffer.length > virtualSize ? buffer.length : virtualSize;
 
   /// Whether this section is empty.
   bool get isEmpty => buffer.isEmpty;
@@ -105,12 +123,74 @@ class SectionFlags {
   int get hashCode => _value.hashCode;
 }
 
+/// Relocation type (`RelocType`).
+enum RelocType {
+  /// None/deleted (no relocation).
+  none,
+
+  /// Expression evaluation (not used by the port yet).
+  expression,
+
+  /// Relative relocation from one section to another.
+  sectionRelative,
+
+  /// Relocate absolute to absolute.
+  absToAbs,
+
+  /// Relocate relative to absolute.
+  relToAbs,
+
+  /// Relocate absolute to relative.
+  absToRel,
+
+  /// Relocate absolute to relative or use trampoline.
+  x64AddressEntry,
+}
+
+/// Relocation entry (`RelocEntry`): a value that can only be written once
+/// the base address of the code is known ([CodeHolder.relocateToBase]).
+final class RelocEntry {
+  /// Relocation id.
+  final int id;
+
+  /// Type of the relocation.
+  RelocType relocType;
+
+  /// Format of the relocated value.
+  OffsetFormat format = OffsetFormat();
+
+  /// Source section id.
+  int sourceSectionId = Globals.kInvalidId;
+
+  /// Target section id.
+  int targetSectionId = Globals.kInvalidId;
+
+  /// Source offset (relative to the start of the source section).
+  int sourceOffset = 0;
+
+  /// Payload (target offset, target address, expression, etc).
+  int payload = 0;
+
+  RelocEntry._(this.id, this.relocType);
+}
+
+/// Details of what happened during [CodeHolder.relocateToBase]
+/// (`RelocationSummary`).
+final class RelocationSummary {
+  /// The number of bytes the final code has been reduced by: entries of
+  /// the address table that were not needed.
+  final int codeSizeReduction;
+
+  const RelocationSummary(this.codeSizeReduction);
+}
+
 /// Finalized code ready for execution.
 class FinalizedCode {
   /// The target environment.
   final Environment env;
 
-  /// The text (code) section bytes.
+  /// The text (code) section bytes; after [CodeHolder.relocateToBase] the
+  /// whole flattened image (text first, then the address table).
   final Uint8List textBytes;
 
   /// The data section bytes (if any).
@@ -164,6 +244,24 @@ class CodeHolder {
     _sections.add(text);
   }
 
+  /// Relocations (`CodeHolder::relocations()`).
+  final List<RelocEntry> _relocations = [];
+
+  /// Relocation entries recorded by the emitters.
+  List<RelocEntry> get relocations => List.unmodifiable(_relocations);
+
+  /// The `.addrtab` section, created on demand.
+  Section? _addressTableSection;
+
+  /// Address table entries: absolute address -> assigned slot (or null).
+  final Map<int, int?> _addressTableEntries = {};
+
+  /// Base address passed to the last [relocateToBase], or null.
+  int? _relocatedBase;
+
+  /// The address table section (`.addrtab`), if any.
+  Section? get addressTableSection => _addressTableSection;
+
   /// Whether the code has been finalized.
   bool get isFinalized => _finalizedCode != null;
 
@@ -181,17 +279,237 @@ class CodeHolder {
   }
 
   /// Creates a new section.
-  Section newSection(String name, SectionFlags flags, {int alignment = 1}) {
+  Section newSection(String name, SectionFlags flags,
+      {int alignment = 1, int order = 0}) {
+    if (alignment < 0 || (alignment & (alignment - 1)) != 0) {
+      throw AsmJitException(AsmJitError.invalidArgument,
+          'Section alignment must be zero or a power of 2: $alignment');
+    }
     final id = _sections.length;
     final section = Section._(
       name: name,
       id: id,
       flags: flags,
-      alignment: alignment,
+      alignment: alignment == 0 ? 1 : alignment,
+      order: order,
     );
     _sections.add(section);
     return section;
   }
+
+  /// Sections sorted by `(order, id)` (`sections_by_order()`).
+  List<Section> get sectionsByOrder => [..._sections]..sort((a, b) =>
+      a.order != b.order ? a.order.compareTo(b.order) : a.id.compareTo(b.id));
+
+  /// Returns the `.addrtab` section, creating it (`ensure_address_table_section`).
+  Section ensureAddressTableSection() =>
+      _addressTableSection ??= newSection('.addrtab', SectionFlags.none,
+          alignment: env.registerSize, order: 0x7FFFFFFF);
+
+  /// Adds [address] to the address table (`add_address_to_address_table`),
+  /// reserving a slot that [relocateToBase] uses for jmp/call trampolines.
+  void addAddressToAddressTable(int address) {
+    if (_addressTableEntries.containsKey(address)) return;
+    final section = ensureAddressTableSection();
+    _addressTableEntries[address] = null;
+    section.virtualSize += env.registerSize;
+  }
+
+  /// Creates a new relocation entry (`new_reloc_entry`).
+  RelocEntry newRelocEntry(RelocType relocType) {
+    final re = RelocEntry._(_relocations.length, relocType);
+    _relocations.add(re);
+    return re;
+  }
+
+  /// Assigns offsets of all sections in the flattened image (`flatten`).
+  void flatten() {
+    Section? prev;
+    var offset = 0;
+    for (final section in sectionsByOrder) {
+      final realSize = section.realSize;
+      if (realSize != 0) offset = _alignUp(offset, section.alignment);
+      section.offset = offset;
+
+      // Make sure the previous section extends a bit to cover the alignment.
+      if (prev != null) prev.virtualSize = offset - prev.offset;
+
+      prev = section;
+      offset += realSize;
+    }
+  }
+
+  /// Size of the flattened image (`code_size()`).
+  int get codeSize {
+    var offset = 0;
+    for (final section in sectionsByOrder) {
+      final realSize = section.realSize;
+      if (realSize != 0) {
+        offset = _alignUp(offset, section.alignment) + realSize;
+      }
+    }
+    return offset;
+  }
+
+  static int _alignUp(int x, int alignment) =>
+      (x + alignment - 1) & ~(alignment - 1);
+
+  /// Relocates the code to [baseAddress] (`relocate_to_base`): writes every
+  /// [RelocEntry] and fills the address table. Call [flatten] first.
+  RelocationSummary relocateToBase(int baseAddress) {
+    final addressSize = env.registerSize;
+    final addressTableSection = _addressTableSection;
+    var addressTableEntrySize = 0;
+
+    if (addressTableSection != null) {
+      addressTableSection.buffer.clear();
+      addressTableSection.buffer.emitZeros(addressTableSection.virtualSize);
+    }
+
+    AsmJitException invalidReloc(RelocEntry re) => AsmJitException(
+        AsmJitError.invalidRelocEntry, 'Invalid relocation entry #${re.id}');
+
+    // Relocate all recorded locations.
+    for (final re in _relocations) {
+      // Possibly deleted or optimized-out entry.
+      if (re.relocType == RelocType.none) continue;
+
+      final sourceSection = getSection(re.sourceSectionId)!;
+      final targetSection = re.targetSectionId != Globals.kInvalidId
+          ? getSection(re.targetSectionId)
+          : null;
+
+      var value = re.payload;
+      final sectionOffset = sourceSection.offset;
+      final sourceOffset = re.sourceOffset;
+
+      // Make sure that the `RelocEntry` doesn't go out of bounds.
+      final regionSize = re.format.regionSize();
+      if (re.sourceOffset >= sourceSection.buffer.length ||
+          sourceSection.buffer.length - re.sourceOffset < regionSize) {
+        throw invalidReloc(re);
+      }
+
+      final buffer = sourceSection.buffer;
+
+      switch (re.relocType) {
+        case RelocType.absToAbs:
+          break;
+
+        case RelocType.relToAbs:
+          // Value is currently a relative offset from the start of its
+          // section. Convert it to an absolute offset (with base address).
+          if (targetSection == null) throw invalidReloc(re);
+          value += baseAddress + targetSection.offset;
+
+        case RelocType.absToRel:
+          value -= baseAddress + sectionOffset + sourceOffset + regionSize;
+
+          // Sign extend as we are not interested in the high 32-bit word in
+          // a 32-bit address space.
+          if (addressSize <= 4) {
+            value = value.toSigned(32);
+          } else if (value != value.toSigned(32)) {
+            throw AsmJitException(AsmJitError.relocOffsetOutOfRange,
+                'Relocation #${re.id}: displacement out of range');
+          }
+
+        case RelocType.x64AddressEntry:
+          final valueOffset = re.sourceOffset + re.format.valueOffset();
+          if (re.format.valueSize() != 4 || valueOffset < 2) {
+            throw invalidReloc(re);
+          }
+
+          // First try whether a relative 32-bit displacement would work.
+          value -= baseAddress + sectionOffset + sourceOffset + regionSize;
+          if (value != value.toSigned(32)) {
+            // Relative 32-bit displacement is not possible, use '.addrtab'.
+            if (!_addressTableEntries.containsKey(re.payload)) {
+              throw invalidReloc(re);
+            }
+            final slot =
+                _addressTableEntries[re.payload] ??= addressTableEntrySize++;
+
+            final atEntryIndex = slot * addressSize;
+            final addrSrc = sectionOffset + sourceOffset + regionSize;
+            final addrDst = addressTableSection!.offset + atEntryIndex;
+
+            value = addrDst - addrSrc;
+            if (value != value.toSigned(32)) {
+              throw AsmJitException(AsmJitError.relocOffsetOutOfRange,
+                  'Relocation #${re.id}: address table out of range');
+            }
+
+            // Bytes that replace [REX, OPCODE] bytes.
+            const byte0 = 0xFF;
+            var byte1 = buffer[valueOffset - 1];
+
+            if (byte1 == 0xE8) {
+              // Patch CALL/MOD byte to FF /2 (-> 0x15).
+              byte1 = _x86EncodeMod(0, 2, 5);
+            } else if (byte1 == 0xE9) {
+              // Patch JMP/MOD byte to FF /4 (-> 0x25).
+              byte1 = _x86EncodeMod(0, 4, 5);
+            } else {
+              throw invalidReloc(re);
+            }
+
+            // Patch `jmp/call` instruction.
+            buffer[valueOffset - 2] = byte0;
+            buffer[valueOffset - 1] = byte1;
+
+            addressTableSection.buffer.patch64(atEntryIndex, re.payload);
+          }
+
+        default:
+          throw invalidReloc(re);
+      }
+
+      if (!CodeWriterUtils.writeOffset(
+          buffer, re.sourceOffset, value, re.format)) {
+        throw invalidReloc(re);
+      }
+    }
+
+    var codeSizeReduction = 0;
+    // Fixup the virtual size of the address table if it's the last section.
+    if (addressTableSection != null &&
+        identical(sectionsByOrder.last, addressTableSection)) {
+      final reservedSize = addressTableSection.virtualSize;
+      final addressTableSize = addressTableEntrySize * addressSize;
+
+      addressTableSection.buffer.truncate(addressTableSize);
+      addressTableSection.virtualSize = addressTableSize;
+
+      assert(reservedSize >= addressTableSize);
+      codeSizeReduction = reservedSize - addressTableSize;
+    }
+
+    _relocatedBase = baseAddress;
+    return RelocationSummary(codeSizeReduction);
+  }
+
+  static int _x86EncodeMod(int m, int o, int rm) => (m << 6) | (o << 3) | rm;
+
+  /// Copies the flattened image into [dst] (`copy_flattened_data`), padding
+  /// the space between sections with zeros.
+  void copyFlattenedData(Uint8List dst) {
+    for (final section in sectionsByOrder) {
+      if (section.offset > dst.length ||
+          dst.length - section.offset < section.buffer.length) {
+        throw AsmJitException(AsmJitError.invalidArgument,
+            'copyFlattenedData: destination too small');
+      }
+      dst.setRange(section.offset, section.offset + section.buffer.length,
+          section.buffer.bytes);
+    }
+  }
+
+  /// Whether the code has relocation entries that [relocateToBase] has not
+  /// applied yet.
+  bool get needsRelocation =>
+      _relocatedBase == null &&
+      _relocations.any((re) => re.relocType != RelocType.none);
 
   // ===========================================================================
   // Label management
@@ -290,19 +608,40 @@ class CodeHolder {
   /// Finalizes the code, resolving all relocations.
   ///
   /// Returns a [FinalizedCode] object containing the executable bytes.
+  ///
+  /// Code with [RelocEntry]s (absolute targets without a known
+  /// [baseAddress]) can only run at the address it is relocated to: use
+  /// `JitRuntime.add()`, or [flatten] + [relocateToBase] before this.
   FinalizedCode finalize() {
-    // Resolve all relocations
-    for (final reloc in text.relocs) {
-      _resolveReloc(reloc, text.buffer);
+    resolveLabelFixups();
+
+    if (needsRelocation) {
+      throw AsmJitException(
+          AsmJitError.invalidState,
+          'The code has absolute targets that need relocation: use '
+          'JitRuntime.add() or flatten() + relocateToBase()');
+    }
+
+    Uint8List bytes = text.buffer.bytes;
+    if (_relocatedBase != null) {
+      bytes = Uint8List(codeSize);
+      copyFlattenedData(bytes);
     }
 
     _finalizedCode = FinalizedCode._(
       env: env,
-      textBytes: text.buffer.bytes,
+      textBytes: bytes,
       dataBytes: null,
-      totalSize: text.buffer.length,
+      totalSize: bytes.length,
     );
     return _finalizedCode!;
+  }
+
+  /// Resolves the label fixups of the text section.
+  void resolveLabelFixups() {
+    for (final reloc in text.relocs) {
+      _resolveReloc(reloc, text.buffer);
+    }
   }
 
   void _resolveReloc(Reloc reloc, CodeBuffer buffer) {
@@ -410,8 +749,13 @@ class CodeHolder {
     for (final section in _sections) {
       section.buffer.clear();
       section.relocs.clear();
+      section.offset = 0;
+      section.virtualSize = 0;
     }
     _labelManager.clear();
+    _relocations.clear();
+    _addressTableEntries.clear();
+    _relocatedBase = null;
   }
 
   /// Re-initializes the code holder (alias for reset).

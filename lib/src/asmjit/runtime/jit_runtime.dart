@@ -114,11 +114,13 @@ class JitRuntime {
       );
     }
 
-    // Finalize the code
-    final finalized = code.finalize();
-    final bytes = finalized.textBytes;
+    // As `JitRuntime::_add()`: flatten, allocate, relocate to the address of
+    // the allocation and copy the flattened image.
+    code.resolveLabelFixups();
+    code.flatten();
 
-    if (bytes.isEmpty) {
+    final estimatedCodeSize = code.codeSize;
+    if (estimatedCodeSize == 0) {
       throw AsmJitException(
         AsmJitError.noCodeGenerated,
         'No code was generated',
@@ -126,13 +128,17 @@ class JitRuntime {
     }
 
     // Align size to page boundary
-    final alignedSize = _vmInfo.alignToPage(bytes.length);
+    final alignedSize = _vmInfo.alignToPage(estimatedCodeSize);
 
     // 1. Allocate RW memory
     final rwBlock = VirtMem.allocRW(alignedSize);
 
     try {
-      // 2. Write the code
+      // 2. Relocate the code to its address and write it. The address table
+      // may shrink when the targets turn out to be close enough.
+      code.relocateToBase(rwBlock.ptr.address);
+      final bytes = Uint8List(code.codeSize);
+      code.copyFlattenedData(bytes);
       VirtMem.writeBytes(rwBlock, bytes);
 
       // 3. Change protection to RX (W^X)
@@ -160,8 +166,26 @@ class JitRuntime {
   /// If [key] is not provided, a stable key is derived from the code bytes
   /// and the target environment.
   JitFunction addCached(CodeHolder code, {String? key}) {
-    final finalized = code.finalize();
-    return addBytesCached(finalized.textBytes, key: key);
+    if (!code.needsRelocation) {
+      return addBytesCached(code.finalize().textBytes, key: key);
+    }
+
+    // Position-dependent code: its bytes are only known after relocation, so
+    // the derived key covers the unrelocated bytes and the relocations.
+    if (!enablePipelineCache) return add(code);
+    code.resolveLabelFixups();
+    final cacheKey = key ??
+        '${_makeCacheKey(code.text.buffer.bytes)}:' +
+            code.relocations
+                .map((re) => '${re.relocType.index}@${re.sourceOffset}='
+                    '${re.payload}')
+                .join(',');
+    final cached = _pipelineCache[cacheKey];
+    if (cached != null) return cached;
+
+    final fn = add(code);
+    _pipelineCache[cacheKey] = fn;
+    return fn;
   }
 
   /// Adds raw bytes as executable code.

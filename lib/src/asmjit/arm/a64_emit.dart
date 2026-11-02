@@ -16,6 +16,7 @@ import 'dart:typed_data';
 
 import '../core/code_buffer.dart';
 import '../core/code_holder.dart';
+import '../core/fixup.dart';
 import '../core/labels.dart';
 import '../core/operand.dart' show Imm, LabelOp;
 import 'a64.dart';
@@ -737,29 +738,6 @@ int _commonHiRegIdOfType(int t) => switch (t) {
 bool checkValidRegs(_Op o0, [_Op? o1, _Op? o2, _Op? o3]) => [o0, o1, o2, o3]
     .whereType<_Op>()
     .every((o) => o.id < 31 || o.id == _commonHiRegIdOfType(o.regType));
-
-/// `OffsetFormat` (asmjit/core/fixup.h) as used by the AArch64 encoder.
-final class OffsetFormat {
-  int _type = 0;
-  int _valueSize = 0;
-  int _immBitShift = 0;
-  int _immBitCount = 0;
-  int _imm_discard_lsb = 0;
-
-  void resetToImmValue(int type, int valueSize, int immBitShift,
-      int immBitCount, int immDiscardLsb) {
-    _type = type;
-    _valueSize = valueSize;
-    _immBitShift = immBitShift;
-    _immBitCount = immBitCount;
-    _imm_discard_lsb = immDiscardLsb;
-  }
-
-  int type() => _type;
-  int immBitShift() => _immBitShift;
-  int immBitCount() => _immBitCount;
-  int immDiscardLsb() => _imm_discard_lsb;
-}
 
 /// `EmitterUtils::is_encodable_offset_64()`.
 bool isEncodableOffset64(int offset, int nBits) {
@@ -1515,7 +1493,7 @@ final class A64Emitter {
               opcode.addReg(o0, 0);
               offsetFormat.resetToImmValue(op_data.offset_type, 4, 5, 21, 0);
 
-              if (instId == _upIds['adrp']!) offsetFormat._imm_discard_lsb = 12;
+              if (instId == _upIds['adrp']!) offsetFormat.setImmDiscardLsb(12);
 
               rmRel = o1;
               {
@@ -7299,10 +7277,15 @@ final class A64Emitter {
             final codeOffset = _w.cursor;
 
             if (baseAddress == null) {
-              // Upstream records an AbsToRel relocation here; the port's
-              // relocations can't express it yet.
+              // Create a new RelocEntry as we cannot calculate the offset right now.
+              final re = code.newRelocEntry(RelocType.absToRel);
+
+              re.sourceSectionId = code.text.id;
+              re.sourceOffset = codeOffset;
+              re.format = offsetFormat.copy();
+              re.payload = rmRel!.imm + 4;
               {
-                state = _S.InvalidDisplacement;
+                state = _S.EmitOp;
                 continue loop;
               }
             } else {

@@ -16,6 +16,7 @@ import 'dart:math' as math;
 import '../core/arch.dart';
 import '../core/code_buffer.dart';
 import '../core/code_holder.dart';
+import '../core/fixup.dart';
 import '../core/emitter.dart' show EncodingOptions;
 import '../core/labels.dart';
 import '../core/operand.dart' show BaseReg, Imm, LabelOp;
@@ -5869,10 +5870,23 @@ final class X86Emitter {
                   var virtualOffset = _w.cursor + immSize + kModRel32Size;
 
                   if (baseAddress == null) {
-                    // Upstream records an AbsToRel relocation here; the port's
-                    // relocations can't express it yet.
+                    // Create a new RelocEntry as we cannot calculate the offset right now.
+                    final re = code.newRelocEntry(RelocType.absToRel);
+
+                    _w.emit8(encodeMod(0, opReg, 5));
+
+                    re.sourceSectionId = code.text.id;
+                    re.sourceOffset = instStart;
+                    re.format
+                      ..resetToSimpleValue(OffsetType.kSignedOffset, 4)
+                      ..setLeadingAndTrailingSize(
+                          _w.cursor - instStart, immSize);
+                    re.payload = rmRel!.offset;
+
+                    _w.emit32uLe(0);
+                    _w.emitImmediate(immValue, immSize);
                     {
-                      s = _S.InvalidAddress;
+                      s = _S.EmitDone;
                       continue loop;
                     }
                   } else {
@@ -6556,10 +6570,41 @@ final class X86Emitter {
                 }
               }
 
-              // Upstream records an AbsToRel relocation (X64AddressEntry for
-              // jmp/call); the port's relocations can't express it yet.
+              final re = code.newRelocEntry(RelocType.absToRel);
+
+              re.sourceOffset = instStart;
+              re.sourceSectionId = code.text.id;
+              re.payload = jump_address;
+
+              if (opcode != 0) {
+                // 64-bit: Emit REX prefix so the instruction can be patched later. REX prefix does nothing if not patched,
+                // but allows to patch the instruction to use MOD/M and to point to a memory where the final 64-bit address
+                // is stored.
+                if (!_is32Bit && isJmpOrCall(instId)) {
+                  if (rex == 0) _w.emit8(_kByteRex);
+
+                  code.addAddressToAddressTable(jump_address);
+
+                  re.relocType = RelocType.x64AddressEntry;
+                }
+
+                _w.emit8If(0x0F,
+                    (opcode & X86Opcode.kMM_Mask) != 0); // Emit 0F prefix.
+                _w.emit8(opcode); // Emit opcode.
+                _w.emit8If(encodeMod(3, opReg, 0), opReg != 0); // Emit MOD.
+                re.format
+                  ..resetToSimpleValue(OffsetType.kSignedOffset, 4)
+                  ..setLeadingAndTrailingSize(_w.cursor - instStart, immSize);
+                _w.emit32uLe(0); // Emit DISP32.
+              } else {
+                _w.emit8(opcode8); // Emit opcode.
+                re.format
+                  ..resetToSimpleValue(OffsetType.kSignedOffset, 1)
+                  ..setLeadingAndTrailingSize(_w.cursor - instStart, immSize);
+                _w.emit8(0); // Emit DISP8 (zero).
+              }
               {
-                s = _S.InvalidDisplacement;
+                s = _S.EmitDone;
                 continue loop;
               }
             }

@@ -29,9 +29,14 @@ _span("      case _S.EmitOp_Rel:\n", "      case _S.EmitOp_DispImm:", """      c
     final codeOffset = _w.cursor;
 
     if (baseAddress == null) {
-      // Upstream records an AbsToRel relocation here; the port's
-      // relocations can't express it yet.
-      { state = _S.InvalidDisplacement; continue loop; }
+      // Create a new RelocEntry as we cannot calculate the offset right now.
+      final re = code.newRelocEntry(RelocType.absToRel);
+
+      re.sourceSectionId = code.text.id;
+      re.sourceOffset = codeOffset;
+      re.format = offsetFormat.copy();
+      re.payload = rmRel!.imm + 4;
+      { state = _S.EmitOp; continue loop; }
     }
     else {
       var pc = baseAddress + codeOffset;
