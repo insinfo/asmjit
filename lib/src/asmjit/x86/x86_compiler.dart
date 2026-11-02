@@ -10,6 +10,8 @@ import 'x86_simd.dart';
 import '../core/reg_type.dart';
 import '../core/builder.dart' as ir;
 import 'x86_serializer.dart';
+import 'x86_rapass.dart';
+import '../core/raarch.dart';
 
 /// X86 Compiler.
 class X86Compiler extends BaseCompiler {
@@ -91,6 +93,9 @@ class X86Compiler extends BaseCompiler {
   void finalize() {
     runPasses();
   }
+
+  @override
+  RAArch createRAArch() => X86RAArch(this);
 
   @override
   void serializeToAssembler(BaseEmitter assembler) {

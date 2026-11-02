@@ -15,11 +15,7 @@ import 'radefs.dart';
 import 'ralocal.dart';
 import 'bitvector.dart';
 import 'ranode_data.dart';
-import '../x86/x86.dart';
-import '../x86/x86_simd.dart';
-
-import '../x86/x86_operands.dart';
-import '../x86/x86_inst_db.g.dart';
+import 'raarch.dart';
 import 'raassignment.dart';
 
 class _RAConsecutiveReg {
@@ -44,8 +40,8 @@ class RAPass extends CompilerPass {
 
   final RALocalAllocator _allocator = RALocalAllocator();
 
-  // Cached target OS for ABI decisions (important on x64).
-  bool _isWindowsTarget = false;
+  /// Architecture-specific hooks (instruction analysis, emission, frame).
+  final RAArch _arch;
 
   // Map from Virtual Register ID to RAWorkId
   final Map<int, RAWorkId> _virtIdToWorkId = {};
@@ -66,7 +62,9 @@ class RAPass extends CompilerPass {
   final List<RALiveBundle> _bundles = [];
   final List<_RACoalesceCandidate> _coalescingCandidates = [];
 
-  RAPass(BaseCompiler compiler) : super(compiler);
+  RAPass(BaseCompiler compiler, [RAArch? arch])
+      : _arch = arch ?? compiler.createRAArch(),
+        super(compiler);
 
   @override
   void run(NodeList nodes) {
@@ -207,23 +205,7 @@ class RAPass extends CompilerPass {
             workReg.homeRegId = physArg.regId;
             workReg.restrictPreferredMask(1 << physArg.regId);
 
-            int instId;
-            Operand op2;
-
-            final physReg = virtReg.toPhys(physArg.regId);
-
-            if (virtReg.group == RegGroup.gp) {
-              // Copy GP args directly from their physical register.
-              instId = X86InstId.kMov;
-              op2 = physReg;
-            } else {
-              // Vector arguments
-              instId = X86InstId.kMovaps;
-              op2 = physReg;
-            }
-
-            // print('RAPass: Insert Arg Move Virt${virtReg.id} <- Phys${physArg.regId}');
-            final movNode = InstNode(instId, [virtReg, op2]);
+            final movNode = _arch.move(virtReg, virtReg.toPhys(physArg.regId));
             _insertNodeAfter(insertPoint!, movNode);
             insertPoint = movNode;
           }
@@ -238,75 +220,7 @@ class RAPass extends CompilerPass {
     avail.reset();
     preserved.reset();
 
-    final arch = compiler.arch;
-
-    if (arch == Arch.x64) {
-      // Use x64 masks from x86.dart
-      // Support for both Windows (Win64) and Linux/Mac (System V)
-
-      bool isWindows = false;
-      try {
-        // Basic check if we are running on Windows VM
-        // Since 'dart:io' might not be available in all contexts (e.g. web), we wrap it or assume user config.
-        // However, for this project which depends on FFI, dart:io is expected.
-        // Ideally, the 'Compiler' instance should provide the target OS.
-        // For now, we use a simple heuristic or Platform check if available.
-        // import 'dart:io' is needed at file level.
-        // Assuming explicit default to Windows if not specified, but here we try logic:
-        // environment is not nullable in BaseCompiler
-        isWindows = compiler.environment.os == 'windows';
-      } catch (e) {
-        // Fallback if env check fails for some reason
-        isWindows = Platform.isWindows;
-      }
-      _isWindowsTarget = isWindows;
-      if (debugLog) print('RAPass: isWindows=$isWindows');
-
-      final preservedGp =
-          isWindows ? x64WindowsPreservedGp : x64SystemVPreservedGp;
-      // All GPs (0-15) are available except RSP (4). RBP (5) is usually preserved.
-      // Available: All 16 minus Stack Pointer.
-      // In AsmJit, available means "allocatable".
-
-      int gpMask = 0xFFFF;
-      gpMask &= ~(1 << 4); // Remove RSP
-      gpMask &= ~(1 << 5); // Remove RBP (Frame Pointer)
-
-      avail[RegGroup.gp] = gpMask;
-      // Disponibiliza XMM0-XMM15 (Win64 tem 16 regs; AVX512 n�o est� habilitado aqui)
-      avail[RegGroup.vec] = 0xFFFF;
-
-      // Set preserved mask
-      int presGp = 0;
-      for (final reg in preservedGp) {
-        presGp |= (1 << reg.id);
-      }
-      preserved[RegGroup.gp] = presGp;
-
-      // XMM 6-15 are volatile on Win64?
-      // Win64: XMM6-XMM15 are non-volatile (preserved). XMM0-XMM5 volatile.
-      // SysV: All XMM volatile? No, check ABI.
-      // Win64: XMM6-XMM15 must be preserved.
-
-      // Win64: XMM6-XMM15 s�o preservados (callee-saved).
-      if (isWindows) {
-        int presVec = 0;
-        for (int i = 6; i <= 15; i++) {
-          presVec |= (1 << i);
-        }
-        preserved[RegGroup.vec] = presVec;
-      } else {
-        preserved[RegGroup.vec] = 0;
-      }
-    } else {
-      // x86 (32-bit) defaults
-      avail[RegGroup.gp] = 0xFF & ~(1 << 4); // Remove ESP
-      avail[RegGroup.vec] = 0xFF; // 8 XMMs
-
-      // Preserved: EBX, ESI, EDI, EBP
-      int presGp = (1 << 3) | (1 << 6) | (1 << 7) | (1 << 5);
-      preserved[RegGroup.gp] = presGp;
-    }
+    _arch.initRegMasks(compiler, avail, preserved);
   }
 
   void _mapVirtuals(NodeList nodes) {
@@ -326,7 +240,7 @@ class RAPass extends CompilerPass {
                 }
               }
             }
-          } else if (op is X86Mem) {
+          } else if (op is BaseMem) {
             // Deep scan memory operands (Base/Index)
             if (op.base != null && !op.base!.isPhysical && !op.base!.isNone) {
               if (!_virtIdToWorkId.containsKey(op.base!.id)) {
@@ -440,6 +354,9 @@ class RAPass extends CompilerPass {
   }
 
   void _analyzeInstLiveness(InstNode node, RABlockData data) {
+    final flags = _arch.preciseLiveness ? _arch.operandFlags(node) : null;
+    final writes = <int>[];
+
     for (int i = 0; i < node.opCount; i++) {
       final op = node.operands[i];
 
@@ -451,38 +368,26 @@ class RAPass extends CompilerPass {
           // Update frequency
           workReg.liveStats.freq += data.weight;
 
-          if (i == 0 && node.instId == _archTraits.movId) {
-            // DEF for Mov - simplified
+          if (flags != null) {
+            // Reads see the value from before the instruction; writes are
+            // applied afterwards so `add a, a, b` keeps `a` live-in.
+            final f = i < flags.length ? flags[i] : 0;
+            if ((f & (RATiedFlags.kRead | RATiedFlags.kUse)) != 0 &&
+                !data.kill.testBit(workId)) {
+              data.gen.setBit(workId);
+            }
+            if ((f & (RATiedFlags.kWrite | RATiedFlags.kOut)) != 0) {
+              writes.add(workId);
+            }
+          } else if (i == 0 && _arch.isMove(node)) {
+            // DEF for moves
             data.kill.setBit(workId);
           } else if (i == 0) {
-            // Check for other Move instructions (SIMD, AVX)
-            bool isMov = (node.instId == X86InstId.kMovaps ||
-                node.instId == X86InstId.kMovups ||
-                node.instId == X86InstId.kMovdqa ||
-                node.instId == X86InstId.kMovdqu ||
-                node.instId == X86InstId.kMovss ||
-                node.instId == X86InstId.kMovsd ||
-                node.instId == X86InstId.kMovd ||
-                node.instId == X86InstId.kMovq ||
-                node.instId == X86InstId.kVmovaps ||
-                node.instId == X86InstId.kVmovups ||
-                node.instId == X86InstId.kVmovdqa ||
-                node.instId == X86InstId.kVmovdqu ||
-                node.instId == X86InstId.kVmovss ||
-                node.instId == X86InstId.kVmovsd ||
-                node.instId == X86InstId.kVmovd ||
-                node.instId == X86InstId.kVmovq ||
-                node.instId == X86InstId.kLea);
-
-            if (isMov) {
-              data.kill.setBit(workId);
-            } else {
-              // RW for destructive (non-mov)
-              if (!data.kill.testBit(workId)) {
-                data.gen.setBit(workId);
-              }
-              data.kill.setBit(workId);
+            // RW for destructive (non-mov)
+            if (!data.kill.testBit(workId)) {
+              data.gen.setBit(workId);
             }
+            data.kill.setBit(workId);
           } else {
             // USE
             if (!data.kill.testBit(workId)) {
@@ -490,20 +395,11 @@ class RAPass extends CompilerPass {
             }
           }
         }
-      } else if (op is X86Mem) {
+      } else if (op is BaseMem) {
         // Handle memory operands (Base and Index are implicit USE)
-        if (op.base != null && !op.base!.isPhysical) {
-          final workId = _virtIdToWorkId[op.base!.id];
-          if (workId != null) {
-            final workReg = _allocator.workRegById(workId);
-            workReg.liveStats.freq += data.weight;
-            if (!data.kill.testBit(workId)) {
-              data.gen.setBit(workId);
-            }
-          }
-        }
-        if (op.index != null && !op.index!.isPhysical) {
-          final workId = _virtIdToWorkId[op.index!.id];
+        for (final reg in [op.base, op.index]) {
+          if (reg == null || reg.isPhysical) continue;
+          final workId = _virtIdToWorkId[reg.id];
           if (workId != null) {
             final workReg = _allocator.workRegById(workId);
             workReg.liveStats.freq += data.weight;
@@ -513,6 +409,10 @@ class RAPass extends CompilerPass {
           }
         }
       }
+    }
+
+    for (final workId in writes) {
+      data.kill.setBit(workId);
     }
   }
 
@@ -627,23 +527,28 @@ class RAPass extends CompilerPass {
         }
       } else if (node is InstNode && currentBlock != null) {
         // Process Inst
-        bool isMov = (node.instId == X86InstId.kMov ||
-            node.instId == X86InstId.kMovaps ||
-            node.instId == X86InstId.kMovups ||
-            node.instId == X86InstId.kMovdqa ||
-            node.instId == X86InstId.kMovdqu ||
-            node.instId == X86InstId.kMovss ||
-            node.instId == X86InstId.kMovsd ||
-            node.instId == X86InstId.kMovd ||
-            node.instId == X86InstId.kMovq ||
-            node.instId == X86InstId.kVmovaps ||
-            node.instId == X86InstId.kVmovups ||
-            node.instId == X86InstId.kVmovdqa ||
-            node.instId == X86InstId.kVmovdqu ||
-            node.instId == X86InstId.kVmovss ||
-            node.instId == X86InstId.kVmovsd ||
-            node.instId == X86InstId.kVmovd ||
-            node.instId == X86InstId.kVmovq);
+        if (_arch.preciseLiveness) {
+          final flags = _arch.operandFlags(node);
+          // 1. Uses (registers read and every memory base/index).
+          for (int i = 0; i < node.opCount; i++) {
+            final op = node.operands[i];
+            final f = i < flags.length ? flags[i] : 0;
+            if (op is BaseMem ||
+                (f & (RATiedFlags.kRead | RATiedFlags.kUse)) != 0) {
+              _activateUse(op, activeRegs, startPos, node.position);
+            }
+          }
+          // 2. Defs.
+          for (int i = 0; i < node.opCount; i++) {
+            final f = i < flags.length ? flags[i] : 0;
+            if ((f & (RATiedFlags.kWrite | RATiedFlags.kOut)) != 0) {
+              _handleDef(node.operands[i], activeRegs, startPos, node.position);
+            }
+          }
+          continue;
+        }
+
+        final isMov = _arch.isMove(node);
 
         // 1. Handle Uses (Gen)
         for (int i = 0; i < node.opCount; i++) {
@@ -687,7 +592,7 @@ class RAPass extends CompilerPass {
         }
         _lastUsePos[op.id] = pos;
       }
-    } else if (op is X86Mem) {
+    } else if (op is BaseMem) {
       if (op.base != null && !op.base!.isPhysical) {
         _activateUse(op.base!, activeRegs, startPos, pos);
       }
@@ -1099,8 +1004,7 @@ class RAPass extends CompilerPass {
     for (final move in spills) {
       final srcReg = move.workReg.virtReg.toPhys(move.fromPhys);
       final mem = _stackSlot(move.workReg);
-      final save = InstNode(_archTraits.movId, [mem, srcReg]);
-      _insertResolution(block, insertionPoint, save);
+      _insertResolution(block, insertionPoint, _arch.save(mem, srcReg));
     }
 
     // 2. Resolve Reg-Reg moves (cycle breaking)
@@ -1110,8 +1014,7 @@ class RAPass extends CompilerPass {
     for (final move in loads) {
       final dstReg = move.workReg.virtReg.toPhys(move.toPhys);
       final mem = _stackSlot(move.workReg);
-      final load = InstNode(_archTraits.movId, [dstReg, mem]);
-      _insertResolution(block, insertionPoint, load);
+      _insertResolution(block, insertionPoint, _arch.load(dstReg, mem));
     }
   }
 
@@ -1148,8 +1051,7 @@ class RAPass extends CompilerPass {
           // Safe to move
           final srcReg = move.workReg.virtReg.toPhys(move.fromPhys);
           final dstReg = move.workReg.virtReg.toPhys(move.toPhys);
-          final mov = InstNode(_archTraits.movId, [dstReg, srcReg]);
-          _insertResolution(block, insertionPoint, mov);
+          _insertResolution(block, insertionPoint, _arch.move(dstReg, srcReg));
 
           moves.removeAt(i);
           progress = true;
@@ -1194,9 +1096,9 @@ class RAPass extends CompilerPass {
       final srcReg = move.workReg.virtReg.toPhys(move.fromPhys);
       final dstReg = move.workReg.virtReg.toPhys(move.toPhys);
 
-      // Check if swap supported
-      final xchg = InstNode(_archTraits.xchgId, [dstReg, srcReg]);
-      _insertResolution(block, insertionPoint, xchg);
+      for (final node in _arch.swap(dstReg, srcReg)) {
+        _insertResolution(block, insertionPoint, node);
+      }
 
       // Update pending moves that sourced from 'toPhys' to now source from 'fromPhys'.
       for (final other in moves) {
@@ -1294,121 +1196,12 @@ class RAPass extends CompilerPass {
 
     if (node.hasNoOperands) return;
 
-    final id = node.instId;
     final opCount = node.opCount;
-
-    // --- Heuristic Flags Determination ---
-    int op0Flags = 0;
-    int op1Flags = 0;
-    int op2Flags = 0;
-    int op3Flags = 0;
-
-    // Detection of instruction groups
-    // This is a simplified classifier. In full AsmJit, this comes from InstDB.
-
-    bool isMov = (id == X86InstId.kMov ||
-        id == X86InstId.kMovabs ||
-        id == X86InstId.kMovaps ||
-        id == X86InstId.kMovups ||
-        id == X86InstId.kMovss ||
-        id == X86InstId.kMovsd ||
-        id == X86InstId.kMovd ||
-        id == X86InstId.kMovq ||
-        id == X86InstId.kMovdqa ||
-        id == X86InstId.kMovdqu ||
-        id == X86InstId.kMovzx ||
-        id == X86InstId.kMovsx ||
-        id == X86InstId.kMovsxd ||
-        id == X86InstId.kVmovaps ||
-        id == X86InstId.kVmovups ||
-        id == X86InstId.kVmovss ||
-        id == X86InstId.kVmovsd ||
-        id == X86InstId.kVmovd ||
-        id == X86InstId.kVmovq ||
-        id == X86InstId.kVmovdqa ||
-        id == X86InstId.kVmovdqu ||
-        id == X86InstId.kLea);
-
-    bool isXchg = (id == X86InstId.kXchg);
-
-    // Read-Only instructions (Test, Cmp)
-    bool isTest = (id == X86InstId.kTest ||
-        id == X86InstId.kCmp ||
-        id == X86InstId.kComiss ||
-        id == X86InstId.kComisd ||
-        id == X86InstId.kUcomiss ||
-        id == X86InstId.kUcomisd ||
-        id == X86InstId.kPtest ||
-        id == X86InstId.kVptest);
-
-    bool isPush = (id == X86InstId.kPush);
-    bool isPop = (id == X86InstId.kPop);
-
-    // 3+ operand, usually AVX/AVX-512 non-destructive
-    // OR Shift with imm/cl (Shl reg, imm -> RW)
-    bool is3Op = (opCount >= 3);
-
-    // Define flags per operand index
-    if (isMov) {
-      // MOV Op0, Op1
-      // Op0 is Write (Out), Op1 is Read (Use)
-      op0Flags = RATiedFlags.kOut | RATiedFlags.kWrite;
-      if (opCount > 1) op1Flags = RATiedFlags.kUse | RATiedFlags.kRead;
-    } else if (isXchg) {
-      // XCHG Op0, Op1
-      // Both are R/W
-      op0Flags = RATiedFlags.kUse |
-          RATiedFlags.kRead |
-          RATiedFlags.kOut |
-          RATiedFlags.kWrite;
-      op1Flags = RATiedFlags.kUse |
-          RATiedFlags.kRead |
-          RATiedFlags.kOut |
-          RATiedFlags.kWrite;
-    } else if (isTest) {
-      // TEST/CMP Op0, Op1
-      // Both are Read
-      op0Flags = RATiedFlags.kUse | RATiedFlags.kRead;
-      if (opCount > 1) op1Flags = RATiedFlags.kUse | RATiedFlags.kRead;
-    } else if (isPush) {
-      // PUSH Op0
-      // Read
-      op0Flags = RATiedFlags.kUse | RATiedFlags.kRead;
-    } else if (isPop) {
-      // POP Op0
-      // Write
-      op0Flags = RATiedFlags.kOut | RATiedFlags.kWrite;
-    } else if (is3Op) {
-      // AVX: VADDPS zmm1, zmm2, zmm3
-      // Op0 = Out, Op1 = Use, Op2 = Use
-      // Note: Some legacy instructions/FMA might be different, but this covers 90% of AVX
-      op0Flags = RATiedFlags.kOut | RATiedFlags.kWrite;
-      op1Flags = RATiedFlags.kUse | RATiedFlags.kRead;
-      op2Flags = RATiedFlags.kUse | RATiedFlags.kRead;
-      if (opCount > 3) op3Flags = RATiedFlags.kUse | RATiedFlags.kRead;
-    } else {
-      // Default 2-operand destructive: ADD Op0, Op1
-      // Op0 is R/W, Op1 is Read
-      op0Flags = RATiedFlags.kUse |
-          RATiedFlags.kRead |
-          RATiedFlags.kOut |
-          RATiedFlags.kWrite;
-      if (opCount > 1) op1Flags = RATiedFlags.kUse | RATiedFlags.kRead;
-    }
-
-    // --- Operand Iteration ---
+    final opFlags = _arch.operandFlags(node);
 
     for (int i = 0; i < opCount; i++) {
       final op = node.operands[i];
-      int currentFlags = 0;
-      if (i == 0)
-        currentFlags = op0Flags;
-      else if (i == 1)
-        currentFlags = op1Flags;
-      else if (i == 2)
-        currentFlags = op2Flags;
-      else
-        currentFlags = op3Flags;
+      int currentFlags = i < opFlags.length ? opFlags[i] : 0;
 
       if (op is BaseReg && !op.isPhysical && !op.isNone) {
         // Virtual Register
@@ -1431,49 +1224,26 @@ class RAPass extends CompilerPass {
           }
         }
 
-        // Apply Masks
         int useMask = 0xFFFFFFFF;
-        int outMask = 0xFFFFFFFF;
-        int useId = RAAssignment.kPhysNone;
-        int outId = RAAssignment.kPhysNone;
+        int useId = _arch.fixedUseId(node, i);
+        if (useId != RAAssignment.kPhysNone) useMask = 1 << useId;
 
-        // Constraint Logic (Basic DB replacement)
-        if (i == 1 &&
-            (id == X86InstId.kShl ||
-                id == X86InstId.kShr ||
-                id == X86InstId.kSar ||
-                id == X86InstId.kRol ||
-                id == X86InstId.kRor)) {
-          // Shift count must be in CL (RCX)
-          useMask = (1 << 1); // RCX=1
-          useId = 1;
-        }
-
-        tied.init(workReg, currentFlags, useMask, useId, 0, outMask, outId, 0);
+        tied.init(workReg, currentFlags, useMask, useId, 0, 0xFFFFFFFF,
+            RAAssignment.kPhysNone, 0);
         tiedRegs.add(tied);
-      } else if (op is X86Mem) {
-        // Memory Operand - check for virtual registers in Base/Index
-        // Memory operands are always READs effectively for the register allocator
-        // (we listen to Base/Index reads).
-        // Even if the instruction Writes to Mem (MOV [rax], rbx), 'rax' is Read.
-
-        if (op.base != null && !op.base!.isPhysical) {
-          _addImplicitUse(op.base!, tiedRegs, node.position);
-        }
-        if (op.index != null && !op.index!.isPhysical) {
-          _addImplicitUse(op.index!, tiedRegs, node.position);
-        }
-
-        // Physical regs in Mem
-        if (op.base != null && op.base!.isPhysical) {
-          used[op.base!.group] |= (1 << op.base!.id);
-        }
-        if (op.index != null && op.index!.isPhysical) {
-          used[op.index!.group] |= (1 << op.index!.id);
+      } else if (op is BaseMem) {
+        // Base/index of a memory operand are always read, even when the
+        // instruction writes to memory (MOV [rax], rbx reads rax).
+        for (final reg in [op.base, op.index]) {
+          if (reg == null) continue;
+          if (reg.isPhysical) {
+            used[reg.group] |= 1 << reg.id;
+          } else {
+            _addImplicitUse(reg, tiedRegs, node.position);
+          }
         }
       } else if (op is BaseReg && op.isPhysical) {
-        // Physical Register Operand
-        // Update Used/Clobbered masks
+        // Physical Register Operand: update used/clobbered masks.
         if ((currentFlags & (RATiedFlags.kWrite | RATiedFlags.kOut)) != 0) {
           clobbered[op.group] |= (1 << op.id);
         }
@@ -1483,15 +1253,7 @@ class RAPass extends CompilerPass {
       }
     }
 
-    // Implicit Definitions (DIV/MUL)
-    if (id == X86InstId.kDiv || id == X86InstId.kIdiv || id == X86InstId.kMul) {
-      clobbered[RegGroup.gp] |= (1 << 0) | (1 << 2); // RAX, RDX
-      used[RegGroup.gp] |= (1 << 0) | (1 << 2); // Input also
-    } else if (id == X86InstId.kCpuid) {
-      clobbered[RegGroup.gp] |=
-          (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3); // EAX, EBX, ECX, EDX
-      used[RegGroup.gp] |= (1 << 0); // EAX input
-    }
+    _arch.implicitRegs(node, used, clobbered);
   }
 
   void _analyzeRet(FuncRetNode node, List<RATiedReg> tiedRegs) {
@@ -1575,7 +1337,7 @@ class RAPass extends CompilerPass {
         if (physId != RAAssignment.kPhysNone) {
           node.operands[i] = op.toPhys(physId);
         }
-      } else if (op is X86Mem) {
+      } else if (op is BaseMem) {
         // Caso especial: operandos de stack criados via newStack (base = VirtReg
         // marcado como stack slot). Convertemos para [RBP+offset] imediatamente,
         // evitando que o registrador virtual seja tratado como ponteiro lixo.
@@ -1602,17 +1364,12 @@ class RAPass extends CompilerPass {
                 }
               }
 
-              final stackMem = _stackSlot(workReg) as X86Mem;
-              final disp = stackMem.displacement + op.displacement;
-              final size = op.size != 0 ? op.size : stackMem.size;
-
-              node.operands[i] = X86Mem(
+              final stackMem = _stackSlot(workReg);
+              node.operands[i] = _arch.rebuildMem(op,
                   base: stackMem.base,
                   index: newIndex,
-                  scale: op.scale,
-                  displacement: disp,
-                  size: size,
-                  segment: op.segment);
+                  displacement: stackMem.displacement + op.displacement,
+                  size: op.size != 0 ? op.size : stackMem.size);
               continue;
             }
           }
@@ -1656,14 +1413,11 @@ class RAPass extends CompilerPass {
         }
 
         if (!identical(newBase, op.base) || !identical(newIndex, op.index)) {
-          node.operands[i] = X86Mem(
+          node.operands[i] = _arch.rebuildMem(op,
               base: newBase,
               index: newIndex,
-              scale: op.scale,
               displacement: op.displacement,
-              size: op.size,
-              segment: op.segment,
-              label: op.label);
+              size: op.size);
         }
       }
     }
@@ -1680,93 +1434,26 @@ class RAPass extends CompilerPass {
 
   // Emission callbacks
   void _emitLoad(RAWorkReg workReg, int physId, InstNode ctx) {
-    final reg = workReg.virtReg.toPhys(physId);
-    final mem = _stackSlot(workReg);
-
-    int instId = _archTraits.movId;
-    if (workReg.group == RegGroup.vec) {
-      if (compiler.arch == Arch.x64 || compiler.arch == Arch.x86) {
-        bool hasAvx = false;
-        try {
-          hasAvx = (compiler as dynamic).hasAvx;
-        } catch (_) {}
-        instId = hasAvx ? X86InstId.kVmovups : X86InstId.kMovups;
-      }
-    }
-
-    final loadNode = InstNode(instId, [reg, mem]);
-    _insertNodeBefore(ctx, loadNode);
+    _insertNodeBefore(
+        ctx, _arch.load(workReg.virtReg.toPhys(physId), _stackSlot(workReg)));
   }
 
   void _emitSave(RAWorkReg workReg, int physId, InstNode ctx) {
-    final reg = workReg.virtReg.toPhys(physId);
-    final mem = _stackSlot(workReg);
-
-    int instId = _archTraits.movId;
-    if (workReg.group == RegGroup.vec) {
-      if (compiler.arch == Arch.x64 || compiler.arch == Arch.x86) {
-        bool hasAvx = false;
-        try {
-          hasAvx = (compiler as dynamic).hasAvx;
-        } catch (_) {}
-        instId = hasAvx ? X86InstId.kVmovups : X86InstId.kMovups;
-      }
-    }
-
-    final saveNode = InstNode(instId, [mem, reg]);
-    _insertNodeBefore(ctx, saveNode);
+    _insertNodeBefore(
+        ctx, _arch.save(_stackSlot(workReg), workReg.virtReg.toPhys(physId)));
   }
 
   void _emitMove(RAWorkReg workReg, int dst, int src, InstNode ctx) {
-    final dstReg = workReg.virtReg.toPhys(dst);
-    final srcReg = workReg.virtReg.toPhys(src);
-
-    int instId = _archTraits.movId;
-    if (workReg.group == RegGroup.vec) {
-      if (compiler.arch == Arch.x64 || compiler.arch == Arch.x86) {
-        bool hasAvx = false;
-        try {
-          hasAvx = (compiler as dynamic).hasAvx;
-        } catch (_) {}
-        instId = hasAvx ? X86InstId.kVmovaps : X86InstId.kMovaps;
-      }
-    }
-
-    final movNode = InstNode(instId, [dstReg, srcReg]);
-    _insertNodeBefore(ctx, movNode);
+    _insertNodeBefore(ctx,
+        _arch.move(workReg.virtReg.toPhys(dst), workReg.virtReg.toPhys(src)));
   }
 
   void _emitSwap(
       RAWorkReg aReg, int aPhys, RAWorkReg bReg, int bPhys, InstNode ctx) {
-    final rA = aReg.virtReg.toPhys(aPhys);
-    final rB = bReg.virtReg.toPhys(bPhys);
-
-    if (aReg.group == RegGroup.vec) {
-      bool hasAvx = false;
-      try {
-        hasAvx = (compiler as dynamic).hasAvx;
-      } catch (_) {}
-
-      if (hasAvx) {
-        // vpxor a, a, b
-        _insertNodeBefore(ctx, InstNode(X86InstId.kVpxor, [rA, rA, rB]));
-        // vpxor b, a, b
-        _insertNodeBefore(ctx, InstNode(X86InstId.kVpxor, [rB, rA, rB]));
-        // vpxor a, a, b
-        _insertNodeBefore(ctx, InstNode(X86InstId.kVpxor, [rA, rA, rB]));
-      } else {
-        // pxor a, b
-        _insertNodeBefore(ctx, InstNode(X86InstId.kPxor, [rA, rB]));
-        // pxor b, a
-        _insertNodeBefore(ctx, InstNode(X86InstId.kPxor, [rB, rA]));
-        // pxor a, b
-        _insertNodeBefore(ctx, InstNode(X86InstId.kPxor, [rA, rB]));
-      }
-      return;
+    for (final node
+        in _arch.swap(aReg.virtReg.toPhys(aPhys), bReg.virtReg.toPhys(bPhys))) {
+      _insertNodeBefore(ctx, node);
     }
-
-    final swapNode = InstNode(_archTraits.xchgId, [rA, rB]);
-    _insertNodeBefore(ctx, swapNode);
   }
 
   BaseMem _stackSlot(RAWorkReg workReg) {
@@ -1792,14 +1479,13 @@ class RAPass extends CompilerPass {
         frame.setLocalStackSize(_spillStackSize);
       }
 
-      // Store relative offset (negative from RBP)
-      workReg.stackOffset = -(offset + size);
+      // Offset inside the spill area; RAArch maps it to a frame address.
+      workReg.stackOffset = offset;
 
       workReg.addFlags(RAWorkRegFlags.kStackUsed);
     }
 
-    return compiler.newStackSlot(
-        _archTraits.fpRegId, workReg.stackOffset, workReg.virtReg.size);
+    return _arch.spillSlot(compiler, workReg.stackOffset, workReg.virtReg.size);
   }
 
   int _spillStackSize = 0;
@@ -1808,195 +1494,14 @@ class RAPass extends CompilerPass {
     final func = _func;
     if (func == null) return;
 
-    // Finalize frame to calculate total size
-    func.frame.finalize();
-
-    final arch = compiler.arch;
-    final is64Bit = arch == Arch.x64;
-
-    // Detect VEX-prefixed (AVX) instructions by name in the instruction DB.
-    // This matters on Win64: VEX-encoded scalar ops on XMM6..XMM15 will also
-    // modify the upper 128 bits of the corresponding YMM register, which are
-    // required to be preserved when AVX is in use.
-    bool usesVex = false;
-    if (is64Bit) {
-      for (final n in compiler.nodes.nodes) {
-        if (n is InstNode) {
-          final id = n.instId;
-          if (id >= 0 && id < kX86InstDb.length) {
-            final name = kX86InstDb[id].name;
-            if (name.isNotEmpty && name.codeUnitAt(0) == 0x76 /* 'v' */) {
-              usesVex = true;
-              break;
-            }
-          }
-        }
-      }
-    }
-
-    // Calculate registers to save
-    final gpClobbered = _allocator.clobberedRegs[RegGroup.gp];
-    final gpPreserved = _allocator.funcPreservedRegs[RegGroup.gp];
-
-    // Same rationale as vecToSave below: on Win64 it's safer to conservatively
-    // save all allocatable preserved GP registers (RBX, RSI, RDI, R12-R15...).
-    final gpToSave = (is64Bit && _isWindowsTarget)
-        ? (gpPreserved & _allocator.availableRegs[RegGroup.gp])
-        : (gpClobbered & gpPreserved);
-
-    final vecClobbered = _allocator.clobberedRegs[RegGroup.vec];
-    final vecPreserved = _allocator.funcPreservedRegs[RegGroup.vec];
-
-    // IMPORTANT (Win64): XMM6..XMM15 are callee-saved.
-    // If clobber tracking misses a vector reg in some corner case, we can
-    // corrupt the caller (Dart VM) and get intermittent crashes. To keep the
-    // JIT safe, conservatively save/restore all preserved vector registers on
-    // Win64.
-    final vecToSave = (is64Bit && _isWindowsTarget)
-        ? (vecPreserved & _allocator.availableRegs[RegGroup.vec])
-        : (vecClobbered & vecPreserved);
-
-    final savedRegs = <X86Gp>[];
-    for (int i = 0; i < 16; i++) {
-      if ((gpToSave & (1 << i)) != 0) {
-        savedRegs.add(X86Gp.r64(i));
-      }
-    }
-
-    // On Win64 + AVX, preserve YMM6..YMM15 (full 256-bit) when non-volatile
-    // vector regs are saved/restored.
-    final vecSaveBytes = (is64Bit && _isWindowsTarget && usesVex) ? 32 : 16;
-
-    final savedVecIds = <int>[];
-    for (int i = 0; i < 32; i++) {
-      if ((vecToSave & (1 << i)) != 0) {
-        savedVecIds.add(i);
-      }
-    }
-
-    // Calculate layout (locals -> aligned vec spills -> aligned gp spills)
-    int localsSize = _alignUp(_spillStackSize, 16);
-    final vecSlots = <MapEntry<X86Xmm, int>>[];
-    final gpSlots = <MapEntry<X86Gp, int>>[];
-
-    int currentOffset = localsSize;
-
-    if (savedVecIds.isNotEmpty) {
-      currentOffset = _alignUp(currentOffset, 16);
-      for (final id in savedVecIds) {
-        currentOffset += vecSaveBytes;
-        vecSlots.add(MapEntry(X86Xmm(id), currentOffset));
-      }
-    }
-
-    if (savedRegs.isNotEmpty) {
-      currentOffset = _alignUp(currentOffset, 8);
-      for (final reg in savedRegs) {
-        currentOffset += 8;
-        gpSlots.add(MapEntry(reg, currentOffset));
-      }
-    }
-
-    int totalStackSize = _alignUp(currentOffset, 16);
-
-    // Garanta que o frame conhe�a o tamanho real (locals + saves).
-    if (func.frame.localStackSize < totalStackSize) {
-      func.frame.setLocalStackSize(totalStackSize);
-    }
-
-    // Prolog
-    if (is64Bit) {
-      // push rbp; mov rbp, rsp
-      final rbp = X86Gp.r64(X86RegId.rbp.index);
-      final rsp = X86Gp.r64(X86RegId.rsp.index);
-
-      final pushRbp = InstNode(X86InstId.kPush, [rbp]);
-      final movRbpRsp = InstNode(X86InstId.kMov, [rbp, rsp]);
-
-      // Insert at beginning of function
-      _insertNodeAfter(func, pushRbp);
-      _insertNodeAfter(pushRbp, movRbpRsp);
-
-      var lastNode = movRbpRsp;
-
-      // Allocate stack (Locals + Saved Regs)
-      if (totalStackSize > 0) {
-        final subRsp = InstNode(X86InstId.kSub, [rsp, Imm(totalStackSize)]);
-        _insertNodeAfter(lastNode, subRsp);
-        lastNode = subRsp;
-      }
-
-      // Spill preserved vector registers.
-      for (final slot in vecSlots) {
-        final mem = X86Mem.baseDisp(rbp, -slot.value, size: vecSaveBytes);
-
-        final reg = (vecSaveBytes == 32) ? X86Ymm(slot.key.id) : slot.key;
-        final instId =
-            (vecSaveBytes == 32) ? X86InstId.kVmovdqu : X86InstId.kMovdqu;
-        final save = InstNode(instId, [mem, reg]);
-        _insertNodeAfter(lastNode, save);
-        lastNode = save;
-      }
-
-      // Spill preserved GP registers just below the vector area.
-      for (final slot in gpSlots) {
-        final mem = X86Mem.baseDisp(rbp, -slot.value);
-        final save = InstNode(X86InstId.kMov, [mem, slot.key]);
-        _insertNodeAfter(lastNode, save);
-        lastNode = save;
-      }
-    }
-
-    // Epilog - finding all Ret nodes
-    final retNodes = <InstNode>[];
-    for (final node in compiler.nodes.nodes) {
-      if (node is InstNode && node.nodeType == NodeType.funcRet) {
-        retNodes.add(node);
-      }
-    }
-
-    for (final node in retNodes) {
-      if (is64Bit) {
-        final rbp = X86Gp.r64(X86RegId.rbp.index);
-        final rsp = X86Gp.r64(X86RegId.rsp.index);
-
-        // Restore registers (mirrors spill order)
-        for (final slot in gpSlots.reversed) {
-          final mem = X86Mem.baseDisp(rbp, -slot.value);
-          final restore = InstNode(X86InstId.kMov, [slot.key, mem]);
-          _insertNodeBefore(node, restore);
-        }
-
-        for (final slot in vecSlots.reversed) {
-          final mem = X86Mem.baseDisp(rbp, -slot.value, size: vecSaveBytes);
-          final reg = (vecSaveBytes == 32) ? X86Ymm(slot.key.id) : slot.key;
-          final instId =
-              (vecSaveBytes == 32) ? X86InstId.kVmovdqu : X86InstId.kMovdqu;
-          final restore = InstNode(instId, [reg, mem]);
-          _insertNodeBefore(node, restore);
-        }
-
-        // Restore RSP and RBP
-        final movRspRbp = InstNode(X86InstId.kMov, [rsp, rbp]);
-        final popRbp = InstNode(X86InstId.kPop, [rbp]);
-
-        _insertNodeBefore(node, movRspRbp);
-        _insertNodeBefore(node, popRbp);
-
-        // Emit RET
-        final retInst = InstNode(X86InstId.kRet, []);
-        _insertNodeBefore(node, retInst);
-
-        // Remove the abstract FuncRetNode
-        compiler.nodes.remove(node);
-      }
-    }
-  }
-
-  int _alignUp(int value, int alignment) {
-    if (alignment <= 0) return value;
-    final mask = alignment - 1;
-    return (value + mask) & ~mask;
+    _arch.insertPrologEpilog(RAFrameContext(
+      compiler: compiler,
+      func: func,
+      spillSize: _spillStackSize,
+      available: _allocator.availableRegs,
+      preserved: _allocator.funcPreservedRegs,
+      clobbered: _allocator.clobberedRegs,
+    ));
   }
 
   void _insertNodeAfter(BaseNode after, BaseNode newNode) {

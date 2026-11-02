@@ -111,8 +111,6 @@ void main() {
           fn.pointer.cast<NativeFunction<_BinNative>>().asFunction<_BinDart>();
       expect(f(6, 7), 48);
       expect(f(-3, 5), -18);
-    },
-        skip: 'RAPass still lowers arg moves/ret/prolog with x86 instruction '
-            'ids; A64 lowering is pending');
+    });
   }, skip: skipUnlessA64Host);
 }

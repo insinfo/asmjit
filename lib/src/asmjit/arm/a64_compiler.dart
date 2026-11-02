@@ -8,6 +8,8 @@ import 'a64.dart';
 import '../core/reg_type.dart';
 import '../core/builder.dart' as ir;
 import 'a64_serializer.dart';
+import 'a64_rapass.dart';
+import '../core/raarch.dart';
 
 /// AArch64 Instruction Analyzer.
 class A64InstructionAnalyzer extends InstructionAnalyzer {
@@ -169,6 +171,9 @@ class A64Compiler extends BaseCompiler {
   void finalize() {
     runPasses();
   }
+
+  @override
+  RAArch createRAArch() => A64RAArch();
 
   @override
   void serializeToAssembler(BaseEmitter assembler) {

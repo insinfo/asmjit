@@ -17,6 +17,7 @@ import 'const_pool.dart';
 import 'type.dart';
 import 'support.dart' as support;
 import 'emitter.dart';
+import 'raarch.dart';
 
 export 'builder.dart';
 export 'emitter.dart';
@@ -261,6 +262,11 @@ class BaseCompiler extends BaseBuilder {
   /// Finalizes the compiler (runs passes).
   void finalize() {
     runPasses();
+  }
+
+  /// Architecture hooks used by the register allocator ([RAPass]).
+  RAArch createRAArch() {
+    throw UnimplementedError('createRAArch not implemented for $arch');
   }
 
   /// Serializes the builder's IR to an assembler.

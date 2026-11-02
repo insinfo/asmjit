@@ -452,6 +452,7 @@ class ArchTraits {
     fpRegId: 29,
     spRegId: 31,
     linkRegId: 30,
+    movId: 96, // A64InstId.kMov
     supportedRegTypes: {
       ..._archGpRegTypes,
       RegType.vec128,
