@@ -125,6 +125,7 @@ class X86Compiler extends BaseCompiler {
 
   void mov(Operand dst, Operand src) => inst(X86InstId.kMov, [dst, src]);
   void movsx(Operand dst, Operand src) => inst(X86InstId.kMovsx, [dst, src]);
+  void movsxd(Operand dst, Operand src) => inst(X86InstId.kMovsxd, [dst, src]);
   void movzx(Operand dst, Operand src) => inst(X86InstId.kMovzx, [dst, src]);
   void lea(Operand dst, Operand src) => inst(X86InstId.kLea, [dst, src]);
   void xchg(Operand dst, Operand src) => inst(X86InstId.kXchg, [dst, src]);
@@ -174,6 +175,12 @@ class X86Compiler extends BaseCompiler {
 
   void jmp(Label target) =>
       inst(X86InstId.kJmp, [LabelOp(target)], type: NodeType.jump);
+
+  /// Jump to a register or memory [target] (a jump table) whose possible
+  /// targets are [annotation] (`jmp(target, annotation)`); without one the
+  /// register allocator assumes it can reach any block.
+  JumpNode jmpIndirect(Operand target, [JumpAnnotation? annotation]) =>
+      emitAnnotatedJump(X86InstId.kJmp, target, annotation);
   void call(Label target) => inst(X86InstId.kCall, [LabelOp(target)]);
 
   void je(Label target) =>

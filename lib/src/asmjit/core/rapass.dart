@@ -9,6 +9,7 @@
 
 import 'dart:io';
 import 'arch.dart';
+import 'error.dart';
 import 'compiler.dart';
 import 'globals.dart'; // Needed for Globals.kNumVirtGroups
 import 'radefs.dart';
@@ -927,8 +928,19 @@ class RAPass extends CompilerPass {
 
   void _propagateAssignments(BlockNode block) {
     final data = _blockData[block.label.id]!;
-    final exitAssignment = data.exitAssignment;
+    var exitAssignment = data.exitAssignment;
     if (exitAssignment == null) return;
+
+    final lastNode = block.lastNode;
+    final analyzer = compiler.instructionAnalyzer;
+    if (lastNode is InstNode &&
+        analyzer != null &&
+        analyzer.isJump(lastNode) &&
+        analyzer.getJumpTarget(lastNode) == null &&
+        block.successors.length > 1) {
+      exitAssignment =
+          _shareJumpTableAssignment(block, lastNode, exitAssignment);
+    }
 
     for (final succ in block.successors) {
       final succData = _blockData[succ.label.id];
@@ -946,6 +958,53 @@ class RAPass extends CompilerPass {
         }
       }
     }
+  }
+
+  /// `RALocalAllocator::alloc_jump_table()`: all targets of a jump through
+  /// a register or memory operand share one entry assignment
+  /// (`share_assignment_across_successors()`), since no move can be placed
+  /// on a single edge. If a target already has one, the moves to it go
+  /// before the jump and the other targets get it too.
+  RAAssignmentState _shareJumpTableAssignment(
+      BlockNode block, InstNode jump, RAAssignmentState exitAssignment) {
+    RAAssignmentState? shared;
+    for (final succ in block.successors) {
+      final entry = _blockData[succ.label.id]?.entryAssignment;
+      if (entry == null) continue;
+      if (shared == null) {
+        shared = entry;
+      } else if (!shared.equals(entry)) {
+        throw AsmJitException(AsmJitError.invalidState,
+            'Jump table targets were entered with different assignments');
+      }
+    }
+    if (shared == null || shared.equals(exitAssignment)) return exitAssignment;
+
+    // The moves must not overwrite the registers the jump reads.
+    final jumpRegs = <int>{};
+    for (final op in jump.operands) {
+      if (op is BaseReg && op.isPhysical) jumpRegs.add(op.id);
+      if (op is BaseMem) {
+        for (final r in [op.base, op.index]) {
+          if (r is BaseReg && r.isPhysical) jumpRegs.add(r.id);
+        }
+      }
+    }
+    for (var i = 0; i < _numWorkRegs; i++) {
+      final workReg = _allocator.workRegById(i);
+      if (workReg.group != RegGroup.gp) continue;
+      final toPhys = shared.workToPhysId(workReg.group, i);
+      if (toPhys != RAAssignment.kPhysNone &&
+          toPhys != exitAssignment.workToPhysId(workReg.group, i) &&
+          jumpRegs.contains(toPhys)) {
+        throw AsmJitException(
+            AsmJitError.invalidState,
+            'Jump table: the moves to the shared assignment overwrite the '
+            'jump target register');
+      }
+    }
+    _emitTransitionMoves(block, exitAssignment, shared, jump);
+    return shared;
   }
 
   /// Emits the moves that switch from [fromState] (exit of [from]) to

@@ -408,6 +408,15 @@ class BaseCompiler extends BaseBuilder {
 
   final List<CompilerPass> _passes = [];
 
+  /// Adds a jump to [target] (a label, register or memory operand) whose
+  /// possible targets are [annotation] (`emit_annotated_jump()`).
+  JumpNode emitAnnotatedJump(int instId, Operand target,
+      [JumpAnnotation? annotation]) {
+    final node = JumpNode(instId, [target], annotation: annotation);
+    addNode(node);
+    return node;
+  }
+
   void addPass(CompilerPass pass) {
     _passes.add(pass);
   }
@@ -531,7 +540,11 @@ class CFGBuilder extends CompilerPass {
     compiler.instructionAnalyzer = analyzer;
     for (final node in nodes.nodes.toList()) {
       if (node is! InstNode || node is FuncRetNode) continue;
-      if (!analyzer.isJump(node) || analyzer.getJumpTarget(node) == null) {
+      // Jumps to a label and jumps through a register or memory operand
+      // (jump tables) end the block.
+      if (!analyzer.isJump(node) ||
+          (analyzer.getJumpTarget(node) == null &&
+              !analyzer.isUnconditionalJump(node))) {
         continue;
       }
       final next = node.next;
@@ -550,9 +563,16 @@ class CFGBuilder extends CompilerPass {
     }
 
     BlockNode? currentBlock;
+    // Blocks of the current function and the blocks ending with a jump
+    // whose targets are unknown (`blocks_with_unknown_jumps`).
+    var funcBlocks = <BlockNode>[];
+    final unknownJumps = <(BlockNode, List<BlockNode>)>[];
     for (final node in nodes.nodes) {
-      if (node is BlockNode) {
+      if (node is FuncNode) {
+        funcBlocks = [];
+      } else if (node is BlockNode) {
         currentBlock = node;
+        funcBlocks.add(node);
       } else if (node is InstNode && currentBlock != null) {
         if (analyzer.isJump(node)) {
           final target = analyzer.getJumpTarget(node);
@@ -560,6 +580,22 @@ class CFGBuilder extends CompilerPass {
             final targetBlock = labelMap[target.id];
             if (targetBlock != null) {
               currentBlock.addSuccessor(targetBlock);
+            }
+          } else if (analyzer.isUnconditionalJump(node) &&
+              !analyzer.isReturn(node)) {
+            // A jump through a register or memory operand: its annotation
+            // lists the targets, otherwise it can reach any block.
+            final annotation = node is JumpNode ? node.annotation : null;
+            if (annotation != null) {
+              for (final id in annotation.labelIds) {
+                final targetBlock = labelMap[id];
+                if (targetBlock != null &&
+                    !currentBlock.successors.contains(targetBlock)) {
+                  currentBlock.addSuccessor(targetBlock);
+                }
+              }
+            } else {
+              unknownJumps.add((currentBlock, funcBlocks));
             }
           }
         }
@@ -571,6 +607,28 @@ class CFGBuilder extends CompilerPass {
         }
       }
     }
+
+    // `handle_block_with_unknown_jump()`: every block of the function except
+    // the entry block (it holds the prolog) and the consecutive block.
+    for (final (block, blocks) in unknownJumps) {
+      final consecutive = _nextBlockAfter(block);
+      for (final candidate in blocks.skip(1)) {
+        if (identical(candidate, consecutive) ||
+            block.successors.contains(candidate)) {
+          continue;
+        }
+        block.addSuccessor(candidate);
+      }
+    }
+  }
+
+  static BlockNode? _nextBlockAfter(BlockNode block) {
+    var next = block.next;
+    while (next != null && next is! BlockNode) {
+      if (next is SentinelNode) return null;
+      next = next.next;
+    }
+    return next as BlockNode?;
   }
 
   void _addFallthroughSuccessor(

@@ -201,8 +201,14 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - `FuncNode` tem label (`new_func_node()` registra um) e o serializer o liga na entrada da função, antes do prólogo, como o `kActsAsLabel` do upstream.
 - `test/asmjit/compiler_multi_func_test.dart`: três funções num `UniCompiler`, chamadas pelos labels dos `FuncNode` (x64 e AArch64).
 
+### Jump tables no Compiler (`JumpAnnotation`)
+- `JumpAnnotation`/`JumpNode` já existiam no port, mas o CFG os ignorava. Agora: `X86Compiler.jmpIndirect(target, [annotation])` (`jmp(target, annotation)` do upstream, via `BaseCompiler.emitAnnotatedJump`); o CFG liga o bloco a todos os labels da anotação e, sem anotação, a todos os blocos da função exceto a entrada e o consecutivo (`handle_block_with_unknown_jump`); um jump por registrador/memória encerra o bloco.
+- RA: os alvos compartilham a atribuição de entrada (`share_assignment_across_successors`/`alloc_jump_table`): se um alvo já tem atribuição, os moves para ela vão antes do jump e os demais alvos a herdam; falha explícita se os moves sobrescreveriam o registrador do alvo ou se os alvos já tivessem atribuições diferentes (antes, os moves iam depois do `jmp` e nunca executavam).
+- `X86Compiler.movsxd`.
+- `test/asmjit/compiler_jump_table_test.dart`: ports de `X86Test_JumpTable1` (anotado e desconhecido), `JumpTable2` (alvo de volta ao começo), `JumpTable3` e `JumpTable4`, executados via JIT x64.
+
 ### Próximos passos
-1. `JumpAnnotation` no Compiler (jump tables); `[LABEL|RIP]` em 32 bits.
+1. Portar o restante de `asmjit_test_compiler_x86.cpp`/`_a64.cpp` como testes (guia para o RA); `[LABEL|RIP]` em 32 bits.
 2. `emit_2vs` (UniOpVR) no lugar de `emitCV`.
 3. Portar `asmjit_test_unicompiler*.cpp` e os testes do compiler.
 4. Acesso de outros operandos além do 0 (xadd/cmpxchg) a partir do banco.
