@@ -78,3 +78,103 @@ jobs:
 
       - name: Run tests
         run: dart test --reporter=expanded --timeout=60s
+
+  # Hosts without an asmjit backend (AArch32, RISC-V) or with a 32-bit x86
+  # process: tests that execute JIT code skip themselves (test/support/host.dart),
+  # host-independent tests (encoding goldens, IR/RA) must still pass.
+  # Non-blocking until they have a track record.
+  test-emulated:
+    name: Test (${{ matrix.name }}, Dart ${{ matrix.sdk }}, QEMU)
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-arm32, platform: linux/arm/v7, sdk_arch: arm, sdk: 3.6.2 }
+          - { name: linux-riscv64, platform: linux/riscv64, sdk_arch: riscv64, sdk: 3.6.2 }
+    env:
+      PUB_CACHE: ${{ github.workspace }}/../pub-cache
+      DART_SDK_URL: https://storage.googleapis.com/dart-archive/channels/stable/release/${{ matrix.sdk }}/sdk/dartsdk-linux-${{ matrix.sdk_arch }}-release.zip
+    steps:
+      - uses: actions/checkout@v4
+
+      # Dependencies are resolved by the same SDK version on the runner and the
+      # pub cache is mounted at the same path, so the emulated SDK reuses them.
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: ${{ matrix.sdk }}
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ${{ matrix.platform }}
+
+      - name: Download Dart SDK (${{ matrix.sdk_arch }})
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/dartsdk.zip" "$DART_SDK_URL"
+          unzip -q "$RUNNER_TEMP/dartsdk.zip" -d "$RUNNER_TEMP"
+
+      - name: Prepare container
+        run: |
+          PUB_CACHE="$(realpath "$PUB_CACHE")"
+          cat > "$RUNNER_TEMP/in-container.sh" <<SH
+          #!/bin/sh
+          set -e
+          docker run --rm --platform ${{ matrix.platform }} \
+            -v "$PWD:$PWD" -w "$PWD" \
+            -v "$PUB_CACHE:$PUB_CACHE" -e PUB_CACHE="$PUB_CACHE" \
+            -v "$RUNNER_TEMP/dart-sdk:/opt/dart-sdk:ro" \
+            -v /etc/ssl/certs:/etc/ssl/certs:ro \
+            -e PATH=/opt/dart-sdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            ubuntu:24.04 "\$@"
+          SH
+          chmod +x "$RUNNER_TEMP/in-container.sh"
+          "$RUNNER_TEMP/in-container.sh" sh -c 'uname -m && dart --version'
+
+      - name: Host info
+        continue-on-error: true
+        run: $RUNNER_TEMP/in-container.sh dart run --verbosity=error tool/print_host_info.dart
+
+      - name: Run tests
+        run: $RUNNER_TEMP/in-container.sh dart test --reporter=expanded --timeout=300s
+
+  test-ia32:
+    name: Test (linux-ia32, Dart 3.6.2)
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    env:
+      # Dart 3.6.x is the last stable line with ia32 SDK builds.
+      DART_SDK_URL: https://storage.googleapis.com/dart-archive/channels/stable/release/3.6.2/sdk/dartsdk-linux-ia32-release.zip
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install 32-bit runtime libraries
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -q
+          sudo apt-get install -y -q libc6:i386 libstdc++6:i386
+
+      - name: Download Dart SDK (ia32)
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/dartsdk.zip" "$DART_SDK_URL"
+          unzip -q "$RUNNER_TEMP/dartsdk.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/dart-sdk/bin" >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        run: |
+          dart --version
+          dart pub get
+
+      - name: Host info
+        continue-on-error: true
+        run: dart run --verbosity=error tool/print_host_info.dart
+
+      - name: Run tests
+        run: dart test --reporter=expanded --timeout=60s
