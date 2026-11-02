@@ -238,65 +238,75 @@ void main() {
         (9 * 9) * (9 * 9));
   }, skip: skipUnlessX64Host);
 
-  // Upstream adds the vectorcall variant only when built by MSVC.
-  test('FuncCallSIMD {VectorCall=N}', () {
-    // `__m128i called_fn_cdecl(__m128i a, __m128i b)`: written with the
-    // assembler for the host ABI (Win64 passes __m128i by reference).
-    final calledFn = assemble((a) {
-      if (isWin64) {
+  // Upstream adds the vectorcall variant only when built by MSVC (Windows
+  // hosts here).
+  for (final useVectorCall in [false, true]) {
+    test('FuncCallSIMD {VectorCall=${useVectorCall ? 'Y' : 'N'}}', () {
+      // `__m128i called_fn_cdecl(__m128i a, __m128i b)` (or
+      // `called_fn_vectorcall()`): written with the assembler for the host
+      // ABI (Win64 passes __m128i by reference, vectorcall in XMM0/XMM1).
+      final calledFn = assemble((a) {
+        if (isWin64 && !useVectorCall) {
+          a
+            ..emit(X86InstId.kMovdqu, [xmm0, X86Mem.base(rcx)])
+            ..emit(X86InstId.kMovdqu, [xmm1, X86Mem.base(rdx)]);
+        }
         a
-          ..emit(X86InstId.kMovdqu, [xmm0, X86Mem.base(rcx)])
-          ..emit(X86InstId.kMovdqu, [xmm1, X86Mem.base(rdx)]);
-      }
-      a
-        ..emit(X86InstId.kPaddb, [xmm0, xmm1])
-        ..emit(X86InstId.kRet, []);
-    });
-    final p = compile((cc) {
-      final funcNode = cc.addFunc(FuncSignature.build(
-          [TypeId.intPtr, TypeId.intPtr, TypeId.intPtr], TypeId.void_));
-      final resultPtr = cc.newGpPtr('result_ptr');
-      final aPtr = cc.newGpPtr('a_ptr');
-      final bPtr = cc.newGpPtr('b_ptr');
-      final pFn = cc.newGpPtr('p_fn');
-      final xmmA = cc.newXmm('xmm_a');
-      final xmmB = cc.newXmm('xmm_b');
-      funcNode.setArg(0, 0, resultPtr);
-      funcNode.setArg(1, 0, aPtr);
-      funcNode.setArg(2, 0, bPtr);
+          ..emit(X86InstId.kPaddb, [xmm0, xmm1])
+          ..emit(X86InstId.kRet, []);
+      });
+      final p = compile((cc) {
+        final funcNode = cc.addFunc(FuncSignature.build(
+            [TypeId.intPtr, TypeId.intPtr, TypeId.intPtr], TypeId.void_));
+        final resultPtr = cc.newGpPtr('result_ptr');
+        final aPtr = cc.newGpPtr('a_ptr');
+        final bPtr = cc.newGpPtr('b_ptr');
+        final pFn = cc.newGpPtr('p_fn');
+        final xmmA = cc.newXmm('xmm_a');
+        final xmmB = cc.newXmm('xmm_b');
+        funcNode.setArg(0, 0, resultPtr);
+        funcNode.setArg(1, 0, aPtr);
+        funcNode.setArg(2, 0, bPtr);
 
-      cc
-        ..mov(pFn, Imm(calledFn.address))
-        ..movdqu(xmmA, X86Mem.base(aPtr))
-        ..movdqu(xmmB, X86Mem.base(bPtr));
-      cc.invoke(pFn,
-          FuncSignature.build([TypeId.int32x4, TypeId.int32x4], TypeId.int32x4))
-        ..setArg(0, xmmA)
-        ..setArg(1, xmmB)
-        ..setRet(0, xmmA);
-      cc
-        ..movdqu(X86Mem.base(resultPtr), xmmA)
-        ..endFunc();
-    });
-    final data = calloc<Uint8>(48);
-    try {
-      for (var i = 0; i < 16; i++) {
-        data[i] = i;
-        data[16 + i] = 15 - i;
+        cc
+          ..mov(pFn, Imm(calledFn.address))
+          ..movdqu(xmmA, X86Mem.base(aPtr))
+          ..movdqu(xmmB, X86Mem.base(bPtr));
+        cc.invoke(
+            pFn,
+            FuncSignature.build(
+                [TypeId.int32x4, TypeId.int32x4], TypeId.int32x4))
+          ..setArg(0, xmmA)
+          ..setArg(1, xmmB)
+          ..setRet(0, xmmA);
+        cc
+          ..movdqu(X86Mem.base(resultPtr), xmmA)
+          ..endFunc();
+      });
+      final data = calloc<Uint8>(48);
+      try {
+        for (var i = 0; i < 16; i++) {
+          data[i] = i;
+          data[16 + i] = 15 - i;
+        }
+        p
+            .cast<
+                NativeFunction<
+                    Void Function(
+                        Pointer<Uint8>, Pointer<Uint8>, Pointer<Uint8>)>>()
+            .asFunction<
+                void Function(Pointer<Uint8>, Pointer<Uint8>,
+                    Pointer<Uint8>)>()(data + 32, data, data + 16);
+        expect(
+            [for (var i = 0; i < 16; i++) data[32 + i]], List.filled(16, 15));
+      } finally {
+        calloc.free(data);
       }
-      p
-          .cast<
-              NativeFunction<
-                  Void Function(
-                      Pointer<Uint8>, Pointer<Uint8>, Pointer<Uint8>)>>()
-          .asFunction<
-              void Function(Pointer<Uint8>, Pointer<Uint8>,
-                  Pointer<Uint8>)>()(data + 32, data, data + 16);
-      expect([for (var i = 0; i < 16; i++) data[32 + i]], List.filled(16, 15));
-    } finally {
-      calloc.free(data);
-    }
-  }, skip: skipUnlessX64Host);
+    },
+        skip: useVectorCall && !isWin64
+            ? 'vectorcall exists only on Windows (MSVC)'
+            : skipUnlessX64Host);
+  }
 
   test('FuncCallLight', () {
     final p = compile((cc) {
