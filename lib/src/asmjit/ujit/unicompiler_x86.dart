@@ -1684,39 +1684,12 @@ mixin UniCompilerX86 on UniCompilerBase {
         return kX86InstDb.firstWhere((i) => i.name == name).id;
       });
 
-  /// `dst = op(dst, src)`: legacy 2-operand form, or the VEX form with dst
-  /// as both destination and first source.
-  void _sseOpX86(int legacyId, BaseReg dst, Operand src) {
-    if (hasAvx) {
-      cc.addNode(InstNode(_vexIdX86(legacyId), [dst, dst, src]));
-    } else {
-      cc.addNode(InstNode(legacyId, [dst, src]));
-    }
-  }
-
-  void _sseShiftImmX86(int legacyId, BaseReg dst, int imm) {
-    if (hasAvx) {
-      cc.addNode(InstNode(_vexIdX86(legacyId), [dst, dst, Imm(imm)]));
-    } else {
-      cc.addNode(InstNode(legacyId, [dst, Imm(imm)]));
-    }
-  }
-
   BaseReg _tmpVecX86() => newVecWithWidth(VecWidth.k128, '@tmp');
 
   BaseReg _copyVecX86(Operand src) {
     final t = _tmpVecX86();
     _vMovX86(t, src);
     return t;
-  }
-
-  /// `dst = op(dst, src, imm)` in legacy or VEX form.
-  void _sseOpImmX86(int legacyId, BaseReg dst, Operand src, int imm) {
-    if (hasAvx) {
-      cc.addNode(InstNode(_vexIdX86(legacyId), [dst, dst, src, Imm(imm)]));
-    } else {
-      cc.addNode(InstNode(legacyId, [dst, src, Imm(imm)]));
-    }
   }
 
   Operand _constX86(VecConst c) =>
@@ -3662,106 +3635,457 @@ mixin UniCompilerX86 on UniCompilerBase {
     }
   }
 
+  /// Port of `emit_3vi()` (ujit/unicompiler_x86.cpp). Interleaved shuffle
+  /// immediates are [Swizzle4] / [Swizzle2] values, as in upstream.
   void _emit3viX86(
-      UniOpVVVI op, Operand dst, Operand src1, Operand src2, int imm) {
-    if (dst is! BaseReg || src1 is! BaseReg) {
+      UniOpVVVI op, Operand dst_, Operand src1_, Operand src2_, int imm) {
+    if (dst_ is! BaseReg || src1_ is! BaseReg) {
       throw ArgumentError('SIMD operands must be registers');
     }
-    switch (op) {
-      case UniOpVVVI.interleaveShuffleU32x4:
-      case UniOpVVVI.interleaveShuffleF32x4:
-      case UniOpVVVI.interleaveShuffleU64x2:
-      case UniOpVVVI.interleaveShuffleF64x2:
-        // SHUFPS/SHUFPD: low half from src1, high half from src2.
-        final ps = op == UniOpVVVI.interleaveShuffleU32x4 ||
-            op == UniOpVVVI.interleaveShuffleF32x4;
-        final r = _copyVecX86(src1);
-        _sseOpImmX86(ps ? X86InstId.kShufps : X86InstId.kShufpd, r, src2, imm);
-        _vMovX86(dst, r);
-        break;
-      case UniOpVVVI.alignrU128 when !hasAvx && !hasSsse3:
-        // SSE2: dst = (src2 >> imm bytes) | (src1 << (16 - imm) bytes).
-        if (imm == 0) {
-          _vMovX86(dst, src2);
-          break;
-        }
-        final lo = _copyVecX86(src2);
-        _sseShiftImmX86(X86InstId.kPsrldq, lo, imm);
-        final hi = _copyVecX86(src1);
-        _sseShiftImmX86(X86InstId.kPslldq, hi, 16 - imm);
-        _sseOpX86(X86InstId.kPor, lo, hi);
-        _vMovX86(dst, lo);
-        break;
-      case UniOpVVVI.alignrU128:
-        if (hasAvx) {
-          cc.addNode(
-              InstNode(X86InstId.kVpalignr, [dst, src1, src2, Imm(imm)]));
-        } else if (hasSsse3) {
-          if (dst.id != src1.id) {
-            _vMovX86(dst, src1);
+    final dst = dst_;
+    var src1v = _cloneAsX86(src1_, dst);
+    var src2 = src2_;
+    final info = kX86OpcodeInfo3vi[op.index];
+
+    // `translate_op(op, kInterleaveShuffleU32x4, kSwizzleU32x4)`.
+    UniOpVVI swizzleOp() => UniOpVVI.values[UniOpVVI.swizzleU32x4.index +
+        op.index -
+        UniOpVVVI.interleaveShuffleU32x4.index];
+
+    int alignrPred() => imm == 4
+        ? _shufImm4(0, 3, 2, 1)
+        : imm == 8
+            ? _shufImm4(1, 0, 3, 2)
+            : _shufImm4(2, 1, 0, 3);
+
+    if (hasAvx) {
+      // AVX Implementation
+      // ------------------
+      var instId = info.avxInstId;
+
+      if (hasAvxExt(info.avxExt)) {
+        _emitX86(instId, [dst, src1v, src2, Imm(imm)]);
+        return;
+      }
+
+      switch (op) {
+        // Short-circuit if possible based on the predicate.
+        case UniOpVVVI.alignrU128:
+          if (imm == 0) {
+            _avxMovX86(dst, src2);
+            return;
           }
-          cc.addNode(InstNode(X86InstId.kPalignr, [dst, src2, Imm(imm)]));
-        } else {
-          throw _requiresX86(op, 'SSSE3');
+          if (_isSameVecX86(src1v, src2) &&
+              (imm == 4 || imm == 8 || imm == 12)) {
+            _emitX86(X86InstId.kVpshufd, [dst, src1v, Imm(alignrPred())]);
+            return;
+          }
+          _emitX86(X86InstId.kVpalignr, [dst, src1v, src2, Imm(imm)]);
+          return;
+
+        case UniOpVVVI.interleaveShuffleU32x4:
+        case UniOpVVVI.interleaveShuffleF32x4:
+          if (_isSameVecX86(src1v, src2)) {
+            _emit2viX86(swizzleOp(), dst, src1v, imm);
+          } else {
+            _emitX86(
+                instId, [dst, src1v, src2, Imm(_shufImm4FromSwizzle4(imm))]);
+          }
+          return;
+
+        case UniOpVVVI.interleaveShuffleU64x2:
+        case UniOpVVVI.interleaveShuffleF64x2:
+          if (_isSameVecX86(src1v, src2)) {
+            _emit2viX86(swizzleOp(), dst, src1v, imm);
+          } else {
+            const multipliers = [0x1, 0x5, 0x55];
+            final shufImm = _shufImm2FromSwizzle2(imm) *
+                multipliers[VecWidthUtils.vecWidthOf(dst).index];
+            _emitX86(instId, [dst, src1v, src2, Imm(shufImm)]);
+          }
+          return;
+
+        case UniOpVVVI.insertV128U32:
+        case UniOpVVVI.insertV128F32:
+        case UniOpVVVI.insertV128U64:
+        case UniOpVVVI.insertV128F64:
+          if (src2 is X86Mem) {
+            src2 = src2.withSize(16);
+          } else {
+            src2 = X86Xmm((src2 as BaseReg).id);
+          }
+          instId = hasAvx2 &&
+                  (op == UniOpVVVI.insertV128U32 ||
+                      op == UniOpVVVI.insertV128U64)
+              ? X86InstId.kVinserti128
+              : X86InstId.kVinsertf128;
+          _emitX86(instId, [dst, src1v, src2, Imm(imm)]);
+          return;
+
+        default:
+          // insertV256* needs AVX-512.
+          throw _requiresX86(op, 'AVX512');
+      }
+    }
+
+    // SSE Implementation
+    // ------------------
+    final instId = info.sseInstId;
+
+    if (_isSameVecX86(dst, src2) && info.commutative != 0) {
+      final t = src1v;
+      src1v = _cloneAsX86(src2 as BaseReg, dst);
+      src2 = t;
+    }
+
+    switch (op) {
+      // Short-circuit if possible based on the predicate.
+      case UniOpVVVI.alignrU128:
+        if (imm == 0) {
+          _sseMovX86(dst, src2);
+          return;
         }
-        break;
+        if (_isSameVecX86(src1v, src2) && (imm == 4 || imm == 8 || imm == 12)) {
+          _emitX86(X86InstId.kPshufd, [dst, src1v, Imm(alignrPred())]);
+          return;
+        }
+        if (hasSsse3) {
+          if (_isSameVecX86(dst, src2) && !_isSameVecX86(dst, src1v)) {
+            final tmp = _newSimilarRegX86(dst, '@tmp');
+            _sseMovX86(tmp, src2);
+            src2 = tmp;
+          }
+          _sseMovX86(dst, src1v);
+          _emitX86(X86InstId.kPalignr, [dst, src2, Imm(imm)]);
+          return;
+        }
+        final tmp = _newSimilarRegX86(dst, '@tmp');
+        final src1Shift = (16 - imm) & 15;
+        final src2Shift = imm;
+        if (_isSameVecX86(dst, src1v)) {
+          _sseMovX86(tmp, src2);
+          _emitX86(X86InstId.kPsrldq, [tmp, Imm(src2Shift)]);
+          _emitX86(X86InstId.kPslldq, [dst, Imm(src1Shift)]);
+        } else {
+          _sseMovX86(tmp, src1v);
+          _sseMovX86(dst, src2);
+          _emitX86(X86InstId.kPslldq, [tmp, Imm(src1Shift)]);
+          _emitX86(X86InstId.kPsrldq, [dst, Imm(src2Shift)]);
+        }
+        _emitX86(X86InstId.kPor, [dst, tmp]);
+        return;
+
+      case UniOpVVVI.interleaveShuffleU32x4:
+      case UniOpVVVI.interleaveShuffleU64x2:
+      case UniOpVVVI.interleaveShuffleF32x4:
+      case UniOpVVVI.interleaveShuffleF64x2:
+        final el32 = info.elementSize == 2;
+        var shufImm =
+            el32 ? _shufImm4FromSwizzle4(imm) : _shufImm2FromSwizzle2(imm);
+        if (_isSameVecX86(src1v, src2)) {
+          _emit2viX86(swizzleOp(), dst, src1v, imm);
+        } else if (_isSameVecX86(dst, src1v)) {
+          _emitX86(instId, [dst, src2, Imm(shufImm)]);
+        } else if (_isSameVecX86(dst, src2)) {
+          // The predicate has to be reversed as we want to swap low/high
+          // 64-bit lanes afterwards.
+          shufImm = el32
+              ? (shufImm >> 4) | ((shufImm & 0xF) << 4)
+              : (shufImm >> 1) | ((shufImm & 0x1) << 1);
+          _emitX86(instId, [dst, src1v, Imm(shufImm)]);
+          _emitX86(X86InstId.kPshufd, [dst, dst, Imm(_shufImm4(1, 0, 3, 2))]);
+        } else {
+          _sseMovX86(dst, src1v);
+          _emitX86(instId, [dst, src2, Imm(shufImm)]);
+        }
+        return;
+
       default:
-        throw UnimplementedError('_emit3viX86: $op not implemented');
+        // These are not available in SSE mode (256-bit vectors require AVX).
+        throw _requiresX86(op, 'AVX');
     }
   }
 
+  /// `sse_fsign_flip()`.
+  void _sseFsignFlipX86(BaseReg dst, Operand src, int fm) {
+    final msk = switch (fm) {
+      kX86FmF32S => _simdConstX86(VecConstTable.sign32_scalar, Bcst.k32, dst),
+      kX86FmF64S => _simdConstX86(VecConstTable.sign64_scalar, Bcst.k64, dst),
+      kX86FmF32V =>
+        _simdConstX86(VecConstTable.p_8000000080000000, Bcst.k32, dst),
+      _ => _simdConstX86(VecConstTable.p_8000000000000000, Bcst.k64, dst),
+    };
+    _sseFmovX86(dst, src, fm);
+    _emitX86(_sseFloatInst[fm].fxor, [dst, msk]);
+  }
+
+  /// `avx_fsign_flip()`.
+  void _avxFsignFlipX86(BaseReg dst, Operand src, int fm) {
+    final fxor = _vexIdX86(_sseFloatInst[fm].fxor);
+    final msk = switch (fm) {
+      kX86FmF32S => _simdConstX86(VecConstTable.sign32_scalar, Bcst.kNA, dst),
+      kX86FmF64S => _simdConstX86(VecConstTable.sign64_scalar, Bcst.kNA, dst),
+      kX86FmF32V =>
+        _simdConstX86(VecConstTable.p_8000000080000000, Bcst.k32, dst),
+      _ => _simdConstX86(VecConstTable.p_8000000000000000, Bcst.k64, dst),
+    };
+    if (src is BaseReg) {
+      _emitX86(fxor, [dst, src, msk]);
+    } else if (msk is BaseReg && fm >= kX86FmF32V) {
+      _emitX86(fxor, [dst, msk, src]);
+    } else {
+      _avxFmovX86(dst, src, fm);
+      _emitX86(fxor, [dst, dst, msk]);
+    }
+  }
+
+  /// `sse_copy()`.
+  BaseReg _sseCopyX86(BaseReg vec, String name) {
+    final copy = _newSimilarRegX86(vec, name);
+    _emitX86(X86InstId.kMovaps, [copy, vec]);
+    return copy;
+  }
+
+  /// FMA forms of `emit_4v()`: [madd, msub, nmadd, nmsub] x [ss, sd, ps, pd].
+  static const _fmaAbAddC = [
+    X86InstId.kVfmadd213ss, X86InstId.kVfmadd213sd, //
+    X86InstId.kVfmadd213ps, X86InstId.kVfmadd213pd,
+    X86InstId.kVfmsub213ss, X86InstId.kVfmsub213sd,
+    X86InstId.kVfmsub213ps, X86InstId.kVfmsub213pd,
+    X86InstId.kVfnmadd213ss, X86InstId.kVfnmadd213sd,
+    X86InstId.kVfnmadd213ps, X86InstId.kVfnmadd213pd,
+    X86InstId.kVfnmsub213ss, X86InstId.kVfnmsub213sd,
+    X86InstId.kVfnmsub213ps, X86InstId.kVfnmsub213pd,
+  ];
+  static const _fmaAcAddB = [
+    X86InstId.kVfmadd132ss, X86InstId.kVfmadd132sd, //
+    X86InstId.kVfmadd132ps, X86InstId.kVfmadd132pd,
+    X86InstId.kVfmsub132ss, X86InstId.kVfmsub132sd,
+    X86InstId.kVfmsub132ps, X86InstId.kVfmsub132pd,
+    X86InstId.kVfnmadd132ss, X86InstId.kVfnmadd132sd,
+    X86InstId.kVfnmadd132ps, X86InstId.kVfnmadd132pd,
+    X86InstId.kVfnmsub132ss, X86InstId.kVfnmsub132sd,
+    X86InstId.kVfnmsub132ps, X86InstId.kVfnmsub132pd,
+  ];
+  static const _fmaBcAddA = [
+    X86InstId.kVfmadd231ss, X86InstId.kVfmadd231sd, //
+    X86InstId.kVfmadd231ps, X86InstId.kVfmadd231pd,
+    X86InstId.kVfmsub231ss, X86InstId.kVfmsub231sd,
+    X86InstId.kVfmsub231ps, X86InstId.kVfmsub231pd,
+    X86InstId.kVfnmadd231ss, X86InstId.kVfnmadd231sd,
+    X86InstId.kVfnmadd231ps, X86InstId.kVfnmadd231pd,
+    X86InstId.kVfnmsub231ss, X86InstId.kVfnmsub231sd,
+    X86InstId.kVfnmsub231ps, X86InstId.kVfnmsub231pd,
+  ];
+
+  /// Port of `emit_4v()` (ujit/unicompiler_x86.cpp).
+  ///
+  ///   madd(dst, a, b, c)  -> dst =  a * b + c
+  ///   msub(dst, a, b, c)  -> dst =  a * b - c
+  ///   nmadd(dst, a, b, c) -> dst = -a * b + c
+  ///   nmsub(dst, a, b, c) -> dst = -a * b - c
   void _emit4vX86(
-      UniOpVVVV op, Operand dst, Operand src1, Operand src2, Operand src3) {
-    if (dst is! BaseReg || src1 is! BaseReg || src3 is! BaseReg) {
+      UniOpVVVV op, Operand dst_, Operand src1_, Operand src2_, Operand src3_) {
+    if (dst_ is! BaseReg || src1_ is! BaseReg) {
       throw ArgumentError('SIMD operands must be registers');
     }
-    switch (op) {
-      case UniOpVVVV.blendvU8:
-        _vBlendVX86(dst, src1, src2, src3);
-        break;
-      case UniOpVVVV.mAddU16:
-      case UniOpVVVV.mAddU32:
-        // dst = a * b + c (no FMA for integers).
-        final r = _tmpVecX86();
-        if (op == UniOpVVVV.mAddU16) {
-          _vMovX86(r, src1);
-          _sseOpX86(X86InstId.kPmullw, r, src2);
-          _sseOpX86(X86InstId.kPaddw, r, src3);
-        } else {
-          _emit3vX86(UniOpVVV.mulU32, r, src1, src2);
-          _sseOpX86(X86InstId.kPaddd, r, src3);
+    var dst = dst_;
+    var src1 = _cloneAsX86(src1_, dst);
+    var src2 = src2_;
+    var src3 = src3_;
+    final info = kX86OpcodeInfo4v[op.index];
+    final fm = info.floatMode;
+    final isFloat = op.index >= UniOpVVVV.mAddF32S.index;
+
+    if (hasAvx) {
+      // AVX Implementation
+      // ------------------
+      if (_isSameVecX86(dst, src2) && info.commutative != 0) {
+        final t = src1;
+        src1 = _cloneAsX86(src2 as BaseReg, dst);
+        src2 = t;
+      }
+
+      if (hasAvxExt(info.avxExt)) {
+        _emitX86(info.avxInstId, [dst, src1, src2, src3]);
+        return;
+      }
+
+      if (op == UniOpVVVV.blendvU8) {
+        // Blend(a, b, cond) == (a & ~cond) | (b & cond)
+        if (src3 is! BaseReg) {
+          final tmp = _newSimilarRegX86(dst, 'msk');
+          _avxMovX86(tmp, src3);
+          src3 = tmp;
         }
-        _vMovX86(dst, r);
-        break;
-      case UniOpVVVV.mAddF32:
-      case UniOpVVVV.mAddF64:
-      case UniOpVVVV.mSubF32:
-      case UniOpVVVV.mSubF64:
-      case UniOpVVVV.mAddF32S:
-      case UniOpVVVV.mAddF64S:
-      case UniOpVVVV.mSubF32S:
-      case UniOpVVVV.mSubF64S:
-        // dst = a * b +/- c (separate multiply and add; no FMA encoding yet).
-        final n = op.name;
-        final f64 = n.contains('F64');
-        final scalar = n.endsWith('S');
-        final isSub = n.startsWith('mSub');
-        final mul = scalar
-            ? (f64 ? X86InstId.kMulsd : X86InstId.kMulss)
-            : (f64 ? X86InstId.kMulpd : X86InstId.kMulps);
-        final addSub = scalar
-            ? (f64
-                ? (isSub ? X86InstId.kSubsd : X86InstId.kAddsd)
-                : (isSub ? X86InstId.kSubss : X86InstId.kAddss))
-            : (f64
-                ? (isSub ? X86InstId.kSubpd : X86InstId.kAddpd)
-                : (isSub ? X86InstId.kSubps : X86InstId.kAddps));
-        final r = _copyVecX86(src1);
-        _sseOpX86(mul, r, src2);
-        _sseOpX86(addSub, r, src3);
-        _vMovX86(dst, r);
-        break;
+        _emitX86(info.avxInstId, [dst, src1, src2, src3]);
+        return;
+      }
+
+      if (!isFloat) {
+        // mAddU16 / mAddU32.
+        var tmp = dst;
+        if (_isSameVecX86(dst, src3)) tmp = _newSimilarRegX86(dst, '@tmp');
+        final addInstId =
+            op == UniOpVVVV.mAddU16 ? X86InstId.kVpaddw : X86InstId.kVpaddd;
+        _emitX86(info.avxInstId, [tmp, src1, src2]);
+        _emitX86(addInstId, [dst, tmp, src3]);
+        return;
+      }
+
+      final fmaId = op.index - UniOpVVVV.mAddF32S.index;
+      if (_isScalarFm(fm)) {
+        dst = X86Xmm(dst.id);
+        src1 = X86Xmm(src1.id);
+        if (src2 is BaseReg) src2 = X86Xmm(src2.id);
+        if (src3 is BaseReg) src3 = X86Xmm(src3.id);
+      }
+
+      if (hasFma) {
+        // FMA instructions have 3 operands; the 4 operand form is mapped to
+        // the 213 (a * b + c), 132 (a * c + b) or 231 (b * c + a) variant.
+        if (_isSameVecX86(dst, src1)) {
+          if (src2 is BaseReg) {
+            _emitX86(_fmaAbAddC[fmaId], [dst, src2, src3]);
+          } else {
+            _emitX86(_fmaAcAddB[fmaId], [dst, src3, src2]);
+          }
+        } else if (_isSameVecX86(dst, src2)) {
+          _emitX86(_fmaAbAddC[fmaId], [dst, src1, src3]);
+        } else if (_isSameVecX86(dst, src3)) {
+          _emitX86(_fmaBcAddA[fmaId], [dst, src1, src2]);
+        } else {
+          _avxMovX86(dst, src1);
+          if (src2 is! BaseReg) {
+            _emitX86(_fmaAcAddB[fmaId], [dst, src3, src2]);
+          } else {
+            // Deviation from upstream, which emits `fma213 dst, src1, src3`
+            // here when src3 is memory: dst holds src1, so that computes
+            // src1 * src1 + src3 (its log shows `vmovdqa xmm0, xmm1;
+            // vfmadd213ps xmm0, xmm1, [rdi+32]` for madd(d, a, b, [m])).
+            _emitX86(_fmaAbAddC[fmaId], [dst, src2, src3]);
+          }
+        }
+        return;
+      }
+
+      // MAdd/MSub without FMA: MUL followed by ADD or SUB.
+      final fi = _sseFloatInst[fm];
+      final mulAdd = (info.imm & 0x01) == 0;
+      final negMul = (info.imm & 0x02) != 0;
+      final fmul = _vexIdX86(fi.fmul);
+      final facc = _vexIdX86(mulAdd ? fi.fadd : fi.fsub);
+
+      if (!negMul) {
+        if (_isSameVecX86(dst, src3)) {
+          final tmp = _newSimilarRegX86(dst, '@tmp');
+          _emitX86(fmul, [tmp, src1, src2]);
+          _emitX86(facc, [dst, tmp, src3]);
+        } else {
+          _emitX86(fmul, [dst, src1, src2]);
+          _emitX86(facc, [dst, dst, src3]);
+        }
+      } else {
+        final tmp = _newSimilarRegX86(dst, '@tmp');
+        _avxFsignFlipX86(tmp, src1, fm);
+        _emitX86(fmul, [tmp, tmp, src2]);
+        _emitX86(facc, [dst, tmp, src3]);
+      }
+      return;
     }
+
+    // SSE Implementation
+    // ------------------
+    if (op == UniOpVVVV.blendvU8) {
+      // Blend(a, b, cond) == (a & ~cond) | (b & cond)
+      if (hasSse41 &&
+          (_isSameVecX86(dst, src1) ||
+              (!_isSameVecX86(dst, src2) && !_isSameVecX86(dst, src3)))) {
+        if (src3 is! BaseReg) {
+          final tmp = newVecWithWidth(VecWidth.k128, 'tmp');
+          _sseMovX86(tmp, src3);
+          src3 = tmp;
+        }
+        _sseMovX86(dst, src1);
+        _emitX86(info.sseInstId, [dst, src2, src3]);
+        return;
+      }
+
+      // Blend(a, b, cond) == a ^ ((a ^ b) &  cond)
+      //                   == b ^ ((a ^ b) & ~cond)
+      if (_isSameVecX86(dst, src1)) {
+        final tmp = newVecWithWidth(VecWidth.k128, '@tmp');
+        _emit3vX86(UniOpVVV.xorU32, tmp, dst, src2);
+        _emit3vX86(UniOpVVV.andU32, tmp, tmp, src3);
+        _emit3vX86(UniOpVVV.xorU32, dst, dst, tmp);
+      } else if (_isSameVecX86(dst, src3)) {
+        final tmp = newVecWithWidth(VecWidth.k128, '@tmp');
+        _emit3vX86(UniOpVVV.xorU32, tmp, src1, src2);
+        _emit3vX86(UniOpVVV.andnU32, dst, dst, tmp);
+        _emit3vX86(UniOpVVV.xorU32, dst, dst, src2);
+      } else {
+        // Deviation from upstream, which emits `v_xor_i32(dst, src2, src1)`:
+        // with a memory src2 that reads an unrelated register (its SSE2
+        // log shows `movaps xmm0, xmm7` and never reads the memory); XOR is
+        // commutative, so src1 (a register) goes first.
+        _emit3vX86(UniOpVVV.xorU32, dst, src1, src2);
+        _emit3vX86(UniOpVVV.andU32, dst, dst, src3);
+        _emit3vX86(UniOpVVV.xorU32, dst, dst, src1);
+      }
+      return;
+    }
+
+    if (!isFloat) {
+      // mAddU16 / mAddU32.
+      var tmp = dst;
+      if (_isSameVecX86(dst, src3)) tmp = _newSimilarRegX86(dst, '@tmp');
+      if (op == UniOpVVVV.mAddU16) {
+        _emit3vX86(UniOpVVV.mulU16, tmp, src1, src2);
+        _emit3vX86(UniOpVVV.addU16, dst, tmp, src3);
+      } else {
+        _emit3vX86(UniOpVVV.mulU32, tmp, src1, src2);
+        _emit3vX86(UniOpVVV.addU32, dst, tmp, src3);
+      }
+      return;
+    }
+
+    final mulAdd = (info.imm & 0x01) == 0;
+    final negMul = (info.imm & 0x02) != 0;
+
+    if (_isSameVecX86(dst, src2)) {
+      // To follow the FMA behavior in the scalar case, we have to copy.
+      if (_isScalarFm(fm)) {
+        src2 = _sseCopyX86(src2 as BaseReg, '@copy_src2');
+      } else {
+        final t = src1;
+        src1 = _cloneAsX86(src2 as BaseReg, dst);
+        src2 = t;
+      }
+    }
+
+    final fi = _sseFloatInst[fm];
+    final facc = mulAdd ? fi.fadd : fi.fsub;
+
+    if (_isSameVecX86(dst, src3)) {
+      if (_isScalarFm(fm) || !mulAdd) {
+        // Copy if we couldn't avoid the extra move.
+        src3 = _sseCopyX86(src3 as BaseReg, '@copy_src3');
+      } else {
+        final tmp = _newSimilarRegX86(dst, '@tmp');
+        _sseMovX86(tmp, src1);
+        _emitX86(fi.fmul, [tmp, src2]);
+        _emitX86(negMul ? fi.fsub : fi.fadd, [dst, tmp]);
+        return;
+      }
+    }
+
+    if (negMul) {
+      _sseFsignFlipX86(dst, src1, fm);
+    } else {
+      _sseMovX86(dst, src1);
+    }
+    _emitX86(fi.fmul, [dst, src2]);
+    _emitX86(facc, [dst, src3]);
   }
 
   void _emit5vX86(UniOpVVVVV op, Operand dst, Operand src1, Operand src2,

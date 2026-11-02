@@ -645,7 +645,15 @@ enum UniOpVVVV {
   mSubF32S,
   mSubF64S,
   mSubF32,
-  mSubF64;
+  mSubF64,
+  nmAddF32S,
+  nmAddF64S,
+  nmAddF32,
+  nmAddF64,
+  nmSubF32S,
+  nmSubF64S,
+  nmSubF32,
+  nmSubF64;
 }
 
 /// Instruction with 5 operands.

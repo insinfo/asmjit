@@ -269,7 +269,6 @@ abstract class UniCompilerBase {
   // Abstract methods implemented by UniCompiler
   BaseReg newVec([String? name]);
   BaseReg newVecWithWidth(VecWidth vw, [String? name]);
-  BaseReg _newVecConst(VecConst c, bool isUnique);
 }
 
 // ============================================================================

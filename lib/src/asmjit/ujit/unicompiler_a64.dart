@@ -1143,152 +1143,258 @@ mixin UniCompilerA64 on UniCompilerBase {
     }
   }
 
-  void _vExtA64(
-      BaseReg dst, BaseReg src1, BaseReg src2, int imm, A64Layout layout) {
-    cc.addNode(InstNode(A64InstId.kExt, [
-      _toA64Vec(dst, layout),
-      _toA64Vec(src1, layout),
-      _toA64Vec(src2, layout),
-      Imm(imm)
-    ]));
-  }
-
+  /// Port of `emit_3vi()` (unicompiler_a64.cpp). Interleaved shuffle
+  /// immediates are [Swizzle4] / [Swizzle2] values, as in upstream.
   void _emit3viA64(
-      UniOpVVVI op, Operand dst, Operand src1, Operand src2, int imm) {
-    final d = dst as BaseReg;
-    final s1 = src1 as BaseReg;
-    final s2 = src2 as BaseReg;
+      UniOpVVVI op, Operand dst_, Operand src1_, Operand src2_, int imm) {
+    final dst = dst_ as BaseReg;
+    final src1 = src1_ as BaseReg;
 
     switch (op) {
       case UniOpVVVI.alignrU128:
-        // PALIGNR semantics (src1 high, src2 low): EXT dst, src2, src1, #imm.
+        if (imm < 0 || imm > 15) throw ArgumentError('alignr imm $imm');
         if (imm == 0) {
-          _vMovA64(d, s2);
-        } else {
-          _vExtA64(d, s2, s1, imm, A64Layout.b16);
+          _vMovA64(dst, src2_);
+          return;
         }
-        break;
+        final src2 = _asVecA64(src2_, dst, kFmNone);
+        _a64(A64InstId.kExt,
+            [_vArr(dst, 0), _vArr(src2, 0), _vArr(src1, 0), Imm(imm)]);
+        return;
+
       case UniOpVVVI.interleaveShuffleU32x4:
       case UniOpVVVI.interleaveShuffleF32x4:
-        final mask = Uint8List(16);
-        for (int i = 0; i < 4; i++) {
-          int sel = (imm >> (i * 2)) & 3;
-          int base = (i < 2) ? 0 : 16;
-          int byteIndex = base + sel * 4;
-          mask[i * 4 + 0] = byteIndex + 0;
-          mask[i * 4 + 1] = byteIndex + 1;
-          mask[i * 4 + 2] = byteIndex + 2;
-          mask[i * 4 + 3] = byteIndex + 3;
+        if ((imm & 0xFCFCFCFC) != 0) {
+          throw ArgumentError(
+              'invalid Swizzle4 value 0x${imm.toRadixString(16)}');
         }
-        _emitTbl2(d, s1, s2, mask);
-        break;
+        _emitInterleavedShuffle32A64(
+            dst, src1, _asVecA64(src2_, dst, kFmNone), imm);
+        return;
 
       case UniOpVVVI.interleaveShuffleU64x2:
       case UniOpVVVI.interleaveShuffleF64x2:
-        final mask = Uint8List(16);
-        for (int i = 0; i < 2; i++) {
-          int sel = (imm >> i) & 1;
-          int base = (i == 0) ? 0 : 16;
-          int byteIndex = base + sel * 8;
-          for (int j = 0; j < 8; j++) {
-            mask[i * 8 + j] = byteIndex + j;
-          }
+        if ((imm & 0xFFFCFEFE) != 0) {
+          throw ArgumentError(
+              'invalid Swizzle2 value 0x${imm.toRadixString(16)}');
         }
-        _emitTbl2(d, s1, s2, mask);
-        break;
+        final src2 = _asVecA64(src2_, dst, kFmNone);
+        if (src1.id == src2.id) {
+          _emit2viA64(UniOpVVI.swizzleU64x2, dst, src1, imm);
+        } else if (imm == swizzle2(0, 0).value) {
+          _a64(
+              A64InstId.kZip1, [_vArr(dst, 3), _vArr(src1, 3), _vArr(src2, 3)]);
+        } else if (imm == swizzle2(1, 1).value) {
+          _a64(
+              A64InstId.kZip2, [_vArr(dst, 3), _vArr(src1, 3), _vArr(src2, 3)]);
+        } else if (imm == swizzle2(1, 0).value) {
+          _emit3vA64(UniOpVVV.combineHiLoU64, dst, src2, src1);
+        } else {
+          _emit3vA64(UniOpVVV.combineLoHiU64, dst, src2, src1);
+        }
+        return;
 
       default:
-        throw UnimplementedError('_emit3viA64: $op');
+        throw UnsupportedError(
+            'UniCompiler A64: $op (NEON has only 128-bit vectors)');
     }
   }
 
-  void _emitTbl2(BaseReg d, BaseReg s1, BaseReg s2, Uint8List mask) {
-    final mask1Bytes = Uint8List(16);
-    final mask2Bytes = Uint8List(16);
+  /// Port of `emit_interleaved_shuffle32_impl()` (unicompiler_a64.cpp): the
+  /// low two lanes are picked from [src1] and the high two from [src2] by up
+  /// to three operations taken from [kA64InterleavedShuffle32Ops] (or the
+  /// table that avoids inserting into `src2` when it is the destination).
+  void _emitInterleavedShuffle32A64(
+      BaseReg dst, BaseReg src1, BaseReg src2, int imm) {
+    if (src1.id == src2.id) {
+      _emitSwizzle32A64(dst, src1, imm);
+      return;
+    }
 
-    for (int i = 0; i < 16; i++) {
-      int idx = mask[i];
-      if (idx < 16) {
-        mask1Bytes[i] = idx;
-        mask2Bytes[i] = 0xFF;
+    final tableIndex = ((imm & 0x03000000) >> (24 - 6)) |
+        ((imm & 0x00030000) >> (16 - 4)) |
+        ((imm & 0x00000300) >> (8 - 2)) |
+        (imm & 0x00000003);
+    final ops = dst.id != src2.id
+        ? kA64InterleavedShuffle32Ops[tableIndex]
+        : kA64InterleavedShuffle32OpsDstSameAsB[tableIndex];
+
+    const kOpRev64 = 0, kOpInsS = 1, kOpInsD = 2, kOpPerm = 3, kOpDup = 4;
+    int opAt(int i) => (ops >> (i * 11)) & 0x7FF;
+    bool isIns(int op) => (op >> 8) == kOpInsS || (op >> 8) == kOpInsD;
+
+    final count = 1 + (opAt(1) != 0 ? 1 : 0) + ((ops >> 22) != 0 ? 1 : 0);
+    final regs = <BaseReg?>[src1, src2, null, null, null];
+    final srcUseMask = [0, 0, 0, 0];
+    var dstIndex = count - 1;
+
+    var allUseMask = 0;
+    for (var i = count - 1; i >= 0; i--) {
+      final op = opAt(i);
+      allUseMask |= 1 << ((op >> 4) & 3);
+      allUseMask |= 1 << ((op >> 6) & 3);
+      srcUseMask[i] = allUseMask;
+      // The last destination would be the previous operation (if not
+      // another insert).
+      if (isIns(op)) dstIndex = i - 1;
+    }
+
+    const permInst = [
+      A64InstId.kZip1,
+      A64InstId.kZip2,
+      A64InstId.kUzp1,
+      A64InstId.kUzp2,
+      A64InstId.kTrn1,
+      A64InstId.kTrn2,
+      A64InstId.kExt,
+      A64InstId.kExt,
+    ];
+
+    var opIndex = 2;
+    BaseReg? finalDst;
+
+    for (var i = 0; i < count; i++) {
+      final op = opAt(i);
+      if (i > 0 && !isIns(op)) opIndex++;
+
+      final BaseReg opDst;
+      if (i < dstIndex) {
+        opDst = regs[opIndex] ?? newVecWithWidth(VecWidth.k128, '@shuf_tmp');
       } else {
-        mask1Bytes[i] = 0xFF;
-        mask2Bytes[i] = idx - 16;
+        if (finalDst == null) {
+          final msk = dst.id == src1.id
+              ? 0x1
+              : dst.id == src2.id
+                  ? 0x2
+                  : 0;
+          // A destination in conflict with a source still to be read gets a
+          // new register that is moved to `dst` at the end.
+          finalDst = (srcUseMask[i + 1] & msk) != 0
+              ? newVecWithWidth(VecWidth.k128, '@shuf_dst')
+              : dst;
+        }
+        opDst = finalDst;
       }
+
+      final a = regs[(op >> 4) & 3]!;
+      final b = regs[(op >> 6) & 3];
+      switch (op >> 8) {
+        case kOpInsS:
+          _a64(A64InstId.kMov,
+              [_vArr(opDst, 2), Imm((op >> 2) & 3), _vArr(a, 2), Imm(op & 3)]);
+        case kOpInsD:
+          _a64(A64InstId.kMov,
+              [_vArr(opDst, 3), Imm((op >> 2) & 3), _vArr(a, 3), Imm(op & 3)]);
+        case kOpPerm:
+          final instId = permInst[op & 7];
+          if (instId == A64InstId.kExt) {
+            _a64(A64InstId.kExt, [
+              _vArr(opDst, 0),
+              _vArr(a, 0),
+              _vArr(b!, 0),
+              Imm(((op & 0x1) << 2) + (op & 0x8))
+            ]);
+          } else {
+            final el = (op & 0x8) == 0 ? 2 : 3;
+            _a64(instId, [_vArr(opDst, el), _vArr(a, el), _vArr(b!, el)]);
+          }
+        case kOpRev64:
+          _a64(A64InstId.kRev64, [_vArr(opDst, 2), _vArr(a, 2)]);
+        case kOpDup:
+          _a64(A64InstId.kDup, [_vArr(opDst, 2), _vArr(a, 2), Imm(op & 3)]);
+        default:
+          throw StateError(
+              'invalid shuffle operation 0x${op.toRadixString(16)}');
+      }
+      regs[opIndex] = opDst;
     }
 
-    final vc1 = VecConst(16, mask1Bytes);
-    final vc2 = VecConst(16, mask2Bytes);
-
-    final m1 = _newVecConst(vc1, true);
-    final m2 = _newVecConst(vc2, true);
-
-    final tmp = newVecWithWidth(_vecWidth, "tmp_tbl");
-
-    // TBL d, {s1}, m1
-    cc.addNode(InstNode(A64InstId.kTbl, [d, s1, m1]));
-    // TBL tmp, {s2}, m2
-    cc.addNode(InstNode(A64InstId.kTbl, [tmp, s2, m2]));
-    // ORR d, d, tmp
-    _vOrA64(d, d, tmp);
+    _vMovA64(dst, finalDst!);
   }
+
+  /// `opcode_info_4v` (unicompiler_a64.cpp): (instruction, float mode,
+  /// element size, negate accumulator).
+  static const _a64OpcodeInfo4v = <(int, int, int, int)>[
+    (A64InstId.kBsl, kFmNone, 0, 0), // blendvU8
+    (A64InstId.kMla, kFmNone, 1, 0), // mAddU16
+    (A64InstId.kMla, kFmNone, 2, 0), // mAddU32
+    (A64InstId.kFmadd, kFmF32S, 2, 0), // mAddF32S
+    (A64InstId.kFmadd, kFmF64S, 3, 0), // mAddF64S
+    (A64InstId.kFmla, kFmF32V, 2, 0), // mAddF32
+    (A64InstId.kFmla, kFmF64V, 3, 0), // mAddF64
+    (A64InstId.kFnmsub, kFmF32S, 2, 0), // mSubF32S
+    (A64InstId.kFnmsub, kFmF64S, 3, 0), // mSubF64S
+    (A64InstId.kFmla, kFmF32V, 2, 1), // mSubF32
+    (A64InstId.kFmla, kFmF64V, 3, 1), // mSubF64
+    (A64InstId.kFmsub, kFmF32S, 2, 0), // nmAddF32S
+    (A64InstId.kFmsub, kFmF64S, 3, 0), // nmAddF64S
+    (A64InstId.kFmls, kFmF32V, 2, 0), // nmAddF32
+    (A64InstId.kFmls, kFmF64V, 3, 0), // nmAddF64
+    (A64InstId.kFnmadd, kFmF32S, 2, 0), // nmSubF32S
+    (A64InstId.kFnmadd, kFmF64S, 3, 0), // nmSubF64S
+    (A64InstId.kFmls, kFmF32V, 2, 1), // nmSubF32
+    (A64InstId.kFmls, kFmF64V, 3, 1), // nmSubF64
+  ];
 
   /// Port of `UniCompiler::emit_4v()` (unicompiler_a64.cpp).
   void _emit4vA64(
       UniOpVVVV op, Operand dst_, Operand src1_, Operand src2_, Operand src3_) {
     final dst = dst_ as BaseReg;
-    final s1 = _asVecA64(src1_, dst, kFmNone);
-    final s2 = _asVecA64(src2_, dst, kFmNone);
-    final s3 = _asVecA64(src3_, dst, kFmNone);
+    final src1 = src1_ as BaseReg;
+    final (instId, floatMode, element, negate) = _a64OpcodeInfo4v[op.index];
 
-    switch (op) {
-      case UniOpVVVV.blendvU8:
-        _blendvU8A64(dst, s1, s2, s3);
-        return;
-
-      case UniOpVVVV.mAddF32S:
-      case UniOpVVVV.mAddF64S:
-      case UniOpVVVV.mSubF32S:
-      case UniOpVVVV.mSubF64S:
-        final bits = op.name.contains('F32') ? 32 : 64;
-        final isSub = op.name.startsWith('mSub');
-        cc.addNode(InstNode(isSub ? A64InstId.kFnmsub : A64InstId.kFmadd, [
-          A64Vec(dst.id, bits),
-          A64Vec(s1.id, bits),
-          A64Vec(s2.id, bits),
-          A64Vec(s3.id, bits)
-        ]));
-        return;
-
-      case UniOpVVVV.mAddU16:
-      case UniOpVVVV.mAddU32:
-      case UniOpVVVV.mAddF32:
-      case UniOpVVVV.mAddF64:
-      case UniOpVVVV.mSubF32:
-      case UniOpVVVV.mSubF64:
-        final (int el, bool fp) = switch (op) {
-          UniOpVVVV.mAddU16 => (1, false),
-          UniOpVVVV.mAddU32 => (2, false),
-          UniOpVVVV.mAddF32 || UniOpVVVV.mSubF32 => (2, true),
-          _ => (3, true),
-        };
-        final isSub = op == UniOpVVVV.mSubF32 || op == UniOpVVVV.mSubF64;
-        // The accumulator must not alias a multiplicand.
-        final acc = (dst.id == s1.id || dst.id == s2.id)
-            ? newVecWithWidth(VecWidth.k128, '@acc')
-            : dst;
-        if (isSub) {
-          // a * b - c = (-c) + a * b
-          cc.addNode(
-              InstNode(A64InstId.kFneg, [_vArr(acc, el), _vArr(s3, el)]));
-        } else if (acc.id != s3.id) {
-          _vMovA64(acc, s3);
-        }
-        cc.addNode(InstNode(fp ? A64InstId.kFmla : A64InstId.kMla,
-            [_vArr(acc, el), _vArr(s1, el), _vArr(s2, el)]));
-        if (acc.id != dst.id) _vMovA64(dst, acc);
-        return;
+    if (op == UniOpVVVV.blendvU8) {
+      _blendvU8A64(dst, src1, _asVecA64(src2_, dst, kFmNone),
+          _asVecA64(src3_, dst, kFmNone));
+      return;
     }
+
+    if (floatMode == kFmF32S || floatMode == kFmF64S) {
+      final bits = floatMode == kFmF32S ? 32 : 64;
+      final src2 = _asVecA64(src2_, dst, floatMode);
+      final src3 = _asVecA64(src3_, dst, floatMode);
+      _a64(instId, [
+        A64Vec(dst.id, bits),
+        A64Vec(src1.id, bits),
+        A64Vec(src2.id, bits),
+        A64Vec(src3.id, bits)
+      ]);
+      return;
+    }
+
+    final src2 = _asVecA64(src2_, dst, kFmNone);
+    final negateAcc = negate != 0;
+    final dstOverlaps = dst.id == src1.id || dst.id == src2.id;
+    final destructible =
+        (src3_ is BaseReg && src3_.id == dst.id) || src3_ is! BaseReg;
+
+    final BaseReg src3;
+    if (!dstOverlaps && src3_ is A64Mem) {
+      _a64(A64InstId.kLdr, [A64Vec(dst.id, 128), src3_]);
+      src3 = dst;
+    } else {
+      src3 = _asVecA64(src3_, dst, kFmNone);
+    }
+
+    if (destructible) {
+      if (negateAcc) {
+        _a64(A64InstId.kFneg, [_vArr(src3, element), _vArr(src3, element)]);
+      }
+      _a64(instId,
+          [_vArr(src3, element), _vArr(src1, element), _vArr(src2, element)]);
+      if (dst.id != src3.id) _vMovA64(dst, src3);
+      return;
+    }
+
+    final tmp = dstOverlaps ? newVecWithWidth(VecWidth.k128, '@tmp') : dst;
+    if (negateAcc) {
+      _a64(A64InstId.kFneg, [_vArr(tmp, element), _vArr(src3, element)]);
+    } else {
+      _vMovA64(tmp, src3);
+    }
+    _a64(instId,
+        [_vArr(tmp, element), _vArr(src1, element), _vArr(src2, element)]);
+    if (dst.id != tmp.id) _vMovA64(dst, tmp);
   }
 
   void _emitRRRA64(UniOpRRR op, BaseReg dst, BaseReg src1, BaseReg src2) {

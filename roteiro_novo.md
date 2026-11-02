@@ -20,7 +20,7 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 | Core (CodeHolder, Buffer, Runtime) | ✅ Funcional | x64: **1000 passando** (Win64 AVX2, SysV/Rosetta); arm64: 288 |
 | Runtime JIT AArch64 (macOS/Linux) | ✅ MAP_JIT + flush de icache | `a64_jit_execution_test` |
 | RAPass | ✅ Neutro de arquitetura (`RAArch`: `X86RAArch`, `A64RAArch`) | spills, callee-saved, laços (A64 e x64) |
-| x86 Encoder SIMD | ✅ Tabela `x86_simd_ops.dart` (legado + VEX) | 747 formas idênticas ao LLVM |
+| x86 Encoder SIMD | ✅ Tabela `x86_simd_ops.dart` (legado + VEX, FMA, blends com XMM0 implícito) | 873 formas idênticas ao LLVM |
 | x86 Encoder GP (ALU) | ✅ ADD/OR/AND/SUB/XOR/CMP/TEST/IMUL e MOV mem,imm respeitam o tamanho (8/16/32/64) | 215 formas idênticas ao LLVM |
 | A64 Encoder | ✅ load/store, SIMD three-same/different, permute, narrow corrigidos | goldens LLVM (ldst + SIMD) |
 | Dispatchers x86/A64 | ✅ Escritos à mão, **fail-loud** (instrução sem bytes = erro) | |
@@ -28,7 +28,8 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 | **UJIT emit_3v (x86 e A64)** | ✅ Port fiel de `emit_3v` + tabela `opcode_info_3v` do x86; **todas as 179 ops comuns** validadas em runtime com 4 layouts de operandos | `ujit_vvv_ops_test`: SSE2, SSE4.1, host (AVX2 no Windows) e AArch64 |
 | **UJIT emit_2vi (x86 e A64)** | ✅ Port fiel (tabela `opcode_info_2vi`, `emit_swizzle32_impl` + `swizzle_32_data`); imediatos `Swizzle2`/`Swizzle4` como no upstream | `ujit_vvi_ops_test`: os 256 swizzles de 32/16 bits, os 4 de 64 bits e shifts nos limites |
 | **UJIT emit_2v (x86)** | ✅ Port fiel (tabela `opcode_info_2v`, `sse_int_widen`, `avx_fmov`); A64 já conferia com a referência | `ujit_vv_ops_test`: todas as ops de 128 bits, inclusive broadcast de GP |
-| UJIT 3vi / 4v | ✅ casos validados em runtime | `ujit_vvv_semantics_test` |
+| **UJIT emit_3vi / emit_4v (x86 e A64)** | ✅ Port fiel (`interleaved_shuffle32_ops` do A64, FMA 132/213/231, `nmAdd/nmSub`) | `ujit_vvvi_ops_test` (256 shuffles x 5 layouts), `ujit_vvvv_ops_test` (6 layouts, AVX2 com e sem FMA) |
+| RA x86: acesso de operandos | ✅ Gerado de `isa_x86.json` (`W:`/`X:`/`w:`) em vez de "3 operandos = AVX" | |
 | **Constantes vetoriais (tabela local)** | ✅ Corrigidas (antes eram lidas do próprio código) | `ujit_const_runtime_test` |
 | **ChaCha20 otimizado** | ✅ x64 e AArch64 | `chacha20_verify_test` |
 | AVX-512 no UJIT | ⛔ Desativado (encodings EVEX não portados/validados); hosts AVX-512 usam as lowerings AVX2 | |
@@ -75,9 +76,19 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - Tabela SIMD: `movss`/`movsd` (registrador, carga e store), `cvtss2sd`/`cvtsd2ss`, `cvtdq2pd`, `vbroadcastss` — conferidos com o LLVM.
 - `test/asmjit/ujit_vv_ops_test.dart`: todas as ops de 128 bits com referência (empates e −0.0 nos arredondamentos, `abs` de INT_MIN, conversões com arredondamento), 3 layouts + broadcast de GP. Resultado: arm64 **6436**, Windows AVX2 **19176** testes.
 
+### `emit_3vi` / `emit_4v` portados fielmente
+- **Mudança de API**: `interleaveShuffle*` recebe `Swizzle4`/`Swizzle2` como no upstream (antes, imm do `shufps`).
+- x86: tabelas `opcode_info_3vi`/`opcode_info_4v`, `emit_3vi()` (alignr SSE2/SSSE3, shuffles com troca de lanes quando `dst == src2`) e `emit_4v()` (FMA 132/213/231, mul+add sem FMA, `nmAdd/nmSub` novos no enum, `pblendvb` com XMM0 no SSE4.1).
+- A64: `emit_interleaved_shuffle32_impl()` com as tabelas `interleaved_shuffle32_ops` e `..._dst_same_as_b` (256 entradas cada, por script) e `emit_4v()` com `opcode_info_4v` (FMSUB/FNMADD/FMLS).
+- Bugs do upstream provados pelo log da geração: FMA com `dst` distinto e `src3` em memória emite `vfmadd213 dst, src1, src3` após `dst = src1` (calcula `a*a + c`); `blendvU8` SSE2 com `src2` em memória emite `movaps xmm0, xmm7` (lê registrador alheio).
+
+### RA x86: correções encontradas pelos novos testes
+- Operandos: qualquer instrução com 3 operandos era tratada como "AVX não destrutivo" (destino só escrita), mas `shufps/palignr/pinsrw/pblendw/roundss/cmpps xmm, xmm, imm` e `pblendvb xmm, xmm, <xmm0>` leem o destino. O gerador do banco agora emite o acesso do operando 0 por número de operandos (`op0Access`, de `isa_x86.json`), e RW segue o asmjit (`kRW | kUse`, reescrito no registrador de uso).
+- Registrador fixo (`fixedUseId`) entra na máscara `used` da instrução, como no `RAInstBuilder::add()`; sem isso, o destino podia ficar no mesmo registrador fixo da máscara (XMM0) ou da contagem de shift (CL).
+
 ### Próximos passos
-1. Conferir 3vi/4v (FMA, `mAdd/mSub`) e o `loadCvt` genérico contra o upstream, com teste abrangente.
-2. Grupos de memória (`emit_vm`/`emit_mv`) com teste abrangente.
+1. Grupos de memória (`emit_vm`/`emit_mv`, `loadCvt` genérico) conferidos contra o upstream, com teste abrangente.
+2. Avaliar acesso de outros operandos além do 0 (xadd/cmpxchg) a partir do banco.
 
 ## ✅ Progresso Recente (02/11/2026 - RA multiarquitetura, UJIT A64, x86 SIMD)
 

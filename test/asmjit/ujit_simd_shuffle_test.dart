@@ -16,24 +16,28 @@ void main() {
       final s1 = cc.newVec("s1");
       final s2 = cc.newVec("s2");
 
-      // Shuffle with imm 0xE4 (3, 2, 1, 0)
-      cc.emit3vi(UniOpVVVI.interleaveShuffleU32x4, d, s1, s2, 0xE4);
+      // dst = {s1[0], s1[1], s2[2], s2[3]}.
+      cc.emit3vi(UniOpVVVI.interleaveShuffleU32x4, d, s1, s2,
+          swizzle4(3, 2, 1, 0).value);
 
       cc.ret();
       cc.endFunc();
       cc.finalize();
 
-      // Check for TBL instruction
+      // Like asmjit, the shuffle is decomposed into at most three permute,
+      // insert, DUP, EXT or REV64 operations from a table, without TBL.
       var node = compiler.nodes.first;
-      bool foundTbl = false;
+      var foundTbl = false;
+      var simd = 0;
       while (node != null) {
-        if (node is InstNode) {
+        if (node is InstNode && node.operands.any((o) => o is A64Vec)) {
           if (node.instId == A64InstId.kTbl) foundTbl = true;
+          simd++;
         }
         node = node.next;
       }
-      expect(foundTbl, isTrue,
-          reason: "TBL instruction should be emitted for shuffle");
+      expect(foundTbl, isFalse);
+      expect(simd, lessThanOrEqualTo(3));
     });
   });
 }

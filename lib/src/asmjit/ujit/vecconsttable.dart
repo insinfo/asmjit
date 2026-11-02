@@ -83,6 +83,12 @@ class VecConstTable {
   static final VecConst p_0100010001000100 =
       _register(VecConst.splat64(0x0100010001000100));
 
+  // Sign bit of the scalar (lane 0) f32 / f64 only.
+  static final VecConst sign32_scalar =
+      _register(VecConst.u64x2(0x0000000080000000, 0));
+  static final VecConst sign64_scalar =
+      _register(VecConst.u64x2(0x8000000000000000, 0));
+
   // Float32 Neg/Abs
   static final VecConst p_8000000080000000 =
       _register(VecConst.splat64(0x8000000080000000));

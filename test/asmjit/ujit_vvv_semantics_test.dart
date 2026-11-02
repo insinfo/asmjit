@@ -570,7 +570,7 @@ void main() {
   )>{
     'interleaveShuffleU32x4 [1,3 | 0,2]': (
       (cc, d, a, b, c) => cc.emit3vi(UniOpVVVI.interleaveShuffleU32x4, d, a, b,
-          1 | (3 << 2) | (0 << 4) | (2 << 6)),
+          swizzle4(2, 0, 3, 1).value),
       ia,
       ib,
       ia,
@@ -579,7 +579,7 @@ void main() {
     ),
     'interleaveShuffleF32x4 [0,0 | 3,1]': (
       (cc, d, a, b, c) => cc.emit3vi(UniOpVVVI.interleaveShuffleF32x4, d, a, b,
-          0 | (0 << 2) | (3 << 4) | (1 << 6)),
+          swizzle4(1, 3, 0, 0).value),
       ia,
       ib,
       ia,
@@ -587,8 +587,8 @@ void main() {
           _bytes([...w32(a, 0), ...w32(a, 0), ...w32(b, 3), ...w32(b, 1)])
     ),
     'interleaveShuffleU64x2 [1 | 0]': (
-      (cc, d, a, b, c) =>
-          cc.emit3vi(UniOpVVVI.interleaveShuffleU64x2, d, a, b, 1),
+      (cc, d, a, b, c) => cc.emit3vi(
+          UniOpVVVI.interleaveShuffleU64x2, d, a, b, swizzle2(0, 1).value),
       ia,
       ib,
       ia,
