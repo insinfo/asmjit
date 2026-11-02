@@ -449,6 +449,88 @@ mixin UniCompilerA64 on UniCompilerBase {
   /// View of [reg] with element size [el] (0..3), optionally the low half.
   void _a64(int instId, List<Operand> ops) => cc.addNode(InstNode(instId, ops));
 
+  /// Port of `emit_2vs()` (ujit/unicompiler_a64.cpp): moves between GP and
+  /// vector registers, element insertion/extraction and int/float
+  /// conversions ([UniOpVR]).
+  void _emit2vsA64(UniOpVR op, Operand dst_, Operand src_, int idx) {
+    final info = kA64OpcodeInfo2vs[op.index];
+    bool isGp(Operand o) => o is BaseReg && o.isGp;
+    bool isVec(Operand o) => o is BaseReg && o.group == RegGroup.vec;
+    A64Gp gp(Operand o, int bits) => A64Gp((o as BaseReg).id, bits);
+    // `vec_set_vec_type()`: the scalar view of the element size.
+    A64Vec scalar(Operand o, int el) => A64Vec((o as BaseReg).id, 8 << el);
+
+    switch (op) {
+      case UniOpVR.mov:
+        if (isGp(dst_) && isVec(src_)) {
+          final d = dst_ as BaseReg;
+          _a64(A64InstId.kMov, [
+            gp(d, d.size == 4 ? 32 : 64),
+            _vElem(src_ as BaseReg, d.size == 4 ? 2 : 3, 0)
+          ]);
+          return;
+        }
+        if (isVec(dst_) && isGp(src_)) {
+          final s = src_ as BaseReg;
+          _a64(A64InstId.kFmov, [
+            scalar(dst_, s.size == 4 ? 2 : 3),
+            gp(s, s.size == 4 ? 32 : 64)
+          ]);
+          return;
+        }
+        throw ArgumentError(
+            'emit2vs(mov): expected a GP and a vector register');
+
+      case UniOpVR.movU32:
+      case UniOpVR.movU64:
+        final el = op == UniOpVR.movU32 ? 2 : 3;
+        final bits = op == UniOpVR.movU32 ? 32 : 64;
+        if (isGp(dst_) && isVec(src_)) {
+          _a64(
+              A64InstId.kMov, [gp(dst_, bits), _vElem(src_ as BaseReg, el, 0)]);
+          return;
+        }
+        if (isVec(dst_) && isGp(src_)) {
+          _a64(A64InstId.kFmov, [scalar(dst_, el), gp(src_, bits)]);
+          return;
+        }
+        throw ArgumentError(
+            'emit2vs($op): expected a GP and a vector register');
+
+      case UniOpVR.insertU8:
+      case UniOpVR.insertU16:
+      case UniOpVR.insertU32:
+      case UniOpVR.insertU64:
+        _a64(A64InstId.kMov, [
+          _vElem(dst_ as BaseReg, info.dstElement, idx),
+          gp(src_, op == UniOpVR.insertU64 ? 64 : 32)
+        ]);
+        return;
+
+      case UniOpVR.extractU8:
+      case UniOpVR.extractU16:
+      case UniOpVR.extractU32:
+      case UniOpVR.extractU64:
+        _a64(A64InstId.kMov, [
+          gp(dst_, op == UniOpVR.extractU64 ? 64 : 32),
+          _vElem(src_ as BaseReg, info.dstElement, idx)
+        ]);
+        return;
+
+      case UniOpVR.cvtIntToF32:
+      case UniOpVR.cvtIntToF64:
+        _a64(A64InstId.kScvtf, [scalar(dst_, info.dstElement), src_]);
+        return;
+
+      case UniOpVR.cvtTruncF32ToInt:
+      case UniOpVR.cvtRoundF32ToInt:
+      case UniOpVR.cvtTruncF64ToInt:
+      case UniOpVR.cvtRoundF64ToInt:
+        _a64(info.instId, [dst_, scalar(src_, info.srcElement)]);
+        return;
+    }
+  }
+
   /// Element [index] of [reg] (upstream `v.b(i)`, `h(i)`, `s(i)`, `d(i)`);
   /// [el] is the element size log2 (0 = B ... 3 = D).
   A64Vec _vElem(BaseReg reg, int el, int index) =>

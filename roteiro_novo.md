@@ -119,7 +119,6 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 
 ### Pendências conhecidas
 - O RA do port não é um port fiel do upstream (alocação global por bundles + correções locais). Exemplo: no Win64 um argumento em RCX que precisa liberar CL é spillado e recarregado em vez de movido; prólogo Win64 salva todos os callee-saved (GP e XMM6–15) de forma conservadora. Avaliar port do `RALocalAllocator`/`RAPass` do upstream.
-- `emitCV`/`UniOpCV` é invenção do Dart; o upstream usa `emit_2vs` com `UniOpVR` (`s_cvt_int_to_f32`...). Portar e remover.
 
 ### Goldens do assembler upstream (`asmjit-testing`)
 - `tool/convert_asmjit_assembler_tests.dart` extrai os `TEST_INSTRUCTION` de `asmjit_test_assembler_{x64,a64}.cpp` para `test/data/` (o `referencias/` não é versionado): 17891 casos x64 e 3992 A64.
@@ -217,9 +216,15 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - **Bug do upstream provado**: na ABI da Apple o `FuncDetail` dá no mínimo 4 bytes a cada argumento na pilha (`min_stack_arg_size`); para (8×int64, int8, int16, int32, uint8, uint16) o upstream calcula os offsets 0, 4, 8, 12, 16, enquanto o clang lê 0, 2, 4, 8, 10. O port empacota pelo tamanho/alinhamento natural na Apple.
 - `test/asmjit/compiler_stack_args_test.dart`: 12 argumentos int64 e argumentos pequenos/mistos na pilha (SysV, Win64, AAPCS64/Apple).
 
+### UJIT `emit_2vs` (`UniOpVR`) portado
+- `UniCompiler.emit2vs(op, dst, src, [idx])`: port de `emit_2vs()` x86 (AVX e SSE, com os fallbacks SSE2 de insert/extract) e A64, com as tabelas `opcode_info_2vs`. Substitui o `emitCV`/`UniOpCV`, que era invenção do port (removidos).
+- **Bugs do upstream provados** (upstream x86_64 compilado e executado sob Rosetta, `UniCompiler` com features restritas):
+  - SSE2 sem SSE4.1, `extract_u32`/`extract_u64` com índice ≠ 0: o temporário é criado com `new_similar_reg(dst.as<Vec>())`, mas `dst` é GP; gera `pshufd eax, xmm0, 85` (`kInvalidInstruction`) e `pshufd rax, xmm0, 238` (codificado como `pshufd xmm0, xmm0`; o resultado nunca chega ao destino). O port usa um temporário vetorial.
+  - AVX, `extract_u64` com índice 1: gera `vmovq rax, xmm0` (elemento 0), enquanto o caminho SSE4.1 gera `pextrq rax, xmm0, 1`. O port só usa `vmovq` no índice 0.
+- `test/asmjit/ujit_vr_ops_test.dart`: todas as `UniOpVR` em todos os índices (SSE2, SSE4.1 e host no x86; AArch64).
+
 ### Próximos passos
 1. Port de `asmjit_test_compiler_x86.cpp` (em andamento, num agente) e `InvokeNode` no RA; `[LABEL|RIP]` em 32 bits.
-2. `emit_2vs` (UniOpVR) no lugar de `emitCV`.
 3. Portar `asmjit_test_unicompiler*.cpp` e os testes do compiler.
 4. Acesso de outros operandos além do 0 (xadd/cmpxchg) a partir do banco.
 5. AVX-512/EVEX no UJIT, validado no runner linux-x64 do CI (tem AVX-512F).

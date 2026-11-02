@@ -1,7 +1,7 @@
 /// x86 lowering tables for UniCompiler.
 ///
 /// Ported from `opcode_info_2v`, `opcode_info_2vi`, `opcode_info_3v`,
-/// `opcode_info_3vi`, `opcode_info_4v`, `opcode_info_2vm` and
+/// `opcode_info_3vi`, `opcode_info_4v`, `opcode_info_2vs`, `opcode_info_2vm` and
 /// `opcode_info_2mv` in asmjit's
 /// `ujit/unicompiler_x86.cpp`; one entry per [UniOpVV] / [UniOpVVI] /
 /// [UniOpVVV] / [UniOpVVVI] / [UniOpVVVV] value
@@ -423,6 +423,44 @@ const List<X86UniOpVInfo> kX86OpcodeInfo3v = [
       0, 0, 0, 0, 0x00, 4, 2, 0, 0), // packsI32U16
   _V(X86InstId.kPshufb, 2, SSEExt.kSSSE3, X86InstId.kVpshufb, AVXExt.kAVX, 0, 0,
       0, 0, 0x00, 4, 0, 0, 0), // swizzlevU8
+];
+
+/// `opcode_info_2vs`: one entry per [UniOpVR] value.
+const List<X86UniOpVInfo> kX86OpcodeInfo2vs = [
+  _V(-1, 0, SSEExt.kIntrin, -1, AVXExt.kIntrin, 0, 0, 0, 0, 0x00, 4, 0, 0,
+      0), // mov
+  _V(X86InstId.kMovd, 0, SSEExt.kSSE2, X86InstId.kVmovd, AVXExt.kAVX, 0, 0, 0,
+      0, 0x00, 4, 2, 0, 0), // movU32
+  _V(X86InstId.kMovq, 0, SSEExt.kSSE2, X86InstId.kVmovq, AVXExt.kAVX, 0, 0, 0,
+      0, 0x00, 4, 3, 0, 0), // movU64
+  _V(X86InstId.kPinsrb, 0, SSEExt.kSSE4_1, X86InstId.kVpinsrb, AVXExt.kAVX, 0,
+      0, 0, 0, 0x00, 4, 0, 0, 0), // insertU8
+  _V(X86InstId.kPinsrw, 0, SSEExt.kSSE2, X86InstId.kVpinsrw, AVXExt.kAVX, 0, 0,
+      0, 0, 0x00, 4, 1, 0, 0), // insertU16
+  _V(X86InstId.kPinsrd, 0, SSEExt.kSSE4_1, X86InstId.kVpinsrd, AVXExt.kAVX, 0,
+      0, 0, 0, 0x00, 4, 2, 0, 0), // insertU32
+  _V(X86InstId.kPinsrq, 0, SSEExt.kSSE4_1, X86InstId.kVpinsrq, AVXExt.kAVX, 0,
+      0, 0, 0, 0x00, 4, 3, 0, 0), // insertU64
+  _V(X86InstId.kPextrb, 0, SSEExt.kSSE4_1, X86InstId.kVpextrb, AVXExt.kAVX, 0,
+      0, 0, 0, 0x00, 4, 0, 0, 0), // extractU8
+  _V(X86InstId.kPextrw, 0, SSEExt.kSSE2, X86InstId.kVpextrw, AVXExt.kAVX, 0, 0,
+      0, 0, 0x00, 4, 1, 0, 0), // extractU16
+  _V(X86InstId.kPextrd, 0, SSEExt.kSSE4_1, X86InstId.kVpextrd, AVXExt.kAVX, 0,
+      0, 0, 0, 0x00, 4, 2, 0, 0), // extractU32
+  _V(X86InstId.kPextrq, 0, SSEExt.kSSE4_1, X86InstId.kVpextrq, AVXExt.kAVX, 0,
+      0, 0, 0, 0x00, 4, 3, 0, 0), // extractU64
+  _V(X86InstId.kCvtsi2ss, 0, SSEExt.kSSE2, X86InstId.kVcvtsi2ss, AVXExt.kAVX, 0,
+      0, 0, 0, 0x00, 4, 2, 0, 0), // cvtIntToF32
+  _V(X86InstId.kCvtsi2sd, 0, SSEExt.kSSE2, X86InstId.kVcvtsi2sd, AVXExt.kAVX, 0,
+      0, 0, 0, 0x00, 4, 3, 0, 0), // cvtIntToF64
+  _V(X86InstId.kCvttss2si, 0, SSEExt.kSSE2, X86InstId.kVcvttss2si, AVXExt.kAVX,
+      0, 0, 0, 0, 0x00, 4, 2, 0, 0), // cvtTruncF32ToInt
+  _V(X86InstId.kCvtss2si, 0, SSEExt.kSSE2, X86InstId.kVcvtss2si, AVXExt.kAVX, 0,
+      0, 0, 0, 0x00, 4, 2, 0, 0), // cvtRoundF32ToInt
+  _V(X86InstId.kCvttsd2si, 0, SSEExt.kSSE2, X86InstId.kVcvttsd2si, AVXExt.kAVX,
+      0, 0, 0, 0, 0x00, 4, 3, 0, 0), // cvtTruncF64ToInt
+  _V(X86InstId.kCvtsd2si, 0, SSEExt.kSSE2, X86InstId.kVcvtsd2si, AVXExt.kAVX, 0,
+      0, 0, 0, 0x00, 4, 3, 0, 0), // cvtRoundF64ToInt
 ];
 
 const List<X86UniOpVInfo> kX86OpcodeInfo2vi = [

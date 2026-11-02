@@ -53,7 +53,7 @@ Future<void> _runWorker(int id, int iterations, {bool dumpOnce = false}) async {
     cc.setArg(2, c);
 
     final bDouble = cc.newVec('bDouble');
-    cc.emitCV(UniOpCV.cvtI2D, bDouble, b);
+    cc.emit2vs(UniOpVR.cvtIntToF64, bDouble, b);
 
     final tmp = cc.newVec('tmp');
     cc.emit3v(UniOpVVV.addF64S, tmp, a, c);

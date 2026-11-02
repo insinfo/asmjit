@@ -116,14 +116,6 @@ enum UniOpRRR {
 }
 
 /// Instruction with `[vec, reg]` operands.
-enum UniOpCV {
-  cvtI2F,
-  cvtI2D,
-  cvtF2I,
-  cvtD2I;
-}
-
-/// Instruction with `[vec, reg]` operands.
 enum UniOpVR {
   mov,
   movU32,

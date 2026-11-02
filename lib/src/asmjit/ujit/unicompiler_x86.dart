@@ -96,20 +96,188 @@ mixin UniCompilerX86 on UniCompilerBase {
     }
   }
 
-  void emitCVX86(UniOpCV op, BaseReg dst, BaseReg src) {
+  /// Port of `emit_2vs()` (ujit/unicompiler_x86.cpp): moves between GP and
+  /// vector registers, element insertion/extraction and int/float
+  /// conversions ([UniOpVR]).
+  void _emit2vsX86(UniOpVR op, Operand dst_, Operand src_, int idx) {
+    final info = kX86OpcodeInfo2vs[op.index];
+    Operand dst = dst_;
+    Operand src = src_;
+
+    bool isGp(Operand o) => o is BaseReg && o.isGp;
+    bool isVec(Operand o) => o is BaseReg && o.group == RegGroup.vec;
+    X86Xmm xmm(Operand o) => X86Xmm((o as BaseReg).id);
+    X86Gp r32(Operand o) => X86Gp.r32((o as BaseReg).id);
+    X86Gp r64(Operand o) => X86Gp.r64((o as BaseReg).id);
+    int size(Operand o) => (o as BaseReg).size;
+
+    final avx = hasAvx;
+    final movd = avx ? X86InstId.kVmovd : X86InstId.kMovd;
+    final movq = avx ? X86InstId.kVmovq : X86InstId.kMovq;
+
     switch (op) {
-      case UniOpCV.cvtI2F:
-        cc.addNode(InstNode(X86InstId.kCvtsi2ss, [dst, src]));
-        break;
-      case UniOpCV.cvtI2D:
-        cc.addNode(InstNode(X86InstId.kCvtsi2sd, [dst, src]));
-        break;
-      case UniOpCV.cvtF2I:
-        cc.addNode(InstNode(X86InstId.kCvttss2si, [dst, src]));
-        break;
-      case UniOpCV.cvtD2I:
-        cc.addNode(InstNode(X86InstId.kCvttsd2si, [dst, src]));
-        break;
+      case UniOpVR.mov:
+        if (isGp(dst) && isVec(src)) {
+          if (size(dst) <= 4) {
+            _emitX86(movd, [r32(dst), xmm(src)]);
+          } else {
+            _emitX86(movq, [r64(dst), xmm(src)]);
+          }
+          return;
+        }
+        if (isVec(dst) && isGp(src)) {
+          if (size(src) <= 4) {
+            _emitX86(movd, [xmm(dst), r32(src)]);
+          } else {
+            _emitX86(movq, [xmm(dst), r64(src)]);
+          }
+          return;
+        }
+        throw ArgumentError(
+            'emit2vs(mov): expected a GP and a vector register');
+
+      case UniOpVR.movU32:
+      case UniOpVR.movU64:
+        if (isGp(dst) && isVec(src)) {
+          if (op == UniOpVR.movU32) {
+            _emitX86(movd, [r32(dst), xmm(src)]);
+          } else {
+            _emitX86(movq, [r64(dst), xmm(src)]);
+          }
+          return;
+        }
+        if (isVec(dst) && isGp(src)) {
+          if (op == UniOpVR.movU32) {
+            _emitX86(movd, [xmm(dst), r32(src)]);
+          } else {
+            _emitX86(movq, [xmm(dst), r64(src)]);
+          }
+          return;
+        }
+        throw ArgumentError(
+            'emit2vs($op): expected a GP and a vector register');
+
+      case UniOpVR.insertU8:
+      case UniOpVR.insertU16:
+      case UniOpVR.insertU32:
+      case UniOpVR.insertU64:
+        if (op != UniOpVR.insertU64) src = r32(src);
+        if (avx) {
+          dst = xmm(dst);
+          _emitX86(info.avxInstId, [dst, dst, src, Imm(idx)]);
+          return;
+        }
+        if (hasSseExt(info.sseExt)) {
+          _emitX86(info.sseInstId, [dst, src, Imm(idx)]);
+        } else if (op == UniOpVR.insertU8) {
+          final tmp = (this as UniCompiler).newGp32('@tmp');
+          _emitX86(X86InstId.kPextrw, [tmp, dst, Imm(idx ~/ 2)]);
+          final s8 = X86Gp.r8((src as BaseReg).id);
+          if ((idx & 1) != 0) {
+            _emitX86(X86InstId.kMov, [X86Gp.r8h(tmp.id), s8]);
+          } else {
+            _emitX86(X86InstId.kMov, [X86Gp.r8(tmp.id), s8]);
+          }
+          _emitX86(X86InstId.kPinsrw, [dst, tmp, Imm(idx ~/ 2)]);
+        } else if (op == UniOpVR.insertU32) {
+          if (idx == 0) {
+            final tmp = newVecWithWidth(VecWidth.k128, '@tmp');
+            _emitX86(X86InstId.kMovd, [tmp, src]);
+            _emitX86(X86InstId.kMovss, [dst, tmp]);
+          } else {
+            final tmp = (this as UniCompiler).newGp32('@tmp');
+            _emitX86(X86InstId.kPinsrw, [dst, src, Imm(idx * 2)]);
+            _emitX86(X86InstId.kMov, [tmp, src]);
+            _emitX86(X86InstId.kShr, [tmp, Imm(16)]);
+            _emitX86(X86InstId.kPinsrw, [dst, tmp, Imm(idx * 2 + 1)]);
+          }
+        } else {
+          final tmp = newVecWithWidth(VecWidth.k128, '@tmp');
+          _emitX86(X86InstId.kMovq, [tmp, src]);
+          if (idx == 0) {
+            _emitX86(X86InstId.kMovsd, [dst, tmp]);
+          } else {
+            _emitX86(X86InstId.kPunpcklqdq, [dst, tmp]);
+          }
+        }
+        return;
+
+      case UniOpVR.extractU8:
+      case UniOpVR.extractU16:
+      case UniOpVR.extractU32:
+      case UniOpVR.extractU64:
+        if (op != UniOpVR.extractU64) dst = r32(dst);
+        if (avx) {
+          src = xmm(src);
+          if (op == UniOpVR.extractU32 && idx == 0) {
+            _emitX86(X86InstId.kVmovd, [dst, src]);
+            return;
+          }
+          // Deviation from upstream, which emits `vmovq` for extract_u64 at
+          // any index: executing upstream with AVX, index 1 emits
+          // `vmovq rax, xmm0` (element 0), while its SSE4.1 path emits
+          // `pextrq rax, xmm0, 1`. Only index 0 is a plain move.
+          if (op == UniOpVR.extractU64 && idx == 0) {
+            _emitX86(X86InstId.kVmovq, [dst, src]);
+            return;
+          }
+          _emitX86(info.avxInstId, [dst, src, Imm(idx)]);
+          return;
+        }
+        if (op == UniOpVR.extractU32 && idx == 0) {
+          _emitX86(X86InstId.kMovd, [dst, src]);
+        } else if (op == UniOpVR.extractU64 && idx == 0) {
+          _emitX86(X86InstId.kMovq, [dst, src]);
+        } else if (hasSseExt(info.sseExt)) {
+          _emitX86(info.sseInstId, [dst, src, Imm(idx)]);
+        } else if (op == UniOpVR.extractU8) {
+          _emitX86(X86InstId.kPextrw, [dst, src, Imm(idx ~/ 2)]);
+          if ((idx & 1) != 0) {
+            _emitX86(X86InstId.kShr, [dst, Imm(8)]);
+          } else {
+            _emitX86(X86InstId.kAnd, [dst, Imm(0xFF)]);
+          }
+        } else {
+          // Deviation from upstream, which creates the temporary with
+          // `new_similar_reg(dst.as<Vec>())` although `dst` is a GP
+          // register: executing upstream with SSE2 only, extract_u32 at
+          // index 1 emits `pshufd eax, xmm0, 85` (kInvalidInstruction) and
+          // extract_u64 at index 1 emits `pshufd rax, xmm0, 238`, encoded as
+          // `pshufd xmm0, xmm0` (the result never reaches the destination).
+          // The temporary is a vector register like the source.
+          final tmp = _newSimilarRegX86(src as BaseReg, '@tmp');
+          final imm = op == UniOpVR.extractU32
+              ? _shufImm4(idx, idx, idx, idx)
+              : _shufImm4(3, 2, 3, 2);
+          _emitX86(X86InstId.kPshufd, [tmp, src, Imm(imm)]);
+          _emitX86(op == UniOpVR.extractU32 ? X86InstId.kMovd : X86InstId.kMovq,
+              [dst, tmp]);
+        }
+        return;
+
+      case UniOpVR.cvtIntToF32:
+      case UniOpVR.cvtIntToF64:
+        dst = xmm(dst);
+        if (avx) {
+          _emitX86(X86InstId.kVpxor, [dst, dst, dst]);
+          _emitX86(info.avxInstId, [dst, dst, src]);
+        } else {
+          _emitX86(X86InstId.kPxor, [dst, dst]);
+          _emitX86(info.sseInstId, [dst, src]);
+        }
+        return;
+
+      case UniOpVR.cvtTruncF32ToInt:
+      case UniOpVR.cvtRoundF32ToInt:
+      case UniOpVR.cvtTruncF64ToInt:
+      case UniOpVR.cvtRoundF64ToInt:
+        if (avx) {
+          if (isVec(src)) src = xmm(src);
+          _emitX86(info.avxInstId, [dst, src]);
+        } else {
+          _emitX86(info.sseInstId, [dst, src]);
+        }
+        return;
     }
   }
 

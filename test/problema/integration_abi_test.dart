@@ -105,7 +105,7 @@ void main() {
         final bDouble = cc.newVec('bDouble');
 
         // Convert int b to double
-        cc.emitCV(UniOpCV.cvtI2D, bDouble, b); // cvtsi2sd
+        cc.emit2vs(UniOpVR.cvtIntToF64, bDouble, b); // cvtsi2sd
 
         cc.emit3v(UniOpVVV.addF64S, tmp, a, bDouble);
         cc.emit3v(UniOpVVV.addF64S, tmp, tmp, c);
@@ -175,7 +175,7 @@ void main() {
         cc.setArg(2, c);
 
         final bDouble = cc.newVec('bDouble');
-        cc.emitCV(UniOpCV.cvtI2D, bDouble, b);
+        cc.emit2vs(UniOpVR.cvtIntToF64, bDouble, b);
 
         final tmp = cc.newVec('tmp');
         cc.emit3v(UniOpVVV.addF64S, tmp, a, c); // tmp = a+c

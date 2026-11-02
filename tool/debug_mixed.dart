@@ -23,7 +23,7 @@ void main() async {
 
   final tmp = cc.newVec('tmp');
   final bDouble = cc.newVec('bDouble');
-  cc.emitCV(UniOpCV.cvtI2D, bDouble, b);
+  cc.emit2vs(UniOpVR.cvtIntToF64, bDouble, b);
   cc.emit3v(UniOpVVV.addF64S, tmp, a, bDouble);
   cc.emit3v(UniOpVVV.addF64S, tmp, tmp, c);
   cc.ret([tmp]);

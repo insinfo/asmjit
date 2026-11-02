@@ -308,6 +308,32 @@ const List<A64UniOpVInfo> kA64OpcodeInfo2vi = [
 ];
 
 /// Ported from `opcode_info_2v`; one entry per [UniOpVV] value.
+/// `opcode_info_2vs`: one entry per [UniOpVR] value (element sizes 0..3
+/// = 8..64 bits).
+const List<A64UniOpVInfo> kA64OpcodeInfo2vs = [
+  _V3(-1, false, 0, 0, 0, 0, 0, 0, 0, 0), // mov
+  _V3(-1, true, 0, 0, 0, 2, 0, 2, 0, 0), // movU32
+  _V3(-1, true, 0, 0, 0, 3, 0, 3, 0, 0), // movU64
+  _V3(-1, true, 0, 0, 0, 0, 0, 0, 0, 0), // insertU8
+  _V3(-1, true, 0, 0, 0, 1, 0, 1, 0, 0), // insertU16
+  _V3(-1, true, 0, 0, 0, 2, 0, 2, 0, 0), // insertU32
+  _V3(-1, true, 0, 0, 0, 3, 0, 3, 0, 0), // insertU64
+  _V3(-1, true, 0, 0, 0, 0, 0, 0, 0, 0), // extractU8
+  _V3(-1, true, 0, 0, 0, 1, 0, 1, 0, 0), // extractU16
+  _V3(-1, true, 0, 0, 0, 2, 0, 2, 0, 0), // extractU32
+  _V3(-1, true, 0, 0, 0, 3, 0, 3, 0, 0), // extractU64
+  _V3(-1, true, 0, 0, kFmF32S, 2, 0, 0, 0, 0), // cvtIntToF32
+  _V3(-1, true, 0, 0, kFmF64S, 3, 0, 0, 0, 0), // cvtIntToF64
+  _V3(A64InstId.kFcvtzs, true, 0, 0, kFmF32S, 0, 0, 2, 0,
+      0), // cvtTruncF32ToInt
+  _V3(A64InstId.kFcvtns, true, 0, 0, kFmF32S, 0, 0, 2, 0,
+      0), // cvtRoundF32ToInt
+  _V3(A64InstId.kFcvtzs, true, 0, 0, kFmF64S, 0, 0, 3, 0,
+      0), // cvtTruncF64ToInt
+  _V3(A64InstId.kFcvtns, true, 0, 0, kFmF64S, 0, 0, 3, 0,
+      0), // cvtRoundF64ToInt
+];
+
 const List<A64UniOpVInfo> kA64OpcodeInfo2v = [
   _V3(A64InstId.kMov, false, 0, 0, 0, 0, 0, 0, 0, 0), // mov
   _V3(A64InstId.kMov, false, 0, 0, 0, 3, 1, 3, 1, 0), // movU64

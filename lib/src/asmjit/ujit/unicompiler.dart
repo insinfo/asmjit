@@ -1050,6 +1050,19 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     }
   }
 
+  /// `emit_2vs()`: a `[vec, reg]` / `[reg, vec]` operation ([UniOpVR]):
+  /// moves between GP and vector registers, insertion/extraction of element
+  /// [idx], and int/float conversions.
+  void emit2vs(UniOpVR op, Operand dst, Operand src, [int idx = 0]) {
+    if (isX86Family) {
+      _emit2vsX86(op, dst, src, idx);
+    } else if (isArm64) {
+      _emit2vsA64(op, dst, src, idx);
+    } else {
+      throw UnimplementedError('emit2vs not implemented for $arch');
+    }
+  }
+
   /// Emit 3-operand vector instruction.
   void emit3v(UniOpVVV op, Operand dst, Operand src1, Operand src2) {
     if (isX86Family) {
@@ -1488,14 +1501,6 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
   // ============================================================================
   // [Scalar (RRR/RRI) Operations]
   // ============================================================================
-
-  void emitCV(UniOpCV op, BaseReg dst, BaseReg src) {
-    if (isX86Family) {
-      (this as UniCompilerX86).emitCVX86(op, dst, src);
-    } else {
-      throw UnimplementedError('emitCV not implemented for AArch64');
-    }
-  }
 
   /// `emit_3i()`: `dst = op(src1, src2)` where the sources are registers,
   /// memory or an [Imm].
