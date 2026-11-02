@@ -662,6 +662,10 @@ void serializeNodes(NodeList nodes, SerializerContext ctx) {
         break;
       case NodeType.inst:
       case NodeType.jump:
+      // A function call (`InvokeNode`) is a call instruction whose operand
+      // is the call target; its arguments were moved by the register
+      // allocator.
+      case NodeType.invoke:
         final inst = node as InstNode;
         if (inst.extraReg != null) {
           ctx.onInstExtra(
@@ -702,7 +706,6 @@ void serializeNodes(NodeList nodes, SerializerContext ctx) {
         if (label.isValid) ctx.onLabel(label);
         break;
       case NodeType.funcRet:
-      case NodeType.invoke:
       case NodeType.constPool:
         // These nodes are either handled by higher-level passes or ignored.
         break;

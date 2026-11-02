@@ -3,6 +3,7 @@
 // test builds the same instructions, virtual registers and control flow as
 // upstream `compile()` and checks what upstream `run()` checks.
 import 'dart:ffi';
+import 'dart:io';
 
 import 'package:asmjit/asmjit.dart' hide calloc;
 import 'package:ffi/ffi.dart';
@@ -61,6 +62,230 @@ typedef _D8 = void Function(Pointer<Uint32>, Pointer<Uint32>, int);
 typedef _N9 = Uint32 Function(Uint8, Uint8, Uint32);
 typedef _D9 = int Function(int, int, int);
 
+/// Calls the AlignBase function [p] with the arguments 1..[n].
+int _callAlignBase(Pointer<Void> p, int n) {
+  switch (n) {
+    case 0:
+      return p
+          .cast<NativeFunction<Uint32 Function()>>()
+          .asFunction<int Function()>()();
+    case 1:
+      return p
+          .cast<NativeFunction<Uint32 Function(Uint32)>>()
+          .asFunction<int Function(int)>()(1);
+    case 2:
+      return p
+          .cast<NativeFunction<Uint32 Function(Uint32, Uint32)>>()
+          .asFunction<int Function(int, int)>()(1, 2);
+    case 3:
+      return p
+          .cast<NativeFunction<Uint32 Function(Uint32, Uint32, Uint32)>>()
+          .asFunction<int Function(int, int, int)>()(1, 2, 3);
+    case 4:
+      return p
+          .cast<
+              NativeFunction<Uint32 Function(Uint32, Uint32, Uint32, Uint32)>>()
+          .asFunction<int Function(int, int, int, int)>()(1, 2, 3, 4);
+    case 5:
+      return p
+          .cast<
+              NativeFunction<
+                  Uint32 Function(Uint32, Uint32, Uint32, Uint32, Uint32)>>()
+          .asFunction<int Function(int, int, int, int, int)>()(1, 2, 3, 4, 5);
+    case 6:
+      return p
+              .cast<
+                  NativeFunction<
+                      Uint32 Function(
+                          Uint32, Uint32, Uint32, Uint32, Uint32, Uint32)>>()
+              .asFunction<int Function(int, int, int, int, int, int)>()(
+          1, 2, 3, 4, 5, 6);
+    case 7:
+      return p
+              .cast<
+                  NativeFunction<
+                      Uint32 Function(Uint32, Uint32, Uint32, Uint32, Uint32,
+                          Uint32, Uint32)>>()
+              .asFunction<int Function(int, int, int, int, int, int, int)>()(
+          1, 2, 3, 4, 5, 6, 7);
+    case 8:
+      return p
+              .cast<
+                  NativeFunction<
+                      Uint32 Function(Uint32, Uint32, Uint32, Uint32, Uint32,
+                          Uint32, Uint32, Uint32)>>()
+              .asFunction<
+                  int Function(int, int, int, int, int, int, int, int)>()(
+          1, 2, 3, 4, 5, 6, 7, 8);
+    case 9:
+      return p
+              .cast<
+                  NativeFunction<
+                      Uint32 Function(Uint32, Uint32, Uint32, Uint32, Uint32,
+                          Uint32, Uint32, Uint32, Uint32)>>()
+              .asFunction<
+                  int Function(int, int, int, int, int, int, int, int, int)>()(
+          1, 2, 3, 4, 5, 6, 7, 8, 9);
+    case 10:
+      return p
+          .cast<
+              NativeFunction<
+                  Uint32 Function(Uint32, Uint32, Uint32, Uint32, Uint32,
+                      Uint32, Uint32, Uint32, Uint32, Uint32)>>()
+          .asFunction<
+              int Function(int, int, int, int, int, int, int, int, int,
+                  int)>()(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+    case 11:
+      return p
+          .cast<
+              NativeFunction<
+                  Uint32 Function(Uint32, Uint32, Uint32, Uint32, Uint32,
+                      Uint32, Uint32, Uint32, Uint32, Uint32, Uint32)>>()
+          .asFunction<
+              int Function(int, int, int, int, int, int, int, int, int, int,
+                  int)>()(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11);
+    case 12:
+      return p
+          .cast<
+              NativeFunction<
+                  Uint32 Function(
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32)>>()
+          .asFunction<
+              int Function(int, int, int, int, int, int, int, int, int, int,
+                  int, int)>()(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
+    case 13:
+      return p
+          .cast<
+              NativeFunction<
+                  Uint32 Function(
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32)>>()
+          .asFunction<
+              int Function(int, int, int, int, int, int, int, int, int, int,
+                  int, int, int)>()(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13);
+    case 14:
+      return p
+          .cast<
+              NativeFunction<
+                  Uint32 Function(
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32)>>()
+          .asFunction<
+              int Function(
+                  int,
+                  int,
+                  int,
+                  int,
+                  int,
+                  int,
+                  int,
+                  int,
+                  int,
+                  int,
+                  int,
+                  int,
+                  int,
+                  int)>()(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14);
+    case 15:
+      return p
+          .cast<
+              NativeFunction<
+                  Uint32 Function(
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32,
+                      Uint32)>>()
+          .asFunction<
+              int Function(
+                  int,
+                  int,
+                  int,
+                  int,
+                  int,
+                  int,
+                  int,
+                  int,
+                  int,
+                  int,
+                  int,
+                  int,
+                  int,
+                  int,
+                  int)>()(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+    case 16:
+      return p
+              .cast<
+                  NativeFunction<
+                      Uint32 Function(
+                          Uint32,
+                          Uint32,
+                          Uint32,
+                          Uint32,
+                          Uint32,
+                          Uint32,
+                          Uint32,
+                          Uint32,
+                          Uint32,
+                          Uint32,
+                          Uint32,
+                          Uint32,
+                          Uint32,
+                          Uint32,
+                          Uint32,
+                          Uint32)>>()
+              .asFunction<
+                  int Function(int, int, int, int, int, int, int, int, int, int,
+                      int, int, int, int, int, int)>()(
+          1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);
+  }
+  throw ArgumentError.value(n);
+}
+
 void main() {
   late JitRuntime rt;
   setUp(() => rt = JitRuntime());
@@ -102,6 +327,56 @@ void main() {
       });
       p.cast<NativeFunction<_VoidNative>>().asFunction<_VoidDart>()();
     }, skip: skipUnlessX64Host);
+  });
+
+  group('AlignBase', () {
+    for (var argCount = 0; argCount <= 16; argCount++) {
+      for (final alignment in [16, 32]) {
+        for (final preserveFp in [true, false]) {
+          test(
+              'AlignBase {NumArgs=$argCount Alignment=$alignment '
+              'PreserveFP=${preserveFp ? 'Y' : 'N'}}', () {
+            final p = compile((cc) {
+              final funcNode = cc.addFunc(FuncSignature.build(
+                  List.filled(argCount, TypeId.int32), TypeId.int32));
+              if (preserveFp) funcNode.frame.setPreservedFP();
+
+              final gpVar = cc.newGpPtr('gp_var');
+              X86Gp? gpSum;
+              final stack = cc.newStack(alignment, alignment);
+
+              // Do a sum of arguments to verify a possible relocation when
+              // misaligned.
+              for (var i = 0; i < argCount; i++) {
+                final gpArg = cc.newGp32('gp_arg$i');
+                funcNode.setArg(i, 0, gpArg);
+                if (i == 0) {
+                  gpSum = gpArg;
+                } else {
+                  cc.add(gpSum!, gpArg);
+                }
+              }
+
+              // Check alignment of the stack (has to be 16).
+              cc
+                ..lea(gpVar, stack)
+                ..and_(gpVar, Imm(alignment - 1));
+
+              // Add a sum of all arguments to check if they are correct.
+              if (argCount != 0) cc.or_(gpVar.as32, gpSum!);
+
+              cc
+                ..ret([gpVar])
+                ..endFunc();
+            });
+            final result = _callAlignBase(p, argCount);
+            final expected = argCount * (argCount + 1) ~/ 2;
+            expect([result >> 28, result & 0x0FFFFFFF],
+                [expected >> 28, expected & 0x0FFFFFFF]);
+          }, skip: skipUnlessX64Host);
+        }
+      }
+    }
   });
 
   group('Jump', () {
@@ -480,6 +755,59 @@ void main() {
         calloc.free(out);
       }
     }, skip: skipUnlessX64Host);
+
+    test('AllocArgsVec', () {
+      final p = compile((cc) {
+        final a = cc.newXmm('xmm_a');
+        final b = cc.newXmm('xmm_b');
+        final funcNode = cc.addFunc(FuncSignature.build(
+            [TypeId.int32x4, TypeId.int32x4], TypeId.int32x4));
+        funcNode.setArg(0, 0, a);
+        funcNode.setArg(1, 0, b);
+        cc
+          ..paddb(a, b)
+          ..ret([a])
+          ..endFunc();
+      });
+      // `__m128i (*)(__m128i, __m128i)` cannot be called through dart:ffi
+      // (no vector types), so a SysV caller written with the assembler loads
+      // the vectors from memory, calls it and stores the result.
+      final code = CodeHolder(env: rt.environment);
+      X86Assembler(code)
+        ..emit(X86InstId.kPush, [rbx])
+        ..emit(X86InstId.kMov, [rbx, rdx])
+        ..emit(X86InstId.kMovdqu, [xmm0, X86Mem.base(rdi)])
+        ..emit(X86InstId.kMovdqu, [xmm1, X86Mem.base(rsi)])
+        ..emit(X86InstId.kMov, [rax, Imm(p.address)])
+        ..emit(X86InstId.kCall, [rax])
+        ..emit(X86InstId.kMovdqu, [X86Mem.base(rbx), xmm0])
+        ..emit(X86InstId.kPop, [rbx])
+        ..emit(X86InstId.kRet, []);
+      final caller = rt.add(code).pointer;
+      final data = calloc<Uint8>(48);
+      try {
+        for (var i = 0; i < 16; i++) {
+          data[i] = i;
+          data[16 + i] = 15 - i;
+        }
+        caller
+            .cast<
+                NativeFunction<
+                    Void Function(
+                        Pointer<Uint8>, Pointer<Uint8>, Pointer<Uint8>)>>()
+            .asFunction<
+                void Function(Pointer<Uint8>, Pointer<Uint8>,
+                    Pointer<Uint8>)>()(data, data + 16, data + 32);
+        expect(
+            [for (var i = 0; i < 16; i++) data[32 + i]], List.filled(16, 15));
+      } finally {
+        calloc.free(data);
+      }
+      // Not supported on Windows (upstream does not add it there).
+    },
+        skip: hostIsX64 && Platform.isWindows
+            ? 'vector arguments are not supported by the Win64 ABI'
+            : skipUnlessX64Host);
 
     test('AllocRetFloat1', () {
       final p = compile((cc) {

@@ -593,6 +593,8 @@ class RATiedReg {
 
   set useId(int value) => _useId = value;
   set outId(int value) => _outId = value;
+  set useRegMask(int value) => _useRegMask = value;
+  set outRegMask(int value) => _outRegMask = value;
 
   bool get isUseDone => hasFlag(RATiedFlags.kUseDone);
   bool get isOutDone => hasFlag(RATiedFlags.kOutDone);

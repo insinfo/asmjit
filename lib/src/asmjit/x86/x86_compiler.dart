@@ -13,6 +13,7 @@ import 'x86_serializer.dart';
 import 'x86_rapass.dart';
 import '../core/raarch.dart';
 import '../core/reg_utils.dart';
+import '../core/func.dart';
 import '../core/type.dart';
 import 'x86_emit.dart' show X86EmitOptions;
 
@@ -280,6 +281,12 @@ class X86Compiler extends BaseCompiler {
   JumpNode jmpIndirect(Operand target, [JumpAnnotation? annotation]) =>
       emitAnnotatedJump(X86InstId.kJmp, target, annotation);
   void call(Label target) => inst(X86InstId.kCall, [LabelOp(target)]);
+
+  /// Calls [target] (an [Imm] address, a [LabelOp] / function label, a
+  /// register or a memory operand) with [signature] (`invoke()`); the
+  /// arguments and return values are set on the returned [InvokeNode].
+  InvokeNode invoke(Operand target, FuncSignature signature) =>
+      addInvokeNode(X86InstId.kCall, target, signature);
 
   void je(Label target) =>
       inst(X86InstId.kJz, [LabelOp(target)], type: NodeType.jump);

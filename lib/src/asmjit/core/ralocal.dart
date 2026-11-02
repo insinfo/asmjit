@@ -368,6 +368,8 @@ class RALocalAllocator {
     required void Function(RAWorkReg, int) emitSave,
     required void Function(RAWorkReg, int, int) emitMove,
     required void Function(RAWorkReg, int, RAWorkReg, int) emitSwap,
+    int invokeVecPreservedRegs = 0,
+    int invokeVecSaveRestoreSize = 0,
   }) {
     final outTiedRegs = <RATiedReg>[];
     final dupTiedRegs = <RATiedReg>[];
@@ -775,7 +777,37 @@ class RALocalAllocator {
         }
       }
 
-      // STEP 8: Duplication (skipped in this simplified version)
+      // STEP 8: Duplication: a register passed in more than one argument
+      // register of a call (`add_call_arg()`) is copied from its use id to
+      // the other registers of its use mask.
+      for (final tiedReg in dupTiedRegs) {
+        final workReg = tiedReg.workReg;
+        final srcId = tiedReg.useId;
+        var mask = tiedReg.useRegMask;
+        while (mask != 0) {
+          final dstId = support.ctz(mask);
+          mask &= mask - 1;
+          if (dstId == srcId) continue;
+          emitMove(workReg, dstId, srcId);
+        }
+      }
+
+      // STEP 9: Vector registers can be clobbered partially by invoke - find
+      // if that's the case and clobber when necessary (a callee preserves
+      // only [invokeVecSaveRestoreSize] bytes of its preserved registers).
+      if (group == RegGroup.vec && invokeVecPreservedRegs != 0) {
+        var mask = invokeVecPreservedRegs & _curAssignment.assignedGroup(group);
+        while (mask != 0) {
+          final physId = support.ctz(mask);
+          mask &= mask - 1;
+          final workId = _curAssignment.physToWorkId(group, physId);
+          final workReg = workRegById(workId);
+          if (workReg.virtReg.size > invokeVecSaveRestoreSize) {
+            final err = onSpillReg(group, workReg, workId, physId, emitSave);
+            if (err != AsmJitError.ok) return err;
+          }
+        }
+      }
 
       // STEP 9: Assign OUT registers
       if (outPendingCount > 0) {

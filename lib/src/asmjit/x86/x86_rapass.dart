@@ -7,6 +7,10 @@
 
 import '../core/arch.dart';
 import '../core/compiler.dart';
+import '../core/error.dart';
+import '../core/func.dart';
+import '../core/globals.dart';
+import '../core/reg_utils.dart';
 import '../core/labels.dart';
 import '../core/raarch.dart';
 import '../core/radefs.dart';
@@ -88,9 +92,16 @@ class X86RAArch extends RAArch {
   };
 
   @override
-  void initRegMasks(BaseCompiler cc, RARegMask avail, RARegMask preserved) {
+  void initRegMasks(BaseCompiler cc, RARegMask avail, RARegMask preserved,
+      {FuncNode? func}) {
     if (cc.arch == Arch.x64) {
-      final isWindows = cc.environment.os == 'windows';
+      // The calling convention of the function decides what it preserves
+      // (a function may use another convention than the target's default,
+      // e.g. `CallConvId::kX64Windows` or a light call).
+      final callConv = func?.detail.callConv;
+      final isWindows = callConv != null && callConv.arch != Arch.unknown
+          ? callConv.id == CallConvId.x64Windows
+          : cc.environment.os == 'windows';
       _isWindowsTarget = isWindows;
 
       // All 16 GPs except RSP (stack pointer) and RBP (frame pointer).
@@ -107,6 +118,13 @@ class X86RAArch extends RAArch {
 
       // Win64: XMM6-XMM15 are callee-saved; SysV: all vector regs volatile.
       preserved[RegGroup.vec] = isWindows ? 0xFFC0 : 0;
+
+      if (callConv != null && callConv.arch != Arch.unknown) {
+        preserved[RegGroup.gp] =
+            callConv.preservedRegs(RegGroup.gp) & avail[RegGroup.gp];
+        preserved[RegGroup.vec] =
+            callConv.preservedRegs(RegGroup.vec) & avail[RegGroup.vec];
+      }
     } else {
       avail[RegGroup.gp] = 0xFF & ~(1 << 4); // Remove ESP
       avail[RegGroup.vec] = 0xFF; // 8 XMMs
@@ -154,7 +172,7 @@ class X86RAArch extends RAArch {
   /// ignores them, the Dart [RAPass] uses them as used/clobbered registers.
   @override
   List<RAInstOp>? analyzeInst(BaseCompiler cc, InstNode node) {
-    if (node is FuncRetNode || node is InvokeNode) return null;
+    if (node is FuncRetNode) return null;
     final instId = node.instId;
     if (instId < 0 || instId >= kX86InstDb.length) return null;
 
@@ -408,6 +426,472 @@ class X86RAArch extends RAArch {
     };
   }
 
+  // ===========================================================================
+  // RACFGBuilder::on_before_invoke()
+  // ===========================================================================
+
+  static bool _isGp8(TypeId t) => t == TypeId.int8 || t == TypeId.uint8;
+  static bool _isGp16(TypeId t) => t == TypeId.int16 || t == TypeId.uint16;
+  static bool _isGp32(TypeId t) => t == TypeId.int32 || t == TypeId.uint32;
+  static bool _isGp64(TypeId t) => t == TypeId.int64 || t == TypeId.uint64;
+
+  /// `TypeUtils::deabstract()`: the abstract pointer-sized integers.
+  static TypeId _deabstract(TypeId t, bool is64Bit) => switch (t) {
+        TypeId.intPtr => is64Bit ? TypeId.int64 : TypeId.int32,
+        TypeId.uintPtr => is64Bit ? TypeId.uint64 : TypeId.uint32,
+        _ => t,
+      };
+
+  X86Gp _zsp(BaseCompiler cc) => cc.arch.is64Bit ? X86Gp.rsp : X86Gp.esp;
+
+  /// New virtual GP register of [typeId] (`_new_reg()`).
+  X86Gp _newGp(BaseCompiler cc, TypeId typeId) {
+    final is64 = typeId.sizeInBytes == 8;
+    final vr = cc.newVirtReg(
+        typeId,
+        OperandSignature.fromRegTypeAndGroup(
+            is64 ? RegType.gp64 : RegType.gp32, RegGroup.gp));
+    return is64 ? X86Gp.r64(vr.id) : X86Gp.r32(vr.id);
+  }
+
+  /// Port of `x86::RACFGBuilder::on_before_invoke()`: moves the immediate
+  /// arguments to registers or to the stack, stores the register arguments
+  /// passed on the stack and passes vectors by pointer where the calling
+  /// convention requires it, with instructions inserted before [node].
+  @override
+  void onBeforeInvoke(BaseCompiler cc, FuncNode func, InvokeNode node) {
+    final fd = node.detail;
+    final argCount = node.argCount;
+    final prevCursor = cc.cursor;
+
+    cc.setCursor(node.prev);
+    final nativeRegType = cc.arch.is64Bit ? RegType.gp64 : RegType.gp32;
+
+    for (var argIndex = 0; argIndex < argCount; argIndex++) {
+      final argPack = fd.args[argIndex];
+      for (var valueIndex = 0;
+          valueIndex < Globals.kMaxValuePack;
+          valueIndex++) {
+        final arg = argPack[valueIndex];
+        if (!arg.isInitialized) break;
+
+        final op = node.arg(argIndex, valueIndex);
+        if (op.isNone) continue;
+
+        if (op is BaseReg) {
+          if (arg.isReg) {
+            final regGroup = op.group;
+            final argGroup = RegUtils.groupOf(arg.fullRegType);
+
+            if (arg.isIndirect) {
+              if (op is X86Gp) {
+                if (op.type != nativeRegType) {
+                  throw AsmJitException(AsmJitError.invalidAssignment,
+                      'invalid assignment of a function call argument');
+                }
+                // It's considered allocated if this is an indirect argument
+                // and the user used GP.
+                continue;
+              }
+
+              final indirectReg = _moveVecToPtr(cc, func, node, arg, op);
+              node.setArgValue(argIndex, valueIndex, indirectReg);
+            } else if (regGroup != argGroup) {
+              // TODO: Conversion is not supported (as upstream).
+              throw AsmJitException(AsmJitError.invalidAssignment,
+                  'invalid assignment of a function call argument');
+            }
+          } else {
+            if (arg.isIndirect) {
+              if (op is X86Gp) {
+                if (op.type != nativeRegType) {
+                  throw AsmJitException(AsmJitError.invalidAssignment,
+                      'invalid assignment of a function call argument');
+                }
+                _moveRegToStackArg(cc, arg, op);
+                continue;
+              }
+
+              final indirectReg = _moveVecToPtr(cc, func, node, arg, op);
+              _moveRegToStackArg(cc, arg, indirectReg);
+            } else {
+              _moveRegToStackArg(cc, arg, op);
+            }
+          }
+        } else if (op is Imm) {
+          if (arg.isReg) {
+            final reg = _moveImmToRegArg(cc, arg, op);
+            node.setArgValue(argIndex, valueIndex, reg);
+          } else {
+            _moveImmToStackArg(cc, arg, op);
+          }
+        }
+      }
+    }
+
+    cc.setCursor(node);
+    if (fd.hasFlag(CallConvFlags.kCalleePopsStack) && fd.argStackSize != 0) {
+      cc.inst(X86InstId.kSub, [_zsp(cc), Imm(fd.argStackSize)]);
+    }
+
+    if (fd.hasRet()) {
+      for (var valueIndex = 0;
+          valueIndex < Globals.kMaxValuePack;
+          valueIndex++) {
+        final ret = fd.rets[valueIndex];
+        if (!ret.isInitialized) break;
+
+        final op = node.ret(valueIndex);
+        if (op is BaseReg && ret.isReg) {
+          if (ret.fullRegType == RegType.x86St) {
+            // x87 return values (32-bit conventions) are not ported.
+            throw UnsupportedError('x87 return values are not supported');
+          }
+          if (op.group != RegUtils.groupOf(ret.fullRegType)) {
+            // TODO: Conversion is not supported (as upstream).
+            throw AsmJitException(AsmJitError.invalidAssignment,
+                'invalid assignment of a function call argument');
+          }
+        }
+      }
+    }
+
+    cc.setCursor(prevCursor);
+  }
+
+  /// `x86::RACFGBuilder::move_vec_to_ptr()`.
+  X86Gp _moveVecToPtr(BaseCompiler cc, FuncNode func, InvokeNode node,
+      FuncValue arg, BaseReg src) {
+    var argSize = arg.typeId.sizeInBytes;
+    if (argSize == 0)
+      throw AsmJitException(AsmJitError.invalidState, 'invalid function call');
+    if (argSize < 16) argSize = 16;
+
+    final fd = node.detail;
+    final argStackOffset = (fd.argStackSize + argSize - 1) & ~(argSize - 1);
+    func.frame.updateCallStackAlignment(argSize);
+    fd.setArgStackSize(argStackOffset + argSize);
+
+    final BaseReg vecReg = argSize >= 64
+        ? X86Zmm(src.id)
+        : argSize >= 32
+            ? X86Ymm(src.id)
+            : X86Xmm(src.id);
+    final vecPtr = X86Mem.baseDisp(_zsp(cc), argStackOffset);
+
+    var vecMovInstId = _hasAvx(_cc) ? X86InstId.kVmovaps : X86InstId.kMovaps;
+    if (argSize > 16) vecMovInstId = X86InstId.kVmovaps;
+
+    final out = _newGp(cc, cc.arch.is64Bit ? TypeId.int64 : TypeId.int32);
+    cc.inst(X86InstId.kLea, [out, vecPtr]);
+    cc.inst(vecMovInstId, [X86Mem.base(out), vecReg]);
+
+    if (arg.isStack) {
+      final stackPtr = X86Mem.baseDisp(_zsp(cc), arg.stackOffset);
+      cc.inst(X86InstId.kMov, [stackPtr, out]);
+    }
+    return out;
+  }
+
+  /// `x86::RACFGBuilder::move_imm_to_reg_arg()`.
+  X86Gp _moveImmToRegArg(BaseCompiler cc, FuncValue arg, Imm imm) {
+    var value = imm.value;
+    var regTypeId = TypeId.uint32;
+
+    switch (_deabstract(arg.typeId, cc.arch.is64Bit)) {
+      case TypeId.int8:
+        value = value.toSigned(8) & 0xFFFFFFFF;
+      case TypeId.uint8:
+        value = value & 0xFF;
+      case TypeId.int16:
+        value = value.toSigned(16) & 0xFFFFFFFF;
+      case TypeId.uint16:
+        value = value & 0xFFFF;
+      case TypeId.int32:
+      case TypeId.uint32:
+        value = value & 0xFFFFFFFF;
+      case TypeId.int64:
+      case TypeId.uint64:
+        // Moving to GPD automatically zero extends in 64-bit mode.
+        if (value >= 0 && value <= 0xFFFFFFFF) break;
+        regTypeId = TypeId.uint64;
+      default:
+        throw AsmJitException(AsmJitError.invalidAssignment,
+            'invalid assignment of a function call argument');
+    }
+
+    final out = _newGp(cc, regTypeId);
+    cc.inst(X86InstId.kMov, [out, Imm(value)]);
+    return out;
+  }
+
+  /// `x86::RACFGBuilder::move_imm_to_stack_arg()`.
+  void _moveImmToStackArg(BaseCompiler cc, FuncValue arg, Imm imm) {
+    var stackOffset = arg.stackOffset;
+    var size = 4;
+    final values = <int>[];
+    final value = imm.value;
+
+    // One stack entry has the same size as the native register size. That
+    // means that if we want to move a 32-bit integer on the stack in 64-bit
+    // mode, we need to extend it to a 64-bit integer first. In 32-bit mode,
+    // pushing a 64-bit on stack is done in two steps by pushing low and high
+    // parts separately.
+    switch (_deabstract(arg.typeId, cc.arch.is64Bit)) {
+      case TypeId.int8:
+        values.add(value.toSigned(8) & 0xFFFFFFFF);
+      case TypeId.uint8:
+        values.add(value & 0xFF);
+      case TypeId.int16:
+        values.add(value.toSigned(16) & 0xFFFFFFFF);
+      case TypeId.uint16:
+        values.add(value & 0xFFFF);
+      case TypeId.int32:
+      case TypeId.uint32:
+      case TypeId.float32:
+        values.add(value & 0xFFFFFFFF);
+      case TypeId.int64:
+      case TypeId.uint64:
+      case TypeId.float64:
+      case TypeId.mmx32:
+      case TypeId.mmx64:
+        if (cc.arch.is64Bit && value == value.toSigned(32)) {
+          size = 8;
+          values.add(value);
+          break;
+        }
+        values
+          ..add(value & 0xFFFFFFFF)
+          ..add((value >> 32) & 0xFFFFFFFF);
+      default:
+        throw AsmJitException(AsmJitError.invalidAssignment,
+            'invalid assignment of a function call argument');
+    }
+
+    for (final v in values) {
+      cc.inst(X86InstId.kMov, [
+        X86Mem.baseDisp(_zsp(cc), stackOffset, size: size),
+        Imm(size == 4 ? v.toSigned(32) : v)
+      ]);
+      stackOffset += size;
+    }
+  }
+
+  /// `x86::RACFGBuilder::move_reg_to_stack_arg()`.
+  void _moveRegToStackArg(BaseCompiler cc, FuncValue arg, BaseReg reg) {
+    final zsp = _zsp(cc);
+    final offset = arg.stackOffset;
+    final id = reg.id;
+    final is64Bit = cc.arch.is64Bit;
+    final dstTypeId = _deabstract(arg.typeId, is64Bit);
+    final srcTypeId =
+        _deabstract(cc.virtRegById(id)?.typeId ?? TypeId.void_, is64Bit);
+    final hasAvx = _hasAvx(_cc);
+
+    X86Mem at(int size, [int disp = 0]) =>
+        X86Mem.baseDisp(zsp, offset + disp, size: size);
+    void emit(int instId, List<Operand> ops) => cc.inst(instId, ops);
+
+    // Extend+Move Gp.
+    void extendMovGpD(int instId, X86Gp r1) {
+      final r0 = X86Gp.r32(id);
+      emit(instId, [r0, r1]);
+      emit(X86InstId.kMov, [at(4), r0]);
+    }
+
+    void extendMovGpDQ(X86Gp r0) {
+      emit(X86InstId.kMov, [at(4), r0]);
+      emit(X86InstId.kAnd, [at(4, 4), Imm(0)]);
+    }
+
+    void extendMovGpXQ(int instId, X86Gp r1) {
+      if (is64Bit) {
+        final r0 = X86Gp.r64(id);
+        emit(instId, [r0, r1]);
+        emit(X86InstId.kMov, [at(8), r0]);
+      } else {
+        final r0 = X86Gp.r32(id);
+        emit(instId, [r0, r1]);
+        extendMovGpDQ(r0);
+      }
+    }
+
+    void movGpD() => emit(X86InstId.kMov, [at(4), X86Gp.r32(id)]);
+    void movGpQ() => emit(X86InstId.kMov, [at(8), X86Gp.r64(id)]);
+    void movMmD() => emit(X86InstId.kMovd, [at(4), X86Mm(id)]);
+    void movMmQ() => emit(X86InstId.kMovq, [at(8), X86Mm(id)]);
+    void movXmmD() => emit(
+        hasAvx ? X86InstId.kVmovss : X86InstId.kMovss, [at(4), X86Xmm(id)]);
+    void movXmmQ() => emit(
+        hasAvx ? X86InstId.kVmovlps : X86InstId.kMovlps, [at(8), X86Xmm(id)]);
+
+    switch (dstTypeId) {
+      case TypeId.int64:
+      case TypeId.uint64:
+        // Extend BYTE->QWORD (GP).
+        if (_isGp8(srcTypeId)) {
+          return extendMovGpXQ(
+              dstTypeId == TypeId.int64 && srcTypeId == TypeId.int8
+                  ? X86InstId.kMovsx
+                  : X86InstId.kMovzx,
+              X86Gp.r8(id));
+        }
+        // Extend WORD->QWORD (GP).
+        if (_isGp16(srcTypeId)) {
+          return extendMovGpXQ(
+              dstTypeId == TypeId.int64 && srcTypeId == TypeId.int16
+                  ? X86InstId.kMovsx
+                  : X86InstId.kMovzx,
+              X86Gp.r16(id));
+        }
+        // Extend DWORD->QWORD (GP).
+        if (_isGp32(srcTypeId)) {
+          if (dstTypeId == TypeId.int64 && srcTypeId == TypeId.int32) {
+            return extendMovGpXQ(X86InstId.kMovsxd, X86Gp.r32(id));
+          }
+          // ZeroExtendGpDQ.
+          return extendMovGpDQ(X86Gp.r32(id));
+        }
+        // Move QWORD (GP).
+        if (_isGp64(srcTypeId)) return movGpQ();
+        if (srcTypeId.isMmx) return movMmQ();
+        if (srcTypeId.isVec) return movXmmQ();
+
+      case TypeId.int32:
+      case TypeId.uint32:
+      case TypeId.int16:
+      case TypeId.uint16:
+      case TypeId.int8:
+      case TypeId.uint8:
+        if (dstTypeId != TypeId.int8 && dstTypeId != TypeId.uint8) {
+          final isDstSigned =
+              dstTypeId == TypeId.int16 || dstTypeId == TypeId.int32;
+          final isSrcSigned =
+              srcTypeId == TypeId.int8 || srcTypeId == TypeId.int16;
+          // DWORD <- WORD (Zero|Sign Extend).
+          if (_isGp16(srcTypeId)) {
+            return extendMovGpD(
+                isDstSigned && isSrcSigned
+                    ? X86InstId.kMovsx
+                    : X86InstId.kMovzx,
+                X86Gp.r16(id));
+          }
+          // DWORD <- BYTE (Zero|Sign Extend).
+          if (_isGp8(srcTypeId)) {
+            return extendMovGpD(
+                isDstSigned && isSrcSigned
+                    ? X86InstId.kMovsx
+                    : X86InstId.kMovzx,
+                X86Gp.r8(id));
+          }
+        }
+        if (srcTypeId.isInt) return movGpD();
+        if (srcTypeId.isMmx) return movMmD();
+        if (srcTypeId.isVec) return movXmmD();
+
+      case TypeId.mmx32:
+      case TypeId.mmx64:
+        // Extend BYTE->QWORD (GP).
+        if (_isGp8(srcTypeId)) {
+          return extendMovGpXQ(X86InstId.kMovzx, X86Gp.r8(id));
+        }
+        // Extend WORD->QWORD (GP).
+        if (_isGp16(srcTypeId)) {
+          return extendMovGpXQ(X86InstId.kMovzx, X86Gp.r16(id));
+        }
+        // Upstream jumps to ExtendMovGpDQ with r0 unset, which fails to
+        // emit (an invalid operand).
+        if (_isGp32(srcTypeId)) {
+          throw AsmJitException(AsmJitError.invalidAssignment,
+              'invalid assignment of a function call argument');
+        }
+        if (_isGp64(srcTypeId)) return movGpQ();
+        if (srcTypeId.isMmx) return movMmQ();
+        if (srcTypeId.isVec) return movXmmQ();
+
+      case TypeId.float32:
+      case TypeId.float32x1:
+        if (srcTypeId.isVec) return movXmmD();
+
+      case TypeId.float64:
+      case TypeId.float64x1:
+        if (srcTypeId.isVec) return movXmmQ();
+
+      default:
+        if (dstTypeId.isVec && reg.isVec) {
+          final size = dstTypeId.sizeInBytes;
+          final vecMovInstId = hasAvx ? X86InstId.kVmovaps : X86InstId.kMovaps;
+          final BaseReg r0;
+          if (dstTypeId.isVec128) {
+            r0 = X86Xmm(id);
+          } else if (dstTypeId.isVec256) {
+            r0 = X86Ymm(id);
+          } else if (dstTypeId.isVec512) {
+            r0 = X86Zmm(id);
+          } else {
+            break;
+          }
+          return emit(vecMovInstId, [at(size), r0]);
+        }
+    }
+    throw AsmJitException(AsmJitError.invalidAssignment,
+        'invalid assignment of a function call argument');
+  }
+
+  /// Port of `X86RAPass::emit_pre_call()`: a variadic call sets AL to the
+  /// number of vector registers used (SysV) or passes every vector
+  /// argument also in the GP register of its position (Win64). [insert]
+  /// inserts an instruction right before the call.
+  @override
+  void emitPreCall(
+      BaseCompiler cc, InvokeNode node, void Function(InstNode) insert) {
+    final fd = node.detail;
+    if (!fd.hasVarArgs || !cc.arch.is64Bit) return;
+    final argCount = node.argCount;
+
+    switch (fd.callConv.id) {
+      case CallConvId.x64SystemV:
+        // AL register contains the number of arguments passed in XMM
+        // register(s).
+        var n = 0;
+        for (var argIndex = 0; argIndex < argCount; argIndex++) {
+          for (var v = 0; v < Globals.kMaxValuePack; v++) {
+            final arg = fd.args[argIndex][v];
+            if (!arg.isInitialized) break;
+            if (arg.isReg &&
+                RegUtils.groupOf(arg.fullRegType) == RegGroup.vec) {
+              n++;
+            }
+          }
+        }
+        insert(n == 0
+            ? InstNode(X86InstId.kXor, [X86Gp.eax, X86Gp.eax])
+            : InstNode(X86InstId.kMov, [X86Gp.eax, Imm(n)]));
+
+      case CallConvId.x64Windows:
+        // Each double-precision argument passed in XMM must be also passed
+        // in GP.
+        for (var argIndex = 0; argIndex < argCount; argIndex++) {
+          for (var v = 0; v < Globals.kMaxValuePack; v++) {
+            final arg = fd.args[argIndex][v];
+            if (!arg.isInitialized) break;
+            if (arg.isReg &&
+                RegUtils.groupOf(arg.fullRegType) == RegGroup.vec) {
+              final dst =
+                  X86Gp.r64(fd.callConv.passedOrder(RegGroup.gp)[argIndex]);
+              final src = X86Xmm(arg.regId);
+              insert(InstNode(_hasAvx(_cc) ? X86InstId.kVmovq : X86InstId.kMovq,
+                  [dst, src]));
+            }
+          }
+        }
+
+      default:
+        throw AsmJitException(
+            AsmJitError.invalidState, 'invalid function call');
+    }
+  }
+
   @override
   bool isMove(InstNode node) => _moveIds.contains(node.instId);
 
@@ -581,6 +1065,12 @@ class X86RAArch extends RAArch {
 
   @override
   BaseMem spillSlot(BaseCompiler cc, int offset, int size) {
+    // A dynamically aligned frame (`and rsp, -alignment` in the prolog)
+    // addresses the local area from the aligned stack pointer, as upstream
+    // addresses locals from SP: [rsp + offset].
+    if (localStackAlignment > 16) {
+      return cc.newStackSlot(X86RegId.rsp.index, callStackSize + offset, size);
+    }
     // Spill slots live below the frame pointer: [rbp - (offset + size)].
     return cc.newStackSlot(X86RegId.rbp.index, -(offset + size), size);
   }
@@ -654,8 +1144,11 @@ class X86RAArch extends RAArch {
     // On Win64 + AVX, preserve YMM6..YMM15 (full 256-bit).
     final vecSaveBytes = (_isWindowsTarget && usesVex) ? 32 : 16;
 
-    // Layout below RBP: locals/spills -> aligned vec saves -> gp saves.
-    int currentOffset = _alignUp(ctx.spillSize, 16);
+    // Layout below RBP: locals/spills -> aligned vec saves -> gp saves. A
+    // dynamically aligned frame has the locals at the bottom ([rsp + x])
+    // and only the saves below RBP.
+    final dynamicAlignment = ctx.stackAlignment > 16;
+    int currentOffset = dynamicAlignment ? 0 : _alignUp(ctx.spillSize, 16);
     final vecSlots = <MapEntry<X86Xmm, int>>[];
     final gpSlots = <MapEntry<X86Gp, int>>[];
 
@@ -674,7 +1167,11 @@ class X86RAArch extends RAArch {
       }
     }
 
-    final totalStackSize = _alignUp(currentOffset, 16);
+    // The outgoing argument area of the calls is at the bottom ([rsp + x]).
+    final totalStackSize = dynamicAlignment
+        ? _alignUp(
+            callStackSize + ctx.spillSize + currentOffset, ctx.stackAlignment)
+        : _alignUp(callStackSize + currentOffset, 16);
     if (func.frame.localStackSize < totalStackSize) {
       func.frame.setLocalStackSize(totalStackSize);
     }
@@ -686,6 +1183,8 @@ class X86RAArch extends RAArch {
     final prolog = <InstNode>[
       InstNode(X86InstId.kPush, [rbp]),
       InstNode(X86InstId.kMov, [rbp, rsp]),
+      if (dynamicAlignment)
+        InstNode(X86InstId.kAnd, [rsp, Imm(-ctx.stackAlignment)]),
       if (totalStackSize > 0)
         InstNode(X86InstId.kSub, [rsp, Imm(totalStackSize)]),
       for (final slot in vecSlots)
@@ -704,6 +1203,10 @@ class X86RAArch extends RAArch {
 
     // Epilog before every return.
     for (final ret in ctx.retNodes) {
+      // As upstream `emit_epilog()`: AVX cleanup first.
+      if (func.frame.hasAvxCleanup) {
+        ctx.insertBefore(ret, InstNode(X86InstId.kVzeroupper, []));
+      }
       for (final slot in gpSlots.reversed) {
         ctx.insertBefore(
             ret,

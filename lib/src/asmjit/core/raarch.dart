@@ -30,6 +30,9 @@ class RAFrameContext {
   /// Registers written anywhere in the function.
   final RARegMask clobbered;
 
+  /// Alignment of the local stack area ([RAArch.localStackAlignment]).
+  final int stackAlignment;
+
   RAFrameContext({
     required this.compiler,
     required this.func,
@@ -37,6 +40,7 @@ class RAFrameContext {
     required this.available,
     required this.preserved,
     required this.clobbered,
+    this.stackAlignment = 16,
   });
 
   void insertAfter(BaseNode after, BaseNode node) =>
@@ -71,6 +75,14 @@ class RAInstOp {
 
   /// The extra register of the instruction ([InstNode.extraReg]).
   static const int kSlotExtra = 3;
+
+  /// An argument of a function call ([InvokeNode]), tied to its argument
+  /// register (`add_call_arg()`); not an operand of the instruction.
+  static const int kSlotCallArg = 4;
+
+  /// A return value of a function call, tied to its return register
+  /// (`add_call_ret()`).
+  static const int kSlotCallRet = 5;
 
   /// The register (virtual or physical).
   final BaseReg reg;
@@ -113,12 +125,37 @@ abstract class RAArch {
   /// [fixedUseId] and [implicitRegs] instead.
   List<RAInstOp>? analyzeInst(BaseCompiler cc, InstNode node) => null;
 
+  /// `RACFGBuilder::on_before_invoke()`: inserts the instructions that
+  /// move the immediate and stack arguments of [node] (a call in [func]).
+  void onBeforeInvoke(BaseCompiler cc, FuncNode func, InvokeNode node) =>
+      throw UnsupportedError(
+          'function calls are not supported by $runtimeType');
+
+  /// `emit_pre_call()`: instructions right before the call [node] after
+  /// its registers were allocated ([insert] adds one before the call).
+  void emitPreCall(
+      BaseCompiler cc, InvokeNode node, void Function(InstNode) insert) {}
+
+  /// Size of the outgoing call argument area at the bottom of the frame
+  /// (the largest argument area of the calls of the function), set by
+  /// [RAPass] before allocation.
+  int callStackSize = 0;
+
+  /// Alignment of the local stack area (spill slots and stack areas) of the
+  /// function being allocated, set by [RAPass] before allocation: more than
+  /// 16 when a stack area created by `newStack()` asks for it.
+  int localStackAlignment = 16;
+
   /// The register operand of the declared type of [vr] (whose operand id is
   /// the id of [seen], a register operand that uses it); [seen] by default.
   BaseReg virtRegOperand(VirtReg vr, BaseReg seen) => seen;
 
   /// Fills allocatable ([avail]) and callee-saved ([preserved]) registers.
-  void initRegMasks(BaseCompiler cc, RARegMask avail, RARegMask preserved);
+  ///
+  /// [func] is the function being allocated: its calling convention gives
+  /// the registers it must preserve.
+  void initRegMasks(BaseCompiler cc, RARegMask avail, RARegMask preserved,
+      {FuncNode? func});
 
   /// Whether liveness is computed from [operandFlags] (precise) instead of
   /// the legacy x86 heuristic "operand 0 is read/write unless [isMove]".

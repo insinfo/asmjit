@@ -11,6 +11,8 @@ import 'dart:io';
 import 'arch.dart';
 import 'error.dart';
 import 'compiler.dart';
+import 'func.dart';
+import 'reg_utils.dart';
 import 'globals.dart'; // Needed for Globals.kNumVirtGroups
 import 'radefs.dart';
 import 'ralocal.dart';
@@ -67,8 +69,58 @@ class RAPass extends CompilerPass {
   /// the architecture does not describe the instruction).
   final Map<InstNode, List<RAInstOp>?> _instOpsCache = {};
 
-  List<RAInstOp>? _instOps(InstNode node) => _instOpsCache.putIfAbsent(node,
-      () => node is FuncRetNode ? null : _arch.analyzeInst(compiler, node));
+  List<RAInstOp>? _instOps(InstNode node) =>
+      _instOpsCache.putIfAbsent(node, () {
+        if (node is FuncRetNode) return null;
+        final ops = _arch.analyzeInst(compiler, node);
+        if (node is InvokeNode) return [...?ops, ..._invokeOps(node)];
+        return ops;
+      });
+
+  /// `RACFGBuilder::on_invoke()`: the arguments passed in registers and the
+  /// return values of the call [node] (stack arguments were already stored
+  /// by [RAArch.onBeforeInvoke]).
+  List<RAInstOp> _invokeOps(InvokeNode node) {
+    final fd = node.detail;
+    final ops = <RAInstOp>[];
+    for (var argIndex = 0; argIndex < node.argCount; argIndex++) {
+      for (var valueIndex = 0;
+          valueIndex < Globals.kMaxValuePack;
+          valueIndex++) {
+        final arg = fd.args[argIndex][valueIndex];
+        if (!arg.isInitialized) continue;
+        final op = node.arg(argIndex, valueIndex);
+        if (op is! BaseReg || op.isPhysical) continue;
+        if (arg.isIndirect) {
+          if (op.group != RegGroup.gp) {
+            throw AsmJitException(
+                AsmJitError.invalidState, 'indirect argument not in a GP');
+          }
+        } else if (!arg.isReg ||
+            op.group != RegUtils.groupOf(arg.fullRegType)) {
+          continue;
+        }
+        ops.add(RAInstOp(op, RAInstOp.kSlotCallArg, argIndex,
+            RATiedFlags.kUse | RATiedFlags.kRead | RATiedFlags.kUseFixed,
+            useId: arg.regId));
+      }
+    }
+    for (var valueIndex = 0; valueIndex < Globals.kMaxValuePack; valueIndex++) {
+      final ret = fd.rets[valueIndex];
+      if (!ret.isInitialized) break;
+      final op = node.ret(valueIndex);
+      if (op is! BaseReg || op.isPhysical) continue;
+      if (!ret.isReg) {
+        throw AsmJitException(
+            AsmJitError.invalidAssignment, 'return value not in a register');
+      }
+      if (op.group != RegUtils.groupOf(ret.fullRegType)) continue;
+      ops.add(RAInstOp(op, RAInstOp.kSlotCallRet, valueIndex,
+          RATiedFlags.kOut | RATiedFlags.kWrite | RATiedFlags.kOutFixed,
+          outId: ret.regId));
+    }
+    return ops;
+  }
 
   /// Whether [reg] is the base of a stack area created by `newStack()` (a
   /// "register home" memory operand: no register is allocated for it).
@@ -123,8 +175,36 @@ class RAPass extends CompilerPass {
     // Ideally these come from internal DB or Compiler state.
     _initRegMasks(availableRegs, preservedRegs);
 
+    // Function calls (`on_before_invoke()`): store the stack arguments and
+    // move the immediate ones before each call; the function then has calls
+    // and an outgoing argument area as large as the largest one.
+    var callStackSize = 0;
+    for (final node in nodes.nodes.toList()) {
+      if (node is! InvokeNode) continue;
+      _arch.onBeforeInvoke(compiler, func, node);
+      func.frame.addAttributes(FuncAttributes.kHasFuncCalls);
+      func.frame.updateCallStackSize(node.detail.argStackSize);
+      if (node.detail.argStackSize > callStackSize) {
+        callStackSize = node.detail.argStackSize;
+      }
+    }
+    _arch.callStackSize = (callStackSize + 15) & ~15;
+
     // 2a. Map Virtual Registers (Pre-pass)
     _mapVirtuals(nodes);
+
+    // The alignment of the local stack area: stack areas created by
+    // newStack() may need more than the natural 16 bytes (the frame is then
+    // dynamically aligned, `FuncFrame::set_dynamic_alignment()`).
+    var localAlignment = 16;
+    for (final workReg in _allocator.workRegs) {
+      if (!workReg.isStackSlot) continue;
+      final vr = compiler.virtRegById(workReg.virtReg.id);
+      if (vr != null && vr.alignment > localAlignment) {
+        localAlignment = vr.alignment;
+      }
+    }
+    _arch.localStackAlignment = localAlignment;
 
     // 2b. Assign Arguments to WorkRegs (Hints)
     _assignArgIndexToWorkRegs(func);
@@ -245,7 +325,7 @@ class RAPass extends CompilerPass {
     avail.reset();
     preserved.reset();
 
-    _arch.initRegMasks(compiler, avail, preserved);
+    _arch.initRegMasks(compiler, avail, preserved, func: _func);
   }
 
   void _mapVirtuals(NodeList nodes) {
@@ -274,6 +354,18 @@ class RAPass extends CompilerPass {
           }
         }
         map(node.extraReg);
+        if (node is InvokeNode) {
+          for (var i = 0; i < node.argCount; i++) {
+            for (var v = 0; v < Globals.kMaxValuePack; v++) {
+              final op = node.arg(i, v);
+              if (op is BaseReg) map(op);
+            }
+          }
+          for (var v = 0; v < Globals.kMaxValuePack; v++) {
+            final op = node.ret(v);
+            if (op is BaseReg) map(op);
+          }
+        }
       }
     }
     _numWorkRegs = _virtIdToWorkId.length;
@@ -1291,6 +1383,7 @@ class RAPass extends CompilerPass {
     // Using a placeholder analysis here
     _analyzeInstruction(node, tiedRegs, usedRegs, clobberedRegs);
 
+    final invokeCallConv = node is InvokeNode ? node.detail.callConv : null;
     _allocator.allocInstruction(
         tiedRegs: tiedRegs,
         usedRegs: usedRegs,
@@ -1299,7 +1392,16 @@ class RAPass extends CompilerPass {
         emitSave: (workReg, physId) => _emitSave(workReg, physId, node),
         emitMove: (workReg, dst, src) => _emitMove(workReg, dst, src, node),
         emitSwap: (aReg, aPhys, bReg, bPhys) =>
-            _emitSwap(aReg, aPhys, bReg, bPhys, node));
+            _emitSwap(aReg, aPhys, bReg, bPhys, node),
+        invokeVecPreservedRegs:
+            invokeCallConv?.preservedRegs(RegGroup.vec) ?? 0,
+        invokeVecSaveRestoreSize:
+            invokeCallConv?.saveRestoreRegSize(RegGroup.vec) ?? 0);
+
+    if (node is InvokeNode) {
+      _arch.emitPreCall(
+          compiler, node, (inst) => _insertNodeBefore(node, inst));
+    }
 
     // Apply assignments to operands
     _rewriteInstruction(node, tiedRegs);
@@ -1342,6 +1444,14 @@ class RAPass extends CompilerPass {
         if (o.isRead && _isKill(reg.id, workId, node.position)) {
           flags |= RATiedFlags.kKill;
         }
+        if (o.slot == RAInstOp.kSlotCallArg) {
+          _tieCallArg(tiedRegs, workReg, flags, o.useId, used);
+          continue;
+        }
+        if (o.slot == RAInstOp.kSlotCallRet) {
+          _tieCallRet(tiedRegs, workReg, o.outId, used);
+          continue;
+        }
         // As `RAInstBuilder::add()`: a fixed register is used (or
         // clobbered) by the instruction, so no other operand may keep it.
         if (o.useId != RAAssignment.kPhysNone) {
@@ -1353,6 +1463,15 @@ class RAPass extends CompilerPass {
           flags |= RATiedFlags.kOutFixed;
         }
         _tie(tiedRegs, workReg, flags, o.useMask, o.useId, o.outMask, o.outId);
+      }
+      if (node is InvokeNode) {
+        // Setup clobbered registers: everything the callee does not
+        // preserve.
+        final cc = node.detail.callConv;
+        for (final group in enumerateRegGroupsMax()) {
+          clobbered[group] |=
+              _allocator.availableRegs[group] & ~cc.preservedRegs(group);
+        }
       }
       return;
     }
@@ -1465,6 +1584,56 @@ class RAPass extends CompilerPass {
           node.opCount, RATiedFlags.kUse | RATiedFlags.kRead);
     }
     return _arch.operandFlags(node);
+  }
+
+  /// `RAInstBuilder::add_call_arg()`: the same register passed in several
+  /// argument registers becomes a duplicate whose use mask has all of them
+  /// (copied by the local allocator).
+  void _tieCallArg(List<RATiedReg> tiedRegs, RAWorkReg workReg, int flags,
+      int useId, RARegMask used) {
+    final allocable = 1 << useId;
+    used[workReg.group] |= allocable;
+    for (final t in tiedRegs) {
+      if (!identical(t.workReg, workReg)) continue;
+      if (t.hasUseId) {
+        flags |= RATiedFlags.kDuplicate;
+        t.useRegMask = t.useRegMask | allocable;
+      } else {
+        t.useId = useId;
+        t.useRegMask = t.useRegMask & allocable;
+      }
+      t.addRefCount();
+      t.addFlags(flags);
+      return;
+    }
+    final tied = RATiedReg();
+    tied.init(workReg, flags, allocable, useId, 0, allocable,
+        RAAssignment.kPhysNone, 0);
+    tiedRegs.add(tied);
+  }
+
+  /// `RAInstBuilder::add_call_ret()`.
+  void _tieCallRet(
+      List<RATiedReg> tiedRegs, RAWorkReg workReg, int outId, RARegMask used) {
+    const flags = RATiedFlags.kOut | RATiedFlags.kWrite | RATiedFlags.kOutFixed;
+    final outRegs = 1 << outId;
+    used[workReg.group] |= outRegs;
+    for (final t in tiedRegs) {
+      if (!identical(t.workReg, workReg)) continue;
+      if (t.hasOutId) {
+        throw AsmJitException(
+            AsmJitError.invalidState, 'overlapped return registers');
+      }
+      t.outId = outId;
+      t.outRegMask = t.outRegMask & outRegs;
+      t.addRefCount();
+      t.addFlags(flags);
+      return;
+    }
+    final tied = RATiedReg();
+    tied.init(workReg, flags, 0xFFFFFFFF, RAAssignment.kPhysNone, 0, outRegs,
+        outId, 0);
+    tiedRegs.add(tied);
   }
 
   /// Adds a tied register, merging with an existing tie of the same work
@@ -1664,10 +1833,6 @@ class RAPass extends CompilerPass {
         vIndex >= 0 &&
         vIndex < compiler.virtRegs.length) {
       final vr = compiler.virtRegs[vIndex];
-      if (vr.alignment > 16) {
-        throw UnsupportedError(
-            'stack area alignment ${vr.alignment} > 16 is not supported');
-      }
       final align = vr.alignment < 4 ? 4 : vr.alignment;
       return ((vr.size + align - 1) & ~(align - 1), align);
     }
@@ -1717,6 +1882,7 @@ class RAPass extends CompilerPass {
       available: _allocator.availableRegs,
       preserved: _allocator.funcPreservedRegs,
       clobbered: _allocator.clobberedRegs,
+      stackAlignment: _arch.localStackAlignment,
     ));
   }
 

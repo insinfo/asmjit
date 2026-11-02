@@ -96,7 +96,8 @@ class A64RAArch extends RAArch {
   };
 
   @override
-  void initRegMasks(BaseCompiler cc, RARegMask avail, RARegMask preserved) {
+  void initRegMasks(BaseCompiler cc, RARegMask avail, RARegMask preserved,
+      {FuncNode? func}) {
     // x18 is the platform register (reserved on Apple and Windows), x29/x30
     // are FP/LR and x31 is SP/ZR.
     avail[RegGroup.gp] = 0x7FFFFFFF & ~(1 << 18) & ~(1 << 29) & ~(1 << 30);

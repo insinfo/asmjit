@@ -142,15 +142,21 @@ class FuncRetNode extends InstNode {
       : super(0 /* kIdAbstract */, operands, type: NodeType.funcRet);
 }
 
-/// Function invocation, used by [BaseCompiler].
+/// Function invocation, used by [BaseCompiler] (`InvokeNode`).
+///
+/// Operand 0 is the call target (an immediate address, a label, a register
+/// or a memory operand); the arguments and return values are operand packs
+/// (`OperandPack`) that the register allocator assigns to the locations
+/// given by the [detail] of the signature.
 class InvokeNode extends InstNode {
   final FuncDetail funcDetail = FuncDetail();
 
-  /// Function return value(s).
-  final FuncValuePack rets = FuncValuePack();
+  /// Function return value(s) (`_rets`).
+  final List<Operand> _rets =
+      List<Operand>.filled(Globals.kMaxValuePack, const NoneOperand());
 
-  /// Function arguments.
-  List<FuncValuePack>? _argPacks;
+  /// Function arguments (`_args`), one operand pack per argument.
+  List<List<Operand>> _args = const [];
 
   InvokeNode(int instId, List<Operand> operands, {int options = 0})
       : super(instId, operands, options: options, type: NodeType.invoke) {
@@ -160,9 +166,10 @@ class InvokeNode extends InstNode {
   AsmJitError init(FuncSignature signature, Environment env) {
     final err = funcDetail.init(signature, env);
     if (err == AsmJitError.ok) {
-      if (funcDetail.argCount > 0) {
-        _argPacks = List.generate(funcDetail.argCount, (_) => FuncValuePack());
-      }
+      _args = List.generate(
+          funcDetail.argCount,
+          (_) =>
+              List<Operand>.filled(Globals.kMaxValuePack, const NoneOperand()));
     }
     return err;
   }
@@ -174,9 +181,22 @@ class InvokeNode extends InstNode {
   bool get hasRet => funcDetail.hasRet();
   int get argCount => funcDetail.argCount;
 
-  FuncValuePack get retPack => rets;
+  /// `ret(value_index)`.
+  Operand ret([int valueIndex = 0]) => _rets[valueIndex];
 
-  FuncValuePack? argPack(int index) => _argPacks?[index];
+  /// `arg(arg_index, value_index)`.
+  Operand arg(int argIndex, [int valueIndex = 0]) =>
+      _args[argIndex][valueIndex];
+
+  /// `set_ret(value_index, reg)`.
+  void setRet(int valueIndex, BaseReg reg) => _rets[valueIndex] = reg;
+
+  /// `set_arg(arg_index, reg_or_imm)`: [op] is a register or an [Imm].
+  void setArg(int argIndex, Operand op) => _args[argIndex][0] = op;
+
+  /// `set_arg(arg_index, value_index, reg_or_imm)`.
+  void setArgValue(int argIndex, int valueIndex, Operand op) =>
+      _args[argIndex][valueIndex] = op;
 }
 
 /// Basic Block node (Dart specific for now, pending C++ parity research).
@@ -480,7 +500,7 @@ class BaseCompiler extends BaseBuilder {
     return AsmJitError.ok;
   }
 
-  /// Create new InvokeNode.
+  /// Create new InvokeNode (`new_invoke_node()`).
   InvokeNode newInvokeNode(
       int instId, Operand target, FuncSignature signature) {
     final node = InvokeNode(instId, [target]);
