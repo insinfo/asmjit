@@ -144,11 +144,15 @@ class InstNode extends BaseNode {
   /// Instruction operands.
   final List<Operand> operands;
 
-  /// Instruction options.
+  /// Instruction options (`InstOptions`, e.g. the x86 REP prefix or `{z}`).
   int options;
 
+  /// Extra register (`BaseInst::extra_reg()`): the REP counter or the
+  /// AVX-512 `{k}` selector of x86 instructions.
+  BaseReg? extraReg;
+
   InstNode(this.instId, this.operands,
-      {this.options = 0, NodeType type = NodeType.inst})
+      {this.options = 0, this.extraReg, NodeType type = NodeType.inst})
       : super(type, NodeFlags.isCode | NodeFlags.actsAsInst);
 
   /// Number of operands.
@@ -448,9 +452,22 @@ class BaseBuilder {
 
   BaseNode? _cursor;
   BaseNode? get cursor => _cursor;
-  void setCursor(BaseNode? node) {
+
+  /// Sets the cursor to [node] and returns the previous cursor
+  /// (`set_cursor()`).
+  BaseNode? setCursor(BaseNode? node) {
+    final prev = _cursor;
     _cursor = node;
+    return prev;
   }
+
+  /// Options of the next instruction (`BaseEmitter::inst_options()`),
+  /// consumed (and reset) by [inst].
+  int instOptions = 0;
+
+  /// Extra register of the next instruction (`BaseEmitter::extra_reg()`),
+  /// consumed (and reset) by [inst].
+  BaseReg? extraReg;
 
   BaseBuilder({this.labelManager}) {
     // If not null, cursor implied at end? No, implied null at start.
@@ -493,9 +510,15 @@ class BaseBuilder {
   }
 
   /// Add an instruction node.
+  ///
+  /// The pending [instOptions] and [extraReg] are attached to the node and
+  /// reset, as upstream `BaseEmitter` does after every instruction.
   InstNode inst(int instId, List<Operand> operands,
       {int options = 0, NodeType type = NodeType.inst}) {
-    final node = InstNode(instId, operands, options: options, type: type);
+    final node = InstNode(instId, operands,
+        options: options | instOptions, extraReg: extraReg, type: type);
+    instOptions = 0;
+    extraReg = null;
     addNode(node);
     return node;
   }
@@ -599,6 +622,12 @@ abstract class SerializerContext {
   /// Called when an instruction is encountered.
   void onInst(int instId, List<Operand> operands, int options);
 
+  /// Called for an instruction with an extra register
+  /// ([InstNode.extraReg]); the default ignores the extra register.
+  void onInstExtra(
+          int instId, List<Operand> operands, int options, BaseReg? extraReg) =>
+      onInst(instId, operands, options);
+
   /// Called when alignment is encountered.
   void onAlign(AlignMode mode, int alignment);
 
@@ -634,7 +663,12 @@ void serializeNodes(NodeList nodes, SerializerContext ctx) {
       case NodeType.inst:
       case NodeType.jump:
         final inst = node as InstNode;
-        ctx.onInst(inst.instId, inst.operands, inst.options);
+        if (inst.extraReg != null) {
+          ctx.onInstExtra(
+              inst.instId, inst.operands, inst.options, inst.extraReg);
+        } else {
+          ctx.onInst(inst.instId, inst.operands, inst.options);
+        }
         break;
       case NodeType.align:
         final align = node as AlignNode;

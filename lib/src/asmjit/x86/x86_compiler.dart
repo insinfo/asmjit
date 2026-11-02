@@ -12,6 +12,9 @@ import '../core/builder.dart' as ir;
 import 'x86_serializer.dart';
 import 'x86_rapass.dart';
 import '../core/raarch.dart';
+import '../core/reg_utils.dart';
+import '../core/type.dart';
+import 'x86_emit.dart' show X86EmitOptions;
 
 /// X86 Compiler.
 class X86Compiler extends BaseCompiler {
@@ -30,27 +33,73 @@ class X86Compiler extends BaseCompiler {
     addPass(RAPass(this));
   }
 
+  /// New virtual register of [typeId] whose operand signature is
+  /// [regType] (`new_virt_reg()`), so its size is the declared one even when
+  /// an instruction uses a narrower view of it.
+  int _newTypedVirtId(TypeId typeId, RegType regType, String? name) =>
+      newVirtReg(
+              typeId,
+              OperandSignature.fromRegTypeAndGroup(
+                  regType, regGroupOf(regType)),
+              name)
+          .id;
+
+  static RegGroup regGroupOf(RegType type) => switch (type) {
+        RegType.vec128 || RegType.vec256 || RegType.vec512 => RegGroup.vec,
+        RegType.mask => RegGroup.mask,
+        _ => RegGroup.gp,
+      };
+
   X86Gp newGp(RegType type, [String? name]) {
-    final id = newVirtId();
-    if (type == RegType.gp32) return X86Gp.r32(id);
-    if (type == RegType.gp64) return X86Gp.r64(id);
-    if (type == RegType.gp16) return X86Gp.r16(id);
-    return X86Gp.r32(id);
+    switch (type) {
+      case RegType.gp8Lo:
+        return X86Gp.r8(_newTypedVirtId(TypeId.int8, type, name));
+      case RegType.gp16:
+        return X86Gp.r16(_newTypedVirtId(TypeId.int16, type, name));
+      case RegType.gp64:
+        return X86Gp.r64(_newTypedVirtId(TypeId.int64, type, name));
+      default:
+        return X86Gp.r32(_newTypedVirtId(TypeId.int32, RegType.gp32, name));
+    }
   }
 
+  X86Gp newGp8([String? name]) => newGp(RegType.gp8Lo, name);
+  X86Gp newGp16([String? name]) => newGp(RegType.gp16, name);
   X86Gp newGp32([String? name]) => newGp(RegType.gp32, name);
   X86Gp newGp64([String? name]) => newGp(RegType.gp64, name);
   X86Gp newGpPtr([String? name]) =>
       newGp(arch.is64Bit ? RegType.gp64 : RegType.gp32, name);
 
-  X86Xmm newXmm([String? name]) => X86Xmm(newVirtId());
-  X86Ymm newYmm([String? name]) => X86Ymm(newVirtId());
-  X86Zmm newZmm([String? name]) => X86Zmm(newVirtId());
-  X86KReg newKReg([String? name]) => X86KReg(newVirtId());
+  X86Xmm newXmm([String? name]) =>
+      X86Xmm(_newTypedVirtId(TypeId.int32x4, RegType.vec128, name));
+  X86Ymm newYmm([String? name]) =>
+      X86Ymm(_newTypedVirtId(TypeId.int32x8, RegType.vec256, name));
+  X86Zmm newZmm([String? name]) =>
+      X86Zmm(_newTypedVirtId(TypeId.int32x16, RegType.vec512, name));
+  X86KReg newKReg([String? name]) =>
+      X86KReg(_newTypedVirtId(TypeId.mask64, RegType.mask, name));
+
+  /// `new_xmm_ss()`: XMM register holding a scalar `float`.
+  X86Xmm newXmmSs([String? name]) =>
+      X86Xmm(_newTypedVirtId(TypeId.float32x1, RegType.vec128, name));
+
+  /// `new_xmm_sd()`: XMM register holding a scalar `double`.
+  X86Xmm newXmmSd([String? name]) =>
+      X86Xmm(_newTypedVirtId(TypeId.float64x1, RegType.vec128, name));
+
+  /// `new_kb()`, `new_kw()`, `new_kd()`, `new_kq()`: AVX-512 mask registers.
+  X86KReg newKb([String? name]) =>
+      X86KReg(_newTypedVirtId(TypeId.mask8, RegType.mask, name));
+  X86KReg newKw([String? name]) =>
+      X86KReg(_newTypedVirtId(TypeId.mask16, RegType.mask, name));
+  X86KReg newKd([String? name]) =>
+      X86KReg(_newTypedVirtId(TypeId.mask32, RegType.mask, name));
+  X86KReg newKq([String? name]) =>
+      X86KReg(_newTypedVirtId(TypeId.mask64, RegType.mask, name));
 
   /// Create new 128-bit vector register (XMM).
-  X86Xmm newXmmF32x1([String? name]) => newXmm(name);
-  X86Xmm newXmmF64x1([String? name]) => newXmm(name);
+  X86Xmm newXmmF32x1([String? name]) => newXmmSs(name);
+  X86Xmm newXmmF64x1([String? name]) => newXmmSd(name);
   X86Xmm newXmmF32x4([String? name]) => newXmm(name);
   X86Xmm newXmmF64x2([String? name]) => newXmm(name);
   X86Xmm newXmmInt32x4([String? name]) => newXmm(name);
@@ -73,6 +122,37 @@ class X86Compiler extends BaseCompiler {
   X86Zmm newZmmInt64x8([String? name]) => newZmm(name);
   X86Zmm newZmmInt8x64([String? name]) => newZmm(name);
   X86Zmm newZmmInt16x32([String? name]) => newZmm(name);
+
+  // ===========================================================================
+  // Instruction options (x86::EmitterExplicitT)
+  // ===========================================================================
+
+  /// `rep(zcx)`: REP prefix with the counter register [zcx] (allocated to
+  /// ECX/RCX) for the next string instruction.
+  X86Compiler rep(BaseReg zcx) {
+    instOptions |= X86EmitOptions.kX86_Rep;
+    extraReg = zcx;
+    return this;
+  }
+
+  /// `repne(zcx)`.
+  X86Compiler repne(BaseReg zcx) {
+    instOptions |= X86EmitOptions.kX86_Repne;
+    extraReg = zcx;
+    return this;
+  }
+
+  /// `k(kreg)`: AVX-512 write mask selector of the next instruction.
+  X86Compiler k(X86KReg kreg) {
+    extraReg = kreg;
+    return this;
+  }
+
+  /// `z()`: AVX-512 zeroing masking of the next instruction.
+  X86Compiler z() {
+    instOptions |= X86EmitOptions.kX86_ZMask;
+    return this;
+  }
 
   /// Create new stack allocation.
   X86Mem newStack(int size, [int alignment = 1, String? name]) {
@@ -136,11 +216,27 @@ class X86Compiler extends BaseCompiler {
 
   void add(Operand dst, Operand src) => inst(X86InstId.kAdd, [dst, src]);
   void sub(Operand dst, Operand src) => inst(X86InstId.kSub, [dst, src]);
-  void mul(Operand src) =>
-      inst(X86InstId.kMul, [src]); // Unsigned multiply (ax/dx implied)
-  void imul(Operand dst, Operand src) => inst(X86InstId.kImul, [dst, src]);
-  void div(Operand src) => inst(X86InstId.kDiv, [src]);
-  void idiv(Operand src) => inst(X86InstId.kIdiv, [src]);
+
+  /// `mul(src)` (implicit EDX:EAX) or the explicit form
+  /// `mul(hi, lo, src)` that the register allocator ties to EDX:EAX.
+  void mul(Operand o0, [Operand? o1, Operand? o2]) =>
+      inst(X86InstId.kMul, [o0, if (o1 != null) o1, if (o2 != null) o2]);
+
+  /// `imul(dst, src)`, `imul(dst, src, imm)` or the explicit widening form
+  /// `imul(hi, lo, src)` (EDX:EAX).
+  void imul(Operand o0, Operand o1, [Operand? o2]) =>
+      inst(X86InstId.kImul, [o0, o1, if (o2 != null) o2]);
+
+  /// `div(src)` (implicit EDX:EAX) or the explicit `div(hi, lo, src)`.
+  void div(Operand o0, [Operand? o1, Operand? o2]) =>
+      inst(X86InstId.kDiv, [o0, if (o1 != null) o1, if (o2 != null) o2]);
+
+  /// `idiv(src)` (implicit EDX:EAX) or the explicit `idiv(hi, lo, src)`.
+  void idiv(Operand o0, [Operand? o1, Operand? o2]) =>
+      inst(X86InstId.kIdiv, [o0, if (o1 != null) o1, if (o2 != null) o2]);
+
+  void adc(Operand dst, Operand src) => inst(X86InstId.kAdc, [dst, src]);
+  void sbb(Operand dst, Operand src) => inst(X86InstId.kSbb, [dst, src]);
 
   void inc(Operand dst) => inst(X86InstId.kInc, [dst]);
   void dec(Operand dst) => inst(X86InstId.kDec, [dst]);
@@ -160,6 +256,8 @@ class X86Compiler extends BaseCompiler {
   // ===========================================================================
 
   void cmp(Operand dst, Operand src) => inst(X86InstId.kCmp, [dst, src]);
+  void setz(Operand dst) => inst(X86InstId.kSetz, [dst]);
+  void setnz(Operand dst) => inst(X86InstId.kSetnz, [dst]);
   void test(Operand dst, Operand src) => inst(X86InstId.kTest, [dst, src]);
 
   // ===========================================================================
@@ -280,6 +378,32 @@ class X86Compiler extends BaseCompiler {
 
   void movdqu(Operand dst, Operand src) => inst(X86InstId.kMovdqu, [dst, src]);
   void pxor(Operand dst, Operand src) => inst(X86InstId.kPxor, [dst, src]);
+
+  // String instructions (explicit memory operands, `movs(dst, src)`).
+  void movs(Operand dst, Operand src) => inst(X86InstId.kMovs, [dst, src]);
+  void stos(Operand dst, Operand src) => inst(X86InstId.kStos, [dst, src]);
+
+  // SSE.
+  void movd(Operand dst, Operand src) => inst(X86InstId.kMovd, [dst, src]);
+  void movq(Operand dst, Operand src) => inst(X86InstId.kMovq, [dst, src]);
+  void movss(Operand dst, Operand src) => inst(X86InstId.kMovss, [dst, src]);
+  void movsd(Operand dst, Operand src) => inst(X86InstId.kMovsd, [dst, src]);
+  void movaps(Operand dst, Operand src) => inst(X86InstId.kMovaps, [dst, src]);
+  void movups(Operand dst, Operand src) => inst(X86InstId.kMovups, [dst, src]);
+  void movdqa(Operand dst, Operand src) => inst(X86InstId.kMovdqa, [dst, src]);
+  void addss(Operand dst, Operand src) => inst(X86InstId.kAddss, [dst, src]);
+  void addsd(Operand dst, Operand src) => inst(X86InstId.kAddsd, [dst, src]);
+  void subss(Operand dst, Operand src) => inst(X86InstId.kSubss, [dst, src]);
+  void subsd(Operand dst, Operand src) => inst(X86InstId.kSubsd, [dst, src]);
+  void mulss(Operand dst, Operand src) => inst(X86InstId.kMulss, [dst, src]);
+  void mulsd(Operand dst, Operand src) => inst(X86InstId.kMulsd, [dst, src]);
+  void divss(Operand dst, Operand src) => inst(X86InstId.kDivss, [dst, src]);
+  void divsd(Operand dst, Operand src) => inst(X86InstId.kDivsd, [dst, src]);
+  void xorps(Operand dst, Operand src) => inst(X86InstId.kXorps, [dst, src]);
+  void paddb(Operand dst, Operand src) => inst(X86InstId.kPaddb, [dst, src]);
+  void paddw(Operand dst, Operand src) => inst(X86InstId.kPaddw, [dst, src]);
+  void paddd(Operand dst, Operand src) => inst(X86InstId.kPaddd, [dst, src]);
+  void pmullw(Operand dst, Operand src) => inst(X86InstId.kPmullw, [dst, src]);
 }
 
 /// X86 Instruction Analyzer.

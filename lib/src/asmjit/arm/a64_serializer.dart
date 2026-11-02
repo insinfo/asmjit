@@ -65,4 +65,9 @@ class A64Serializer implements ir.SerializerContext {
     }
     asm.emit(instId, ops);
   }
+
+  @override
+  void onInstExtra(int instId, List<ir.Operand> operands, int options,
+          ir.BaseReg? extraReg) =>
+      onInst(instId, operands, options);
 }

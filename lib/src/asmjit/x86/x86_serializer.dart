@@ -47,7 +47,15 @@ class X86Serializer implements ir.SerializerContext {
   }
 
   @override
-  void onInst(int instId, List<ir.Operand> operands, int options) {
+  void onInst(int instId, List<ir.Operand> operands, int options) =>
+      onInstExtra(instId, operands, options, null);
+
+  /// Emits the instruction with its options (`InstOptions`) and extra
+  /// register (REP counter or AVX-512 `{k}`), as upstream
+  /// `Builder::serialize_to()` passes `inst_options()` and `extra_reg()`.
+  @override
+  void onInstExtra(int instId, List<ir.Operand> operands, int options,
+      ir.BaseReg? extraReg) {
     // Helper to extract X86 operands
     final ops = <Object>[];
     for (final op in operands) {
@@ -61,11 +69,8 @@ class X86Serializer implements ir.SerializerContext {
         ops.add(op.label);
       }
     }
-    emitInst(instId, ops, options);
-  }
-
-  /// Emits the instruction with pre-processed operands.
-  void emitInst(int instId, List<Object> ops, int options) {
+    asm.instOptions |= options;
+    if (extraReg != null) asm.extraReg = extraReg;
     asm.emit(instId, ops);
   }
 }
