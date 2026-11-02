@@ -139,7 +139,17 @@ void main() {
     expect(UniOpVVVV.values.where((op) => !covered.contains(op)), isEmpty);
   });
 
-  for (final fs in _featureSets.entries) {
+  // 256-bit vectors (AVX2): the ops work per 128-bit lane; the high lane gets
+  // rotated inputs and the expected result is the reference of each lane.
+  final runs = <(String, CpuFeatures?, VecWidth)>[
+    for (final fs in _featureSets.entries) (fs.key, fs.value, VecWidth.k128),
+    if (_host?.avx2 ?? false) ...[
+      ('avx2-nofma-256', _featureSets['avx2-nofma'], VecWidth.k256),
+      ('host-256', _host, VecWidth.k256),
+    ],
+  ];
+  for (final (fsName, features, width) in runs) {
+    final wide = width == VecWidth.k256;
     for (final layout in [
       'dst',
       'dst=src1',
@@ -148,9 +158,12 @@ void main() {
       'src2=mem',
       'src3=mem',
     ]) {
-      group('UniOpVVVV ${fs.key} $layout', () {
+      group('UniOpVVVV $fsName $layout', () {
         for (final c in cases) {
           test(c.op.name, () {
+            // Inputs of the high lane; the blendv mask keeps 0x00/0xFF bytes.
+            final hi =
+                c.op == UniOpVVVV.blendvU8 ? (c.b, c.a, c.c) : (c.b, c.c, c.a);
             final r = runUjit((cc, d, a, b, cv, m) {
               switch (layout) {
                 case 'dst':
@@ -167,15 +180,24 @@ void main() {
                 case 'src2=mem':
                   // The memory slot is overwritten with `b` after `c` was
                   // loaded into its register.
-                  cc.emitMV(UniOpMV.store128U32, m, b);
+                  cc.emitMV(
+                      wide ? UniOpMV.store256U32 : UniOpMV.store128U32, m, b);
                   cc.emit4v(c.op, d, a, m, cv);
                 default:
                   cc.emit4v(c.op, d, a, b, m);
               }
-            }, c.a, c.b, c.c, features: fs.value);
-            final expected = c.ref(c.a, c.b, c.c);
-            expect(_hex(r.sublist(0, c.bytes)),
-                _hex(expected.sublist(0, c.bytes)));
+            },
+                wide ? Uint8List.fromList([...c.a, ...hi.$1]) : c.a,
+                wide ? Uint8List.fromList([...c.b, ...hi.$2]) : c.b,
+                wide ? Uint8List.fromList([...c.c, ...hi.$3]) : c.c,
+                features: features,
+                width: width);
+            final expected = [
+              ...c.ref(c.a, c.b, c.c),
+              if (wide) ...c.ref(hi.$1, hi.$2, hi.$3),
+            ];
+            final n = c.bytes < 16 ? c.bytes : r.length;
+            expect(_hex(r.sublist(0, n)), _hex(expected.sublist(0, n)));
           });
         }
       }, skip: skipUnlessJitHost);
