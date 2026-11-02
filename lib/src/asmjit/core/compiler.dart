@@ -355,7 +355,8 @@ class BaseCompiler extends BaseBuilder {
   }
 
   FuncNode newFunc(FuncSignature signature) {
-    final func = FuncNode();
+    // As `new_func_node()`, which registers a label for the function node.
+    final func = FuncNode(newLabel().id);
     final err = func.funcDetail.init(signature, _env);
     if (err != AsmJitError.ok) {
       throw AsmJitException(err, "Failed to initialize function detail");
@@ -562,7 +563,10 @@ class CFGBuilder extends CompilerPass {
             }
           }
         }
-        if (!analyzer.isUnconditionalJump(node) && !analyzer.isReturn(node)) {
+        // A function return (`FuncRetNode`) ends the flow like `ret`.
+        if (!analyzer.isUnconditionalJump(node) &&
+            !analyzer.isReturn(node) &&
+            node is! FuncRetNode) {
           _addFallthroughSuccessor(currentBlock, node, labelMap);
         }
       }
@@ -575,6 +579,10 @@ class CFGBuilder extends CompilerPass {
     while (next != null) {
       if (next is BlockNode) {
         current.addSuccessor(next);
+        break;
+      }
+      // The flow never falls through the end of a function.
+      if (next is SentinelNode && next.sentinelType == SentinelType.funcEnd) {
         break;
       }
       next = next.next;

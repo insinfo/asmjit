@@ -416,6 +416,26 @@ class NodeList {
   }
 }
 
+/// The nodes from [rangeFirst] to [rangeLast] (inclusive) of a list,
+/// e.g. one function (`[FuncNode .. end sentinel]`). Only [nodes] (the
+/// iteration) is scoped; edits go through the owning [NodeList].
+class NodeRange extends NodeList {
+  final BaseNode rangeFirst;
+  final BaseNode rangeLast;
+
+  NodeRange(this.rangeFirst, this.rangeLast);
+
+  @override
+  Iterable<BaseNode> get nodes sync* {
+    BaseNode? current = rangeFirst;
+    while (current != null) {
+      yield current;
+      if (identical(current, rangeLast)) break;
+      current = current.next;
+    }
+  }
+}
+
 class BaseBuilder {
   /// The node list.
   final NodeList nodes = NodeList();
@@ -642,6 +662,11 @@ void serializeNodes(NodeList nodes, SerializerContext ctx) {
         ctx.onEmbedLabelDelta(e.label, e.base, e.dataSize);
         break;
       case NodeType.func:
+        // A function node acts as a label (`NodeFlags::kActsAsLabel`): its
+        // label is the entry of the function, before the prolog.
+        final label = (node as LabelNode).label;
+        if (label.isValid) ctx.onLabel(label);
+        break;
       case NodeType.funcRet:
       case NodeType.invoke:
       case NodeType.constPool:

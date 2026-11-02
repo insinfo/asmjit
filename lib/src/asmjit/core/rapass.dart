@@ -73,21 +73,16 @@ class RAPass extends CompilerPass {
     _archTraits = ArchTraits.forArch(
         compiler.arch); // Assuming compiler has arch property
 
-    // Iterate over functions (usually one per compiler instance in this simplified view,
-    // but AsmJit handles stream of nodes).
-
-    // Find FuncNode
-    FuncNode? func;
-    for (final node in nodes.nodes) {
-      if (node is FuncNode) {
-        func = node;
-        break; // Only support one function for now or iterate all?
-      }
+    // As `FuncPass::run()`: every function is allocated on its own, with
+    // a fresh pass state (`run_on_function()`).
+    final funcs = [
+      for (final node in nodes.nodes)
+        if (node is FuncNode) node
+    ];
+    for (final func in funcs) {
+      final pass = RAPass(compiler, _arch).._archTraits = _archTraits;
+      pass._processFunction(func, NodeRange(func, func.end ?? nodes.last!));
     }
-
-    if (func == null) return;
-
-    _processFunction(func, nodes);
   }
 
   void _processFunction(FuncNode func, NodeList nodes) {

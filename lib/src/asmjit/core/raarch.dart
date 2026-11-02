@@ -44,9 +44,13 @@ class RAFrameContext {
   void insertBefore(BaseNode before, BaseNode node) =>
       compiler.nodes.insertBefore(node, before);
 
-  /// All function return nodes (lowered by the epilog).
+  /// The nodes of [func], from the function node to its end sentinel.
+  Iterable<BaseNode> get funcNodes =>
+      NodeRange(func, func.end ?? compiler.nodes.last!).nodes;
+
+  /// The return nodes of [func] (lowered by the epilog).
   List<InstNode> get retNodes => [
-        for (final node in compiler.nodes.nodes)
+        for (final node in funcNodes)
           if (node is InstNode && node.nodeType == NodeType.funcRet) node
       ];
 }

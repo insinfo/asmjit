@@ -28,7 +28,8 @@ void main() {
       final table = cc.newLabel();
       final cases = [cc.newLabel(), cc.newLabel()];
 
-      cc.addFunc(FuncSignature(retType: TypeId.int64, args: [TypeId.int64]));
+      final lookupFunc = cc
+          .addFunc(FuncSignature(retType: TypeId.int64, args: [TypeId.int64]));
       final idx = cc.newGp64('idx');
       final addr = cc.newGp64('addr');
       cc
@@ -41,7 +42,8 @@ void main() {
       // Two labels in the code whose addresses go to .data (a jump table
       // through the compiler also needs upstream's JumpAnnotation, which
       // the port does not have yet).
-      cc.addFunc(FuncSignature(retType: TypeId.int64, args: []));
+      final casesFunc =
+          cc.addFunc(FuncSignature(retType: TypeId.int64, args: []));
       for (final (i, c) in cases.indexed) {
         cc
           ..bind(c)
@@ -75,6 +77,14 @@ void main() {
       for (final i in [0, 3, 9]) {
         expect(lookup(i), _dataArray[i]);
       }
+      // Function nodes act as labels at the function entries.
+      expect(code.getLabelOffset(lookupFunc.label), 0);
+      final casesFn =
+          (fn.pointer.cast<Uint8>() + code.getLabelOffset(casesFunc.label)!)
+              .cast<NativeFunction<Int64 Function()>>()
+              .asFunction<int Function()>();
+      expect(casesFn(), 100);
+
       // The table holds the absolute addresses of the cases, then the delta.
       final tableAt = data.offset + 16;
       final words = (fn.pointer.cast<Uint8>() + tableAt).cast<Int64>();

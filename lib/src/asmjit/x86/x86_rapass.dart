@@ -299,7 +299,7 @@ class X86RAArch extends RAArch {
     // modify the upper 128 bits of the corresponding YMM register, which are
     // required to be preserved when AVX is in use.
     bool usesVex = false;
-    for (final n in compiler.nodes.nodes) {
+    for (final n in ctx.funcNodes) {
       if (n is InstNode) {
         final id = n.instId;
         if (id >= 0 && id < kX86InstDb.length) {
