@@ -235,8 +235,20 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - `runUjit()` aceita a largura do vetor (cargas/stores de 256 bits, buffers alinhados a 32). As ops do UniCompiler a 256 bits trabalham por faixa de 128 bits (como as referências do teste do upstream), então `ujit_vvv_ops_test` e `ujit_vvvv_ops_test` rodam todas as `UniOpVVV`/`UniOpVVVV` a 256 bits em hosts AVX2 (com e sem FMA), comparando cada faixa com a referência de 128 bits: todos os 1548 + 228 casos passam (Windows AVX2).
 - `vv`/`vvi` ficam de fora: no upstream as conversões lo/hi e os broadcasts a 256 bits cruzam faixas e precisam de referências próprias.
 
+### Testes de compiler x86 do upstream (75 `X86Test_*`) e o que eles corrigiram
+- `test/asmjit/upstream_compiler_x86_test.dart`, `upstream_compiler_x86_call_test.dart`, `x86_rw_info_test.dart`: os 75 testes portados, passando em SysV (Rosetta) e Win64 (Windows). Pulados: AVX512_KK/TernLog (sem host AVX-512), FuncCallAVXClobber sob Rosetta (sem AVX2), AllocArgsVec no Windows e o vectorcall fora do Windows (como o upstream); MiscUnfollow só compila (exige setjmp/longjmp).
+- Defeitos do port corrigidos:
+  - Opções de instrução perdidas: REP, `{k}` e `{z}` nunca chegavam ao assembler; `InstNode` ganhou extra register e o builder anexa as opções pendentes como o upstream. Vregs x86 mantêm o tipo declarado (`newGp8`, `newXmmSs`, `newKd`...).
+  - Port de `query_rw_info()` com as tabelas do `x86instdb.cpp` (`tool/vendor_x86_rwinfo.dart` → `assets/db`, `tool/gen_x86_rwinfo.dart` → `x86_rw_info.g.dart`, incluído no `gen_tables.dart`); 65 consultas idênticas às do upstream.
+  - O RA x86 adivinhava o acesso dos operandos ("operando 0 é leitura/escrita"); agora segue `RACFGBuilder::on_instruction()` sobre o RW info (registradores fixos EDX:EAX, RCX/RDI/RSI, escritas parciais, hints).
+  - Exit label e sentinela adicionados com a função (`add_func_node`).
+  - **Chamadas (`invoke`)**: `on_before_invoke` (imediatos, argumentos na pilha, vetor por ponteiro), `on_invoke` (amarração de argumentos/retorno, clobber dos caller-saved), `emit_pre_call` (AL para variádicas); área de argumentos de saída no frame; registradores preservados pela convenção de cada função; áreas de pilha alinhadas acima de 16 com alinhamento dinâmico.
+  - Spills de YMM perdiam a metade alta (sempre `movups` SSE); moves VEX quando a função é AVX; o UniCompiler habilita AVX nas suas funções e emite `vzeroupper`.
+  - Constant pools (`newConst`...), `unfollow()`, K1–K7 alocáveis.
+- Não portado: 32 registradores vetoriais com AVX-512, escolha do move de máscara por tipo (sempre `kmovq`), layout interno do constant pool, retorno x87, consecutive-register ties.
+
 ### Próximos passos
-1. Port de `asmjit_test_compiler_x86.cpp` (em andamento, num agente) e `InvokeNode` no RA.
+1. Invoke no A64 (hooks do RA A64) e reativar Invoke1-3 de `upstream_compiler_a64_test.dart`.
 3. Portar `asmjit_test_unicompiler*.cpp` e os testes do compiler.
 4. Acesso de outros operandos além do 0 (xadd/cmpxchg) a partir do banco.
 5. AVX-512/EVEX no UJIT, validado no runner linux-x64 do CI (tem AVX-512F).

@@ -15,6 +15,7 @@ import 'dart:async';
 import 'gen_a64_db.dart' as a64;
 import 'gen_a64_encoder.dart' as a64enc;
 import 'gen_x86_db.dart' as x86;
+import 'gen_x86_rwinfo.dart' as x86rw;
 import 'gen_enum.dart' as enumgen;
 
 Future<void> main(List<String> args) async {
@@ -25,6 +26,9 @@ Future<void> main(List<String> args) async {
 
   print('=== Running all table generators (Dart port) ===');
   await x86.generateX86Db(jsonPath: x86Json);
+  // Reads the x86 instruction ids of the database generated above as of
+  // the last build; rerun if the instruction set changed.
+  x86rw.main();
   await a64.generateA64Db(jsonPath: a64Json);
   a64enc.generateA64Encoder(
       instdbPath: '$dbDir/a64_instdb.txt',
