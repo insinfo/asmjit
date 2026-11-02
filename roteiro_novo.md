@@ -30,7 +30,7 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 | **UJIT emit_2v (x86)** | ✅ Port fiel (tabela `opcode_info_2v`, `sse_int_widen`, `avx_fmov`); A64 já conferia com a referência | `ujit_vv_ops_test`: todas as ops de 128 bits, inclusive broadcast de GP |
 | **UJIT emit_3vi / emit_4v (x86 e A64)** | ✅ Port fiel (`interleaved_shuffle32_ops` do A64, FMA 132/213/231, `nmAdd/nmSub`) | `ujit_vvvi_ops_test` (256 shuffles x 5 layouts), `ujit_vvvv_ops_test` (6 layouts, AVX2 com e sem FMA) |
 | RA x86: acesso de operandos | ✅ Gerado de `isa_x86.json` (`W:`/`X:`/`w:`) em vez de "3 operandos = AVX" | |
-| **UJIT emit_vm / emit_mv (x86)** | ✅ Port fiel (`opcode_info_2vm`/`opcode_info_2mv`); `storeCvt*` ainda não existem no upstream x86 | `ujit_vm_mv_ops_test`: cargas/stores de 128 bits, endereços alinhados e desalinhados |
+| **UJIT emit_vm / emit_mv (x86)** | ✅ Port fiel (`opcode_info_2vm`/`opcode_info_2mv`); `storeCvt*` não são implementados no upstream | `ujit_vm_mv_ops_test`: cargas/stores de 128 bits, endereços alinhados e desalinhados |
 | **Constantes vetoriais (tabela local)** | ✅ Corrigidas (antes eram lidas do próprio código) | `ujit_const_runtime_test` |
 | **ChaCha20 otimizado** | ✅ x64 e AArch64 | `chacha20_verify_test` |
 | AVX-512 no UJIT | ⛔ Desativado (encodings EVEX não portados/validados); hosts AVX-512 usam as lowerings AVX2 | |
@@ -94,8 +94,10 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - `Alignment.none` (padrão da API Dart) é tratado como não alinhado; no upstream, os chamadores sempre informam o alinhamento.
 - Resultado: arm64 **9351**, Windows AVX2 **28033**, x64 Rosetta **27919** testes.
 
+- `storeCvt*`: comentados (`UNIMPLEMENTED`) no upstream x86 e A64; o enum Dart não os tem, o que já é paridade.
+
 ### Próximos passos
-1. `storeCvt*` (estão comentados no upstream x86; conferir o A64 do upstream).
+1. Conferir a parte GP do UJIT (`emit_2vs`, `emit_rm/mr`, `emit_rrr/rri`, condições/cmov/select) contra o upstream, com teste abrangente.
 2. Avaliar acesso de outros operandos além do 0 (xadd/cmpxchg) a partir do banco.
 
 ## ✅ Progresso Recente (02/11/2026 - RA multiarquitetura, UJIT A64, x86 SIMD)
