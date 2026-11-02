@@ -365,4 +365,139 @@ void main() {
       }
     }, skip: skipUnlessJitHost);
   }
+
+  // 256-bit vectors (AVX2). Most ops work on each 128-bit lane; broadcasts
+  // and the lo/hi conversions follow the upstream test references for a
+  // 32-byte vector (lo/hi select a half of the whole vector), derived here
+  // from the 128-bit references.
+  final host = hostIsX64 ? CpuInfo.host().features : null;
+  final dInit256 = _u8(List.generate(32, (i) => 0xA0 + i));
+  final byOp = <UniOpVV, List<_Case>>{};
+  for (final c in cases) {
+    (byOp[c.op] ??= []).add(c);
+  }
+  _Ref refOf(UniOpVV op) => byOp[op]!.first.ref;
+  for (final layout in ['dst', 'dst=src', 'src=mem']) {
+    group('UniOpVV avx2-256 $layout', () {
+      for (final (i, c) in cases.indexed) {
+        test('${c.op.name} ${_hex(c.a)}', () {
+          final a0 = c.a;
+          final a1 =
+              _otherInput(c, byOp[c.op]!, i - cases.indexOf(byOp[c.op]!.first));
+          final a = _u8([...a0, ...a1]);
+          final d0 = dInit256.sublist(0, 16), d1 = dInit256.sublist(16);
+          final hi = _hiNarrowing.contains(c.op);
+          final r = runUjit((cc, d, va, vb, cv, m) {
+            switch (layout) {
+              case 'dst':
+                if (hi) cc.emit2v(UniOpVV.mov, d, vb);
+                cc.emit2v(c.op, d, va);
+              case 'dst=src':
+                cc.emit2v(c.op, va, va);
+                cc.emit2v(UniOpVV.mov, d, va);
+              default:
+                if (hi) cc.emit2v(UniOpVV.mov, d, vb);
+                cc.emit2v(c.op, d, m);
+            }
+          }, a, dInit256, a, features: host, width: VecWidth.k256);
+          final d0Init = layout == 'dst=src' ? a0 : d0;
+          final d1Init = layout == 'dst=src' ? a1 : d1;
+          final expected = _wideExpected(c, a0, a1, d0Init, d1Init, refOf);
+          final n = c.bytes < 16 ? c.bytes : 32;
+          expect(_hex(r.sublist(0, n)), _hex(expected.sublist(0, n)));
+        });
+      }
+      for (final op in _wideOnly) {
+        test('${op.name} (256-bit)', () {
+          final a = _u8(List.generate(32, (i) => i * 7 + 1));
+          final r = runUjit((cc, d, va, vb, cv, m) {
+            switch (layout) {
+              case 'dst':
+                cc.emit2v(op, d, va);
+              case 'dst=src':
+                cc.emit2v(op, va, va);
+                cc.emit2v(UniOpVV.mov, d, va);
+              default:
+                cc.emit2v(op, d, m);
+            }
+          }, a, dInit256, a, features: host, width: VecWidth.k256);
+          expect(_hex(r), _hex(a));
+        });
+      }
+    }, skip: (host?.avx2 ?? false) ? null : 'needs an AVX2 host');
+  }
+}
+
+/// Input of the high 128-bit lane: another input of the same op, else a
+/// value of the same domain (floats doubled, integers byte-reversed).
+Uint8List _otherInput(_Case c, List<_Case> sameOp, int indexInOp) {
+  if (sameOp.length > 1) return sameOp[(indexInOp + 1) % sameOp.length].a;
+  final name = c.op.name;
+  final isFloat = name.contains('F32') || name.contains('F64');
+  if (!isFloat) return _u8(c.a.reversed.toList());
+  final f64 = name.endsWith('F64') ||
+      name.endsWith('F64S') ||
+      name.startsWith('cvtF64') ||
+      name.startsWith('cvtTruncF64') ||
+      name.startsWith('cvtRoundF64');
+  return f64
+      ? _f64s(_asF64(c.a).map((x) => x * 2).toList())
+      : _f32s(_asF32(c.a).map((x) => x * 2).toList());
+}
+
+const _widenLoHi = {
+  UniOpVV.cvtI8LoToI16: UniOpVV.cvtI8HiToI16,
+  UniOpVV.cvtU8LoToU16: UniOpVV.cvtU8HiToU16,
+  UniOpVV.cvtI16LoToI32: UniOpVV.cvtI16HiToI32,
+  UniOpVV.cvtU16LoToU32: UniOpVV.cvtU16HiToU32,
+  UniOpVV.cvtI32LoToI64: UniOpVV.cvtI32HiToI64,
+  UniOpVV.cvtU32LoToU64: UniOpVV.cvtU32HiToU64,
+  UniOpVV.cvtF32LoToF64: UniOpVV.cvtF32HiToF64,
+  UniOpVV.cvtI32LoToF64: UniOpVV.cvtI32HiToF64,
+};
+
+/// Narrowing "Lo" op of each "Hi" op.
+const _narrowHiToLo = {
+  UniOpVV.cvtF64ToF32Hi: UniOpVV.cvtF64ToF32Lo,
+  UniOpVV.cvtTruncF64ToI32Hi: UniOpVV.cvtTruncF64ToI32Lo,
+  UniOpVV.cvtRoundF64ToI32Hi: UniOpVV.cvtRoundF64ToI32Lo,
+};
+
+/// Expected 32 bytes of [c] at 256 bits for the lane inputs [a0] / [a1] and
+/// the initial destination lanes [d0] / [d1].
+Uint8List _wideExpected(_Case c, Uint8List a0, Uint8List a1, Uint8List d0,
+    Uint8List d1, _Ref Function(UniOpVV) refOf) {
+  final op = c.op;
+  final zero = Uint8List(16);
+  Uint8List cat(List<int> x, List<int> y) => _u8([...x, ...y]);
+
+  if (op == UniOpVV.movU64) return cat(c.ref(a0, d0), zero);
+  if (op.name.startsWith('broadcastV128')) return cat(a0, a0);
+  if (op.name.startsWith('broadcast')) {
+    return cat(c.ref(a0, d0), c.ref(a0, d0));
+  }
+  final hiOfLo = _widenLoHi[op];
+  if (hiOfLo != null) return cat(c.ref(a0, d0), refOf(hiOfLo)(a0, d0));
+  final loOfHi = _widenLoHi.entries.where((e) => e.value == op).firstOrNull;
+  if (loOfHi != null) return cat(refOf(loOfHi.key)(a1, d1), c.ref(a1, d1));
+  if (op == UniOpVV.cvtI8ToI32 || op == UniOpVV.cvtU8ToU32) {
+    return cat(
+        c.ref(a0, d0), c.ref(_u8([...a0.sublist(4), ...zero.sublist(12)]), d0));
+  }
+  // Narrowing: all four results go to the low (Lo) or high (Hi) 128 bits.
+  if (op == UniOpVV.cvtF64ToF32Lo ||
+      op == UniOpVV.cvtTruncF64ToI32Lo ||
+      op == UniOpVV.cvtRoundF64ToI32Lo) {
+    return cat(
+        [...c.ref(a0, d0).sublist(0, 8), ...c.ref(a1, d1).sublist(0, 8)], zero);
+  }
+  final lo = _narrowHiToLo[op];
+  if (lo != null) {
+    return cat(d0, [
+      ...refOf(lo)(a0, d0).sublist(0, 8),
+      ...refOf(lo)(a1, d1).sublist(0, 8),
+    ]);
+  }
+  // Element-wise (and scalar) ops: each lane.
+  return cat(c.ref(a0, d0), c.ref(a1, d1));
 }

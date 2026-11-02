@@ -233,7 +233,9 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 
 ### UJIT com vetores de 256 bits (AVX2)
 - `runUjit()` aceita a largura do vetor (cargas/stores de 256 bits, buffers alinhados a 32). As ops do UniCompiler a 256 bits trabalham por faixa de 128 bits (como as referências do teste do upstream), então `ujit_vvv_ops_test` e `ujit_vvvv_ops_test` rodam todas as `UniOpVVV`/`UniOpVVVV` a 256 bits em hosts AVX2 (com e sem FMA), comparando cada faixa com a referência de 128 bits: todos os 1548 + 228 casos passam (Windows AVX2).
-- `vv`/`vvi` ficam de fora: no upstream as conversões lo/hi e os broadcasts a 256 bits cruzam faixas e precisam de referências próprias.
+- `ujit_vvi_ops_test` a 256 bits: todas as `UniOpVVI` são por faixa no upstream (4035 casos passam).
+- `ujit_vv_ops_test` a 256 bits: as ops por elemento são por faixa; broadcasts, `movU64` e as conversões lo/hi/narrowing seguem as fórmulas das referências do upstream para um vetor de 32 bytes (lo/hi escolhem uma metade do vetor inteiro), derivadas das referências de 128 bits; mais os broadcasts de 256 bits (396 casos passam).
+- **Bug encontrado**: a tabela de constantes embutida pelo UniCompiler era alinhada a 16 bytes, mas as constantes ficam em offsets de 32 e um vreg de constante de 256 bits é carregado com `vmovaps ymm` (alinhado): `rcpF32` a 256 bits dava access violation no Windows AVX2. Agora alinhada a 64, como a tabela comum do upstream.
 
 ### Testes de compiler x86 do upstream (75 `X86Test_*`) e o que eles corrigiram
 - `test/asmjit/upstream_compiler_x86_test.dart`, `upstream_compiler_x86_call_test.dart`, `x86_rw_info_test.dart`: os 75 testes portados, passando em SysV (Rosetta) e Win64 (Windows). Pulados: AVX512_KK/TernLog (sem host AVX-512), FuncCallAVXClobber sob Rosetta (sem AVX2), AllocArgsVec no Windows e o vectorcall fora do Windows (como o upstream); MiscUnfollow só compila (exige setjmp/longjmp).

@@ -1319,7 +1319,9 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     if (_commonTableLabel == null) return;
 
     // Align first: the label must point at the data, not at the padding.
-    cc.align(AlignMode.data, 16);
+    // 64 bytes like upstream's common table: the constants sit at 32-byte
+    // offsets and 256-bit aligned loads (`vmovaps ymm`) fault otherwise.
+    cc.align(AlignMode.data, 64);
     cc.bind(_commonTableLabel!);
 
     // Registered constants at their VecConstTable offsets, then ad-hoc

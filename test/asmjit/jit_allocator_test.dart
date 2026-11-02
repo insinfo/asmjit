@@ -463,6 +463,10 @@ const List<_TestInfo> _testInfoTable = [
       0),
 ];
 
+/// x86 and x86-64 hosts fill unused memory with `int3` (0xCC).
+final _hostIsX86Family =
+    Environment.host().arch == Arch.x64 || Environment.host().arch == Arch.x86;
+
 void main() {
   final hri = VirtMem.hardenedRuntimeInfo();
   final is64Bit = sizeOf<IntPtr>() == 8;
@@ -631,7 +635,7 @@ void main() {
       expect(allocator.isInitialized, isTrue);
       expect(allocator.blockSize, VirtMem.info().pageGranularity);
       expect(allocator.granularity, 64);
-      expect(allocator.fillPattern, hostIsX64 ? 0xCCCCCCCC : 0);
+      expect(allocator.fillPattern, _hostIsX86Family ? 0xCCCCCCCC : 0);
       expect(allocator.statistics().blockCount, 0);
 
       allocator.dispose();
@@ -648,7 +652,7 @@ void main() {
       expect(allocator.blockSize, VirtMem.info().pageGranularity);
       expect(allocator.granularity, 64);
       // kCustomFillPattern not set: the custom pattern is ignored.
-      expect(allocator.fillPattern, hostIsX64 ? 0xCCCCCCCC : 0);
+      expect(allocator.fillPattern, _hostIsX86Family ? 0xCCCCCCCC : 0);
       allocator.dispose();
 
       final custom = JitAllocator(JitAllocatorCreateParams(
