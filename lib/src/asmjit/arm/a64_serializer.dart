@@ -1,4 +1,5 @@
 import '../core/builder.dart' as ir;
+import '../core/code_holder.dart' show Section;
 import '../core/labels.dart';
 import 'a64_assembler.dart';
 import 'a64.dart';
@@ -16,22 +17,23 @@ class A64Serializer implements ir.SerializerContext {
   }
 
   @override
-  void onAlign(ir.AlignMode mode, int alignment) {
-    if (mode == ir.AlignMode.code) {
-      // A64Assembler has no direct align; pad with 4-byte NOPs.
-      final misalign = asm.offset % alignment;
-      if (misalign != 0) {
-        for (var pad = alignment - misalign; pad >= 4; pad -= 4) {
-          asm.nop();
-        }
-      }
-    }
-  }
+  void onAlign(ir.AlignMode mode, int alignment) => asm.align(mode, alignment);
 
   @override
   void onEmbedData(List<int> data, int typeSize) {
     asm.emitBytes(data);
   }
+
+  @override
+  void onSection(Section section) => asm.section(section);
+
+  @override
+  void onEmbedLabel(Label label, int dataSize) =>
+      asm.embedLabel(label, dataSize);
+
+  @override
+  void onEmbedLabelDelta(Label label, Label base, int dataSize) =>
+      asm.embedLabelDelta(label, base, dataSize);
 
   @override
   void onComment(String text) {

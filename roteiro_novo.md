@@ -189,8 +189,14 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
   - Referenciar um label já ligado em outra seção (`mov(eax, dword_ptr(L))` com L ligado no `.data`): `new_fixup` encadeia o fixup no label ligado e o union `_offset_or_fixups` troca o offset de L por um ponteiro (0x4 → 0x7a86c000d8), com deslocamento 0. O port coloca esse fixup direto na lista entre seções.
 - `test/asmjit/sections_test.dart`: `asmjit_test_x86_sections` (imagem do upstream e execução JIT x64/A64), jump table em `.rodata` com `embedLabel` (execução JIT), `embedLabel/embedLabelDelta`, label ligado antes em outra seção.
 
+### `align(AlignMode)` e nós de seção/embed no Builder
+- `BaseAssembler.align(AlignMode, alignment)` portado de `x86::Assembler::align()` (NOP `0x90`, NOPs multibyte com `EncodingOptions.kOptimizedAlign`, `0xCC` para dados, zeros) e `a64::Assembler::align()` (NOP `D503201F` para código, zeros para dados). Antes o serializer A64 ignorava `AlignMode.data` (usado pelas constantes do UJIT) e o x86 alinhava dados com NOPs. `AlignMode` foi para `globals.dart` e `Globals.kMaxAlignment = 64`.
+- Builder: `SectionNode`, `EmbedLabelNode`, `EmbedLabelDeltaNode` e `section()`, `embedLabel()`, `embedLabelDelta()`; o `SerializerContext` ganhou `onSection/onEmbedLabel/onEmbedLabelDelta` (antes esses nós eram ignorados em silêncio) e os serializers x86/A64 os repassam ao assembler.
+- `test/asmjit/compiler_sections_test.dart`: `X86Compiler` lendo dados de uma seção `.data` e embutindo endereços de labels (execução JIT), padrões de `align` x86/A64.
+- Lacunas encontradas: o `FuncNode` do port não tem label (o upstream cria um em `add_func`), e jump tables pelo Compiler precisam de `JumpAnnotation` (`jmp(target, annotation)`) para o RA conhecer os alvos.
+
 ### Próximos passos
-1. Builder/Compiler: `SectionNode`/`EmbedLabelNode`/`EmbedLabelDeltaNode` e `section()`/`embedLabel()` no builder (o serializer ignora esses nós hoje); `[LABEL|RIP]` em 32 bits; `align(AlignMode)` do upstream (NOPs otimizados).
+1. `JumpAnnotation` no Compiler (jump tables) e label do `FuncNode`; `[LABEL|RIP]` em 32 bits.
 2. `emit_2vs` (UniOpVR) no lugar de `emitCV`.
 3. Portar `asmjit_test_unicompiler*.cpp` e os testes do compiler.
 4. Acesso de outros operandos além do 0 (xadd/cmpxchg) a partir do banco.

@@ -3,8 +3,11 @@
 /// Port of asmjit/core/builder.h - provides a node-based IR
 /// that can be modified before serialization to machine code.
 
+import 'code_holder.dart' show Section;
+import 'globals.dart';
 import 'labels.dart';
 import 'operand.dart';
+export 'globals.dart' show AlignMode;
 export 'operand.dart';
 
 /// Type of node in the builder.
@@ -29,6 +32,9 @@ enum NodeType {
 
   /// Embedded label node.
   embedLabel,
+
+  /// Embedded label delta node.
+  embedLabelDelta,
 
   /// Constant pool node.
   constPool,
@@ -185,18 +191,6 @@ class AlignNode extends BaseNode {
   String toString() => 'AlignNode($alignMode, $alignment bytes)';
 }
 
-/// Align mode.
-enum AlignMode {
-  /// Code alignment.
-  code,
-
-  /// Data alignment.
-  data,
-
-  /// Zero-fill alignment.
-  zero,
-}
-
 /// Embedded data node.
 class EmbedDataNode extends BaseNode {
   /// Data bytes.
@@ -210,6 +204,50 @@ class EmbedDataNode extends BaseNode {
 
   @override
   String toString() => 'EmbedDataNode(${data.length} bytes)';
+}
+
+/// Section node (`SectionNode`): the following nodes go to [section].
+class SectionNode extends BaseNode {
+  /// The section to switch to.
+  final Section section;
+
+  SectionNode(this.section) : super(NodeType.section, NodeFlags.hasNoEffect);
+
+  @override
+  String toString() => 'SectionNode(${section.name})';
+}
+
+/// Embedded label node (`EmbedLabelNode`): the absolute address of [label].
+class EmbedLabelNode extends BaseNode {
+  /// The embedded label.
+  final Label label;
+
+  /// Size of the embedded address in bytes (0 = register size).
+  final int dataSize;
+
+  EmbedLabelNode(this.label, [this.dataSize = 0])
+      : super(NodeType.embedLabel, NodeFlags.isData);
+
+  @override
+  String toString() => 'EmbedLabelNode(L${label.id})';
+}
+
+/// Embedded label delta node (`EmbedLabelDeltaNode`): `label - base`.
+class EmbedLabelDeltaNode extends BaseNode {
+  /// The label.
+  final Label label;
+
+  /// The base label.
+  final Label base;
+
+  /// Size of the embedded delta in bytes (0 = register size).
+  final int dataSize;
+
+  EmbedLabelDeltaNode(this.label, this.base, [this.dataSize = 0])
+      : super(NodeType.embedLabelDelta, NodeFlags.isData);
+
+  @override
+  String toString() => 'EmbedLabelDeltaNode(L${label.id} - L${base.id})';
 }
 
 /// Comment node.
@@ -468,6 +506,28 @@ class BaseBuilder {
     return node;
   }
 
+  /// Switches the following nodes to [section] (`section()`).
+  SectionNode section(Section section) {
+    final node = SectionNode(section);
+    addNode(node);
+    return node;
+  }
+
+  /// Embeds the absolute address of [label] (`embed_label()`).
+  EmbedLabelNode embedLabel(Label label, [int dataSize = 0]) {
+    final node = EmbedLabelNode(label, dataSize);
+    addNode(node);
+    return node;
+  }
+
+  /// Embeds `label - base` (`embed_label_delta()`).
+  EmbedLabelDeltaNode embedLabelDelta(Label label, Label base,
+      [int dataSize = 0]) {
+    final node = EmbedLabelDeltaNode(label, base, dataSize);
+    addNode(node);
+    return node;
+  }
+
   /// Add a comment.
   CommentNode comment(String text) {
     final node = CommentNode(text);
@@ -525,6 +585,18 @@ abstract class SerializerContext {
   /// Called when embedded data is encountered.
   void onEmbedData(List<int> data, int typeSize);
 
+  /// Called when a section node is encountered.
+  void onSection(Section section) =>
+      throw UnsupportedError('$runtimeType does not support sections');
+
+  /// Called when an embedded label is encountered.
+  void onEmbedLabel(Label label, int dataSize) =>
+      throw UnsupportedError('$runtimeType does not support embedded labels');
+
+  /// Called when an embedded label delta is encountered.
+  void onEmbedLabelDelta(Label label, Label base, int dataSize) =>
+      throw UnsupportedError('$runtimeType does not support embedded labels');
+
   /// Called when a comment is encountered.
   void onComment(String text);
 
@@ -558,12 +630,21 @@ void serializeNodes(NodeList nodes, SerializerContext ctx) {
       case NodeType.sentinel:
         ctx.onSentinel((node as SentinelNode).sentinelType);
         break;
+      case NodeType.section:
+        ctx.onSection((node as SectionNode).section);
+        break;
+      case NodeType.embedLabel:
+        final e = node as EmbedLabelNode;
+        ctx.onEmbedLabel(e.label, e.dataSize);
+        break;
+      case NodeType.embedLabelDelta:
+        final e = node as EmbedLabelDeltaNode;
+        ctx.onEmbedLabelDelta(e.label, e.base, e.dataSize);
+        break;
       case NodeType.func:
       case NodeType.funcRet:
       case NodeType.invoke:
-      case NodeType.section:
       case NodeType.constPool:
-      case NodeType.embedLabel:
         // These nodes are either handled by higher-level passes or ignored.
         break;
       default:

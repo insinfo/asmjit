@@ -22,6 +22,9 @@ abstract final class Globals {
   /// Maximum value pack size.
   static const int kMaxValuePack = 4;
 
+  /// Maximum alignment of `BaseAssembler.align()`.
+  static const int kMaxAlignment = 64;
+
   /// Invalid identifier.
   static const int kInvalidId = 0xFFFFFFFF;
 
@@ -70,3 +73,16 @@ enum ResetPolicy {
 
 /// Checks if an index is invalid (npos-like).
 bool isNpos(int index) => index == -1;
+
+/// Align mode, used by `BaseAssembler.align()` and `AlignNode`
+/// (`AlignMode`).
+enum AlignMode {
+  /// Align executable code (x86 NOPs, AArch64 NOP instructions).
+  code,
+
+  /// Align non-executable code (x86 `0xCC`, AArch64 zeros).
+  data,
+
+  /// Align by a sequence of zeros.
+  zero,
+}

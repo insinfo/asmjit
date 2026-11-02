@@ -1,5 +1,6 @@
 //C:\MyDartProjects\asmjit\lib\src\asmjit\x86\x86_serializer.dart
 import '../core/builder.dart' as ir;
+import '../core/code_holder.dart' show Section;
 import '../core/labels.dart';
 import 'x86_assembler.dart';
 
@@ -17,17 +18,23 @@ class X86Serializer implements ir.SerializerContext {
   }
 
   @override
-  void onAlign(ir.AlignMode mode, int alignment) {
-    // Honor both code and data alignment so embedded constants are safely accessed.
-    if (mode == ir.AlignMode.code || mode == ir.AlignMode.data) {
-      asm.align(alignment);
-    }
-  }
+  void onAlign(ir.AlignMode mode, int alignment) => asm.align(mode, alignment);
 
   @override
   void onEmbedData(List<int> data, int typeSize) {
     asm.emitInline(data);
   }
+
+  @override
+  void onSection(Section section) => asm.section(section);
+
+  @override
+  void onEmbedLabel(Label label, int dataSize) =>
+      asm.embedLabel(label, dataSize);
+
+  @override
+  void onEmbedLabelDelta(Label label, Label base, int dataSize) =>
+      asm.embedLabelDelta(label, base, dataSize);
 
   @override
   void onComment(String text) {

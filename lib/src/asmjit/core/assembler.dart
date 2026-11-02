@@ -10,6 +10,7 @@ import 'code_holder.dart';
 import 'emitter.dart';
 import 'error.dart';
 import 'fixup.dart';
+import 'globals.dart';
 import 'labels.dart';
 
 /// Base class of `X86Assembler` and `A64Assembler` (`BaseAssembler`).
@@ -56,6 +57,26 @@ abstract class BaseAssembler extends BaseEmitter {
 
   /// Binds [label] to the current offset of [currentSection] (`bind()`).
   void bind(Label label) => code.bindLabel(label, _section.id, offset);
+
+  // ===========================================================================
+  // Align
+  // ===========================================================================
+
+  /// Aligns the current offset to [alignment] (`align()`), padding as
+  /// [alignMode] says for the architecture.
+  void align(AlignMode alignMode, int alignment);
+
+  /// Number of padding bytes [align] has to emit: validates [alignment]
+  /// like upstream (a power of 2 up to `Globals::kMaxAlignment`).
+  int alignPadding(int alignment) {
+    if (alignment <= 1) return 0;
+    if ((alignment & (alignment - 1)) != 0 ||
+        alignment > Globals.kMaxAlignment) {
+      throw AsmJitException(
+          AsmJitError.invalidArgument, 'Invalid alignment: $alignment');
+    }
+    return (alignment - (offset & (alignment - 1))) & (alignment - 1);
+  }
 
   // ===========================================================================
   // Embed

@@ -10,6 +10,8 @@ import 'a64_emit.dart';
 import 'a64_inst_db.g.dart';
 
 import '../core/assembler.dart';
+import '../core/error.dart';
+import '../core/globals.dart' show AlignMode;
 
 /// ARM64 Assembler.
 ///
@@ -636,6 +638,30 @@ class A64Assembler extends BaseAssembler {
 
   /// NOP - No operation.
   void nop() => emit(A64InstId.kNop, const []);
+
+  /// Aligns the current offset (`a64::Assembler::align()`): NOP
+  /// instructions for code, zeros for data.
+  @override
+  void align(AlignMode alignMode, int alignment) {
+    const kNopA64 = 0xD503201F;
+    var i = alignPadding(alignment);
+    if (i == 0) return;
+    switch (alignMode) {
+      case AlignMode.code:
+        if ((offset & 0x3) != 0) {
+          throw AsmJitException(AsmJitError.invalidState,
+              'Code alignment at an offset that is not a multiple of 4');
+        }
+        while (i >= 4) {
+          _buf.emit32(kNopA64);
+          i -= 4;
+        }
+      case AlignMode.data:
+      case AlignMode.zero:
+        _buf.emitZeros(i);
+    }
+    log('align $alignment');
+  }
 
   /// BRK - Breakpoint.
   void brk(int imm) => emit(A64InstId.kBrk, [imm]);

@@ -6,6 +6,7 @@
 import '../core/code_holder.dart';
 import '../core/code_buffer.dart';
 import '../core/assembler.dart';
+import '../core/globals.dart' show AlignMode;
 import '../core/emitter.dart';
 import '../core/error.dart';
 import '../core/func.dart';
@@ -108,8 +109,27 @@ class X86Assembler extends BaseAssembler {
   /// Emits a 64-bit value.
   void emit64(int value) => _buf.emit64(value);
 
-  /// Aligns to [alignment] bytes with NOPs.
-  void align(int alignment) => _buf.alignWithNops(alignment);
+  /// Aligns the current offset (`x86::Assembler::align()`): NOPs for code
+  /// (the multi-byte NOPs of [nopN] with `EncodingOptions.kOptimizedAlign`),
+  /// `0xCC` for data, zeros for [AlignMode.zero].
+  @override
+  void align(AlignMode alignMode, int alignment) {
+    var i = alignPadding(alignment);
+    if (i == 0) return;
+    switch (alignMode) {
+      case AlignMode.code:
+        if ((encodingOptions & EncodingOptions.kOptimizedAlign) != 0) {
+          nopN(i);
+          i = 0;
+        }
+        _buf.emitBytes(List.filled(i, 0x90));
+      case AlignMode.data:
+        _buf.emitBytes(List.filled(i, 0xCC));
+      case AlignMode.zero:
+        _buf.emitZeros(i);
+    }
+    log('align $alignment');
+  }
 
   // ===========================================================================
   // Basic instructions
