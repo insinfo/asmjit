@@ -1163,7 +1163,25 @@ class A64Encoder {
     _vec3SameLogic(0x2E, 0x0, 0x03, rd, rn, rm, wide: wide);
   }
 
+  /// Q bit of a vector operand: taken from the arrangement when present
+  /// (`.16B/.8H/.4S/.2D` -> 1, `.8B/.4H/.2S/.1D` -> 0), otherwise from the
+  /// register size, falling back to [wide].
   bool _resolveWide(A64Vec vec, bool wide) {
+    switch (vec.layout) {
+      case A64Layout.b16:
+      case A64Layout.h8:
+      case A64Layout.s4:
+      case A64Layout.d2:
+      case A64Layout.q1:
+        return true;
+      case A64Layout.b8:
+      case A64Layout.h4:
+      case A64Layout.s2:
+      case A64Layout.d1:
+        return false;
+      case A64Layout.none:
+        break;
+    }
     if (vec.sizeBits == 128) return true;
     if (vec.sizeBits == 64) return false;
     return wide;
@@ -1195,7 +1213,7 @@ class A64Encoder {
   // ===========================================================================
 
   void _emitPermute(int opcode, A64Vec rd, A64Vec rn, A64Vec rm) {
-    final q = rd.sizeBits == 128 ? 1 : 0;
+    final q = _resolveWide(rd, true) ? 1 : 0;
     final sz = _vecElemSizeBits(rd);
     // Instruction: 0 Q 00 1110 size 0 Rm 0 opcode(3) 10 Rn Rd
     final inst = (0 << 31) |
@@ -1224,7 +1242,7 @@ class A64Encoder {
   /// Encoding: 0 Q 00 1110 00 0 Rm 0 len(2) 00 Rn Rd
   /// op=0 for TBL. len=0 for 1 register.
   void tbl(A64Vec rd, A64Vec rn, A64Vec rm) {
-    final q = rd.sizeBits == 128 ? 1 : 0;
+    final q = _resolveWide(rd, true) ? 1 : 0;
     final len = 0; // 1 register in table
     final inst = (0 << 31) |
         (q << 30) |
@@ -1521,55 +1539,166 @@ class A64Encoder {
   // NEON (FP) - Vector
   // ===========================================================================
 
-  void _vec3SameFp(int u, int opcode, A64Vec rd, A64Vec rn, A64Vec rm,
+  /// Advanced SIMD three same (FP): `0|Q|U|01110|a|sz|1|Rm|opcode|1|Rn|Rd`.
+  void _vec3SameFp(int u, int a, int opcode, A64Vec rd, A64Vec rn, A64Vec rm,
       {bool wide = true}) {
-    final rawSz = _vecElemSizeBits(rd); // 2=32, 3=64
-    final szEnc = (rawSz == 3) ? 1 : 0;
-    final q = wide ? 1 : 0;
-    final inst = (q << 30) |
+    final sz = _vecElemSizeBits(rd) == 3 ? 1 : 0;
+    final q = _resolveWide(rd, wide) ? 1 : 0;
+    emit32((q << 30) |
         (u << 29) |
         (0x0E << 24) |
-        (szEnc << 22) |
+        (a << 23) |
+        (sz << 22) |
         (1 << 21) |
         (_encVec(rm) << 16) |
         (opcode << 11) |
         (1 << 10) |
         (_encVec(rn) << 5) |
-        _encVec(rd);
-    emit32(inst);
+        _encVec(rd));
   }
 
   /// FADD (vector).
   void faddVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
-      _vec3SameFp(0, 0x1A, rd, rn, rm, wide: wide);
+      _vec3SameFp(0, 0, 0x1A, rd, rn, rm, wide: wide);
 
   /// FSUB (vector).
   void fsubVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
-      _vec3SameFp(1, 0x1A, rd, rn, rm, wide: wide);
+      _vec3SameFp(0, 1, 0x1A, rd, rn, rm, wide: wide);
 
   /// FMUL (vector).
   void fmulVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
-      _vec3SameFp(1, 0x1B, rd, rn, rm, wide: wide);
+      _vec3SameFp(1, 0, 0x1B, rd, rn, rm, wide: wide);
 
   /// FDIV (vector).
   void fdivVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
-      _vec3SameFp(1, 0x1F, rd, rn, rm, wide: wide);
+      _vec3SameFp(1, 0, 0x1F, rd, rn, rm, wide: wide);
 
   /// FMAX (vector).
   void fmaxVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
-      _vec3SameFp(0, 0x0F, rd, rn, rm, wide: wide);
+      _vec3SameFp(0, 0, 0x1E, rd, rn, rm, wide: wide);
 
   /// FMIN (vector).
   void fminVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
-      _vec3SameFp(0, 0x1F, rd, rn, rm, wide: wide);
+      _vec3SameFp(0, 1, 0x1E, rd, rn, rm, wide: wide);
 
   /// FMAXNM (vector).
   void fmaxnmVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
-      _vec3SameFp(0, 0x0C, rd, rn, rm, wide: wide);
+      _vec3SameFp(0, 0, 0x18, rd, rn, rm, wide: wide);
 
   /// FMINNM (vector).
   void fminnmVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
-      _vec3SameFp(0, 0x0D, rd, rn, rm, wide: wide);
+      _vec3SameFp(0, 1, 0x18, rd, rn, rm, wide: wide);
+
+  /// FCMEQ (vector, register).
+  void fcmeqVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameFp(0, 0, 0x1C, rd, rn, rm);
+
+  /// FCMGE (vector, register).
+  void fcmgeVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameFp(1, 0, 0x1C, rd, rn, rm);
+
+  /// FCMGT (vector, register).
+  void fcmgtVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameFp(1, 1, 0x1C, rd, rn, rm);
+
+  // Integer three-same: base 0x0E (U=0) / 0x2E (U=1), 5-bit opcode.
+  void sqaddVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameInt(0x0E, 0x01, rd, rn, rm);
+  void uqaddVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameInt(0x2E, 0x01, rd, rn, rm);
+  void sqsubVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameInt(0x0E, 0x05, rd, rn, rm);
+  void uqsubVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameInt(0x2E, 0x05, rd, rn, rm);
+  void cmgtVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameInt(0x0E, 0x06, rd, rn, rm);
+  void cmhiVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameInt(0x2E, 0x06, rd, rn, rm);
+  void cmgeVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameInt(0x0E, 0x07, rd, rn, rm);
+  void cmhsVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameInt(0x2E, 0x07, rd, rn, rm);
+  void sshlVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameInt(0x0E, 0x08, rd, rn, rm);
+  void ushlVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameInt(0x2E, 0x08, rd, rn, rm);
+  void smaxVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameInt(0x0E, 0x0C, rd, rn, rm);
+  void umaxVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameInt(0x2E, 0x0C, rd, rn, rm);
+  void sminVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameInt(0x0E, 0x0D, rd, rn, rm);
+  void uminVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameInt(0x2E, 0x0D, rd, rn, rm);
+  void urhaddVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameInt(0x2E, 0x02, rd, rn, rm);
+  void cmtstVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameInt(0x0E, 0x11, rd, rn, rm);
+  void cmeqVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3SameInt(0x2E, 0x11, rd, rn, rm);
+
+  /// Advanced SIMD three different: `0|Q|U|01110|size|1|Rm|opcode|00|Rn|Rd`.
+  /// `size` is the source element size; Q=1 selects the `*2` (upper half)
+  /// form and is taken from the arrangement of [rn].
+  void _vec3Diff(int u, int opcode, A64Vec rd, A64Vec rn, A64Vec rm) {
+    final size = _vecElemSizeBits(rn);
+    final q = _resolveWide(rn, false) ? 1 : 0;
+    emit32((q << 30) |
+        (u << 29) |
+        (0x0E << 24) |
+        (size << 22) |
+        (1 << 21) |
+        (_encVec(rm) << 16) |
+        (opcode << 12) |
+        (_encVec(rn) << 5) |
+        _encVec(rd));
+  }
+
+  /// SMULL/SMULL2 (vector), selected by the arrangement of [rn].
+  void smullVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3Diff(0, 0xC, rd, rn, rm);
+
+  /// UMULL/UMULL2 (vector).
+  void umullVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3Diff(1, 0xC, rd, rn, rm);
+
+  /// SMLAL/SMLAL2 (vector).
+  void smlalVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3Diff(0, 0x8, rd, rn, rm);
+
+  /// UMLAL/UMLAL2 (vector).
+  void umlalVec(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _vec3Diff(1, 0x8, rd, rn, rm);
+
+  /// EXT: `ext Vd.16B, Vn.16B, Vm.16B, #index` (Vd = Vm:Vn >> index*8).
+  /// Encoding: 0|Q|101110|00|0|Rm|0|imm4|0|Rn|Rd
+  void extVec(A64Vec rd, A64Vec rn, A64Vec rm, int index) {
+    final q = _resolveWide(rd, true) ? 1 : 0;
+    if (index < 0 || index >= (q == 1 ? 16 : 8)) {
+      throw ArgumentError('EXT index out of range: $index');
+    }
+    emit32((q << 30) |
+        (0x2E << 24) |
+        (_encVec(rm) << 16) |
+        (index << 11) |
+        (_encVec(rn) << 5) |
+        _encVec(rd));
+  }
+
+  /// MOVI (8-bit, per byte): `movi Vd.16B/.8B, #imm8`.
+  void moviB(A64Vec rd, int imm8) {
+    if (imm8 < 0 || imm8 > 0xFF) {
+      throw ArgumentError('MOVI immediate out of range: $imm8');
+    }
+    final q = _resolveWide(rd, true) ? 1 : 0;
+    emit32((q << 30) |
+        (0x1E0 << 19) |
+        ((imm8 >> 5) << 16) |
+        (0xE << 12) |
+        (1 << 10) |
+        ((imm8 & 0x1F) << 5) |
+        _encVec(rd));
+  }
 
   /// FADDP (vector).
   void faddp(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) {
@@ -1852,95 +1981,36 @@ class A64Encoder {
   // Narrowing (Extract Narrow)
   // ===========================================================================
 
-  /// XTN - Extract narrow
-  void xtn(A64Vec rd, A64Vec rn) {
-    // Encoding: 0 Q 0 01110 size 10000 10010 10 Rn Rd
+  /// Narrowing two-register misc: `0|Q|U|01110|size|10000|opcode|10|Rn|Rd`,
+  /// `size` = destination element size; Q=1 writes the upper half (`*2`).
+  void _vecNarrow(int u, int opcode, A64Vec rd, A64Vec rn, {required int q}) {
     final size = _vecElemSizeBits(rd);
-    final q = 0;
-    final inst = (q << 30) |
+    emit32((q << 30) |
+        (u << 29) |
         (0x0E << 24) |
         (size << 22) |
-        (0x21 << 16) | // 100001
-        (0x28 << 11) | // 01010
-        (0x02 << 10) | // 10
+        (0x10 << 17) |
+        (opcode << 12) |
+        (2 << 10) |
         (_encVec(rn) << 5) |
-        _encVec(rd);
-    emit32(inst);
+        _encVec(rd));
   }
 
-  /// XTN2 - Extract narrow (high half)
-  void xtn2(A64Vec rd, A64Vec rn) {
-    final size = _vecElemSizeBits(rd);
-    final q = 1;
-    final inst = (q << 30) |
-        (0x0E << 24) |
-        (size << 22) |
-        (0x21 << 16) |
-        (0x28 << 11) |
-        (0x02 << 10) |
-        (_encVec(rn) << 5) |
-        _encVec(rd);
-    emit32(inst);
-  }
+  /// XTN / XTN2 - Extract narrow.
+  void xtn(A64Vec rd, A64Vec rn) => _vecNarrow(0, 0x12, rd, rn, q: 0);
+  void xtn2(A64Vec rd, A64Vec rn) => _vecNarrow(0, 0x12, rd, rn, q: 1);
 
-  /// SQXTN - Signed saturating extract narrow
-  void sqxtn(A64Vec rd, A64Vec rn) {
-    // Encoding: 0 Q 0 01110 size 10000 10100 10 Rn Rd
-    final size = _vecElemSizeBits(rd);
-    final q = 0;
-    final inst = (q << 30) |
-        (0x0E << 24) |
-        (size << 22) |
-        (0x21 << 16) |
-        (0x48 << 10) | // 0100100010
-        (_encVec(rn) << 5) |
-        _encVec(rd);
-    emit32(inst);
-  }
+  /// SQXTN / SQXTN2 - Signed saturating extract narrow.
+  void sqxtn(A64Vec rd, A64Vec rn) => _vecNarrow(0, 0x14, rd, rn, q: 0);
+  void sqxtn2(A64Vec rd, A64Vec rn) => _vecNarrow(0, 0x14, rd, rn, q: 1);
 
-  /// SQXTN2 - Signed saturating extract narrow (high half)
-  void sqxtn2(A64Vec rd, A64Vec rn) {
-    final size = _vecElemSizeBits(rd);
-    final q = 1;
-    final inst = (q << 30) |
-        (0x0E << 24) |
-        (size << 22) |
-        (0x21 << 16) |
-        (0x48 << 10) |
-        (_encVec(rn) << 5) |
-        _encVec(rd);
-    emit32(inst);
-  }
+  /// UQXTN / UQXTN2 - Unsigned saturating extract narrow.
+  void uqxtn(A64Vec rd, A64Vec rn) => _vecNarrow(1, 0x14, rd, rn, q: 0);
+  void uqxtn2(A64Vec rd, A64Vec rn) => _vecNarrow(1, 0x14, rd, rn, q: 1);
 
-  /// UQXTN - Unsigned saturating extract narrow
-  void uqxtn(A64Vec rd, A64Vec rn) {
-    final size = _vecElemSizeBits(rd);
-    final q = 0;
-    final inst = (q << 30) |
-        (1 << 29) | // U=1
-        (0x0E << 24) |
-        (size << 22) |
-        (0x21 << 16) |
-        (0x48 << 10) |
-        (_encVec(rn) << 5) |
-        _encVec(rd);
-    emit32(inst);
-  }
-
-  /// UQXTN2 - Unsigned saturating extract narrow (high half)
-  void uqxtn2(A64Vec rd, A64Vec rn) {
-    final size = _vecElemSizeBits(rd);
-    final q = 1;
-    final inst = (q << 30) |
-        (1 << 29) |
-        (0x0E << 24) |
-        (size << 22) |
-        (0x21 << 16) |
-        (0x48 << 10) |
-        (_encVec(rn) << 5) |
-        _encVec(rd);
-    emit32(inst);
-  }
+  /// SQXTUN / SQXTUN2 - Signed to unsigned saturating extract narrow.
+  void sqxtun(A64Vec rd, A64Vec rn) => _vecNarrow(1, 0x12, rd, rn, q: 0);
+  void sqxtun2(A64Vec rd, A64Vec rn) => _vecNarrow(1, 0x12, rd, rn, q: 1);
 
   // ===========================================================================
   // Floating Point / Integer Conversions

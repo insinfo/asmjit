@@ -24,6 +24,7 @@ import '../x86/x86_inst_db.g.dart';
 import '../arm/a64.dart';
 import '../arm/a64_inst_db.g.dart';
 import 'ujitbase.dart';
+import 'unicompiler_a64_tables.dart';
 import 'vecconsttable.dart';
 import 'uniop.dart';
 import 'unicondition.dart';

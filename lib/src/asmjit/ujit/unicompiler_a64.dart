@@ -346,44 +346,6 @@ mixin UniCompilerA64 on UniCompilerBase {
     }
   }
 
-  void _vAddI64A64(BaseReg dst, BaseReg a, Operand b) {
-    if (dst.isVec && a.isVec && (b is BaseReg && b.isVec)) {
-      final d = _toA64Vec(dst, A64Layout.d2);
-      final s1 = _toA64Vec(a, A64Layout.d2);
-      final s2 = _toA64Vec(b, A64Layout.d2);
-      cc.addNode(InstNode(A64InstId.kAdd, [d, s1, s2]));
-    } else {
-      throw UnimplementedError('_vAddI64A64 expects Vectors');
-    }
-  }
-
-  void _vCmgtA64(BaseReg dst, BaseReg a, BaseReg b) {
-    if (dst.isVec && a.isVec && b.isVec) {
-      final d = _toA64Vec(dst, A64Layout.d2);
-      final s1 = _toA64Vec(a, A64Layout.d2);
-      final s2 = _toA64Vec(b, A64Layout.d2);
-      cc.addNode(InstNode(A64InstId.kCmgt, [d, s1, s2]));
-    }
-  }
-
-  void _vCmhiA64(BaseReg dst, BaseReg a, BaseReg b) {
-    if (dst.isVec && a.isVec && b.isVec) {
-      final d = _toA64Vec(dst, A64Layout.d2);
-      final s1 = _toA64Vec(a, A64Layout.d2);
-      final s2 = _toA64Vec(b, A64Layout.d2);
-      cc.addNode(InstNode(A64InstId.kCmhi, [d, s1, s2]));
-    }
-  }
-
-  void _vBitA64(BaseReg dst, BaseReg src, BaseReg mask) {
-    if (dst.isVec && src.isVec && mask.isVec) {
-      final d = _toA64Vec(dst, A64Layout.b16);
-      final s = _toA64Vec(src, A64Layout.b16);
-      final m = _toA64Vec(mask, A64Layout.b16);
-      cc.addNode(InstNode(A64InstId.kBit, [d, s, m]));
-    }
-  }
-
   // Helper for Shift Left (immediate)
   void _vShlA64(BaseReg dst, BaseReg src, int imm, A64Layout layout) {
     final d = _toA64Vec(dst, layout);
@@ -414,58 +376,11 @@ mixin UniCompilerA64 on UniCompilerBase {
   }
 
   // TBL (Table Lookup for Shuffle)
-  void _vTblA64(BaseReg dst, BaseReg src, BaseReg table, A64Layout layout) {
-    final d = _toA64Vec(dst, layout);
-    final s = _toA64Vec(src, layout);
-    final t = _toA64Vec(table, layout);
-    cc.addNode(InstNode(A64InstId.kTbl, [d, t, s])); // TBL dst, {v0}, index_v
-  }
-
   // ZIP1/ZIP2 (Interleave)
-  void _vZip1A64(BaseReg dst, BaseReg src1, BaseReg src2, A64Layout layout) {
-    cc.addNode(InstNode(A64InstId.kZip1, [
-      _toA64Vec(dst, layout),
-      _toA64Vec(src1, layout),
-      _toA64Vec(src2, layout)
-    ]));
-  }
-
-  void _vZip2A64(BaseReg dst, BaseReg src1, BaseReg src2, A64Layout layout) {
-    cc.addNode(InstNode(A64InstId.kZip2, [
-      _toA64Vec(dst, layout),
-      _toA64Vec(src1, layout),
-      _toA64Vec(src2, layout)
-    ]));
-  }
-
   // SQXTN (Signed Saturating Narrow) - for Packing
-  void _vSqxtnA64(
-      BaseReg dst, BaseReg src, A64Layout dstLayout, A64Layout srcLayout) {
-    cc.addNode(InstNode(A64InstId.kSqxtn,
-        [_toA64Vec(dst, dstLayout), _toA64Vec(src, srcLayout)]));
-  }
-
   // SQXTN2 (Signed Saturating Narrow High)
-  void _vSqxtn2A64(
-      BaseReg dst, BaseReg src, A64Layout dstLayout, A64Layout srcLayout) {
-    cc.addNode(InstNode(A64InstId.kSqxtn2,
-        [_toA64Vec(dst, dstLayout), _toA64Vec(src, srcLayout)]));
-  }
-
   // UQXTN (Unsigned Saturating Narrow)
-  void _vUqxtnA64(
-      BaseReg dst, BaseReg src, A64Layout dstLayout, A64Layout srcLayout) {
-    cc.addNode(InstNode(A64InstId.kUqxtn,
-        [_toA64Vec(dst, dstLayout), _toA64Vec(src, srcLayout)]));
-  }
-
   // UQXTN2
-  void _vUqxtn2A64(
-      BaseReg dst, BaseReg src, A64Layout dstLayout, A64Layout srcLayout) {
-    cc.addNode(InstNode(A64InstId.kUqxtn2,
-        [_toA64Vec(dst, dstLayout), _toA64Vec(src, srcLayout)]));
-  }
-
   // ============================================================================
   // [Dispatchers]
   // ============================================================================
@@ -496,179 +411,220 @@ mixin UniCompilerA64 on UniCompilerBase {
     }
   }
 
-  void _emit3vA64(UniOpVVV op, Operand dst, Operand src1, Operand src2) {
-    final d = dst as BaseReg;
-    final s1 = src1 as BaseReg;
-    final s2 = src2;
+  static const _fullLayouts = [
+    A64Layout.b16,
+    A64Layout.h8,
+    A64Layout.s4,
+    A64Layout.d2
+  ];
+  static const _loLayouts = [
+    A64Layout.b8,
+    A64Layout.h4,
+    A64Layout.s2,
+    A64Layout.d1
+  ];
 
-    BaseReg s2Reg;
-    if (src2 is A64Mem) {
-      throw UnimplementedError('Memory src2 in _emit3vA64 not supported yet');
+  /// View of [reg] with element size [el] (0..3), optionally the low half.
+  A64Vec _vArr(BaseReg reg, int el, {bool lo = false}) =>
+      A64Vec(reg.id, lo ? 64 : 128, (lo ? _loLayouts : _fullLayouts)[el]);
+
+  /// `as_vec()`: [op] as a vector register, loading it when it's memory.
+  BaseReg _asVecA64(Operand op, BaseReg ref, int floatMode) {
+    if (op is BaseReg) return op;
+    if (op is A64Mem) {
+      final tmp = newVecWithWidth(VecWidth.k128, '@src');
+      final bits = floatMode == kFmF32S
+          ? 32
+          : floatMode == kFmF64S
+              ? 64
+              : 128;
+      cc.addNode(InstNode(A64InstId.kLdr, [A64Vec(tmp.id, bits), op]));
+      return tmp;
+    }
+    throw ArgumentError('Expected vector register or memory: $op');
+  }
+
+  /// `emit_3v_op()`: emits [instId] with the arrangement described by [info].
+  void _emit3vOpA64(
+      int instId, BaseReg dst, BaseReg src1, Operand src2_, A64UniOpVInfo info,
+      {bool reverse = false}) {
+    final src2 = _asVecA64(src2_, dst, info.floatMode);
+    A64Vec d, s1, s2;
+    switch (info.floatMode) {
+      case kFmF32S:
+        d = A64Vec(dst.id, 32);
+        s1 = A64Vec(src1.id, 32);
+        s2 = A64Vec(src2.id, 32);
+      case kFmF64S:
+        d = A64Vec(dst.id, 64);
+        s1 = A64Vec(src1.id, 64);
+        s2 = A64Vec(src2.id, 64);
+      default:
+        d = _vArr(dst, info.dstElement, lo: info.dstPart == kPartLo);
+        s1 = _vArr(src1, info.srcElement, lo: info.srcPart == kPartLo);
+        s2 = _vArr(src2, info.srcElement, lo: info.srcPart == kPartLo);
+    }
+    cc.addNode(InstNode(instId, reverse ? [d, s2, s1] : [d, s1, s2]));
+  }
+
+  /// `vec_neg()`: bitwise NOT of the scalar/vector value.
+  void _vecNotA64(BaseReg dst, BaseReg src, int floatMode) {
+    final A64Vec d, s;
+    if (floatMode == kFmF32S || floatMode == kFmF64S) {
+      // MVN only exists as a vector op; operate on the low 64 bits.
+      d = A64Vec(dst.id, 64, A64Layout.b8);
+      s = A64Vec(src.id, 64, A64Layout.b8);
     } else {
-      s2Reg = s2 as BaseReg;
+      d = A64Vec(dst.id, 128, A64Layout.b16);
+      s = A64Vec(src.id, 128, A64Layout.b16);
+    }
+    cc.addNode(InstNode(A64InstId.kMvn, [d, s]));
+  }
+
+  /// Port of `UniCompiler::emit_3v()` (unicompiler_a64.cpp).
+  void _emit3vA64(UniOpVVV op, Operand dst_, Operand src1_, Operand src2_) {
+    final dst = dst_ as BaseReg;
+    final src1 = src1_ as BaseReg;
+    final info = kA64OpcodeInfo3v[op.index];
+
+    if (src2_ is BaseReg && src2_.id == src1.id) {
+      switch (info.sameVecOp) {
+        case kSameZero:
+          cc.addNode(InstNode(A64InstId.kMovi, [_vArr(dst, 0), Imm(0)]));
+          return;
+        case kSameOnes:
+          cc.addNode(InstNode(A64InstId.kMovi, [_vArr(dst, 0), Imm(0xFF)]));
+          return;
+        case kSameSrc:
+          _vMovA64(dst, src1);
+          return;
+      }
     }
 
     switch (op) {
-      case UniOpVVV.andU64:
-        _vAndA64(d, s1, s2Reg);
-        break;
-      case UniOpVVV.orU64:
-        _vOrA64(d, s1, s2Reg);
-        break;
-      case UniOpVVV.xorU64:
-        _vXorA64(d, s1, s2Reg);
-        break;
-      case UniOpVVV.andnU64:
-        _vAndNotA64(d, s1, s2Reg);
-        break;
-      case UniOpVVV.addU64:
-        _vAddI64A64(d, s1, s2Reg);
-        break;
-      case UniOpVVV.addF32:
-        cc.addNode(InstNode(A64InstId.kFadd, [
-          _toA64Vec(d, A64Layout.s4),
-          _toA64Vec(s1, A64Layout.s4),
-          _toA64Vec(s2Reg, A64Layout.s4)
-        ]));
-        break;
-      case UniOpVVV.addF64:
-        cc.addNode(InstNode(A64InstId.kFadd, [
-          _toA64Vec(d, A64Layout.d2),
-          _toA64Vec(s1, A64Layout.d2),
-          _toA64Vec(s2Reg, A64Layout.d2)
-        ]));
-        break;
-      case UniOpVVV.subF32:
-        cc.addNode(InstNode(A64InstId.kFsub, [
-          _toA64Vec(d, A64Layout.s4),
-          _toA64Vec(s1, A64Layout.s4),
-          _toA64Vec(s2Reg, A64Layout.s4)
-        ]));
-        break;
-      case UniOpVVV.subF64:
-        cc.addNode(InstNode(A64InstId.kFsub, [
-          _toA64Vec(d, A64Layout.d2),
-          _toA64Vec(s1, A64Layout.d2),
-          _toA64Vec(s2Reg, A64Layout.d2)
-        ]));
-        break;
-      case UniOpVVV.mulF32:
-        cc.addNode(InstNode(A64InstId.kFmul, [
-          _toA64Vec(d, A64Layout.s4),
-          _toA64Vec(s1, A64Layout.s4),
-          _toA64Vec(s2Reg, A64Layout.s4)
-        ]));
-        break;
-      case UniOpVVV.mulF64:
-        cc.addNode(InstNode(A64InstId.kFmul, [
-          _toA64Vec(d, A64Layout.d2),
-          _toA64Vec(s1, A64Layout.d2),
-          _toA64Vec(s2Reg, A64Layout.d2)
-        ]));
-        break;
-      case UniOpVVV.divF32:
-        cc.addNode(InstNode(A64InstId.kFdiv, [
-          _toA64Vec(d, A64Layout.s4),
-          _toA64Vec(s1, A64Layout.s4),
-          _toA64Vec(s2Reg, A64Layout.s4)
-        ]));
-        break;
-      case UniOpVVV.divF64:
-        cc.addNode(InstNode(A64InstId.kFdiv, [
-          _toA64Vec(d, A64Layout.d2),
-          _toA64Vec(s1, A64Layout.d2),
-          _toA64Vec(s2Reg, A64Layout.d2)
-        ]));
-        break;
       case UniOpVVV.minI64:
-        {
-          final mask = newVecWithWidth(VecWidth.k128, "minMask");
-          _vCmgtA64(mask, s2Reg, s1);
-          if (d.id != s2Reg.id) _vMovA64(d, s2Reg);
-          _vBitA64(d, s1, mask);
-        }
-        break;
+      case UniOpVVV.minU64:
+      case UniOpVVV.maxI64:
       case UniOpVVV.maxU64:
-        {
-          final mask = newVecWithWidth(VecWidth.k128, "maxMask");
-          _vCmhiA64(mask, s1, s2Reg);
-          if (d.id != s2Reg.id) _vMovA64(d, s2Reg);
-          _vBitA64(d, s1, mask);
+        var a = src1;
+        var b = _asVecA64(src2_, dst, kFmNone);
+        // Min/max is commutative: make dst overlap only src1.
+        if (dst.id == b.id) {
+          final t = a;
+          a = b;
+          b = t;
         }
-        break;
+        final tmp =
+            dst.id == a.id ? newVecWithWidth(VecWidth.k128, '@tmp') : dst;
+        if (op == UniOpVVV.maxU64) {
+          cc.addNode(InstNode(
+              A64InstId.kUqsub, [_vArr(tmp, 3), _vArr(a, 3), _vArr(b, 3)]));
+          cc.addNode(InstNode(
+              A64InstId.kAdd, [_vArr(dst, 3), _vArr(tmp, 3), _vArr(b, 3)]));
+          return;
+        }
+        cc.addNode(
+            InstNode(info.instId, [_vArr(tmp, 3), _vArr(a, 3), _vArr(b, 3)]));
+        // Select with the compare mask (imm=1 swaps the inputs for max).
+        _blendvU8A64(dst, info.imm != 0 ? b : a, info.imm != 0 ? a : b, tmp);
+        return;
 
-      // Interleaves (ZIP)
-      case UniOpVVV.interleaveLoU8:
-        _vZip1A64(d, s1, s2Reg, A64Layout.b16);
-        break;
-      case UniOpVVV.interleaveHiU8:
-        _vZip2A64(d, s1, s2Reg, A64Layout.b16);
-        break;
-      case UniOpVVV.interleaveLoU16:
-        _vZip1A64(d, s1, s2Reg, A64Layout.h8);
-        break;
-      case UniOpVVV.interleaveHiU16:
-        _vZip2A64(d, s1, s2Reg, A64Layout.h8);
-        break;
-      case UniOpVVV.interleaveLoU32:
-      case UniOpVVV.interleaveLoF32:
-        _vZip1A64(d, s1, s2Reg, A64Layout.s4);
-        break;
-      case UniOpVVV.interleaveHiU32:
-      case UniOpVVV.interleaveHiF32:
-        _vZip2A64(d, s1, s2Reg, A64Layout.s4);
-        break;
-      case UniOpVVV.interleaveLoU64:
-      case UniOpVVV.interleaveLoF64:
-        _vZip1A64(d, s1, s2Reg, A64Layout.d2);
-        break;
-      case UniOpVVV.interleaveHiU64:
-      case UniOpVVV.interleaveHiF64:
-        _vZip2A64(d, s1, s2Reg, A64Layout.d2);
-        break;
+      case UniOpVVV.cmpNeF32S:
+      case UniOpVVV.cmpNeF64S:
+      case UniOpVVV.cmpNeF32:
+      case UniOpVVV.cmpNeF64:
+        _emit3vOpA64(info.instId, dst, src1, src2_, info);
+        _vecNotA64(dst, dst, info.floatMode);
+        return;
 
-      // Packs (SQXTN/UQXTN)
-      // packsIxIy -> narrow signed from Iy to Ix
-      case UniOpVVV.packsI16I8:
-        // We need 2 steps or just use one if src2 logic differs?
-        // UJIT usually maps pack(a, b) -> result. A64 pack is narrowing.
-        // SQXTN narrows one register. SQXTN2 narrows high part.
-        // Implementation of pack(a,b):
-        // d.b16 = [sqxtn(a.h8), sqxtn(b.h8)]
-        // This requires explicit handling if a and b are separate.
-        // For now, implement simple case or throw if complex.
-
-        // Use temporary register if needed or assuming sequential emission?
-        // Let's implement basics:
-        // d_low = sqxtn(a)
-        // d_high = sqxtn2(b) --> applied to d
-        if (d.id != s1.id) {
-          _vSqxtnA64(d, s1, A64Layout.b8, A64Layout.h8);
+      case UniOpVVV.cmpOrdF32S:
+      case UniOpVVV.cmpOrdF64S:
+      case UniOpVVV.cmpOrdF32:
+      case UniOpVVV.cmpOrdF64:
+      case UniOpVVV.cmpUnordF32S:
+      case UniOpVVV.cmpUnordF64S:
+      case UniOpVVV.cmpUnordF32:
+      case UniOpVVV.cmpUnordF64:
+        if (src2_ is BaseReg && src2_.id == src1.id) {
+          _emit3vOpA64(A64InstId.kFcmeq, dst, src1, src1, info);
         } else {
-          // If d==s1, sqxtn works insitu? No, destination is smaller elements.
-          // Ideally we need a temp or trust the encoder.
-          _vSqxtnA64(d, s1, A64Layout.b8, A64Layout.h8);
+          final src2 = _asVecA64(src2_, dst, info.floatMode);
+          _emit3vOpA64(A64InstId.kFmin, dst, src1, src2, info);
+          _emit3vOpA64(A64InstId.kFcmeq, dst, dst, dst, info);
         }
-        _vSqxtn2A64(d, s2Reg, A64Layout.b16, A64Layout.h8);
-        break;
+        if (info.imm != 0) _vecNotA64(dst, dst, info.floatMode);
+        return;
 
+      case UniOpVVV.hAddF64:
+        final src2 = _asVecA64(src2_, dst, kFmNone);
+        final tmp = newVecWithWidth(VecWidth.k128, '@tmp');
+        if (src1.id == src2.id) {
+          cc.addNode(InstNode(A64InstId.kExt,
+              [_vArr(tmp, 0), _vArr(src1, 0), _vArr(src1, 0), Imm(8)]));
+          cc.addNode(InstNode(
+              A64InstId.kFadd, [_vArr(dst, 3), _vArr(src1, 3), _vArr(tmp, 3)]));
+        } else {
+          cc.addNode(InstNode(A64InstId.kZip1,
+              [_vArr(tmp, 3), _vArr(src1, 3), _vArr(src2, 3)]));
+          cc.addNode(InstNode(A64InstId.kZip2,
+              [_vArr(dst, 3), _vArr(src1, 3), _vArr(src2, 3)]));
+          cc.addNode(InstNode(
+              A64InstId.kFadd, [_vArr(dst, 3), _vArr(dst, 3), _vArr(tmp, 3)]));
+        }
+        return;
+
+      case UniOpVVV.combineLoHiU64:
+      case UniOpVVV.combineLoHiF64:
+        // dst = {src1.u64[0], src2.u64[1]}: EXT dst, src2, src1, #8.
+        final src2 = _asVecA64(src2_, dst, kFmNone);
+        cc.addNode(InstNode(A64InstId.kExt,
+            [_vArr(dst, 0), _vArr(src2, 0), _vArr(src1, 0), Imm(8)]));
+        return;
+
+      case UniOpVVV.packsI16I8:
+      case UniOpVVV.packsI16U8:
       case UniOpVVV.packsI32I16:
-        _vSqxtnA64(d, s1, A64Layout.h8, A64Layout.s4);
-        _vSqxtn2A64(d, s2Reg, A64Layout.h8, A64Layout.s4);
-        break;
-
       case UniOpVVV.packsI32U16:
-        _vUqxtnA64(d, s1, A64Layout.h8, A64Layout.s4);
-        _vUqxtn2A64(d, s2Reg, A64Layout.h8, A64Layout.s4);
-        break;
-
-      // Swizzle (TBL)
-      case UniOpVVV.swizzlevU8:
-        _vTblA64(d, s1, s2Reg, A64Layout.b16);
-        break;
+        // Signed -> signed uses SQXTN, signed -> unsigned uses SQXTUN.
+        final unsigned =
+            op == UniOpVVV.packsI16U8 || op == UniOpVVV.packsI32U16;
+        final lo = unsigned ? A64InstId.kSqxtun : A64InstId.kSqxtn;
+        final hi = unsigned ? A64InstId.kSqxtun2 : A64InstId.kSqxtn2;
+        final src2 = _asVecA64(src2_, dst, kFmNone);
+        final se = info.srcElement, de = info.dstElement;
+        if (src1.id == src2.id) {
+          cc.addNode(InstNode(lo, [_vArr(dst, de, lo: true), _vArr(src1, se)]));
+          cc.addNode(InstNode(hi, [_vArr(dst, de), _vArr(src1, se)]));
+          return;
+        }
+        final tmp = (dst.id == src1.id || dst.id == src2.id)
+            ? newVecWithWidth(VecWidth.k128, '@tmp')
+            : dst;
+        cc.addNode(InstNode(lo, [_vArr(tmp, de, lo: true), _vArr(src1, se)]));
+        cc.addNode(InstNode(hi, [_vArr(tmp, de), _vArr(src2, se)]));
+        if (tmp.id != dst.id) _vMovA64(dst, tmp);
+        return;
 
       default:
-        throw UnimplementedError('_emit3vA64: $op');
+        if (!info.asimd || info.instId < 0) {
+          throw UnimplementedError('_emit3vA64: $op');
+        }
+        _emit3vOpA64(info.instId, dst, src1, src2_, info,
+            reverse: info.reverse != 0);
+    }
+  }
+
+  /// `v_blendv_u8(dst, a, b, mask)`: dst = mask ? b : a (bitwise).
+  void _blendvU8A64(BaseReg dst, BaseReg a, BaseReg b, BaseReg mask) {
+    final d = _vArr(dst, 0), va = _vArr(a, 0), vb = _vArr(b, 0);
+    final m = _vArr(mask, 0);
+    if (dst.id == a.id) {
+      cc.addNode(InstNode(A64InstId.kBit, [d, vb, m]));
+    } else if (dst.id == b.id) {
+      cc.addNode(InstNode(A64InstId.kBif, [d, va, m]));
+    } else {
+      _vMovA64(dst, mask);
+      cc.addNode(InstNode(A64InstId.kBsl, [d, vb, va]));
     }
   }
 

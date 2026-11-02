@@ -434,6 +434,150 @@ void _dispatch(A64Assembler asm, int instId, List<Object> ops) {
       if (ops.length == 2 && ops[0] is A64Gp && ops[1] is A64Gp)
         asm.uxth(ops[0] as A64Gp, ops[1] as A64Gp);
       break;
+    case A64InstId.kSqadd:
+      _v3(asm, ops, asm.sqaddVec);
+      break;
+    case A64InstId.kUqadd:
+      _v3(asm, ops, asm.uqaddVec);
+      break;
+    case A64InstId.kSqsub:
+      _v3(asm, ops, asm.sqsubVec);
+      break;
+    case A64InstId.kUqsub:
+      _v3(asm, ops, asm.uqsubVec);
+      break;
+    case A64InstId.kSmax:
+      _v3(asm, ops, asm.smaxVec);
+      break;
+    case A64InstId.kUmax:
+      _v3(asm, ops, asm.umaxVec);
+      break;
+    case A64InstId.kSmin:
+      _v3(asm, ops, asm.sminVec);
+      break;
+    case A64InstId.kUmin:
+      _v3(asm, ops, asm.uminVec);
+      break;
+    case A64InstId.kCmeq:
+      _v3(asm, ops, asm.cmeqVec);
+      break;
+    case A64InstId.kCmgt:
+      _v3(asm, ops, asm.cmgtVec);
+      break;
+    case A64InstId.kCmhi:
+      _v3(asm, ops, asm.cmhiVec);
+      break;
+    case A64InstId.kCmge:
+      _v3(asm, ops, asm.cmgeVec);
+      break;
+    case A64InstId.kCmhs:
+      _v3(asm, ops, asm.cmhsVec);
+      break;
+    case A64InstId.kCmtst:
+      _v3(asm, ops, asm.cmtstVec);
+      break;
+    case A64InstId.kFcmeq:
+      _v3(asm, ops, asm.fcmeqVec);
+      break;
+    case A64InstId.kFcmge:
+      _v3(asm, ops, asm.fcmgeVec);
+      break;
+    case A64InstId.kFcmgt:
+      _v3(asm, ops, asm.fcmgtVec);
+      break;
+    case A64InstId.kZip1:
+      _v3(asm, ops, asm.zip1);
+      break;
+    case A64InstId.kZip2:
+      _v3(asm, ops, asm.zip2);
+      break;
+    case A64InstId.kUzp1:
+      _v3(asm, ops, asm.uzp1);
+      break;
+    case A64InstId.kUzp2:
+      _v3(asm, ops, asm.uzp2);
+      break;
+    case A64InstId.kTrn1:
+      _v3(asm, ops, asm.trn1);
+      break;
+    case A64InstId.kTrn2:
+      _v3(asm, ops, asm.trn2);
+      break;
+    case A64InstId.kTbl:
+      _v3(asm, ops, asm.tbl);
+      break;
+    case A64InstId.kSmull:
+      _v3(asm, ops, asm.smullVec);
+      break;
+    case A64InstId.kUmull:
+      _v3(asm, ops, asm.umullVec);
+      break;
+    case A64InstId.kSmull2:
+      _v3(asm, ops, asm.smullVec);
+      break;
+    case A64InstId.kUmull2:
+      _v3(asm, ops, asm.umullVec);
+      break;
+    case A64InstId.kSmlal:
+      _v3(asm, ops, asm.smlalVec);
+      break;
+    case A64InstId.kUmlal:
+      _v3(asm, ops, asm.umlalVec);
+      break;
+    case A64InstId.kSmlal2:
+      _v3(asm, ops, asm.smlalVec);
+      break;
+    case A64InstId.kUmlal2:
+      _v3(asm, ops, asm.umlalVec);
+      break;
+    case A64InstId.kSshl:
+      _v3(asm, ops, asm.sshlVec);
+      break;
+    case A64InstId.kUshl:
+      _v3(asm, ops, asm.ushlVec);
+      break;
+    case A64InstId.kMovi:
+      if (ops.length == 2 && ops[0] is A64Vec && ops[1] is int) {
+        asm.moviB(ops[0] as A64Vec, ops[1] as int);
+      }
+      break;
+    case A64InstId.kUrhadd:
+      _v3(asm, ops, asm.urhaddVec);
+      break;
+    case A64InstId.kExt:
+      if (ops.length == 4 &&
+          ops[0] is A64Vec &&
+          ops[1] is A64Vec &&
+          ops[2] is A64Vec &&
+          ops[3] is int) {
+        asm.extVec(ops[0] as A64Vec, ops[1] as A64Vec, ops[2] as A64Vec,
+            ops[3] as int);
+      }
+      break;
+    case A64InstId.kSqxtn:
+      _v2(asm, ops, asm.sqxtn);
+      break;
+    case A64InstId.kSqxtn2:
+      _v2(asm, ops, asm.sqxtn2);
+      break;
+    case A64InstId.kSqxtun:
+      _v2(asm, ops, asm.sqxtun);
+      break;
+    case A64InstId.kSqxtun2:
+      _v2(asm, ops, asm.sqxtun2);
+      break;
+    case A64InstId.kXtn:
+      _v2(asm, ops, asm.xtn);
+      break;
+    case A64InstId.kXtn2:
+      _v2(asm, ops, asm.xtn2);
+      break;
+    case A64InstId.kUqxtn:
+      _v2(asm, ops, asm.uqxtn);
+      break;
+    case A64InstId.kUqxtn2:
+      _v2(asm, ops, asm.uqxtn2);
+      break;
     default:
       break;
   }
@@ -624,6 +768,24 @@ void _adrp(A64Assembler asm, List<Object> ops) {
 void _b(A64Assembler asm, List<Object> ops) {
   if (ops.length == 1 && ops[0] is Label) {
     asm.b(ops[0] as Label);
+  }
+}
+
+/// Vector two-register op with both operands [A64Vec].
+void _v2(A64Assembler asm, List<Object> ops, void Function(A64Vec, A64Vec) fn) {
+  if (ops.length == 2 && ops[0] is A64Vec && ops[1] is A64Vec) {
+    fn(ops[0] as A64Vec, ops[1] as A64Vec);
+  }
+}
+
+/// Vector three-register op with all operands [A64Vec].
+void _v3(A64Assembler asm, List<Object> ops,
+    void Function(A64Vec, A64Vec, A64Vec) fn) {
+  if (ops.length == 3 &&
+      ops[0] is A64Vec &&
+      ops[1] is A64Vec &&
+      ops[2] is A64Vec) {
+    fn(ops[0] as A64Vec, ops[1] as A64Vec, ops[2] as A64Vec);
   }
 }
 

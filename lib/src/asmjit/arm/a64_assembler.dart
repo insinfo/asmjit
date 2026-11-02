@@ -758,6 +758,36 @@ class A64Assembler extends BaseEmitter {
       _enc.fmaxnmVec(rd, rn, rm, wide: wide);
   void fminnmVec(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
       _enc.fminnmVec(rd, rn, rm, wide: wide);
+
+  void fcmeqVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.fcmeqVec(rd, rn, rm);
+  void fcmgeVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.fcmgeVec(rd, rn, rm);
+  void fcmgtVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.fcmgtVec(rd, rn, rm);
+  void sqaddVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.sqaddVec(rd, rn, rm);
+  void uqaddVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.uqaddVec(rd, rn, rm);
+  void sqsubVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.sqsubVec(rd, rn, rm);
+  void uqsubVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.uqsubVec(rd, rn, rm);
+  void cmgtVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.cmgtVec(rd, rn, rm);
+  void cmhiVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.cmhiVec(rd, rn, rm);
+  void cmgeVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.cmgeVec(rd, rn, rm);
+  void cmhsVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.cmhsVec(rd, rn, rm);
+  void sshlVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.sshlVec(rd, rn, rm);
+  void ushlVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.ushlVec(rd, rn, rm);
+  void smaxVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.smaxVec(rd, rn, rm);
+  void umaxVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.umaxVec(rd, rn, rm);
+  void sminVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.sminVec(rd, rn, rm);
+  void uminVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.uminVec(rd, rn, rm);
+  void urhaddVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.urhaddVec(rd, rn, rm);
+  void extVec(A64Vec rd, A64Vec rn, A64Vec rm, int index) =>
+      _enc.extVec(rd, rn, rm, index);
+  void cmtstVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.cmtstVec(rd, rn, rm);
+  void cmeqVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.cmeqVec(rd, rn, rm);
+  void smullVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.smullVec(rd, rn, rm);
+  void umullVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.umullVec(rd, rn, rm);
+  void smlalVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.smlalVec(rd, rn, rm);
+  void umlalVec(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.umlalVec(rd, rn, rm);
+
+  /// MOVI (per-byte immediate).
+  void moviB(A64Vec rd, int imm8) => _enc.moviB(rd, imm8);
   void faddp(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
       _enc.faddp(rd, rn, rm, wide: wide);
 
@@ -844,6 +874,10 @@ class A64Assembler extends BaseEmitter {
 
   /// UQXTN2 - Unsigned saturating extract narrow (high)
   void uqxtn2(A64Vec rd, A64Vec rn) => _enc.uqxtn2(rd, rn);
+
+  /// SQXTUN / SQXTUN2 - Signed to unsigned saturating extract narrow.
+  void sqxtun(A64Vec rd, A64Vec rn) => _enc.sqxtun(rd, rn);
+  void sqxtun2(A64Vec rd, A64Vec rn) => _enc.sqxtun2(rd, rn);
 
   // ===========================================================================
   // Conversions
