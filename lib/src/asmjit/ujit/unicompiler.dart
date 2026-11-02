@@ -25,7 +25,7 @@ import '../x86/x86_inst_db.g.dart';
 import '../arm/a64.dart';
 import '../arm/a64_inst_db.g.dart';
 import '../arm/a64_encoder.dart' show A64Encoder;
-import '../x86/x86_encoder.dart' show X86Cond;
+import '../x86/x86_cond.dart';
 import 'ujitbase.dart';
 import 'unicompiler_a64_tables.dart';
 import 'unicompiler_x86_tables.dart';

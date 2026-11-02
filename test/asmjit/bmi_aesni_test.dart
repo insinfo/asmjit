@@ -14,47 +14,52 @@ void main() {
 
   group('BMI1 Instructions', () {
     test('ANDN encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.andnR64R64R64(rax, rbx, rcx);
+      enc.emit(X86InstId.kAndn, [rax, rbx, rcx]);
 
       expect(buffer.bytes.length, greaterThan(0));
       expect(buffer.bytes[0], 0xC4);
     });
 
     test('BEXTR encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.bextrR64R64R64(rax, rbx, rcx);
+      enc.emit(X86InstId.kBextr, [rax, rbx, rcx]);
 
       expect(buffer.bytes[0], 0xC4);
     });
 
     test('BLSI encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.blsiR64R64(rax, rbx);
+      enc.emit(X86InstId.kBlsi, [rax, rbx]);
 
       expect(buffer.bytes[0], 0xC4);
     });
 
     test('BLSMSK encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.blsmskR64R64(rax, rbx);
+      enc.emit(X86InstId.kBlsmsk, [rax, rbx]);
 
       expect(buffer.bytes[0], 0xC4);
     });
 
     test('BLSR encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.blsrR64R64(rax, rbx);
+      enc.emit(X86InstId.kBlsr, [rax, rbx]);
 
       expect(buffer.bytes[0], 0xC4);
     });
@@ -62,65 +67,72 @@ void main() {
 
   group('BMI2 Instructions', () {
     test('BZHI encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.bzhiR64R64R64(rax, rbx, rcx);
+      enc.emit(X86InstId.kBzhi, [rax, rbx, rcx]);
 
       expect(buffer.bytes[0], 0xC4);
     });
 
     test('PDEP encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.pdepR64R64R64(rax, rbx, rcx);
+      enc.emit(X86InstId.kPdep, [rax, rbx, rcx]);
 
       expect(buffer.bytes[0], 0xC4);
     });
 
     test('PEXT encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.pextR64R64R64(rax, rbx, rcx);
+      enc.emit(X86InstId.kPext, [rax, rbx, rcx]);
 
       expect(buffer.bytes[0], 0xC4);
     });
 
     test('RORX encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.rorxR64R64Imm8(rax, rbx, 5);
+      enc.emit(X86InstId.kRorx, [rax, rbx, 5]);
 
       expect(buffer.bytes[0], 0xC4);
       expect(buffer.bytes.last, 5);
     });
 
     test('SARX encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.sarxR64R64R64(rax, rbx, rcx);
+      enc.emit(X86InstId.kSarx, [rax, rbx, rcx]);
 
       expect(buffer.bytes[0], 0xC4);
     });
 
     test('SHLX encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.shlxR64R64R64(rax, rbx, rcx);
+      enc.emit(X86InstId.kShlx, [rax, rbx, rcx]);
 
       expect(buffer.bytes[0], 0xC4);
     });
 
     test('SHRX encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.shrxR64R64R64(rax, rbx, rcx);
+      enc.emit(X86InstId.kShrx, [rax, rbx, rcx]);
 
       expect(buffer.bytes[0], 0xC4);
     });
@@ -128,10 +140,11 @@ void main() {
 
   group('AES-NI Instructions', () {
     test('AESENC encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.aesencXmmXmm(xmm0, xmm1);
+      enc.emit(X86InstId.kAesenc, [xmm0, xmm1]);
 
       final bytes = buffer.bytes;
       expect(bytes[0], 0x66);
@@ -141,10 +154,11 @@ void main() {
     });
 
     test('AESENCLAST encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.aesenclastXmmXmm(xmm0, xmm1);
+      enc.emit(X86InstId.kAesenclast, [xmm0, xmm1]);
 
       final bytes = buffer.bytes;
       expect(bytes[0], 0x66);
@@ -152,10 +166,11 @@ void main() {
     });
 
     test('AESDEC encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.aesdecXmmXmm(xmm0, xmm1);
+      enc.emit(X86InstId.kAesdec, [xmm0, xmm1]);
 
       final bytes = buffer.bytes;
       expect(bytes[0], 0x66);
@@ -163,10 +178,11 @@ void main() {
     });
 
     test('AESDECLAST encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.aesdeclastXmmXmm(xmm0, xmm1);
+      enc.emit(X86InstId.kAesdeclast, [xmm0, xmm1]);
 
       final bytes = buffer.bytes;
       expect(bytes[0], 0x66);
@@ -174,10 +190,11 @@ void main() {
     });
 
     test('AESKEYGENASSIST encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.aeskeygenassistXmmXmmImm8(xmm0, xmm1, 0x01);
+      enc.emit(X86InstId.kAeskeygenassist, [xmm0, xmm1, 0x01]);
 
       final bytes = buffer.bytes;
       expect(bytes[0], 0x66);
@@ -185,10 +202,11 @@ void main() {
     });
 
     test('AESIMC encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.aesimcXmmXmm(xmm0, xmm1);
+      enc.emit(X86InstId.kAesimc, [xmm0, xmm1]);
 
       final bytes = buffer.bytes;
       expect(bytes[0], 0x66);
@@ -198,46 +216,51 @@ void main() {
 
   group('Memory-Immediate Instructions', () {
     test('MOV [mem], imm32 encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.movMemImm32(X86Mem.baseDisp(rax, 8), 0x12345678);
+      enc.emit(X86InstId.kMov, [X86Mem.baseDisp(rax, 8, size: 8), 0x12345678]);
 
       expect(buffer.bytes.length, greaterThan(4));
     });
 
     test('ADD [mem], r64 encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.addMemR64(X86Mem.baseDisp(rax, 8), rbx);
+      enc.emit(X86InstId.kAdd, [X86Mem.baseDisp(rax, 8), rbx]);
 
       expect(buffer.bytes.length, greaterThan(0));
     });
 
     test('ADD [mem], imm32 encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.addMemImm32(X86Mem.baseDisp(rax, 8), 100);
+      enc.emit(X86InstId.kAdd, [X86Mem.baseDisp(rax, 8, size: 8), 100]);
 
       expect(buffer.bytes.length, greaterThan(4));
     });
 
     test('SUB [mem], r64 encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.subMemR64(X86Mem.baseDisp(rax, 8), rbx);
+      enc.emit(X86InstId.kSub, [X86Mem.baseDisp(rax, 8), rbx]);
 
       expect(buffer.bytes.length, greaterThan(0));
     });
 
     test('CMP [mem], imm32 encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.cmpMemImm32(X86Mem.baseDisp(rax, 8), 0xFF);
+      enc.emit(X86InstId.kCmp, [X86Mem.baseDisp(rax, 8, size: 8), 0xFF]);
 
       expect(buffer.bytes.length, greaterThan(4));
     });
@@ -267,10 +290,11 @@ void main() {
 
   group('SHA Extensions', () {
     test('SHA1RNDS4 encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.sha1rnds4XmmXmmImm8(xmm0, xmm1, 0x01);
+      enc.emit(X86InstId.kSha1rnds4, [xmm0, xmm1, 0x01]);
 
       final bytes = buffer.bytes;
       expect(bytes[0], 0x0F);
@@ -280,10 +304,11 @@ void main() {
     });
 
     test('SHA1NEXTE encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.sha1nexteXmmXmm(xmm0, xmm1);
+      enc.emit(X86InstId.kSha1nexte, [xmm0, xmm1]);
 
       final bytes = buffer.bytes;
       expect(bytes[0], 0x0F);
@@ -292,10 +317,11 @@ void main() {
     });
 
     test('SHA1MSG1 encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.sha1msg1XmmXmm(xmm0, xmm1);
+      enc.emit(X86InstId.kSha1msg1, [xmm0, xmm1]);
 
       final bytes = buffer.bytes;
       expect(bytes[0], 0x0F);
@@ -303,20 +329,22 @@ void main() {
     });
 
     test('SHA1MSG2 encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.sha1msg2XmmXmm(xmm0, xmm1);
+      enc.emit(X86InstId.kSha1msg2, [xmm0, xmm1]);
 
       final bytes = buffer.bytes;
       expect(bytes[2], 0xCA);
     });
 
     test('SHA256RNDS2 encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.sha256rnds2XmmXmm(xmm0, xmm1);
+      enc.emit(X86InstId.kSha256rnds2, [xmm0, xmm1]);
 
       final bytes = buffer.bytes;
       expect(bytes[0], 0x0F);
@@ -324,20 +352,22 @@ void main() {
     });
 
     test('SHA256MSG1 encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.sha256msg1XmmXmm(xmm0, xmm1);
+      enc.emit(X86InstId.kSha256msg1, [xmm0, xmm1]);
 
       final bytes = buffer.bytes;
       expect(bytes[2], 0xCC);
     });
 
     test('SHA256MSG2 encoding', () {
-      final buffer = CodeBuffer();
-      final enc = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      final buffer = code.text.buffer;
+      final enc = X86Assembler(code);
 
-      enc.sha256msg2XmmXmm(xmm0, xmm1);
+      enc.emit(X86InstId.kSha256msg2, [xmm0, xmm1]);
 
       final bytes = buffer.bytes;
       expect(bytes[2], 0xCD);

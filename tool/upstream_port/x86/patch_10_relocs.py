@@ -14,7 +14,7 @@ def _span(start, end, new):
 # (`Globals::kNoBaseAddress`), so relative addressing of an absolute target
 # needs an AbsToRel relocation, which the port does not support yet.
 _span("      Mem::AddrType addr_type = rmRel!.addrType;\n", "        var baseAddress = code()->baseAddress();\n",
-"      var addr_type = rmRel!.addrType;\n      relOffset = rmRel!.offsetLo32;\n\n      if (false) {\n      }\n      else {\n        var is_offset_int32 = rmRel!.offsetHi32 == (relOffset >> 31);\n        var is_offset_uint32 = rmRel!.offsetHi32 == 0;\n        final baseAddress = code.baseAddress;\n")
+"      var addr_type = rmRel!.addrType;\n      relOffset = rmRel!.offsetLo32;\n\n      if (_is32Bit) {\n        // Explicit relative addressing doesn't work in 32-bit mode.\n        if (addr_type == _Addr.kRel)\n          { s = _S.InvalidAddress; continue loop; }\n\n        _w.emit8(encodeMod(0, opReg, 5));\n        _w.emit32uLe(_u32(relOffset));\n      }\n      else {\n        var is_offset_int32 = rmRel!.offsetHi32 == (relOffset >> 31);\n        var is_offset_uint32 = rmRel!.offsetHi32 == 0;\n        final baseAddress = code.baseAddress;\n")
 _span("        if (addr_type == _Addr.kDefault) {\n          if (baseAddress == Globals::kNoBaseAddress) {", "        // Handle unsigned 32-bit address that doesn't work with sign extension.",
 """        if (addr_type == _Addr.kDefault) {
           if (baseAddress == null) {

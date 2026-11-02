@@ -87,6 +87,14 @@ class _Parser {
       final name = ident();
       e = CppCall(e, name, args());
     }
+    // Integer sums (`128 + 128`) are folded.
+    while (accept('+')) {
+      final r = primary();
+      if (e is! CppNum || r is! CppNum) {
+        throw CppParseError('"+" of non-numbers in "$s"');
+      }
+      e = CppNum(e.value + r.value);
+    }
     return e;
   }
 

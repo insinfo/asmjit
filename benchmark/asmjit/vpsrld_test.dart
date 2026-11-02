@@ -4,26 +4,27 @@ import 'package:ffi/ffi.dart' as ffi;
 
 void main() {
   // Manually create the instruction stream
-  final buffer = CodeBuffer();
-  final encoder = X86Encoder(buffer);
+  final code = CodeHolder(env: Environment.x64SysV());
+  final buffer = code.text.buffer;
+  final encoder = X86Assembler(code);
   
   // Prologue
   // mov rax, rcx (arg0 -> rax)
-  encoder.movR64R64(rax, rcx);
+  encoder.emit(X86InstId.kMov, [rax, rcx]);
   
   // Load data into xmm1
   // vmovdqu xmm1, [rax]
-  encoder.vmovdquXmmMem(xmm1, ptr(rax));
+  encoder.emit(X86InstId.kVmovdqu, [xmm1, ptr(rax)]);
   
   // vpsrld xmm1, xmm1, 1
-  encoder.vpsrldXmmXmmImm8(xmm1, xmm1, 1);
+  encoder.emit(X86InstId.kVpsrld, [xmm1, xmm1, 1]);
   
   // Store result
   // vmovdqu [rax], xmm1
-  encoder.vmovdquMemXmm(ptr(rax), xmm1);
+  encoder.emit(X86InstId.kVmovdqu, [ptr(rax), xmm1]);
   
   // Ret
-  encoder.ret();
+  encoder.emit(X86InstId.kRet, []);
   
   print('Bytes: ${buffer.bytes}');
   

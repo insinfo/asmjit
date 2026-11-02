@@ -31,8 +31,17 @@ void main() {
   if (!Environment.host().isX86Family) return;
 
   group('asmjit-testing (subset) - assembler x64', () {
-    test('mov rax, 42 (movRI64 otimiza para mov eax, imm32)', () {
-      _testInst('b82a000000', (a) => a.movRI64(rax, 42));
+    test('mov rax, 42 (movRI64 usa mov r64, imm32 sign-extend)', () {
+      // Upstream: mov(rcx, 1) => 48C7C101000000 (asmjit_test_assembler_x64).
+      _testInst('48c7c02a000000', (a) => a.movRI64(rax, 42));
+    });
+
+    test('mov rax, 42 com EncodingOptions.kOptimizeForSize (mov eax, imm32)',
+        () {
+      _testInst('b82a000000', (a) {
+        a.encodingOptions = EncodingOptions.kOptimizeForSize;
+        a.movRI64(rax, 42);
+      });
     });
 
     test('mov rcx, -1 (movRI64 usa mov r64, imm32 sign-extend)', () {
@@ -394,7 +403,7 @@ void main() {
     });
 
     test('mulx rdx, rax, rcx (BMI2)', () {
-      _testInst('c4a2fbf6d1', (a) => a.mulx(rdx, rax, rcx));
+      _testInst('c4e2fbf6d1', (a) => a.mulx(rdx, rax, rcx));
     });
 
     test('bzhi rax, rcx, rdx (BMI2)', () {

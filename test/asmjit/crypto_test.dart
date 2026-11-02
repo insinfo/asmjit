@@ -26,72 +26,74 @@ void main() {
   if (!hostIsX64) {
     return;
   }
-  group('X86Encoder - High-precision Arithmetic', () {
+  group('x86 emit - High-precision Arithmetic', () {
     late CodeBuffer buffer;
-    late X86Encoder encoder;
+    late X86Assembler encoder;
 
     setUp(() {
-      buffer = CodeBuffer();
-      encoder = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      buffer = code.text.buffer;
+      encoder = X86Assembler(code);
     });
 
     test('adc r64, r64 encodes correctly', () {
-      encoder.adcR64R64(rax, rcx);
+      encoder.emit(X86InstId.kAdc, [rax, rcx]);
       expect(buffer.bytes, equals([0x48, 0x11, 0xC8]));
     });
 
     test('sbb r64, r64 encodes correctly', () {
-      encoder.sbbR64R64(rax, rcx);
+      encoder.emit(X86InstId.kSbb, [rax, rcx]);
       expect(buffer.bytes, equals([0x48, 0x19, 0xC8]));
     });
 
     test('mul r64 encodes correctly', () {
-      encoder.mulR64(rcx);
+      encoder.emit(X86InstId.kMul, [rcx]);
       expect(buffer.bytes, equals([0x48, 0xF7, 0xE1]));
     });
 
     test('clc encodes correctly', () {
-      encoder.clc();
+      encoder.emit(X86InstId.kClc, []);
       expect(buffer.bytes, equals([0xF8]));
     });
 
     test('stc encodes correctly', () {
-      encoder.stc();
+      encoder.emit(X86InstId.kStc, []);
       expect(buffer.bytes, equals([0xF9]));
     });
 
     test('cmc encodes correctly', () {
-      encoder.cmc();
+      encoder.emit(X86InstId.kCmc, []);
       expect(buffer.bytes, equals([0xF5]));
     });
 
     test('pause encodes correctly', () {
-      encoder.pause();
+      encoder.emit(X86InstId.kPause, []);
       expect(buffer.bytes, equals([0xF3, 0x90]));
     });
   });
 
-  group('X86Encoder - Memory Fences', () {
+  group('x86 emit - Memory Fences', () {
     late CodeBuffer buffer;
-    late X86Encoder encoder;
+    late X86Assembler encoder;
 
     setUp(() {
-      buffer = CodeBuffer();
-      encoder = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      buffer = code.text.buffer;
+      encoder = X86Assembler(code);
     });
 
     test('mfence encodes correctly', () {
-      encoder.mfence();
+      encoder.emit(X86InstId.kMfence, []);
       expect(buffer.bytes, equals([0x0F, 0xAE, 0xF0]));
     });
 
     test('sfence encodes correctly', () {
-      encoder.sfence();
+      encoder.emit(X86InstId.kSfence, []);
       expect(buffer.bytes, equals([0x0F, 0xAE, 0xF8]));
     });
 
     test('lfence encodes correctly', () {
-      encoder.lfence();
+      encoder.emit(X86InstId.kLfence, []);
       expect(buffer.bytes, equals([0x0F, 0xAE, 0xE8]));
     });
   });

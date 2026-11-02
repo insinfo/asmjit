@@ -145,10 +145,10 @@ def expr(l):
     l = re.sub(r'\bcommon_info\.([a-z_]+)\(\)', lambda m: '_ci' + camel('_' + m.group(1)) + '()', l)
     l = re.sub(r'\bcommon_info\.has_flag\(', '_ciHasFlag(', l)
     l = re.sub(r'\b(rm_rel|rm_info|rb_reg|rx_reg|op_reg|imm_value|imm_size|rel_offset|rel_size|mem_op_ao_mark|alt_opcode_of|inst_id|inst_info|pack_reg_and_vvvvv|encode_mod|encode_sib|is_implicit_mem|opcode_l_by_vmem|opcode_l_by_size|is_mmx_or_xmm|x86_should_use_movabs|is_jmp_or_call|base_address|virtual_offset|ll_by_reg_type_table|cdisp8_shl_table|vex_prefix_table|mod16_base_table|mod16_base_index_table|mem_info_table|x86_get_force_evex3_mask_in_last_bit)\b', lambda m: camel(m.group(1)), l)
-    l = re.sub(r'\bis_32bit\(\)', 'false', l)
-    l = re.sub(r'\bis_64bit\(\)', 'true', l)
-    l = re.sub(r'\bregister_size\(\)', '8', l)
-    l = re.sub(r'\b_address_override_mask\(\)', '_kMemInfo67H_X64', l)
+    l = re.sub(r'\bis_32bit\(\)', '_is32Bit', l)
+    l = re.sub(r'\bis_64bit\(\)', '_is64Bit', l)
+    l = re.sub(r'\bregister_size\(\)', '_registerSize', l)
+    l = re.sub(r'\b_address_override_mask\(\)', '_addressOverrideMask', l)
     l = re.sub(r'\bhas_encoding_option\(', '_hasEncodingOption(', l)
     # C-isms.
     l = l.replace('ASMJIT_UNLIKELY(', '(').replace('ASMJIT_LIKELY(', '(')
@@ -167,7 +167,7 @@ def expr(l):
     l = re.sub(r'\bcommon_info\.([a-z_]+)\(\)', lambda m: '_ci' + camel('_' + m.group(1)) + '()', l)
     l = re.sub(r'\b_extra_reg\.id\(\)', '_extraReg.id', l)
     l = re.sub(r'\b_extra_reg\.is_reg\(\)', '_extraReg.isReg()', l)
-    l = re.sub(r'\(opReg & 0x8\) && false', 'false', l)
+    l = re.sub(r'\(opReg & 0x8\) && _is32Bit', '(opReg & 0x8) != 0 && _is32Bit', l)
     l = re.sub(r'\bx86ShouldUseMovabs\(this, writer, ', '_shouldUseMovabs(', l)
     # Integer conditions.
     l = re.sub(r'\bif \(!\((\w+) & ([^()]+|\([^()]*\))\)\)', r'if ((\1 & \2) == 0)', l)

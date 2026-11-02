@@ -103,8 +103,9 @@ void main() {
       asm.ret();
 
       final finalized = code.finalize();
-      // mov eax, 42 (optimized from r64) + ret
-      expect(finalized.textBytes, equals([0xB8, 0x2A, 0x00, 0x00, 0x00, 0xC3]));
+      // mov rax, 42 (upstream `mov r64, simm32` form) + ret
+      expect(finalized.textBytes,
+          equals([0x48, 0xC7, 0xC0, 0x2A, 0x00, 0x00, 0x00, 0xC3]));
     });
 
     test('add function generates correct bytes', () {

@@ -1,10 +1,276 @@
-// Golden encodings for the table-driven SSE/AVX path (x86_simd_ops.dart).
+// Golden encodings of SSE/AVX instructions in legacy and VEX form (the
+// former table-driven SSE/AVX path), encoded through `X86Assembler.emit`.
 // Expected bytes were produced by LLVM (clang -arch x86_64, Intel syntax) for
-// every table entry in legacy and VEX form, including extended registers,
+// every instruction in legacy and VEX form, including extended registers,
 // YMM and base+index*scale memory operands.
 import 'package:asmjit/asmjit.dart';
-import 'package:asmjit/src/asmjit/x86/x86_simd_ops.dart';
 import 'package:test/test.dart';
+
+/// Operand shape of an instruction (`v` + name is its VEX form).
+enum _Kind { rm, rmi, rm2, rm2i, shiftImm, is4, mr, mri }
+
+class _Shape {
+  final _Kind kind;
+  final bool memOnly;
+  final bool regOnly;
+  final bool rmGp;
+  const _Shape(this.kind,
+      {this.memOnly = false, this.regOnly = false, this.rmGp = false});
+}
+
+/// The instructions checked, keyed by the legacy mnemonic. `_l`, `_m` and
+/// `_i` suffixes select other operand forms (see [_encodeAll]).
+const Map<String, _Shape> _shapes = {
+  'paddb': _Shape(_Kind.rm),
+  'paddw': _Shape(_Kind.rm),
+  'paddd': _Shape(_Kind.rm),
+  'paddq': _Shape(_Kind.rm),
+  'psubb': _Shape(_Kind.rm),
+  'psubw': _Shape(_Kind.rm),
+  'psubd': _Shape(_Kind.rm),
+  'psubq': _Shape(_Kind.rm),
+  'paddsb': _Shape(_Kind.rm),
+  'paddsw': _Shape(_Kind.rm),
+  'paddusb': _Shape(_Kind.rm),
+  'paddusw': _Shape(_Kind.rm),
+  'psubsb': _Shape(_Kind.rm),
+  'psubsw': _Shape(_Kind.rm),
+  'psubusb': _Shape(_Kind.rm),
+  'psubusw': _Shape(_Kind.rm),
+  'pmullw': _Shape(_Kind.rm),
+  'pmulhw': _Shape(_Kind.rm),
+  'pmulhuw': _Shape(_Kind.rm),
+  'pmuludq': _Shape(_Kind.rm),
+  'pmaddwd': _Shape(_Kind.rm),
+  'pminub': _Shape(_Kind.rm),
+  'pmaxub': _Shape(_Kind.rm),
+  'pminsw': _Shape(_Kind.rm),
+  'pmaxsw': _Shape(_Kind.rm),
+  'pavgb': _Shape(_Kind.rm),
+  'pavgw': _Shape(_Kind.rm),
+  'psadbw': _Shape(_Kind.rm),
+  'pand': _Shape(_Kind.rm),
+  'pandn': _Shape(_Kind.rm),
+  'por': _Shape(_Kind.rm),
+  'pxor': _Shape(_Kind.rm),
+  'pcmpeqb': _Shape(_Kind.rm),
+  'pcmpeqw': _Shape(_Kind.rm),
+  'pcmpeqd': _Shape(_Kind.rm),
+  'pcmpgtb': _Shape(_Kind.rm),
+  'pcmpgtw': _Shape(_Kind.rm),
+  'pcmpgtd': _Shape(_Kind.rm),
+  'packsswb': _Shape(_Kind.rm),
+  'packssdw': _Shape(_Kind.rm),
+  'packuswb': _Shape(_Kind.rm),
+  'punpcklbw': _Shape(_Kind.rm),
+  'punpcklwd': _Shape(_Kind.rm),
+  'punpckldq': _Shape(_Kind.rm),
+  'punpcklqdq': _Shape(_Kind.rm),
+  'punpckhbw': _Shape(_Kind.rm),
+  'punpckhwd': _Shape(_Kind.rm),
+  'punpckhdq': _Shape(_Kind.rm),
+  'punpckhqdq': _Shape(_Kind.rm),
+  'psllw': _Shape(_Kind.rm),
+  'pslld': _Shape(_Kind.rm),
+  'psllq': _Shape(_Kind.rm),
+  'psrlw': _Shape(_Kind.rm),
+  'psrld': _Shape(_Kind.rm),
+  'psrlq': _Shape(_Kind.rm),
+  'psraw': _Shape(_Kind.rm),
+  'psrad': _Shape(_Kind.rm),
+  'psllw_i': _Shape(_Kind.shiftImm),
+  'psrlw_i': _Shape(_Kind.shiftImm),
+  'psraw_i': _Shape(_Kind.shiftImm),
+  'pslld_i': _Shape(_Kind.shiftImm),
+  'psrld_i': _Shape(_Kind.shiftImm),
+  'psrad_i': _Shape(_Kind.shiftImm),
+  'psllq_i': _Shape(_Kind.shiftImm),
+  'psrlq_i': _Shape(_Kind.shiftImm),
+  'pslldq_i': _Shape(_Kind.shiftImm),
+  'psrldq_i': _Shape(_Kind.shiftImm),
+  'pshufd': _Shape(_Kind.rm2i),
+  'pshuflw': _Shape(_Kind.rm2i),
+  'pshufhw': _Shape(_Kind.rm2i),
+  'shufps': _Shape(_Kind.rmi),
+  'shufpd': _Shape(_Kind.rmi),
+  'pshufb': _Shape(_Kind.rm),
+  'phaddw': _Shape(_Kind.rm),
+  'phaddd': _Shape(_Kind.rm),
+  'pmaddubsw': _Shape(_Kind.rm),
+  'pmulhrsw': _Shape(_Kind.rm),
+  'pabsb': _Shape(_Kind.rm2),
+  'pabsw': _Shape(_Kind.rm2),
+  'pabsd': _Shape(_Kind.rm2),
+  'palignr': _Shape(_Kind.rmi),
+  'pminsb': _Shape(_Kind.rm),
+  'pminsd': _Shape(_Kind.rm),
+  'pminuw': _Shape(_Kind.rm),
+  'pminud': _Shape(_Kind.rm),
+  'pmaxsb': _Shape(_Kind.rm),
+  'pmaxsd': _Shape(_Kind.rm),
+  'pmaxuw': _Shape(_Kind.rm),
+  'pmaxud': _Shape(_Kind.rm),
+  'pmulld': _Shape(_Kind.rm),
+  'pmuldq': _Shape(_Kind.rm),
+  'pcmpeqq': _Shape(_Kind.rm),
+  'pcmpgtq': _Shape(_Kind.rm),
+  'packusdw': _Shape(_Kind.rm),
+  'ptest': _Shape(_Kind.rm2),
+  'pmovsxbw': _Shape(_Kind.rm2),
+  'pmovsxbd': _Shape(_Kind.rm2),
+  'pmovsxbq': _Shape(_Kind.rm2),
+  'pmovsxwd': _Shape(_Kind.rm2),
+  'pmovsxwq': _Shape(_Kind.rm2),
+  'pmovsxdq': _Shape(_Kind.rm2),
+  'pmovzxbw': _Shape(_Kind.rm2),
+  'pmovzxbd': _Shape(_Kind.rm2),
+  'pmovzxbq': _Shape(_Kind.rm2),
+  'pmovzxwd': _Shape(_Kind.rm2),
+  'pmovzxwq': _Shape(_Kind.rm2),
+  'pmovzxdq': _Shape(_Kind.rm2),
+  'pblendw': _Shape(_Kind.rmi),
+  'blendps': _Shape(_Kind.rmi),
+  'blendpd': _Shape(_Kind.rmi),
+  'pblendvb': _Shape(_Kind.is4),
+  'blendvps': _Shape(_Kind.is4),
+  'blendvpd': _Shape(_Kind.is4),
+  'pblendvb_l': _Shape(_Kind.rm),
+  'blendvps_l': _Shape(_Kind.rm),
+  'blendvpd_l': _Shape(_Kind.rm),
+  'roundps': _Shape(_Kind.rm2i),
+  'roundpd': _Shape(_Kind.rm2i),
+  'roundss': _Shape(_Kind.rmi),
+  'roundsd': _Shape(_Kind.rmi),
+  'addps': _Shape(_Kind.rm),
+  'addpd': _Shape(_Kind.rm),
+  'addss': _Shape(_Kind.rm),
+  'addsd': _Shape(_Kind.rm),
+  'subps': _Shape(_Kind.rm),
+  'subpd': _Shape(_Kind.rm),
+  'subss': _Shape(_Kind.rm),
+  'subsd': _Shape(_Kind.rm),
+  'mulps': _Shape(_Kind.rm),
+  'mulpd': _Shape(_Kind.rm),
+  'mulss': _Shape(_Kind.rm),
+  'mulsd': _Shape(_Kind.rm),
+  'divps': _Shape(_Kind.rm),
+  'divpd': _Shape(_Kind.rm),
+  'divss': _Shape(_Kind.rm),
+  'divsd': _Shape(_Kind.rm),
+  'minps': _Shape(_Kind.rm),
+  'minpd': _Shape(_Kind.rm),
+  'minss': _Shape(_Kind.rm),
+  'minsd': _Shape(_Kind.rm),
+  'maxps': _Shape(_Kind.rm),
+  'maxpd': _Shape(_Kind.rm),
+  'maxss': _Shape(_Kind.rm),
+  'maxsd': _Shape(_Kind.rm),
+  'andps': _Shape(_Kind.rm),
+  'andpd': _Shape(_Kind.rm),
+  'andnps': _Shape(_Kind.rm),
+  'andnpd': _Shape(_Kind.rm),
+  'orps': _Shape(_Kind.rm),
+  'orpd': _Shape(_Kind.rm),
+  'xorps': _Shape(_Kind.rm),
+  'xorpd': _Shape(_Kind.rm),
+  'cmpps': _Shape(_Kind.rmi),
+  'cmppd': _Shape(_Kind.rmi),
+  'cmpss': _Shape(_Kind.rmi),
+  'cmpsd': _Shape(_Kind.rmi),
+  'unpcklps': _Shape(_Kind.rm),
+  'unpckhps': _Shape(_Kind.rm),
+  'unpcklpd': _Shape(_Kind.rm),
+  'unpckhpd': _Shape(_Kind.rm),
+  'sqrtss': _Shape(_Kind.rm),
+  'sqrtsd': _Shape(_Kind.rm),
+  'sqrtps': _Shape(_Kind.rm2),
+  'sqrtpd': _Shape(_Kind.rm2),
+  'cvtdq2ps': _Shape(_Kind.rm2),
+  'cvtps2dq': _Shape(_Kind.rm2),
+  'cvttps2dq': _Shape(_Kind.rm2),
+  'cvtps2pd': _Shape(_Kind.rm2),
+  'cvtpd2ps': _Shape(_Kind.rm2),
+  'movddup': _Shape(_Kind.rm2),
+  'movlps': _Shape(_Kind.rm, memOnly: true),
+  'movhlps': _Shape(_Kind.rm, regOnly: true),
+  'movsd': _Shape(_Kind.rm, regOnly: true),
+  'movss': _Shape(_Kind.rm, regOnly: true),
+  'movsd_m': _Shape(_Kind.rm2, memOnly: true),
+  'movss_m': _Shape(_Kind.rm2, memOnly: true),
+  'movsd_st': _Shape(_Kind.mr),
+  'movss_st': _Shape(_Kind.mr),
+  'cvtss2sd': _Shape(_Kind.rm),
+  'cvtsd2ss': _Shape(_Kind.rm),
+  'cvtdq2pd': _Shape(_Kind.rm2),
+  'fmadd132ps': _Shape(_Kind.rm),
+  'fmadd132pd': _Shape(_Kind.rm),
+  'fmadd132ss': _Shape(_Kind.rm),
+  'fmadd132sd': _Shape(_Kind.rm),
+  'fmadd213ps': _Shape(_Kind.rm),
+  'fmadd213pd': _Shape(_Kind.rm),
+  'fmadd213ss': _Shape(_Kind.rm),
+  'fmadd213sd': _Shape(_Kind.rm),
+  'fmadd231ps': _Shape(_Kind.rm),
+  'fmadd231pd': _Shape(_Kind.rm),
+  'fmadd231ss': _Shape(_Kind.rm),
+  'fmadd231sd': _Shape(_Kind.rm),
+  'fmsub132ps': _Shape(_Kind.rm),
+  'fmsub132pd': _Shape(_Kind.rm),
+  'fmsub132ss': _Shape(_Kind.rm),
+  'fmsub132sd': _Shape(_Kind.rm),
+  'fmsub213ps': _Shape(_Kind.rm),
+  'fmsub213pd': _Shape(_Kind.rm),
+  'fmsub213ss': _Shape(_Kind.rm),
+  'fmsub213sd': _Shape(_Kind.rm),
+  'fmsub231ps': _Shape(_Kind.rm),
+  'fmsub231pd': _Shape(_Kind.rm),
+  'fmsub231ss': _Shape(_Kind.rm),
+  'fmsub231sd': _Shape(_Kind.rm),
+  'fnmadd132ps': _Shape(_Kind.rm),
+  'fnmadd132pd': _Shape(_Kind.rm),
+  'fnmadd132ss': _Shape(_Kind.rm),
+  'fnmadd132sd': _Shape(_Kind.rm),
+  'fnmadd213ps': _Shape(_Kind.rm),
+  'fnmadd213pd': _Shape(_Kind.rm),
+  'fnmadd213ss': _Shape(_Kind.rm),
+  'fnmadd213sd': _Shape(_Kind.rm),
+  'fnmadd231ps': _Shape(_Kind.rm),
+  'fnmadd231pd': _Shape(_Kind.rm),
+  'fnmadd231ss': _Shape(_Kind.rm),
+  'fnmadd231sd': _Shape(_Kind.rm),
+  'fnmsub132ps': _Shape(_Kind.rm),
+  'fnmsub132pd': _Shape(_Kind.rm),
+  'fnmsub132ss': _Shape(_Kind.rm),
+  'fnmsub132sd': _Shape(_Kind.rm),
+  'fnmsub213ps': _Shape(_Kind.rm),
+  'fnmsub213pd': _Shape(_Kind.rm),
+  'fnmsub213ss': _Shape(_Kind.rm),
+  'fnmsub213sd': _Shape(_Kind.rm),
+  'fnmsub231ps': _Shape(_Kind.rm),
+  'fnmsub231pd': _Shape(_Kind.rm),
+  'fnmsub231ss': _Shape(_Kind.rm),
+  'fnmsub231sd': _Shape(_Kind.rm),
+  'broadcastss': _Shape(_Kind.rm2),
+  'haddpd': _Shape(_Kind.rm),
+  'movhps': _Shape(_Kind.rm, memOnly: true),
+  'movlpd': _Shape(_Kind.rm, memOnly: true),
+  'movhpd': _Shape(_Kind.rm, memOnly: true),
+  'movlps_st': _Shape(_Kind.mr),
+  'movhps_st': _Shape(_Kind.mr),
+  'movlpd_st': _Shape(_Kind.mr),
+  'movhpd_st': _Shape(_Kind.mr),
+  'pinsrw': _Shape(_Kind.rmi, rmGp: true),
+  'pinsrb': _Shape(_Kind.rmi, rmGp: true),
+  'pinsrd': _Shape(_Kind.rmi, rmGp: true),
+  'pinsrq': _Shape(_Kind.rmi, rmGp: true),
+  'pextrb': _Shape(_Kind.mri, rmGp: true),
+  'pextrw': _Shape(_Kind.mri),
+  'pextrd': _Shape(_Kind.mri, rmGp: true),
+  'pextrq': _Shape(_Kind.mri, rmGp: true),
+  'movq': _Shape(_Kind.rm2),
+  'cvtpd2dq': _Shape(_Kind.rm2),
+  'cvttpd2dq': _Shape(_Kind.rm2),
+};
 
 String hex(List<int> b) =>
     b.map((e) => e.toRadixString(16).padLeft(2, '0')).join();
@@ -39,7 +305,7 @@ Map<String, String> _encodeAll() {
   }
 
   const memText = '[r9 + 2*rax + 64]';
-  kX86SimdOps.forEach((key, op) {
+  _shapes.forEach((key, op) {
     if (key.endsWith('_l')) {
       final n = key.substring(0, key.length - 2);
       final x0 = X86Xmm(0);
@@ -65,13 +331,13 @@ Map<String, String> _encodeAll() {
     final scalar = n.endsWith('ss') ||
         (n.endsWith('sd') && n != 'pminsd' && n != 'pmaxsd');
     switch (op.kind) {
-      case X86SimdKind.rm when op.memOnly:
+      case _Kind.rm when op.memOnly:
         emit('$n xmm1, qword ptr $memText', n, [x1, mem]);
         emit('v$n xmm9, xmm10, qword ptr $memText', 'v$n', [x9, x10, mem]);
-      case X86SimdKind.rm when op.regOnly:
+      case _Kind.rm when op.regOnly:
         emit('$n xmm9, xmm2', n, [x9, x2]);
         emit('v$n xmm9, xmm10, xmm2', 'v$n', [x9, x10, x2]);
-      case X86SimdKind.rm:
+      case _Kind.rm:
         emit('$n xmm9, xmm2', n, [x9, x2]);
         emit('$n xmm1, ${memSize(n)} $memText', n, [x1, mem]);
         emit('v$n xmm9, xmm10, xmm2', 'v$n', [x9, x10, x2]);
@@ -81,7 +347,7 @@ Map<String, String> _encodeAll() {
           emit('v$n ymm9, ymm10, ymm2', 'v$n', [y9, y10, y2]);
         }
         if (countShift) emit('v$n ymm9, ymm10, xmm2', 'v$n', [y9, y10, x2]);
-      case X86SimdKind.rmi when op.rmGp:
+      case _Kind.rmi when op.rmGp:
         final sz = const {
           'pinsrb': 'byte',
           'pinsrw': 'word',
@@ -93,23 +359,23 @@ Map<String, String> _encodeAll() {
         emit('$n xmm9, $gpName, 1', n, [x9, gp, 1]);
         emit('$n xmm1, $sz ptr $memText, 1', n, [x1, mem, 1]);
         emit('v$n xmm9, xmm10, $sz ptr $memText, 1', 'v$n', [x9, x10, mem, 1]);
-      case X86SimdKind.rmi:
+      case _Kind.rmi:
         emit('$n xmm9, xmm2, 5', n, [x9, x2, 5]);
         emit('v$n xmm9, xmm10, xmm2, 5', 'v$n', [x9, x10, x2, 5]);
-      case X86SimdKind.rm2:
+      case _Kind.rm2:
         emit('$n xmm9, xmm2', n, [x9, x2]);
         emit('v$n xmm9, xmm2', 'v$n', [x9, x2]);
-      case X86SimdKind.rm2i:
+      case _Kind.rm2i:
         emit('$n xmm9, xmm2, 5', n, [x9, x2, 5]);
         emit('v$n xmm9, xmm2, 5', 'v$n', [x9, x2, 5]);
-      case X86SimdKind.shiftImm:
+      case _Kind.shiftImm:
         break;
-      case X86SimdKind.mr:
+      case _Kind.mr:
         final base = n.substring(0, n.length - 3); // strip '_st'
         final sz = base.endsWith('ss') ? 'dword' : 'qword';
         emit('$base $sz ptr $memText, xmm9', base, [mem, x9]);
         emit('v$base $sz ptr $memText, xmm1', 'v$base', [mem, x1]);
-      case X86SimdKind.mri:
+      case _Kind.mri:
         final sz = const {
           'pextrb': 'byte',
           'pextrw': 'word',
@@ -123,7 +389,7 @@ Map<String, String> _encodeAll() {
           final gpName = n == 'pextrq' ? 'r10' : 'r10d';
           emit('$n $gpName, xmm9, 1', n, [gp, x9, 1]);
         }
-      case X86SimdKind.is4:
+      case _Kind.is4:
         emit('v$n xmm9, xmm10, xmm2, xmm3', 'v$n', [x9, x10, x2, X86Xmm(3)]);
         emit('v$n ymm9, ymm10, ymm2, ymm11', 'v$n', [y9, y10, y2, X86Ymm(11)]);
     }

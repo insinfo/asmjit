@@ -13,6 +13,7 @@
 // ignore_for_file: dead_code, non_constant_identifier_names, constant_identifier_names, unused_local_variable, unnecessary_parenthesis, curly_braces_in_flow_control_structures, unused_element, prefer_final_locals, no_leading_underscores_for_local_identifiers, unnecessary_null_comparison, unnecessary_non_null_assertion, unused_field
 import 'dart:math' as math;
 
+import '../core/arch.dart';
 import '../core/code_buffer.dart';
 import '../core/code_holder.dart';
 import '../core/emitter.dart' show EncodingOptions;
@@ -578,6 +579,17 @@ final class X86Emitter {
 
   bool _hasEncodingOption(int o) => (encodingOptions & o) != 0;
 
+  /// `is_32bit()`, `is_64bit()` and `register_size()` of the target
+  /// architecture.
+  bool get _is32Bit => code.env.arch == Arch.x86;
+  bool get _is64Bit => !_is32Bit;
+  int get _registerSize => _is32Bit ? 4 : 8;
+
+  /// `_address_override_mask()`: the [memInfoTable] bit that requires the
+  /// address-size override prefix in the target mode.
+  int get _addressOverrideMask =>
+      _is32Bit ? _kMemInfo67H_X86 : _kMemInfo67H_X64;
+
   /// Emits [instId] with [operands]; throws [X86EmitError] if the
   /// instruction cannot be encoded.
   void emit(int instId, List<Object> operands) {
@@ -672,8 +684,13 @@ final class X86Emitter {
             (X86Avx512Flags.kB16 | X86Avx512Flags.kB32 | X86Avx512Flags.kB64)) !=
         0;
 
-    // `x86_get_movabs_inst_size_64bit()` + `x86_should_use_movabs()` (64-bit).
+    // `x86_get_movabs_inst_size_64bit()` + `x86_should_use_movabs()`.
     bool _shouldUseMovabs(int registerSize, int options, _Op rmRel) {
+      if (_is32Bit) {
+        // There is no relative addressing, just decide whether to use MOV
+        // encoded with MOD R/M or absolute.
+        return !_test(options, _IO.kX86_ModMR | _IO.kX86_ModRM);
+      }
       if (rmRel.addrType == _Addr.kRel ||
           _test(options, _IO.kX86_ModMR | _IO.kX86_ModRM)) {
         return false;

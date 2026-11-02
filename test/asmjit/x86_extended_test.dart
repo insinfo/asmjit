@@ -23,127 +23,131 @@ void main() {
   if (!hostIsX64) {
     return;
   }
-  group('X86Encoder - Unary Instructions', () {
+  group('x86 emit - Unary Instructions', () {
     late CodeBuffer buffer;
-    late X86Encoder encoder;
+    late X86Assembler encoder;
 
     setUp(() {
-      buffer = CodeBuffer();
-      encoder = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      buffer = code.text.buffer;
+      encoder = X86Assembler(code);
     });
 
     test('inc r64 encodes correctly', () {
-      encoder.incR64(rax);
+      encoder.emit(X86InstId.kInc, [rax]);
       expect(buffer.bytes, equals([0x48, 0xFF, 0xC0]));
     });
 
     test('dec r64 encodes correctly', () {
-      encoder.decR64(rcx);
+      encoder.emit(X86InstId.kDec, [rcx]);
       expect(buffer.bytes, equals([0x48, 0xFF, 0xC9]));
     });
 
     test('neg r64 encodes correctly', () {
-      encoder.negR64(rax);
+      encoder.emit(X86InstId.kNeg, [rax]);
       expect(buffer.bytes, equals([0x48, 0xF7, 0xD8]));
     });
 
     test('not r64 encodes correctly', () {
-      encoder.notR64(rax);
+      encoder.emit(X86InstId.kNot, [rax]);
       expect(buffer.bytes, equals([0x48, 0xF7, 0xD0]));
     });
   });
 
-  group('X86Encoder - Shift Instructions', () {
+  group('x86 emit - Shift Instructions', () {
     late CodeBuffer buffer;
-    late X86Encoder encoder;
+    late X86Assembler encoder;
 
     setUp(() {
-      buffer = CodeBuffer();
-      encoder = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      buffer = code.text.buffer;
+      encoder = X86Assembler(code);
     });
 
     test('shl r64, 1 encodes correctly', () {
-      encoder.shlR64Imm8(rax, 1);
+      encoder.emit(X86InstId.kShl, [rax, 1]);
       expect(buffer.bytes, equals([0x48, 0xD1, 0xE0]));
     });
 
     test('shl r64, imm8 encodes correctly', () {
-      encoder.shlR64Imm8(rax, 4);
+      encoder.emit(X86InstId.kShl, [rax, 4]);
       expect(buffer.bytes, equals([0x48, 0xC1, 0xE0, 0x04]));
     });
 
     test('shr r64, imm8 encodes correctly', () {
-      encoder.shrR64Imm8(rcx, 8);
+      encoder.emit(X86InstId.kShr, [rcx, 8]);
       expect(buffer.bytes, equals([0x48, 0xC1, 0xE9, 0x08]));
     });
 
     test('sar r64, imm8 encodes correctly', () {
-      encoder.sarR64Imm8(rax, 2);
+      encoder.emit(X86InstId.kSar, [rax, 2]);
       expect(buffer.bytes, equals([0x48, 0xC1, 0xF8, 0x02]));
     });
 
     test('rol r64, imm8 encodes correctly', () {
-      encoder.rolR64Imm8(rax, 3);
+      encoder.emit(X86InstId.kRol, [rax, 3]);
       expect(buffer.bytes, equals([0x48, 0xC1, 0xC0, 0x03]));
     });
 
     test('ror r64, imm8 encodes correctly', () {
-      encoder.rorR64Imm8(rax, 5);
+      encoder.emit(X86InstId.kRor, [rax, 5]);
       expect(buffer.bytes, equals([0x48, 0xC1, 0xC8, 0x05]));
     });
   });
 
-  group('X86Encoder - Conditional Move', () {
+  group('x86 emit - Conditional Move', () {
     late CodeBuffer buffer;
-    late X86Encoder encoder;
+    late X86Assembler encoder;
 
     setUp(() {
-      buffer = CodeBuffer();
-      encoder = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      buffer = code.text.buffer;
+      encoder = X86Assembler(code);
     });
 
     test('cmove r64, r64 encodes correctly', () {
-      encoder.cmovccR64R64(X86Cond.e, rax, rcx);
+      encoder.cmovcc(X86Cond.e, rax, rcx);
       expect(buffer.bytes, equals([0x48, 0x0F, 0x44, 0xC1]));
     });
 
     test('cmovne r64, r64 encodes correctly', () {
-      encoder.cmovccR64R64(X86Cond.ne, rax, rdx);
+      encoder.cmovcc(X86Cond.ne, rax, rdx);
       expect(buffer.bytes, equals([0x48, 0x0F, 0x45, 0xC2]));
     });
 
     test('cmovg r64, r64 encodes correctly', () {
-      encoder.cmovccR64R64(X86Cond.g, rax, r8);
+      encoder.cmovcc(X86Cond.g, rax, r8);
       expect(buffer.bytes, equals([0x49, 0x0F, 0x4F, 0xC0]));
     });
   });
 
-  group('X86Encoder - Division', () {
+  group('x86 emit - Division', () {
     late CodeBuffer buffer;
-    late X86Encoder encoder;
+    late X86Assembler encoder;
 
     setUp(() {
-      buffer = CodeBuffer();
-      encoder = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      buffer = code.text.buffer;
+      encoder = X86Assembler(code);
     });
 
     test('cqo encodes correctly', () {
-      encoder.cqo();
+      encoder.emit(X86InstId.kCqo, []);
       expect(buffer.bytes, equals([0x48, 0x99]));
     });
 
     test('cdq encodes correctly', () {
-      encoder.cdq();
+      encoder.emit(X86InstId.kCdq, []);
       expect(buffer.bytes, equals([0x99]));
     });
 
     test('idiv r64 encodes correctly', () {
-      encoder.idivR64(rcx);
+      encoder.emit(X86InstId.kIdiv, [rcx]);
       expect(buffer.bytes, equals([0x48, 0xF7, 0xF9]));
     });
 
     test('div r64 encodes correctly', () {
-      encoder.divR64(rcx);
+      encoder.emit(X86InstId.kDiv, [rcx]);
       expect(buffer.bytes, equals([0x48, 0xF7, 0xF1]));
     });
   });

@@ -13,6 +13,7 @@
 // ignore_for_file: dead_code, non_constant_identifier_names, constant_identifier_names, unused_local_variable, unnecessary_parenthesis, curly_braces_in_flow_control_structures, unused_element, prefer_final_locals, no_leading_underscores_for_local_identifiers, unnecessary_null_comparison, unnecessary_non_null_assertion, unused_field
 import 'dart:math' as math;
 
+import '../core/arch.dart';
 import '../core/code_buffer.dart';
 import '../core/code_holder.dart';
 import '../core/emitter.dart' show EncodingOptions;
@@ -583,6 +584,17 @@ final class X86Emitter {
 
   bool _hasEncodingOption(int o) => (encodingOptions & o) != 0;
 
+  /// `is_32bit()`, `is_64bit()` and `register_size()` of the target
+  /// architecture.
+  bool get _is32Bit => code.env.arch == Arch.x86;
+  bool get _is64Bit => !_is32Bit;
+  int get _registerSize => _is32Bit ? 4 : 8;
+
+  /// `_address_override_mask()`: the [memInfoTable] bit that requires the
+  /// address-size override prefix in the target mode.
+  int get _addressOverrideMask =>
+      _is32Bit ? _kMemInfo67H_X86 : _kMemInfo67H_X64;
+
   /// Emits [instId] with [operands]; throws [X86EmitError] if the
   /// instruction cannot be encoded.
   void emit(int instId, List<Object> operands) {
@@ -679,8 +691,13 @@ final class X86Emitter {
                 X86Avx512Flags.kB64)) !=
         0;
 
-    // `x86_get_movabs_inst_size_64bit()` + `x86_should_use_movabs()` (64-bit).
+    // `x86_get_movabs_inst_size_64bit()` + `x86_should_use_movabs()`.
     bool _shouldUseMovabs(int registerSize, int options, _Op rmRel) {
+      if (_is32Bit) {
+        // There is no relative addressing, just decide whether to use MOV
+        // encoded with MOD R/M or absolute.
+        return !_test(options, _IO.kX86_ModMR | _IO.kX86_ModRM);
+      }
       if (rmRel.addrType == _Addr.kRel ||
           _test(options, _IO.kX86_ModMR | _IO.kX86_ModRM)) {
         return false;
@@ -810,7 +827,7 @@ final class X86Emitter {
           }
 
           rmInfo = memInfoTable[(o0.regType)];
-          _w.emitAddressOverride((rmInfo & _kMemInfo67H_X64) != 0);
+          _w.emitAddressOverride((rmInfo & _addressOverrideMask) != 0);
           {
             s = _S.EmitX86Op;
             continue loop;
@@ -1873,7 +1890,7 @@ final class X86Emitter {
               }
             }
 
-            if (false) {
+            if (_is32Bit) {
               // INC r16|r32 is only encodable in 32-bit mode (collides with REX).
               opcode = altOpcodeOf(instInfo) + (rbReg & 0x07);
               opcode = _add66hBySize(opcode, o0.x86RmSize);
@@ -1946,8 +1963,8 @@ final class X86Emitter {
               }
             }
 
-            _w.emitAddressOverride(
-                (false && o0.x86RmSize == 2) || (true && o0.x86RmSize == 4));
+            _w.emitAddressOverride((_is32Bit && o0.x86RmSize == 2) ||
+                (_is64Bit && o0.x86RmSize == 4));
             rmRel = o1;
           }
 
@@ -1993,10 +2010,10 @@ final class X86Emitter {
             rmRel = o0;
             var mem_size = rmRel!.size;
             if (mem_size == 0) {
-              mem_size = 8;
+              mem_size = _registerSize;
             } else {
               mem_size -= 2;
-              if (mem_size != 2 && mem_size != 4 && mem_size != 8) {
+              if (mem_size != 2 && mem_size != 4 && mem_size != _registerSize) {
                 s = _S.InvalidAddress;
                 continue loop;
               }
@@ -2009,7 +2026,7 @@ final class X86Emitter {
           }
 
           if (isign3 == 36 /* ENC_OPS2(Imm, Imm) */) {
-            if (!false) {
+            if (!_is32Bit) {
               s = _S.InvalidInstruction;
               continue loop;
             }
@@ -2128,7 +2145,7 @@ final class X86Emitter {
                 opcode = X86Opcode.k000F00 | 0x20;
 
                 // Use `LOCK MOV` in 32-bit mode if CR8+ register is accessed (AMD extension).
-                if (false) {
+                if ((opReg & 0x8) != 0 && _is32Bit) {
                   _w.emit8(0xF0);
                   opReg &= 0x7;
                 }
@@ -2172,7 +2189,7 @@ final class X86Emitter {
                 opcode = X86Opcode.k000F00 | 0x22;
 
                 // Use `LOCK MOV` in 32-bit mode if CR8+ register is accessed (AMD extension).
-                if (false) {
+                if ((opReg & 0x8) != 0 && _is32Bit) {
                   _w.emit8(0xF0);
                   opReg &= 0x7;
                 }
@@ -2650,7 +2667,7 @@ final class X86Emitter {
               continue loop;
             }
 
-            if (o0.x86RmSize != 2 && o0.x86RmSize != 8) {
+            if (o0.x86RmSize != 2 && o0.x86RmSize != _registerSize) {
               s = _S.InvalidInstruction;
               continue loop;
             }
@@ -3089,7 +3106,7 @@ final class X86Emitter {
 
             // Special cases for 'xchg ?ax, reg'.
             if (instId == X86InstId.kXchg && (opReg == 0 || rbReg == 0)) {
-              if (true && opReg == rbReg && op_size >= 4) {
+              if (_is64Bit && opReg == rbReg && op_size >= 4) {
                 if (op_size == 8) {
                   // Encode 'xchg rax, rax' as '90' (REX and other prefixes are optional).
                   opcode &= X86Opcode.kW;
@@ -5523,7 +5540,7 @@ final class X86Emitter {
         // -----------------
 
         case _S.EmitX86OpMovAbs:
-          immSize = (8);
+          immSize = (_registerSize);
           _w.emitSegmentOverride(rmRel!.segmentId);
 
           s = _S.EmitX86Op;
@@ -5607,7 +5624,7 @@ final class X86Emitter {
 
           // Emit override prefixes.
           _w.emitSegmentOverride(rmRel!.segmentId);
-          _w.emitAddressOverride((rmInfo & _kMemInfo67H_X64) != 0);
+          _w.emitAddressOverride((rmInfo & _addressOverrideMask) != 0);
 
           // Emit instruction opcodes.
           _w.emitMmAndOpcode(opcode);
@@ -5688,7 +5705,7 @@ final class X86Emitter {
 
           // Emit override prefixes.
           _w.emitSegmentOverride(rmRel!.segmentId);
-          _w.emitAddressOverride((rmInfo & _kMemInfo67H_X64) != 0);
+          _w.emitAddressOverride((rmInfo & _addressOverrideMask) != 0);
 
           // Emit instruction opcodes.
           _w.emitMmAndOpcode(opcode);
@@ -5717,7 +5734,7 @@ final class X86Emitter {
           _w.emitSegmentOverride(rmRel!.segmentId);
 
           memOpAoMark = _w.cursor;
-          _w.emitAddressOverride((rmInfo & _kMemInfo67H_X64) != 0);
+          _w.emitAddressOverride((rmInfo & _addressOverrideMask) != 0);
 
           // Emit mandatory instruction prefix.
           _w.emitPp(opcode);
@@ -5813,7 +5830,15 @@ final class X86Emitter {
               var addr_type = rmRel!.addrType;
               relOffset = rmRel!.offsetLo32;
 
-              if (false) {
+              if (_is32Bit) {
+                // Explicit relative addressing doesn't work in 32-bit mode.
+                if (addr_type == _Addr.kRel) {
+                  s = _S.InvalidAddress;
+                  continue loop;
+                }
+
+                _w.emit8(encodeMod(0, opReg, 5));
+                _w.emit32uLe(_u32(relOffset));
               } else {
                 var is_offset_int32 = rmRel!.offsetHi32 == (relOffset >> 31);
                 var is_offset_uint32 = rmRel!.offsetHi32 == 0;
@@ -5926,7 +5951,7 @@ final class X86Emitter {
             else {
               _w.emit8(encodeMod(0, opReg, 5));
 
-              if (false) {
+              if (_is32Bit) {
                 {
                   s = _S.EmitModSib_LabelRip_X86;
                   continue loop;
@@ -6259,7 +6284,7 @@ final class X86Emitter {
           _w.emitSegmentOverride(rmRel!.segmentId);
 
           memOpAoMark = _w.cursor;
-          _w.emitAddressOverride((rmInfo & _kMemInfo67H_X64) != 0);
+          _w.emitAddressOverride((rmInfo & _addressOverrideMask) != 0);
 
           rbReg = rmRel!.hasBaseReg() ? rmRel!.baseId : _u32(0);
           rxReg = rmRel!.hasIndexReg() ? rmRel!.indexId : _u32(0);
@@ -6640,7 +6665,8 @@ final class X86Emitter {
             continue loop;
           }
         case _S.EmitModSib_LabelRip_X86:
-          // 32-bit mode only (the port targets x64).
+          // 32-bit mode only: [LABEL|RIP] needs a RelToAbs relocation, which
+          // the port's relocations can't express yet.
           {
             s = _S.InvalidInstruction;
             continue loop;
@@ -6690,7 +6716,7 @@ final class X86Emitter {
           }
           // ==========|> [LABEL|RIP + INDEX + DISP32].
           else {
-            if (false) {
+            if (_is32Bit) {
               _w.emit8(encodeMod(0, opReg, 4));
               _w.emit8(encodeSib(rmRel!.shift, rxReg, 5));
               {

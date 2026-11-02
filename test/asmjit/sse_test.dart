@@ -44,188 +44,194 @@ void main() {
     });
   });
 
-  group('X86Encoder - SSE Move Instructions', () {
+  group('x86 emit - SSE Move Instructions', () {
     late CodeBuffer buffer;
-    late X86Encoder encoder;
+    late X86Assembler encoder;
 
     setUp(() {
-      buffer = CodeBuffer();
-      encoder = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      buffer = code.text.buffer;
+      encoder = X86Assembler(code);
     });
 
     test('movaps xmm, xmm encodes correctly', () {
-      encoder.movapsXmmXmm(xmm0, xmm1);
+      encoder.emit(X86InstId.kMovaps, [xmm0, xmm1]);
       expect(buffer.bytes, equals([0x0F, 0x28, 0xC1]));
     });
 
     test('movaps xmm8, xmm0 encodes correctly (with REX)', () {
-      encoder.movapsXmmXmm(xmm8, xmm0);
+      encoder.emit(X86InstId.kMovaps, [xmm8, xmm0]);
       // REX.R for xmm8
       expect(buffer.bytes, equals([0x44, 0x0F, 0x28, 0xC0]));
     });
 
     test('movups xmm, xmm encodes correctly', () {
-      encoder.movupsXmmXmm(xmm2, xmm3);
+      encoder.emit(X86InstId.kMovups, [xmm2, xmm3]);
       expect(buffer.bytes, equals([0x0F, 0x10, 0xD3]));
     });
 
     test('movsd xmm, xmm encodes correctly', () {
-      encoder.movsdXmmXmm(xmm0, xmm1);
+      encoder.emit(X86InstId.kMovsd, [xmm0, xmm1]);
       expect(buffer.bytes, equals([0xF2, 0x0F, 0x10, 0xC1]));
     });
 
     test('movss xmm, xmm encodes correctly', () {
-      encoder.movssXmmXmm(xmm0, xmm1);
+      encoder.emit(X86InstId.kMovss, [xmm0, xmm1]);
       expect(buffer.bytes, equals([0xF3, 0x0F, 0x10, 0xC1]));
     });
   });
 
-  group('X86Encoder - SSE Arithmetic Instructions', () {
+  group('x86 emit - SSE Arithmetic Instructions', () {
     late CodeBuffer buffer;
-    late X86Encoder encoder;
+    late X86Assembler encoder;
 
     setUp(() {
-      buffer = CodeBuffer();
-      encoder = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      buffer = code.text.buffer;
+      encoder = X86Assembler(code);
     });
 
     test('addsd xmm, xmm encodes correctly', () {
-      encoder.addsdXmmXmm(xmm0, xmm1);
+      encoder.emit(X86InstId.kAddsd, [xmm0, xmm1]);
       expect(buffer.bytes, equals([0xF2, 0x0F, 0x58, 0xC1]));
     });
 
     test('subsd xmm, xmm encodes correctly', () {
-      encoder.subsdXmmXmm(xmm0, xmm1);
+      encoder.emit(X86InstId.kSubsd, [xmm0, xmm1]);
       expect(buffer.bytes, equals([0xF2, 0x0F, 0x5C, 0xC1]));
     });
 
     test('mulsd xmm, xmm encodes correctly', () {
-      encoder.mulsdXmmXmm(xmm0, xmm1);
+      encoder.emit(X86InstId.kMulsd, [xmm0, xmm1]);
       expect(buffer.bytes, equals([0xF2, 0x0F, 0x59, 0xC1]));
     });
 
     test('divsd xmm, xmm encodes correctly', () {
-      encoder.divsdXmmXmm(xmm0, xmm1);
+      encoder.emit(X86InstId.kDivsd, [xmm0, xmm1]);
       expect(buffer.bytes, equals([0xF2, 0x0F, 0x5E, 0xC1]));
     });
 
     test('sqrtsd xmm, xmm encodes correctly', () {
-      encoder.sqrtsdXmmXmm(xmm0, xmm1);
+      encoder.emit(X86InstId.kSqrtsd, [xmm0, xmm1]);
       expect(buffer.bytes, equals([0xF2, 0x0F, 0x51, 0xC1]));
     });
 
     test('addss xmm, xmm encodes correctly', () {
-      encoder.addssXmmXmm(xmm0, xmm1);
+      encoder.emit(X86InstId.kAddss, [xmm0, xmm1]);
       expect(buffer.bytes, equals([0xF3, 0x0F, 0x58, 0xC1]));
     });
   });
 
-  group('X86Encoder - SSE Logical Instructions', () {
+  group('x86 emit - SSE Logical Instructions', () {
     late CodeBuffer buffer;
-    late X86Encoder encoder;
+    late X86Assembler encoder;
 
     setUp(() {
-      buffer = CodeBuffer();
-      encoder = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      buffer = code.text.buffer;
+      encoder = X86Assembler(code);
     });
 
     test('pxor xmm, xmm encodes correctly', () {
-      encoder.pxorXmmXmm(xmm0, xmm0);
+      encoder.emit(X86InstId.kPxor, [xmm0, xmm0]);
       // 66 0F EF C0 (pxor xmm0, xmm0)
       expect(buffer.bytes, equals([0x66, 0x0F, 0xEF, 0xC0]));
     });
 
     test('xorps xmm, xmm encodes correctly', () {
-      encoder.xorpsXmmXmm(xmm0, xmm0);
+      encoder.emit(X86InstId.kXorps, [xmm0, xmm0]);
       expect(buffer.bytes, equals([0x0F, 0x57, 0xC0]));
     });
 
     test('xorpd xmm, xmm encodes correctly', () {
-      encoder.xorpdXmmXmm(xmm0, xmm0);
+      encoder.emit(X86InstId.kXorpd, [xmm0, xmm0]);
       expect(buffer.bytes, equals([0x66, 0x0F, 0x57, 0xC0]));
     });
   });
 
-  group('X86Encoder - SSE Conversion Instructions', () {
+  group('x86 emit - SSE Conversion Instructions', () {
     late CodeBuffer buffer;
-    late X86Encoder encoder;
+    late X86Assembler encoder;
 
     setUp(() {
-      buffer = CodeBuffer();
-      encoder = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      buffer = code.text.buffer;
+      encoder = X86Assembler(code);
     });
 
     test('cvtsi2sd xmm, r64 encodes correctly', () {
-      encoder.cvtsi2sdXmmR64(xmm0, rax);
+      encoder.emit(X86InstId.kCvtsi2sd, [xmm0, rax]);
       // F2 REX.W 0F 2A C0
       expect(buffer.bytes, equals([0xF2, 0x48, 0x0F, 0x2A, 0xC0]));
     });
 
     test('cvttsd2si r64, xmm encodes correctly', () {
-      encoder.cvttsd2siR64Xmm(rax, xmm0);
+      encoder.emit(X86InstId.kCvttsd2si, [rax, xmm0]);
       // F2 REX.W 0F 2C C0
       expect(buffer.bytes, equals([0xF2, 0x48, 0x0F, 0x2C, 0xC0]));
     });
 
     test('cvtsd2ss xmm, xmm encodes correctly', () {
-      encoder.cvtsd2ssXmmXmm(xmm0, xmm1);
+      encoder.emit(X86InstId.kCvtsd2ss, [xmm0, xmm1]);
       expect(buffer.bytes, equals([0xF2, 0x0F, 0x5A, 0xC1]));
     });
 
     test('cvtss2sd xmm, xmm encodes correctly', () {
-      encoder.cvtss2sdXmmXmm(xmm0, xmm1);
+      encoder.emit(X86InstId.kCvtss2sd, [xmm0, xmm1]);
       expect(buffer.bytes, equals([0xF3, 0x0F, 0x5A, 0xC1]));
     });
   });
 
-  group('X86Encoder - SSE Comparison Instructions', () {
+  group('x86 emit - SSE Comparison Instructions', () {
     late CodeBuffer buffer;
-    late X86Encoder encoder;
+    late X86Assembler encoder;
 
     setUp(() {
-      buffer = CodeBuffer();
-      encoder = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      buffer = code.text.buffer;
+      encoder = X86Assembler(code);
     });
 
     test('comisd xmm, xmm encodes correctly', () {
-      encoder.comisdXmmXmm(xmm0, xmm1);
+      encoder.emit(X86InstId.kComisd, [xmm0, xmm1]);
       expect(buffer.bytes, equals([0x66, 0x0F, 0x2F, 0xC1]));
     });
 
     test('comiss xmm, xmm encodes correctly', () {
-      encoder.comissXmmXmm(xmm0, xmm1);
+      encoder.emit(X86InstId.kComiss, [xmm0, xmm1]);
       expect(buffer.bytes, equals([0x0F, 0x2F, 0xC1]));
     });
 
     test('ucomisd xmm, xmm encodes correctly', () {
-      encoder.ucomisdXmmXmm(xmm0, xmm1);
+      encoder.emit(X86InstId.kUcomisd, [xmm0, xmm1]);
       expect(buffer.bytes, equals([0x66, 0x0F, 0x2E, 0xC1]));
     });
   });
 
-  group('X86Encoder - SSE GP<->XMM Transfer', () {
+  group('x86 emit - SSE GP<->XMM Transfer', () {
     late CodeBuffer buffer;
-    late X86Encoder encoder;
+    late X86Assembler encoder;
 
     setUp(() {
-      buffer = CodeBuffer();
-      encoder = X86Encoder(buffer);
+      final code = CodeHolder(env: Environment.x64SysV());
+      buffer = code.text.buffer;
+      encoder = X86Assembler(code);
     });
 
     test('movq xmm, r64 encodes correctly', () {
-      encoder.movqXmmR64(xmm0, rax);
+      encoder.emit(X86InstId.kMovq, [xmm0, rax]);
       // 66 REX.W 0F 6E C0
       expect(buffer.bytes, equals([0x66, 0x48, 0x0F, 0x6E, 0xC0]));
     });
 
     test('movq r64, xmm encodes correctly', () {
-      encoder.movqR64Xmm(rax, xmm0);
+      encoder.emit(X86InstId.kMovq, [rax, xmm0]);
       // 66 REX.W 0F 7E C0
       expect(buffer.bytes, equals([0x66, 0x48, 0x0F, 0x7E, 0xC0]));
     });
 
     test('movd xmm, r32 encodes correctly', () {
-      encoder.movdXmmR32(xmm0, eax);
+      encoder.emit(X86InstId.kMovd, [xmm0, eax]);
       // 66 0F 6E C0
       expect(buffer.bytes, equals([0x66, 0x0F, 0x6E, 0xC0]));
     });

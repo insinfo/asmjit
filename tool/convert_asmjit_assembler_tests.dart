@@ -1,5 +1,5 @@
 // Extracts the `TEST_INSTRUCTION(OPCODE, expr)` cases of the upstream
-// assembler tests (asmjit-testing/tests/asmjit_test_assembler_{x64,a64}.cpp)
+// assembler tests (asmjit-testing/tests/asmjit_test_assembler_{x64,x86,a64}.cpp)
 // into data files used by test/asmjit/asmjit_assembler_goldens_test.dart.
 //
 // The upstream sources live in the untracked `referencias/` directory, so the
@@ -8,7 +8,7 @@
 // Usage: dart run tool/convert_asmjit_assembler_tests.dart [asmjit-master]
 import 'dart:io';
 
-const _arches = ['x64', 'a64'];
+const _arches = ['x64', 'x86', 'a64'];
 
 void main(List<String> args) {
   final root = args.isNotEmpty ? args[0] : 'referencias/asmjit-master';

@@ -42,7 +42,7 @@ export 'src/asmjit/runtime/cpuinfo.dart' show CpuInfo, CpuFeatures;
 // x86
 export 'src/asmjit/x86/x86.dart';
 export 'src/asmjit/x86/x86_operands.dart';
-export 'src/asmjit/x86/x86_encoder.dart';
+export 'src/asmjit/x86/x86_cond.dart';
 export 'src/asmjit/x86/x86_assembler.dart';
 export 'src/asmjit/x86/x86_emit.dart' show X86EmitOptions, X86EmitError;
 export 'src/asmjit/x86/x86_opcode.dart'

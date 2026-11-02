@@ -15,11 +15,10 @@ import '../core/reg_utils.dart';
 import '../core/operand.dart';
 import 'x86.dart';
 import 'x86_operands.dart';
-import 'x86_encoder.dart';
+import 'x86_cond.dart';
 import 'x86_simd.dart';
 import 'x86_inst_db.g.dart';
 import 'x86_emit.dart';
-import 'x86_simd_ops.dart';
 import 'x86_emit_helper.dart';
 
 /// x86/x64 Assembler.
@@ -30,7 +29,6 @@ class X86Assembler extends BaseEmitter {
   /// The internal code buffer.
   late final CodeBuffer _buf;
 
-  /// The instruction encoder.
   /// Accounts for bytes emitted after a RIP-relative disp32 (an immediate)
   /// in relocations recorded since [instStart]: the CPU computes the target
   /// from the end of the instruction, not from the end of the disp32.
@@ -51,17 +49,6 @@ class X86Assembler extends BaseEmitter {
     }
   }
 
-  /// Table-driven SSE encoding (see [kX86SimdOps]).
-  void simdLegacy(X86SimdOp op, int regField, Object rm, {int? imm8}) =>
-      _enc.simdLegacy(op, regField, rm, imm8: imm8);
-
-  /// Table-driven AVX (VEX) encoding (see [kX86SimdOps]).
-  void simdVex(X86SimdOp op, int regField, int vvvv, Object rm,
-          {required bool l, int? imm8}) =>
-      _enc.simdVex(op, regField, vvvv, rm, l: l, imm8: imm8);
-
-  late final X86Encoder _enc;
-
   /// Encoding options (used by higher-level pipelines).
   int encodingOptions = EncodingOptions.kNone;
 
@@ -71,7 +58,6 @@ class X86Assembler extends BaseEmitter {
   /// Creates an x86 assembler for the given code holder.
   X86Assembler(CodeHolder code) : super(code) {
     _buf = code.text.buffer;
-    _enc = X86Encoder(_buf, this);
   }
 
   /// Port of upstream `x86::Assembler::_emit()` (x86_emit.dart).
@@ -164,310 +150,203 @@ class X86Assembler extends BaseEmitter {
   // ===========================================================================
 
   /// RET - Return from procedure.
-  void ret() => _enc.ret();
+  void ret() => emit(X86InstId.kRet, []);
 
   /// RET imm16 - Return and pop bytes from stack.
-  void retImm(int imm16) => _enc.retImm(imm16);
+  void retImm(int imm16) => emit(X86InstId.kRet, [imm16]);
 
   /// NOP - No operation.
-  void nop() => _enc.nop();
+  void nop() => emit(X86InstId.kNop, []);
 
-  /// Multi-byte NOP.
-  void nopN(int bytes) => _enc.nopN(bytes);
+  /// Multi-byte NOP: [bytes] bytes of the NOP sequences upstream
+  /// `x86::Assembler::align()` uses with `EncodingOptions::kOptimizedAlign`.
+  void nopN(int bytes) {
+    while (bytes > 0) {
+      final n = bytes < _nopTable.length ? bytes : _nopTable.length;
+      _buf.emitBytes(_nopTable[n - 1]);
+      bytes -= n;
+    }
+  }
+
+  /// Upstream `nop_table` (x86assembler.cpp, `Assembler::align()`).
+  static const List<List<int>> _nopTable = [
+    [0x90],
+    [0x66, 0x90],
+    [0x0F, 0x1F, 0x00],
+    [0x0F, 0x1F, 0x40, 0x00],
+    [0x0F, 0x1F, 0x44, 0x00, 0x00],
+    [0x66, 0x0F, 0x1F, 0x44, 0x00, 0x00],
+    [0x0F, 0x1F, 0x80, 0x00, 0x00, 0x00, 0x00],
+    [0x0F, 0x1F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00],
+    [0x66, 0x0F, 0x1F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00],
+  ];
 
   /// INT3 - Breakpoint.
-  void int3() => _enc.int3();
+  void int3() => emit(X86InstId.kInt3, []);
 
   /// INT n - Software interrupt.
-  void intN(int n) => _enc.intN(n);
+  void intN(int n) => emit(X86InstId.kInt, [n]);
 
   // ===========================================================================
   // MOV instructions
   // ===========================================================================
 
   /// MOV dst, src (register to register).
-  void movRR(X86Gp dst, X86Gp src) {
-    if (dst.bits == 64 || src.bits == 64) {
-      _enc.movR64R64(dst, src);
-    } else {
-      _enc.movR32R32(dst, src);
-    }
-  }
+  void movRR(X86Gp dst, X86Gp src) => emit(X86InstId.kMov, [dst, src]);
 
-  /// MOV r64, imm64.
-  void movRI64(X86Gp dst, int imm) {
-    // Optimize: if immediate fits in 32 bits, use shorter encoding
-    if (imm >= 0 && imm <= 0xFFFFFFFF) {
-      _enc.movR32Imm32(dst.as32, imm);
-    } else if (imm >= -2147483648 && imm <= 2147483647) {
-      _enc.movR64Imm32(dst, imm);
-    } else {
-      _enc.movR64Imm64(dst, imm);
-    }
-  }
+  /// MOV reg, imm64: as upstream, a 64-bit destination uses `mov r32, imm32`
+  /// when the value is a zero-extended 32-bit one, `mov r64, simm32` when it
+  /// is a sign-extended one and `movabs r64, imm64` otherwise.
+  void movRI64(X86Gp dst, int imm) => emit(X86InstId.kMov, [dst, imm]);
 
   /// MOV r32, imm32.
-  void movRI32(X86Gp dst, int imm) {
-    _enc.movR32Imm32(dst.as32, imm);
-  }
+  void movRI32(X86Gp dst, int imm) => emit(X86InstId.kMov, [dst.as32, imm]);
 
-  /// MOV reg, imm (convenience method - auto-selects size).
-  void movRI(X86Gp dst, int imm) {
-    if (dst.bits == 64) {
-      movRI64(dst, imm);
-    } else {
-      movRI32(dst, imm);
-    }
-  }
+  /// MOV reg, imm (the immediate size follows the register size).
+  void movRI(X86Gp dst, int imm) => emit(X86InstId.kMov, [dst, imm]);
 
   /// MOV (generic).
-  void mov(Operand dst, Object src) {
-    if (dst is X86Gp) {
-      if (src is X86Gp) {
-        movRR(dst, src);
-      } else if (src is int) {
-        movRI(dst, src);
-      } else if (src is X86Mem) {
-        movRM(dst, src);
-      }
-    } else if (dst is X86Mem) {
-      if (src is X86Gp) {
-        movMR(dst, src);
-      } else if (src is int) {
-        movMI(dst, src);
-      }
-    }
-  }
+  void mov(Operand dst, Object src) => emit(X86InstId.kMov, [dst, src]);
 
   /// MOV reg, [mem] — operand size follows the register size.
-  void movRM(X86Gp dst, X86Mem mem) {
-    switch (dst.bits) {
-      case 64:
-        _enc.movR64Mem(dst, mem);
-        break;
-      case 32:
-        _enc.movR32Mem(dst, mem);
-        break;
-      case 16:
-        _enc.movR16Mem(dst, mem);
-        break;
-      case 8:
-        _enc.movR8Mem(dst, mem);
-        break;
-      default:
-        throw UnsupportedError('movRM: invalid register size ${dst.bits}');
-    }
-  }
+  void movRM(X86Gp dst, X86Mem mem) => emit(X86InstId.kMov, [dst, mem]);
 
   /// MOV [mem], reg — operand size follows the register size.
-  ///
-  /// The register size decides how many bytes are written; collapsing 8/16
-  /// bit registers to 32 bits would write past narrow store targets.
-  void movMR(X86Mem mem, X86Gp src) {
-    switch (src.bits) {
-      case 64:
-        _enc.movMemR64(mem, src);
-        break;
-      case 32:
-        _enc.movMemR32(mem, src);
-        break;
-      case 16:
-        _enc.movMemR16(mem, src);
-        break;
-      case 8:
-        _enc.movMemR8(mem, src);
-        break;
-      default:
-        throw UnsupportedError('movMR: invalid register size ${src.bits}');
-    }
-  }
+  void movMR(X86Mem mem, X86Gp src) => emit(X86InstId.kMov, [mem, src]);
 
-  /// MOV [mem], imm.
-  void movMI(X86Mem mem, int imm) {
-    _enc.movMemImm32(mem, imm);
-  }
+  /// MOV [mem], imm (the memory operand must have a size).
+  void movMI(X86Mem mem, int imm) => emit(X86InstId.kMov, [mem, imm]);
 
   // ===========================================================================
   // Arithmetic instructions
   // ===========================================================================
 
   /// ADD dst, src (register to register).
-  void addRR(X86Gp dst, X86Gp src) {
-    _enc.addRR(dst, src);
-  }
+  void addRR(X86Gp dst, X86Gp src) => emit(X86InstId.kAdd, [dst, src]);
 
   /// ADD reg, imm.
-  void addRI(X86Gp dst, int imm) => _enc.aluRI(X86Encoder.kAluAdd, dst, imm);
+  void addRI(X86Gp dst, int imm) => emit(X86InstId.kAdd, [dst, imm]);
 
   /// ADD reg, [mem].
-  void addRM(X86Gp dst, X86Mem mem) => _enc.addRM(dst, mem);
+  void addRM(X86Gp dst, X86Mem mem) => emit(X86InstId.kAdd, [dst, mem]);
 
   /// ADD [mem], reg.
-  void addMR(X86Mem mem, X86Gp src) => _enc.addMR(mem, src);
+  void addMR(X86Mem mem, X86Gp src) => emit(X86InstId.kAdd, [mem, src]);
 
   /// ADD [mem], imm.
-  void addMI(X86Mem mem, int imm) => _enc.addMI(mem, imm);
+  void addMI(X86Mem mem, int imm) => emit(X86InstId.kAdd, [mem, imm]);
 
   /// SUB dst, src.
-  void subRR(X86Gp dst, X86Gp src) => _enc.aluRR(X86Encoder.kAluSub, dst, src);
+  void subRR(X86Gp dst, X86Gp src) => emit(X86InstId.kSub, [dst, src]);
 
   /// SUB reg, imm.
-  void subRI(X86Gp dst, int imm) => _enc.aluRI(X86Encoder.kAluSub, dst, imm);
+  void subRI(X86Gp dst, int imm) => emit(X86InstId.kSub, [dst, imm]);
 
   /// SUB reg, [mem].
-  void subRM(X86Gp dst, X86Mem mem) => _enc.aluRM(X86Encoder.kAluSub, dst, mem);
+  void subRM(X86Gp dst, X86Mem mem) => emit(X86InstId.kSub, [dst, mem]);
 
   /// AND r64, [mem].
-  void andRM(X86Gp dst, X86Mem mem) => _enc.andRM(dst, mem);
+  void andRM(X86Gp dst, X86Mem mem) => emit(X86InstId.kAnd, [dst, mem]);
 
   /// AND [mem], reg.
-  void andMR(X86Mem mem, X86Gp src) => _enc.andMR(mem, src);
+  void andMR(X86Mem mem, X86Gp src) => emit(X86InstId.kAnd, [mem, src]);
 
   /// AND [mem], imm.
-  void andMI(X86Mem mem, int imm) => _enc.andMI(mem, imm);
+  void andMI(X86Mem mem, int imm) => emit(X86InstId.kAnd, [mem, imm]);
 
   /// OR reg, [mem].
-  void orRM(X86Gp dst, X86Mem mem) => _enc.aluRM(X86Encoder.kAluOr, dst, mem);
+  void orRM(X86Gp dst, X86Mem mem) => emit(X86InstId.kOr, [dst, mem]);
 
   /// XOR reg, [mem].
-  void xorRM(X86Gp dst, X86Mem mem) => _enc.aluRM(X86Encoder.kAluXor, dst, mem);
+  void xorRM(X86Gp dst, X86Mem mem) => emit(X86InstId.kXor, [dst, mem]);
 
   /// CMP reg, [mem].
-  void cmpRM(X86Gp dst, X86Mem mem) => _enc.aluRM(X86Encoder.kAluCmp, dst, mem);
+  void cmpRM(X86Gp dst, X86Mem mem) => emit(X86InstId.kCmp, [dst, mem]);
 
   /// TEST [mem], reg.
-  void testRM(X86Gp dst, X86Mem mem) => _enc.testMRSized(mem, dst);
+  void testRM(X86Gp dst, X86Mem mem) => emit(X86InstId.kTest, [mem, dst]);
 
   /// IMUL dst, src.
-  void imulRR(X86Gp dst, X86Gp src) => _enc.imulRRSized(dst, src);
+  void imulRR(X86Gp dst, X86Gp src) => emit(X86InstId.kImul, [dst, src]);
 
   /// IMUL dst, src, imm (three-operand form).
   void imulRRI(X86Gp dst, X86Gp src, int imm) =>
-      _enc.imulRRISized(dst, src, imm);
+      emit(X86InstId.kImul, [dst, src, imm]);
 
   /// IMUL dst, imm (dst = dst * imm).
-  void imulRI(X86Gp dst, int imm) => _enc.imulRRISized(dst, dst, imm);
+  void imulRI(X86Gp dst, int imm) => emit(X86InstId.kImul, [dst, imm]);
 
   /// XOR dst, src.
-  void xorRR(X86Gp dst, X86Gp src) => _enc.aluRR(X86Encoder.kAluXor, dst, src);
+  void xorRR(X86Gp dst, X86Gp src) => emit(X86InstId.kXor, [dst, src]);
 
   /// AND dst, src.
-  void andRR(X86Gp dst, X86Gp src) {
-    _enc.andRR(dst, src);
-  }
+  void andRR(X86Gp dst, X86Gp src) => emit(X86InstId.kAnd, [dst, src]);
 
   /// OR dst, src.
-  void orRR(X86Gp dst, X86Gp src) => _enc.aluRR(X86Encoder.kAluOr, dst, src);
+  void orRR(X86Gp dst, X86Gp src) => emit(X86InstId.kOr, [dst, src]);
 
   /// CMP dst, src.
-  void cmpRR(X86Gp dst, X86Gp src) => _enc.aluRR(X86Encoder.kAluCmp, dst, src);
+  void cmpRR(X86Gp dst, X86Gp src) => emit(X86InstId.kCmp, [dst, src]);
 
   /// CMP reg, imm.
-  void cmpRI(X86Gp dst, int imm) => _enc.aluRI(X86Encoder.kAluCmp, dst, imm);
+  void cmpRI(X86Gp dst, int imm) => emit(X86InstId.kCmp, [dst, imm]);
 
   /// TEST dst, src.
-  void testRR(X86Gp dst, X86Gp src) => _enc.testRRSized(dst, src);
+  void testRR(X86Gp dst, X86Gp src) => emit(X86InstId.kTest, [dst, src]);
 
   /// TEST reg, imm.
-  void testRI(X86Gp dst, int imm) => _enc.testRISized(dst, imm);
+  void testRI(X86Gp dst, int imm) => emit(X86InstId.kTest, [dst, imm]);
 
   /// AND r64, imm.
-  void andRI(X86Gp dst, int imm) => _enc.aluRI(X86Encoder.kAluAnd, dst, imm);
+  void andRI(X86Gp dst, int imm) => emit(X86InstId.kAnd, [dst, imm]);
 
   /// OR reg, imm.
-  void orRI(X86Gp dst, int imm) => _enc.aluRI(X86Encoder.kAluOr, dst, imm);
+  void orRI(X86Gp dst, int imm) => emit(X86InstId.kOr, [dst, imm]);
 
   /// XOR reg, imm.
-  void xorRI(X86Gp dst, int imm) => _enc.aluRI(X86Encoder.kAluXor, dst, imm);
+  void xorRI(X86Gp dst, int imm) => emit(X86InstId.kXor, [dst, imm]);
 
-  /// MOVSX r64, r8 (sign-extend byte).
-  void movsxB(X86Gp dst, X86Gp src) {
-    _enc.movsxR64R8(dst, src);
-  }
+  /// MOVSX dst, r8 (sign-extend the low byte of [src]).
+  void movsxB(X86Gp dst, X86Gp src) =>
+      emit(X86InstId.kMovsx, [dst, src.bits == 8 ? src : src.as8]);
 
-  /// MOVSX r64, r16 (sign-extend word).
-  void movsxW(X86Gp dst, X86Gp src) {
-    _enc.movsxR64R16(dst, src);
-  }
+  /// MOVSX dst, r16 (sign-extend the low word of [src]).
+  void movsxW(X86Gp dst, X86Gp src) => emit(X86InstId.kMovsx, [dst, src.as16]);
 
   /// MOVZX reg, reg — source register size selects the byte/word form.
-  void movzxRR(X86Gp dst, X86Gp src) {
-    switch (src.bits) {
-      case 8:
-        _enc.movzxR64R8(dst, src);
-        break;
-      case 16:
-        _enc.movzxR64R16(dst, src);
-        break;
-      default:
-        throw UnsupportedError('movzxRR: invalid source size ${src.bits}');
-    }
-  }
+  void movzxRR(X86Gp dst, X86Gp src) => emit(X86InstId.kMovzx, [dst, src]);
 
   /// MOVSX reg, reg — source register size selects the byte/word form.
-  void movsxRR(X86Gp dst, X86Gp src) {
-    switch (src.bits) {
-      case 8:
-        _enc.movsxR64R8(dst, src);
-        break;
-      case 16:
-        _enc.movsxR64R16(dst, src);
-        break;
-      default:
-        throw UnsupportedError('movsxRR: invalid source size ${src.bits}');
-    }
-  }
+  void movsxRR(X86Gp dst, X86Gp src) => emit(X86InstId.kMovsx, [dst, src]);
 
   /// MOVZX reg, [mem] — memory operand size selects the byte/word form.
-  void movzxRM(X86Gp dst, X86Mem mem) {
-    switch (mem.size) {
-      case 1:
-        _enc.movzxRegMem8(dst, mem);
-        break;
-      case 2:
-        _enc.movzxRegMem16(dst, mem);
-        break;
-      default:
-        throw UnsupportedError(
-            'movzxRM requires a 1 or 2 byte memory operand, got ${mem.size}');
-    }
-  }
+  void movzxRM(X86Gp dst, X86Mem mem) => emit(X86InstId.kMovzx, [dst, mem]);
 
   /// MOVSX reg, [mem] — memory operand size selects the byte/word form.
-  void movsxRM(X86Gp dst, X86Mem mem) {
-    switch (mem.size) {
-      case 1:
-        _enc.movsxRegMem8(dst, mem);
-        break;
-      case 2:
-        _enc.movsxRegMem16(dst, mem);
-        break;
-      default:
-        throw UnsupportedError(
-            'movsxRM requires a 1 or 2 byte memory operand, got ${mem.size}');
-    }
-  }
+  void movsxRM(X86Gp dst, X86Mem mem) => emit(X86InstId.kMovsx, [dst, mem]);
 
   /// MOVSXD r64, dword ptr [mem].
-  void movsxdRM(X86Gp dst, X86Mem mem) {
-    _enc.movsxdR64Mem(dst, mem);
-  }
+  /// MOVSXD r64, dword ptr [mem].
+  void movsxdRM(X86Gp dst, X86Mem mem) => emit(X86InstId.kMovsxd, [dst, mem]);
 
   // ===========================================================================
   // Stack instructions
   // ===========================================================================
 
   /// PUSH r64.
-  void push(X86Gp reg) => _enc.pushR64(reg);
+  void push(X86Gp reg) => emit(X86InstId.kPush, [reg]);
 
   /// POP r64.
-  void pop(X86Gp reg) => _enc.popR64(reg);
+  void pop(X86Gp reg) => emit(X86InstId.kPop, [reg]);
 
   /// PUSH imm8.
-  void pushImm8(int imm) => _enc.pushImm8(imm);
+  void pushImm8(int imm) => emit(X86InstId.kPush, [imm]);
 
-  /// PUSH imm32.
-  void pushImm32(int imm) => _enc.pushImm32(imm);
+  /// PUSH imm32 (always the 4-byte immediate form).
+  void pushImm32(int imm) {
+    instOptions |= X86EmitOptions.kLongForm;
+    emit(X86InstId.kPush, [imm]);
+  }
 
   // ===========================================================================
   // Control flow instructions
@@ -475,113 +354,53 @@ class X86Assembler extends BaseEmitter {
 
   /// JMP to label.
   ///
-  /// For backward jumps (to already bound labels), automatically uses
-  /// short jump (rel8) if the distance is within range (-128 to 127).
-  /// For forward jumps, uses near jump (rel32).
+  /// As upstream: a jump to a bound label uses the short form (rel8) when the
+  /// displacement fits; a jump to an unbound label uses rel32 unless
+  /// [forceShort] (`kShortForm`) is given.
   void jmp(Label target, {bool forceShort = false}) {
-    final targetOffset = code.getLabelOffset(target);
-
-    if (targetOffset != null) {
-      // Backward jump - label is already bound
-      // Calculate distance from end of instruction
-      final currentPos = _enc.buffer.length;
-
-      // For rel8: instruction is 2 bytes (EB xx)
-      // For rel32: instruction is 5 bytes (E9 xx xx xx xx)
-      // disp = target - (current + instruction_size)
-      final dispShort = targetOffset - (currentPos + 2);
-
-      if (dispShort >= -128 && dispShort <= 127) {
-        // Use short jump
-        _enc.jmpRel8(dispShort);
-      } else {
-        // Use near jump
-        final dispNear = targetOffset - (currentPos + 5);
-        _enc.jmpRel32(dispNear);
-      }
-    } else {
-      // Forward jump - use placeholder and patch later
-      if (forceShort) {
-        // Emit short jump with placeholder (will be patched)
-        final placeholderOffset = _enc.buffer.length + 1; // offset of disp8
-        _enc.jmpRel8(0);
-        code.addRel8(target, placeholderOffset);
-      } else {
-        final placeholderOffset = _enc.jmpRel32Placeholder();
-        code.addRel32(target, placeholderOffset);
-      }
-    }
-  }
-
-  /// JMP rel32 (direct displacement).
-  void jmpRel(int disp) {
-    _enc.jmpRel32(disp);
-  }
-
-  /// JMP rel8 (short jump, direct displacement).
-  void jmpRelShort(int disp8) {
-    _enc.jmpRel8(disp8);
+    if (forceShort) instOptions |= X86EmitOptions.kShortForm;
+    emit(X86InstId.kJmp, [target]);
   }
 
   /// JMP r64.
-  void jmpR(X86Gp reg) {
-    _enc.jmpR64(reg);
-  }
+  void jmpR(X86Gp reg) => emit(X86InstId.kJmp, [reg]);
 
   /// CALL to label.
-  void call(Label target) {
-    final placeholderOffset = _enc.callRel32Placeholder();
-    code.addRel32(target, placeholderOffset);
-  }
-
-  /// CALL rel32 (direct displacement).
-  void callRel(int disp) {
-    _enc.callRel32(disp);
-  }
+  void call(Label target) => emit(X86InstId.kCall, [target]);
 
   /// CALL r64.
-  void callR(X86Gp reg) {
-    _enc.callR64(reg);
-  }
+  void callR(X86Gp reg) => emit(X86InstId.kCall, [reg]);
 
   // ===========================================================================
   // Conditional jumps
   // ===========================================================================
 
-  /// Jcc to label.
-  ///
-  /// For backward jumps, automatically uses short jump (rel8) if possible.
-  /// For forward jumps, uses near jump (rel32).
+  /// Instruction ids of Jcc, CMOVcc and SETcc indexed by [X86Cond.code].
+  static const List<int> _jccIds = [
+    X86InstId.kJo, X86InstId.kJno, X86InstId.kJb, X86InstId.kJnb, //
+    X86InstId.kJz, X86InstId.kJnz, X86InstId.kJbe, X86InstId.kJnbe,
+    X86InstId.kJs, X86InstId.kJns, X86InstId.kJp, X86InstId.kJnp,
+    X86InstId.kJl, X86InstId.kJnl, X86InstId.kJle, X86InstId.kJnle,
+  ];
+  static const List<int> _cmovIds = [
+    X86InstId.kCmovo, X86InstId.kCmovno, X86InstId.kCmovb, //
+    X86InstId.kCmovnb, X86InstId.kCmovz, X86InstId.kCmovnz,
+    X86InstId.kCmovbe, X86InstId.kCmovnbe, X86InstId.kCmovs,
+    X86InstId.kCmovns, X86InstId.kCmovp, X86InstId.kCmovnp,
+    X86InstId.kCmovl, X86InstId.kCmovnl, X86InstId.kCmovle,
+    X86InstId.kCmovnle,
+  ];
+  static const List<int> _setIds = [
+    X86InstId.kSeto, X86InstId.kSetno, X86InstId.kSetb, X86InstId.kSetnb, //
+    X86InstId.kSetz, X86InstId.kSetnz, X86InstId.kSetbe, X86InstId.kSetnbe,
+    X86InstId.kSets, X86InstId.kSetns, X86InstId.kSetp, X86InstId.kSetnp,
+    X86InstId.kSetl, X86InstId.kSetnl, X86InstId.kSetle, X86InstId.kSetnle,
+  ];
+
+  /// Jcc to label (short/near form chosen as in [jmp]).
   void jcc(X86Cond cond, Label target, {bool forceShort = false}) {
-    final targetOffset = code.getLabelOffset(target);
-
-    if (targetOffset != null) {
-      // Backward jump - label is already bound
-      final currentPos = _enc.buffer.length;
-
-      // For rel8: instruction is 2 bytes (7x xx)
-      // For rel32: instruction is 6 bytes (0F 8x xx xx xx xx)
-      final dispShort = targetOffset - (currentPos + 2);
-
-      if (dispShort >= -128 && dispShort <= 127) {
-        // Use short conditional jump
-        _enc.jccRel8(cond, dispShort);
-      } else {
-        // Use near conditional jump
-        final dispNear = targetOffset - (currentPos + 6);
-        _enc.jccRel32(cond, dispNear);
-      }
-    } else {
-      // Forward jump - use placeholder
-      if (forceShort) {
-        final placeholderOffset = _enc.buffer.length + 1;
-        _enc.jccRel8(cond, 0);
-        code.addRel8(target, placeholderOffset);
-      } else {
-        final placeholderOffset = _enc.jccRel32Placeholder(cond);
-        code.addRel32(target, placeholderOffset);
-      }
-    }
+    if (forceShort) instOptions |= X86EmitOptions.kShortForm;
+    emit(_jccIds[cond.code], [target]);
   }
 
   /// JE/JZ - Jump if equal/zero.
@@ -616,19 +435,12 @@ class X86Assembler extends BaseEmitter {
   /// JAE - Jump if above or equal (unsigned).
   void jae(Label target) => jcc(X86Cond.ae, target);
 
-  /// Jcc rel32 (direct displacement).
-  void jccRel(X86Cond cond, int disp) {
-    _enc.jccRel32(cond, disp);
-  }
-
   // ===========================================================================
   // LEA instruction
   // ===========================================================================
 
   /// LEA r64, [mem].
-  void lea(X86Gp dst, X86Mem mem) {
-    _enc.leaR64Mem(dst, mem);
-  }
+  void lea(X86Gp dst, X86Mem mem) => emit(X86InstId.kLea, [dst, mem]);
 
   // ===========================================================================
   // Prologue/Epilogue helpers
@@ -665,9 +477,7 @@ class X86Assembler extends BaseEmitter {
   }
 
   /// Emits LEAVE instruction (equivalent to mov rsp, rbp; pop rbp).
-  void leave() {
-    _buf.emit8(0xC9);
-  }
+  void leave() => emit(X86InstId.kLeave, []);
 
   // ===========================================================================
   // ABI helpers
@@ -717,113 +527,51 @@ class X86Assembler extends BaseEmitter {
   // ===========================================================================
 
   /// INC reg.
-  void inc(X86Gp reg) {
-    if (reg.bits == 64) {
-      _enc.incR64(reg);
-    } else {
-      _enc.incR32(reg.as32);
-    }
-  }
+  void inc(X86Gp reg) => emit(X86InstId.kInc, [reg]);
 
   /// DEC reg.
-  void dec(X86Gp reg) {
-    if (reg.bits == 64) {
-      _enc.decR64(reg);
-    } else {
-      _enc.decR32(reg.as32);
-    }
-  }
+  void dec(X86Gp reg) => emit(X86InstId.kDec, [reg]);
 
   /// NEG reg (two's complement negation).
-  void neg(X86Gp reg) => _enc.gpGroup3(3, reg);
+  void neg(X86Gp reg) => emit(X86InstId.kNeg, [reg]);
 
   /// NOT reg (one's complement).
-  void not(X86Gp reg) => _enc.gpGroup3(2, reg);
+  void not(X86Gp reg) => emit(X86InstId.kNot, [reg]);
 
   // ===========================================================================
   // Shift instructions
   // ===========================================================================
 
   /// SHL reg, imm (left shift).
-  void shlRI(X86Gp reg, int imm) {
-    if (reg.bits == 64) {
-      _enc.shlR64Imm8(reg, imm);
-    } else {
-      _enc.shlR32Imm8(reg.as32, imm);
-    }
-  }
+  void shlRI(X86Gp reg, int imm) => emit(X86InstId.kShl, [reg, imm]);
 
   /// SHL reg, CL (left shift by CL).
-  void shlRCl(X86Gp reg) {
-    if (reg.bits == 64) {
-      _enc.shlR64Cl(reg);
-    } else {
-      _enc.shlR32Cl(reg.as32);
-    }
-  }
+  void shlRCl(X86Gp reg) => emit(X86InstId.kShl, [reg, cl]);
 
   /// SHR reg, imm (logical right shift).
-  void shrRI(X86Gp reg, int imm) {
-    if (reg.bits == 64) {
-      _enc.shrR64Imm8(reg, imm);
-    } else {
-      _enc.shrR32Imm8(reg.as32, imm);
-    }
-  }
+  void shrRI(X86Gp reg, int imm) => emit(X86InstId.kShr, [reg, imm]);
 
   /// SHR reg, CL (logical right shift by CL).
-  void shrRCl(X86Gp reg) {
-    if (reg.bits == 64) {
-      _enc.shrR64Cl(reg);
-    } else {
-      _enc.shrR32Cl(reg.as32);
-    }
-  }
+  void shrRCl(X86Gp reg) => emit(X86InstId.kShr, [reg, cl]);
 
   /// SAR reg, imm (arithmetic right shift).
-  void sarRI(X86Gp reg, int imm) {
-    if (reg.bits == 64) {
-      _enc.sarR64Imm8(reg, imm);
-    } else {
-      _enc.sarR32Imm8(reg.as32, imm);
-    }
-  }
+  void sarRI(X86Gp reg, int imm) => emit(X86InstId.kSar, [reg, imm]);
 
   /// SAR reg, CL (arithmetic right shift by CL).
-  void sarRCl(X86Gp reg) {
-    if (reg.bits == 64) {
-      _enc.sarR64Cl(reg);
-    } else {
-      _enc.sarR32Cl(reg.as32);
-    }
-  }
+  void sarRCl(X86Gp reg) => emit(X86InstId.kSar, [reg, cl]);
 
   /// ROL reg, imm (rotate left).
-  void rolRI(X86Gp reg, int imm) {
-    if (reg.bits == 64) {
-      _enc.rolR64Imm8(reg, imm);
-    } else {
-      _enc.rolR32Imm8(reg.as32, imm);
-    }
-  }
+  void rolRI(X86Gp reg, int imm) => emit(X86InstId.kRol, [reg, imm]);
 
   /// ROR reg, imm (rotate right).
-  void rorRI(X86Gp reg, int imm) {
-    if (reg.bits == 64) {
-      _enc.rorR64Imm8(reg, imm);
-    } else {
-      _enc.rorR32Imm8(reg.as32, imm);
-    }
-  }
+  void rorRI(X86Gp reg, int imm) => emit(X86InstId.kRor, [reg, imm]);
 
   // ===========================================================================
   // Exchange instruction
   // ===========================================================================
 
   /// XCHG a, b (exchange values).
-  void xchg(X86Gp a, X86Gp b) {
-    _enc.xchgR64R64(a, b);
-  }
+  void xchg(X86Gp a, X86Gp b) => emit(X86InstId.kXchg, [a, b]);
 
   // ===========================================================================
   // Conditional move (CMOVcc)
@@ -831,7 +579,7 @@ class X86Assembler extends BaseEmitter {
 
   /// CMOVcc dst, src (conditional move).
   void cmovcc(X86Cond cond, X86Gp dst, Object src) =>
-      _enc.gp0F(0, 1, 0x40 + cond.code, dst.bits, dst.id, src);
+      emit(_cmovIds[cond.code], [dst, src]);
 
   /// CMOVE dst, src (move if equal).
   void cmove(X86Gp dst, X86Gp src) => cmovcc(X86Cond.e, dst, src);
@@ -864,9 +612,8 @@ class X86Assembler extends BaseEmitter {
   // ===========================================================================
 
   /// SETcc reg (set byte based on condition).
-  void setcc(X86Cond cond, X86Gp reg) {
-    _enc.setccR8(cond, reg.as8);
-  }
+  void setcc(X86Cond cond, X86Gp reg) =>
+      emit(_setIds[cond.code], [reg.bits == 8 ? reg : reg.as8]);
 
   /// SETE reg (set if equal).
   void sete(X86Gp reg) => setcc(X86Cond.e, reg);
@@ -885,830 +632,815 @@ class X86Assembler extends BaseEmitter {
   // ===========================================================================
 
   /// MOVZX dst, src (zero-extend byte to qword).
-  void movzxB(X86Gp dst, X86Gp src) {
-    _enc.movzxR64R8(dst, src);
-  }
+  void movzxB(X86Gp dst, X86Gp src) =>
+      emit(X86InstId.kMovzx, [dst, src.bits == 8 ? src : src.as8]);
 
   /// MOVZX dst, src (zero-extend word to qword).
-  void movzxW(X86Gp dst, X86Gp src) {
-    _enc.movzxR64R16(dst, src);
-  }
+  void movzxW(X86Gp dst, X86Gp src) => emit(X86InstId.kMovzx, [dst, src.as16]);
 
   /// MOVSXD dst, src (sign-extend dword to qword).
-  void movsxd(X86Gp dst, X86Gp src) {
-    _enc.movsxdR64R32(dst, src);
-  }
+  void movsxd(X86Gp dst, X86Gp src) => emit(X86InstId.kMovsxd, [dst, src]);
 
   // ===========================================================================
   // Bit manipulation
   // ===========================================================================
 
   /// ARPL r/m16, r16.
-  void arplRR(X86Gp dst, X86Gp src) => _enc.arplRR(dst, src);
+  void arplRR(X86Gp dst, X86Gp src) => emit(X86InstId.kArpl, [dst, src]);
 
   /// ARPL [mem16], r16.
-  void arplMR(X86Mem dst, X86Gp src) => _enc.arplMR(dst, src);
+  void arplMR(X86Mem dst, X86Gp src) => emit(X86InstId.kArpl, [dst, src]);
 
   /// BOUND r16/r32, [mem].
-  void bound(X86Gp dst, X86Mem mem) => _enc.boundRM(dst, mem);
+  void bound(X86Gp dst, X86Mem mem) => emit(X86InstId.kBound, [dst, mem]);
 
   /// BSF dst, [mem].
-  void bsfRM(X86Gp dst, X86Mem mem) => _enc.bsfRM(dst, mem);
+  void bsfRM(X86Gp dst, X86Mem mem) => emit(X86InstId.kBsf, [dst, mem]);
 
   /// BSR dst, [mem].
-  void bsrRM(X86Gp dst, X86Mem mem) => _enc.bsrRM(dst, mem);
+  void bsrRM(X86Gp dst, X86Mem mem) => emit(X86InstId.kBsr, [dst, mem]);
 
   /// BT reg, imm.
-  void btRI(X86Gp dst, int imm) => _enc.btRI(dst, imm);
+  void btRI(X86Gp dst, int imm) => emit(X86InstId.kBt, [dst, imm]);
 
   /// BT [mem], imm.
-  void btMI(X86Mem mem, int imm) => _enc.btMI(mem, imm);
+  void btMI(X86Mem mem, int imm) => emit(X86InstId.kBt, [mem, imm]);
 
   /// BT reg, reg.
-  void btRR(X86Gp dst, X86Gp src) => _enc.btRR(dst, src);
+  void btRR(X86Gp dst, X86Gp src) => emit(X86InstId.kBt, [dst, src]);
 
   /// BT [mem], reg.
-  void btMR(X86Mem mem, X86Gp src) => _enc.btMR(mem, src);
+  void btMR(X86Mem mem, X86Gp src) => emit(X86InstId.kBt, [mem, src]);
 
   /// BTC reg, imm.
-  void btcRI(X86Gp dst, int imm) => _enc.btcRI(dst, imm);
+  void btcRI(X86Gp dst, int imm) => emit(X86InstId.kBtc, [dst, imm]);
 
   /// BTC [mem], imm.
-  void btcMI(X86Mem mem, int imm) => _enc.btcMI(mem, imm);
+  void btcMI(X86Mem mem, int imm) => emit(X86InstId.kBtc, [mem, imm]);
 
   /// BTC reg, reg.
-  void btcRR(X86Gp dst, X86Gp src) => _enc.btcRR(dst, src);
+  void btcRR(X86Gp dst, X86Gp src) => emit(X86InstId.kBtc, [dst, src]);
 
   /// BTC [mem], reg.
-  void btcMR(X86Mem mem, X86Gp src) => _enc.btcMR(mem, src);
+  void btcMR(X86Mem mem, X86Gp src) => emit(X86InstId.kBtc, [mem, src]);
 
   /// BTR reg, imm.
-  void btrRI(X86Gp dst, int imm) => _enc.btrRI(dst, imm);
+  void btrRI(X86Gp dst, int imm) => emit(X86InstId.kBtr, [dst, imm]);
 
   /// BTR reg, reg.
-  void btrRR(X86Gp dst, X86Gp src) => _enc.btrRR(dst, src);
+  void btrRR(X86Gp dst, X86Gp src) => emit(X86InstId.kBtr, [dst, src]);
 
   /// BTS reg, imm.
-  void btsRI(X86Gp dst, int imm) => _enc.btsRI(dst, imm);
+  void btsRI(X86Gp dst, int imm) => emit(X86InstId.kBts, [dst, imm]);
 
   /// BTS reg, reg.
-  void btsRR(X86Gp dst, X86Gp src) => _enc.btsRR(dst, src);
+  void btsRR(X86Gp dst, X86Gp src) => emit(X86InstId.kBts, [dst, src]);
 
   // ===========================================================================
   // Division
   // ===========================================================================
 
   /// CDQ - Sign-extend EAX into EDX:EAX
-  void cdq() => _enc.cdq();
+  void cdq() => emit(X86InstId.kCdq, []);
 
   /// CQO - Sign-extend RAX into RDX:RAX
-  void cqo() => _enc.cqo();
+  void cqo() => emit(X86InstId.kCqo, []);
 
   /// CBW - Convert byte to word (AL -> AX)
-  void cbw() => _enc.cbw();
+  void cbw() => emit(X86InstId.kCbw, []);
 
   /// CWDE - Convert word to doubleword (AX -> EAX)
-  void cwde() => _enc.cwde();
+  void cwde() => emit(X86InstId.kCwde, []);
 
   /// CDQE - Convert doubleword to quadword (EAX -> RAX)
-  void cdqe() => _enc.cdqe();
+  void cdqe() => emit(X86InstId.kCdqe, []);
 
   /// CWD - Convert word to doubleword (AX -> DX:AX)
-  void cwd() => _enc.cwd();
+  void cwd() => emit(X86InstId.kCwd, []);
 
   /// IDIV reg - Signed divide RDX:RAX by reg
   /// Result: quotient in RAX, remainder in RDX
-  void idiv(Object src) => _enc.gpGroup3(7, src);
+  void idiv(Object src) => emit(X86InstId.kIdiv, [src]);
 
   /// DIV reg - Unsigned divide RDX:RAX by reg
   /// Result: quotient in RAX, remainder in RDX
-  void div(Object src) => _enc.gpGroup3(6, src);
+  void div(Object src) => emit(X86InstId.kDiv, [src]);
 
   // ===========================================================================
   // High-precision arithmetic (for cryptography)
   // ===========================================================================
 
   /// ADC dst, src - Add with carry
-  void adcRR(X86Gp dst, X86Gp src) {
-    _enc.adcRR(dst, src);
-  }
+  void adcRR(X86Gp dst, X86Gp src) => emit(X86InstId.kAdc, [dst, src]);
 
   /// ADC dst, imm - Add with carry
-  void adcRI(X86Gp dst, int imm) {
-    if (dst.bits == 8) {
-      _enc.adcImm8(dst, imm);
-      return;
-    }
-
-    if (imm >= -128 && imm <= 127) {
-      _enc.adcImm8(dst, imm);
-    } else {
-      _enc.adcImmFull(dst, imm);
-    }
-  }
+  void adcRI(X86Gp dst, int imm) => emit(X86InstId.kAdc, [dst, imm]);
 
   /// ADC dst, [mem] - Add with carry (register <- register + memory)
-  void adcRM(X86Gp dst, X86Mem src) {
-    _enc.adcRM(dst, src);
-  }
+  void adcRM(X86Gp dst, X86Mem src) => emit(X86InstId.kAdc, [dst, src]);
 
   /// ADC [mem], src - Add with carry (memory <- memory + register)
-  void adcMR(X86Mem dst, X86Gp src) {
-    _enc.adcMR(dst, src);
-  }
+  void adcMR(X86Mem dst, X86Gp src) => emit(X86InstId.kAdc, [dst, src]);
 
   /// ADC [mem], imm - Add with carry (memory <- memory + immediate)
-  void adcMI(X86Mem dst, int imm) {
-    _enc.adcMI(dst, imm);
-  }
+  void adcMI(X86Mem dst, int imm) => emit(X86InstId.kAdc, [dst, imm]);
 
   /// SBB dst, imm - Subtract with borrow
-  void sbbRI(X86Gp dst, int imm) {
-    if (dst.bits == 8) {
-      _enc.sbbImm8(dst, imm);
-      return;
-    }
-
-    if (imm >= -128 && imm <= 127) {
-      _enc.sbbImm8(dst, imm);
-    } else {
-      _enc.sbbImmFull(dst, imm);
-    }
-  }
+  void sbbRI(X86Gp dst, int imm) => emit(X86InstId.kSbb, [dst, imm]);
 
   /// SBB dst, [mem] - Subtract with borrow (register <- register - memory)
-  void sbbRM(X86Gp dst, X86Mem src) {
-    _enc.sbbRM(dst, src);
-  }
+  void sbbRM(X86Gp dst, X86Mem src) => emit(X86InstId.kSbb, [dst, src]);
 
   /// MUL src - Unsigned multiply RDX:RAX = RAX * src
-  void mul(Object src) => _enc.gpGroup3(4, src);
+  void mul(Object src) => emit(X86InstId.kMul, [src]);
 
   /// ROL/ROR/SHL/SHR/SAR by CL.
-  void rolRCl(X86Gp reg) => _enc.gpShift(0, reg, null);
-  void rorRCl(X86Gp reg) => _enc.gpShift(1, reg, null);
+  void rolRCl(X86Gp reg) => emit(X86InstId.kRol, [reg, cl]);
+  void rorRCl(X86Gp reg) => emit(X86InstId.kRor, [reg, cl]);
 
   /// BSR/BSF/LZCNT/TZCNT/POPCNT reg, r/m.
-  void bsr(X86Gp dst, Object src) =>
-      _enc.gp0F(0, 1, 0xBD, dst.bits, dst.id, src);
-  void bsf(X86Gp dst, Object src) =>
-      _enc.gp0F(0, 1, 0xBC, dst.bits, dst.id, src);
-  void lzcnt(X86Gp dst, Object src) =>
-      _enc.gp0F(0xF3, 1, 0xBD, dst.bits, dst.id, src);
-  void tzcnt(X86Gp dst, Object src) =>
-      _enc.gp0F(0xF3, 1, 0xBC, dst.bits, dst.id, src);
-  void popcnt(X86Gp dst, Object src) =>
-      _enc.gp0F(0xF3, 1, 0xB8, dst.bits, dst.id, src);
+  void bsr(X86Gp dst, Object src) => emit(X86InstId.kBsr, [dst, src]);
+  void bsf(X86Gp dst, Object src) => emit(X86InstId.kBsf, [dst, src]);
+  void lzcnt(X86Gp dst, Object src) => emit(X86InstId.kLzcnt, [dst, src]);
+  void tzcnt(X86Gp dst, Object src) => emit(X86InstId.kTzcnt, [dst, src]);
+  void popcnt(X86Gp dst, Object src) => emit(X86InstId.kPopcnt, [dst, src]);
 
   /// IMUL reg, [mem], imm.
-  void imulRMI(X86Gp dst, X86Mem src, int imm) => _enc.imulRMI(dst, src, imm);
+  void imulRMI(X86Gp dst, X86Mem src, int imm) =>
+      emit(X86InstId.kImul, [dst, src, imm]);
 
   /// IMUL reg, [mem].
-  void imulRM(X86Gp dst, X86Mem src) =>
-      _enc.gp0F(0, 1, 0xAF, dst.bits, dst.id, src);
+  void imulRM(X86Gp dst, X86Mem src) => emit(X86InstId.kImul, [dst, src]);
 
   /// MOVBE reg, [mem].
-  void movbe(X86Gp dst, X86Mem src) =>
-      _enc.gp0F(0, 2, 0xF0, dst.bits, dst.id, src);
+  void movbe(X86Gp dst, X86Mem src) => emit(X86InstId.kMovbe, [dst, src]);
 
   /// BSWAP reg.
-  void bswap(X86Gp reg) => _enc.gpBswap(reg);
+  void bswap(X86Gp reg) => emit(X86InstId.kBswap, [reg]);
 
   /// BT r/m, reg and BT r/m, imm8.
-  void bt(Object dst, X86Gp bit) =>
-      _enc.gp0F(0, 1, 0xA3, bit.bits, bit.id, dst);
-  void btI(X86Gp dst, int bit) =>
-      _enc.gp0F(0, 1, 0xBA, dst.bits, 4, dst, imm8: bit);
+  void bt(Object dst, X86Gp bit) => emit(X86InstId.kBt, [dst, bit]);
+  void btI(X86Gp dst, int bit) => emit(X86InstId.kBt, [dst, bit]);
 
   /// SBB reg, reg.
-  void sbbRR(X86Gp dst, X86Gp src) => _enc.aluRR(0x18, dst, src);
+  void sbbRR(X86Gp dst, X86Gp src) => emit(X86InstId.kSbb, [dst, src]);
 
   /// PREFETCHT0 [mem].
-  void prefetcht0(X86Mem mem) => _enc.gp0F(0, 1, 0x18, 32, 1, mem);
+  void prefetcht0(X86Mem mem) => emit(X86InstId.kPrefetcht0, [mem]);
 
   /// BMI: ANDN dst, src1, src2 (dst = ~src1 & src2).
   void andn(X86Gp dst, X86Gp src1, Object src2) =>
-      _enc.gpVex(0, 2, 0xF2, dst.bits, dst.id, src1.id, src2);
+      emit(X86InstId.kAndn, [dst, src1, src2]);
 
   /// BMI2: SHLX/SHRX/SARX dst, src, count.
   void shlx(X86Gp dst, Object src, X86Gp count) =>
-      _enc.gpVex(0x66, 2, 0xF7, dst.bits, dst.id, count.id, src);
+      emit(X86InstId.kShlx, [dst, src, count]);
   void shrx(X86Gp dst, Object src, X86Gp count) =>
-      _enc.gpVex(0xF2, 2, 0xF7, dst.bits, dst.id, count.id, src);
+      emit(X86InstId.kShrx, [dst, src, count]);
   void sarx(X86Gp dst, Object src, X86Gp count) =>
-      _enc.gpVex(0xF3, 2, 0xF7, dst.bits, dst.id, count.id, src);
+      emit(X86InstId.kSarx, [dst, src, count]);
 
   /// MULX hi, lo, src (BMI2) - Unsigned multiply without flags
-  void mulx(X86Gp hi, X86Gp lo, X86Gp src) {
-    _enc.mulxR64R64R64(hi, lo, src);
-  }
+  void mulx(X86Gp hi, X86Gp lo, X86Gp src) =>
+      emit(X86InstId.kMulx, [hi, lo, src]);
 
   // ==========================================================================
   // BMI2
   // ==========================================================================
 
   /// BZHI dst, src, idx (BMI2) - Zero high bits starting from idx.
-  void bzhi(X86Gp dst, X86Gp src, X86Gp idx) {
-    _enc.bzhiR64R64R64(dst, src, idx);
-  }
+  void bzhi(X86Gp dst, X86Gp src, X86Gp idx) =>
+      emit(X86InstId.kBzhi, [dst, src, idx]);
 
   /// PDEP dst, src, mask (BMI2) - Parallel bit deposit.
-  void pdep(X86Gp dst, X86Gp src, X86Gp mask) {
-    _enc.pdepR64R64R64(dst, src, mask);
-  }
+  void pdep(X86Gp dst, X86Gp src, X86Gp mask) =>
+      emit(X86InstId.kPdep, [dst, src, mask]);
 
   /// PEXT dst, src, mask (BMI2) - Parallel bit extract.
-  void pext(X86Gp dst, X86Gp src, X86Gp mask) {
-    _enc.pextR64R64R64(dst, src, mask);
-  }
+  void pext(X86Gp dst, X86Gp src, X86Gp mask) =>
+      emit(X86InstId.kPext, [dst, src, mask]);
 
   /// RORX dst, src, imm8 (BMI2) - Rotate right without affecting flags.
-  void rorx(X86Gp dst, Object src, int imm8) {
-    _enc.gpVex(0xF2, 3, 0xF0, dst.bits, dst.id, 0, src, imm8: imm8);
-  }
+  void rorx(X86Gp dst, Object src, int imm8) =>
+      emit(X86InstId.kRorx, [dst, src, imm8]);
 
   /// ADCX dst, src (ADX) - Add with carry (uses CF only)
-  void adcx(X86Gp dst, X86Gp src) {
-    _enc.adcxR64R64(dst, src);
-  }
+  void adcx(X86Gp dst, X86Gp src) => emit(X86InstId.kAdcx, [dst, src]);
 
   /// ADOX dst, src (ADX) - Add with overflow (uses OF only)
-  void adox(X86Gp dst, X86Gp src) {
-    _enc.adoxR64R64(dst, src);
-  }
+  void adox(X86Gp dst, X86Gp src) => emit(X86InstId.kAdox, [dst, src]);
 
   // ===========================================================================
   // Flag manipulation
   // ===========================================================================
 
   /// CLC - Clear carry flag
-  void clc() => _enc.clc();
+  void clc() => emit(X86InstId.kClc, []);
 
   /// STC - Set carry flag
-  void stc() => _enc.stc();
+  void stc() => emit(X86InstId.kStc, []);
 
   /// CMC - Complement carry flag
-  void cmc() => _enc.cmc();
+  void cmc() => emit(X86InstId.kCmc, []);
 
   /// CLD - Clear direction flag
-  void cld() => _enc.cld();
+  void cld() => emit(X86InstId.kCld, []);
 
   /// STD - Set direction flag (use with caution)
-  void std() => _enc.std();
+  void std() => emit(X86InstId.kStd, []);
 
   // ===========================================================================
   // String operations
   // ===========================================================================
 
   /// REP MOVSB - Copy RCX bytes from [RSI] to [RDI]
-  void repMovsb() => _enc.repMovsb();
+  void repMovsb() => _repString(X86InstId.kMovs, 1);
 
   /// REP MOVSQ - Copy RCX qwords from [RSI] to [RDI]
-  void repMovsq() => _enc.repMovsq();
+  void repMovsq() => _repString(X86InstId.kMovs, 8);
 
   /// REP STOSB - Store AL to RCX bytes at [RDI]
-  void repStosb() => _enc.repStosb();
+  void repStosb() => _repString(X86InstId.kStos, 1);
 
   /// REP STOSQ - Store RAX to RCX qwords at [RDI]
-  void repStosq() => _enc.repStosq();
+  void repStosq() => _repString(X86InstId.kStos, 8);
+
+  /// `rep(zcx).movs(ptr_zdi, ptr_zsi)` / `rep(zcx).stos(ptr_zdi, zax)` of
+  /// [size] bytes, as upstream's `movsb()`... aliases (x86emitter.h).
+  void _repString(int instId, int size) {
+    final zdi = is64Bit ? rdi : edi;
+    final zsi = is64Bit ? rsi : esi;
+    final dst = X86Mem.base(zdi, size: size);
+    instOptions |= X86EmitOptions.kX86_Rep;
+    extraReg = is64Bit ? rcx : ecx;
+    emit(
+        instId,
+        instId == X86InstId.kMovs
+            ? [dst, X86Mem.base(zsi, size: size)]
+            : [dst, size == 8 ? rax : al]);
+  }
 
   // ===========================================================================
   // Memory fences
   // ===========================================================================
 
   /// MFENCE - Full memory fence
-  void mfence() => _enc.mfence();
+  void mfence() => emit(X86InstId.kMfence, []);
 
   /// SFENCE - Store fence
-  void sfence() => _enc.sfence();
+  void sfence() => emit(X86InstId.kSfence, []);
 
   /// LFENCE - Load fence
-  void lfence() => _enc.lfence();
+  void lfence() => emit(X86InstId.kLfence, []);
 
   /// PAUSE - Spin loop hint
-  void pause() => _enc.pause();
+  void pause() => emit(X86InstId.kPause, []);
 
   // ===========================================================================
   // SSE/SSE2 - Move instructions
   // ===========================================================================
 
   /// MOVAPS xmm, xmm (move aligned packed single-precision)
-  void movapsXX(X86Xmm dst, X86Xmm src) => _enc.movapsXmmXmm(dst, src);
+  void movapsXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMovaps, [dst, src]);
 
   /// MOVUPS xmm, xmm (move unaligned packed single-precision)
-  void movupsXX(X86Xmm dst, X86Xmm src) => _enc.movupsXmmXmm(dst, src);
+  void movupsXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMovups, [dst, src]);
 
   /// MOVUPS xmm, [mem]
-  void movupsXM(X86Xmm dst, X86Mem mem) => _enc.movupsXmmMem(dst, mem);
+  void movupsXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kMovups, [dst, mem]);
 
   /// MOVUPS [mem], xmm
-  void movupsMX(X86Mem mem, X86Xmm src) => _enc.movupsMemXmm(mem, src);
+  void movupsMX(X86Mem mem, X86Xmm src) => emit(X86InstId.kMovups, [mem, src]);
 
   /// MOVAPS xmm, [mem]
-  void movapsXM(X86Xmm dst, X86Mem mem) => _enc.movapsXmmMem(dst, mem);
+  void movapsXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kMovaps, [dst, mem]);
 
   /// MOVAPS [mem], xmm
-  void movapsMX(X86Mem mem, X86Xmm src) => _enc.movapsMemXmm(mem, src);
+  void movapsMX(X86Mem mem, X86Xmm src) => emit(X86InstId.kMovaps, [mem, src]);
 
   /// MOVD xmm, [mem]
-  void movdXM(X86Xmm dst, X86Mem mem) => _enc.movdXmmMem(dst, mem);
+  void movdXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kMovd, [dst, mem]);
 
   /// MOVD [mem], xmm
-  void movdMX(X86Mem mem, X86Xmm src) => _enc.movdMemXmm(mem, src);
+  void movdMX(X86Mem mem, X86Xmm src) => emit(X86InstId.kMovd, [mem, src]);
 
   /// MOVSD xmm, xmm (move scalar double-precision)
-  void movsdXX(X86Xmm dst, X86Xmm src) => _enc.movsdXmmXmm(dst, src);
+  void movsdXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMovsd, [dst, src]);
 
   /// MOVSD xmm, [mem]
-  void movsdXM(X86Xmm dst, X86Mem mem) => _enc.movsdXmmMem(dst, mem);
+  void movsdXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kMovsd, [dst, mem]);
 
   /// MOVSD [mem], xmm
-  void movsdMX(X86Mem mem, X86Xmm src) => _enc.movsdMemXmm(mem, src);
+  void movsdMX(X86Mem mem, X86Xmm src) => emit(X86InstId.kMovsd, [mem, src]);
 
   /// MOVSS xmm, xmm (move scalar single-precision)
-  void movssXX(X86Xmm dst, X86Xmm src) => _enc.movssXmmXmm(dst, src);
+  void movssXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMovss, [dst, src]);
 
   /// MOVSS xmm, [mem]
-  void movssXM(X86Xmm dst, X86Mem mem) => _enc.movssXmmMem(dst, mem);
+  void movssXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kMovss, [dst, mem]);
 
   /// MOVSS [mem], xmm
-  void movssMX(X86Mem mem, X86Xmm src) => _enc.movssMemXmm(mem, src);
+  void movssMX(X86Mem mem, X86Xmm src) => emit(X86InstId.kMovss, [mem, src]);
 
   // ===========================================================================
   // SSE/SSE2 - Arithmetic (scalar double)
   // ===========================================================================
 
   /// ADDSD xmm, xmm (add scalar double)
-  void addsdXX(X86Xmm dst, X86Xmm src) => _enc.addsdXmmXmm(dst, src);
+  void addsdXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kAddsd, [dst, src]);
 
   /// SUBSD xmm, xmm (subtract scalar double)
-  void subsdXX(X86Xmm dst, X86Xmm src) => _enc.subsdXmmXmm(dst, src);
+  void subsdXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kSubsd, [dst, src]);
 
   /// MULSD xmm, xmm (multiply scalar double)
-  void mulsdXX(X86Xmm dst, X86Xmm src) => _enc.mulsdXmmXmm(dst, src);
+  void mulsdXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMulsd, [dst, src]);
 
   /// DIVSD xmm, xmm (divide scalar double)
-  void divsdXX(X86Xmm dst, X86Xmm src) => _enc.divsdXmmXmm(dst, src);
+  void divsdXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kDivsd, [dst, src]);
 
   /// SQRTSD xmm, xmm (square root scalar double)
-  void sqrtsdXX(X86Xmm dst, X86Xmm src) => _enc.sqrtsdXmmXmm(dst, src);
+  void sqrtsdXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kSqrtsd, [dst, src]);
 
   /// ADDSD xmm, [mem]
-  void addsdXM(X86Xmm dst, X86Mem src) => _enc.addsdXmmMem(dst, src);
+  void addsdXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kAddsd, [dst, src]);
 
   /// SUBSD xmm, [mem]
-  void subsdXM(X86Xmm dst, X86Mem src) => _enc.subsdXmmMem(dst, src);
+  void subsdXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kSubsd, [dst, src]);
 
   /// MULSD xmm, [mem]
-  void mulsdXM(X86Xmm dst, X86Mem src) => _enc.mulsdXmmMem(dst, src);
+  void mulsdXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kMulsd, [dst, src]);
 
   /// DIVSD xmm, [mem]
-  void divsdXM(X86Xmm dst, X86Mem src) => _enc.divsdXmmMem(dst, src);
+  void divsdXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kDivsd, [dst, src]);
 
   /// SQRTSD xmm, [mem]
-  void sqrtsdXM(X86Xmm dst, X86Mem src) => _enc.sqrtsdXmmMem(dst, src);
+  void sqrtsdXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kSqrtsd, [dst, src]);
 
   // ===========================================================================
   // SSE/SSE2 - Arithmetic (scalar single)
   // ===========================================================================
 
   /// ADDSS xmm, xmm (add scalar single)
-  void addssXX(X86Xmm dst, X86Xmm src) => _enc.addssXmmXmm(dst, src);
+  void addssXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kAddss, [dst, src]);
 
   /// SUBSS xmm, xmm (subtract scalar single)
-  void subssXX(X86Xmm dst, X86Xmm src) => _enc.subssXmmXmm(dst, src);
+  void subssXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kSubss, [dst, src]);
 
   /// MULSS xmm, xmm (multiply scalar single)
-  void mulssXX(X86Xmm dst, X86Xmm src) => _enc.mulssXmmXmm(dst, src);
+  void mulssXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMulss, [dst, src]);
 
   /// DIVSS xmm, xmm (divide scalar single)
-  void divssXX(X86Xmm dst, X86Xmm src) => _enc.divssXmmXmm(dst, src);
+  void divssXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kDivss, [dst, src]);
 
   /// SQRTSS xmm, xmm (square root scalar single)
-  void sqrtssXX(X86Xmm dst, X86Xmm src) => _enc.sqrtssXmmXmm(dst, src);
+  void sqrtssXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kSqrtss, [dst, src]);
 
   /// ADDSS xmm, [mem]
-  void addssXM(X86Xmm dst, X86Mem src) => _enc.addssXmmMem(dst, src);
+  void addssXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kAddss, [dst, src]);
 
   /// SUBSS xmm, [mem]
-  void subssXM(X86Xmm dst, X86Mem src) => _enc.subssXmmMem(dst, src);
+  void subssXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kSubss, [dst, src]);
 
   /// MULSS xmm, [mem]
-  void mulssXM(X86Xmm dst, X86Mem src) => _enc.mulssXmmMem(dst, src);
+  void mulssXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kMulss, [dst, src]);
 
   /// DIVSS xmm, [mem]
-  void divssXM(X86Xmm dst, X86Mem src) => _enc.divssXmmMem(dst, src);
+  void divssXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kDivss, [dst, src]);
 
   /// SQRTSS xmm, [mem]
-  void sqrtssXM(X86Xmm dst, X86Mem src) => _enc.sqrtssXmmMem(dst, src);
+  void sqrtssXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kSqrtss, [dst, src]);
 
   // SSE/SSE2 - Scalar Min/Max and Reciprocal
   /// MINSD xmm, xmm
-  void minsdXX(X86Xmm dst, X86Xmm src) => _enc.minsdXmmXmm(dst, src);
-  void minsdXM(X86Xmm dst, X86Mem src) => _enc.minsdXmmMem(dst, src);
+  void minsdXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMinsd, [dst, src]);
+  void minsdXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kMinsd, [dst, src]);
 
   /// MINSS xmm, xmm
-  void minssXX(X86Xmm dst, X86Xmm src) => _enc.minssXmmXmm(dst, src);
-  void minssXM(X86Xmm dst, X86Mem src) => _enc.minssXmmMem(dst, src);
+  void minssXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMinss, [dst, src]);
+  void minssXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kMinss, [dst, src]);
 
   /// MAXSD xmm, xmm
-  void maxsdXX(X86Xmm dst, X86Xmm src) => _enc.maxsdXmmXmm(dst, src);
-  void maxsdXM(X86Xmm dst, X86Mem src) => _enc.maxsdXmmMem(dst, src);
+  void maxsdXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMaxsd, [dst, src]);
+  void maxsdXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kMaxsd, [dst, src]);
 
   /// MAXSS xmm, xmm
-  void maxssXX(X86Xmm dst, X86Xmm src) => _enc.maxssXmmXmm(dst, src);
-  void maxssXM(X86Xmm dst, X86Mem src) => _enc.maxssXmmMem(dst, src);
+  void maxssXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMaxss, [dst, src]);
+  void maxssXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kMaxss, [dst, src]);
 
   /// RCPSS xmm, xmm
-  void rcpssXX(X86Xmm dst, X86Xmm src) => _enc.rcpssXmmXmm(dst, src);
-  void rcpssXM(X86Xmm dst, X86Mem src) => _enc.rcpssXmmMem(dst, src);
+  void rcpssXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kRcpss, [dst, src]);
+  void rcpssXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kRcpss, [dst, src]);
 
   /// RSQRTSS xmm, xmm
-  void rsqrtssXX(X86Xmm dst, X86Xmm src) => _enc.rsqrtssXmmXmm(dst, src);
-  void rsqrtssXM(X86Xmm dst, X86Mem src) => _enc.rsqrtssXmmMem(dst, src);
+  void rsqrtssXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kRsqrtss, [dst, src]);
+  void rsqrtssXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kRsqrtss, [dst, src]);
 
   // ===========================================================================
   // SSE/SSE2 - Packed single-precision arithmetic
   // ===========================================================================
 
   /// ADDPS xmm, xmm (add packed single)
-  void addps(X86Xmm dst, X86Xmm src) => _enc.addpsXmmXmm(dst, src);
+  void addps(X86Xmm dst, X86Xmm src) => emit(X86InstId.kAddps, [dst, src]);
 
   /// ADDPS xmm, [mem]
-  void addpsXM(X86Xmm dst, X86Mem mem) => _enc.addpsXmmMem(dst, mem);
+  void addpsXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kAddps, [dst, mem]);
 
   /// SUBPS xmm, xmm (subtract packed single)
-  void subps(X86Xmm dst, X86Xmm src) => _enc.subpsXmmXmm(dst, src);
+  void subps(X86Xmm dst, X86Xmm src) => emit(X86InstId.kSubps, [dst, src]);
 
   /// SUBPS xmm, [mem]
-  void subpsXM(X86Xmm dst, X86Mem mem) => _enc.subpsXmmMem(dst, mem);
+  void subpsXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kSubps, [dst, mem]);
 
   /// MULPS xmm, xmm (multiply packed single)
-  void mulps(X86Xmm dst, X86Xmm src) => _enc.mulpsXmmXmm(dst, src);
+  void mulps(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMulps, [dst, src]);
 
   /// MULPS xmm, [mem]
-  void mulpsXM(X86Xmm dst, X86Mem mem) => _enc.mulpsXmmMem(dst, mem);
+  void mulpsXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kMulps, [dst, mem]);
 
   /// DIVPS xmm, xmm (divide packed single)
-  void divps(X86Xmm dst, X86Xmm src) => _enc.divpsXmmXmm(dst, src);
+  void divps(X86Xmm dst, X86Xmm src) => emit(X86InstId.kDivps, [dst, src]);
 
   /// DIVPS xmm, [mem]
-  void divpsXM(X86Xmm dst, X86Mem mem) => _enc.divpsXmmMem(dst, mem);
+  void divpsXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kDivps, [dst, mem]);
 
   /// ADDPD xmm, xmm (add packed double)
-  void addpd(X86Xmm dst, X86Xmm src) => _enc.addpdXmmXmm(dst, src);
-  void addpdXM(X86Xmm dst, X86Mem mem) => _enc.addpdXmmMem(dst, mem);
+  void addpd(X86Xmm dst, X86Xmm src) => emit(X86InstId.kAddpd, [dst, src]);
+  void addpdXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kAddpd, [dst, mem]);
 
   /// SUBPD xmm, xmm (subtract packed double)
-  void subpd(X86Xmm dst, X86Xmm src) => _enc.subpdXmmXmm(dst, src);
-  void subpdXM(X86Xmm dst, X86Mem mem) => _enc.subpdXmmMem(dst, mem);
+  void subpd(X86Xmm dst, X86Xmm src) => emit(X86InstId.kSubpd, [dst, src]);
+  void subpdXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kSubpd, [dst, mem]);
 
   /// MULPD xmm, xmm (multiply packed double)
-  void mulpd(X86Xmm dst, X86Xmm src) => _enc.mulpdXmmXmm(dst, src);
-  void mulpdXM(X86Xmm dst, X86Mem mem) => _enc.mulpdXmmMem(dst, mem);
+  void mulpd(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMulpd, [dst, src]);
+  void mulpdXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kMulpd, [dst, mem]);
 
   /// DIVPD xmm, xmm (divide packed double)
-  void divpd(X86Xmm dst, X86Xmm src) => _enc.divpdXmmXmm(dst, src);
-  void divpdXM(X86Xmm dst, X86Mem mem) => _enc.divpdXmmMem(dst, mem);
+  void divpd(X86Xmm dst, X86Xmm src) => emit(X86InstId.kDivpd, [dst, src]);
+  void divpdXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kDivpd, [dst, mem]);
 
   /// MINPS xmm, xmm (minimum packed single)
-  void minps(X86Xmm dst, X86Xmm src) => _enc.minpsXmmXmm(dst, src);
+  void minps(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMinps, [dst, src]);
 
   /// MAXPS xmm, xmm (maximum packed single)
-  void maxps(X86Xmm dst, X86Xmm src) => _enc.maxpsXmmXmm(dst, src);
+  void maxps(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMaxps, [dst, src]);
 
   /// RCPPS xmm, xmm
-  void rcppsXX(X86Xmm dst, X86Xmm src) => _enc.rcppsXmmXmm(dst, src);
+  void rcppsXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kRcpps, [dst, src]);
 
   /// RCPPS xmm, [mem]
-  void rcppsXM(X86Xmm dst, X86Mem src) => _enc.rcppsXmmMem(dst, src);
+  void rcppsXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kRcpps, [dst, src]);
 
   /// RSQRTPS xmm, xmm
-  void rsqrtpsXX(X86Xmm dst, X86Xmm src) => _enc.rsqrtpsXmmXmm(dst, src);
+  void rsqrtpsXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kRsqrtps, [dst, src]);
 
   /// RSQRTPS xmm, [mem]
-  void rsqrtpsXM(X86Xmm dst, X86Mem src) => _enc.rsqrtpsXmmMem(dst, src);
+  void rsqrtpsXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kRsqrtps, [dst, src]);
 
   /// SQRTPS xmm, xmm
-  void sqrtpsXX(X86Xmm dst, X86Xmm src) => _enc.sqrtpsXmmXmm(dst, src);
+  void sqrtpsXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kSqrtps, [dst, src]);
 
   /// SQRTPS xmm, [mem]
-  void sqrtpsXM(X86Xmm dst, X86Mem src) => _enc.sqrtpsXmmMem(dst, src);
+  void sqrtpsXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kSqrtps, [dst, src]);
 
   /// SQRTPD xmm, xmm
-  void sqrtpdXX(X86Xmm dst, X86Xmm src) => _enc.sqrtpdXmmXmm(dst, src);
+  void sqrtpdXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kSqrtpd, [dst, src]);
 
   /// SQRTPD xmm, [mem]
-  void sqrtpdXM(X86Xmm dst, X86Mem src) => _enc.sqrtpdXmmMem(dst, src);
+  void sqrtpdXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kSqrtpd, [dst, src]);
 
   /// SQRTPS xmm, xmm (alias)
-  void sqrtps(X86Xmm dst, X86Xmm src) => _enc.sqrtpsXmmXmm(dst, src);
+  void sqrtps(X86Xmm dst, X86Xmm src) => emit(X86InstId.kSqrtps, [dst, src]);
 
   /// SQRTPD xmm, xmm (alias)
-  void sqrtpd(X86Xmm dst, X86Xmm src) => _enc.sqrtpdXmmXmm(dst, src);
+  void sqrtpd(X86Xmm dst, X86Xmm src) => emit(X86InstId.kSqrtpd, [dst, src]);
 
   /// RCPPS xmm, xmm (alias)
-  void rcpps(X86Xmm dst, X86Xmm src) => _enc.rcppsXmmXmm(dst, src);
+  void rcpps(X86Xmm dst, X86Xmm src) => emit(X86InstId.kRcpps, [dst, src]);
 
   /// RSQRTPS xmm, xmm (alias)
-  void rsqrtps(X86Xmm dst, X86Xmm src) => _enc.rsqrtpsXmmXmm(dst, src);
+  void rsqrtps(X86Xmm dst, X86Xmm src) => emit(X86InstId.kRsqrtps, [dst, src]);
 
   /// MINPS xmm, xmm
-  void minpsXX(X86Xmm dst, X86Xmm src) => _enc.minpsXmmXmm(dst, src);
+  void minpsXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMinps, [dst, src]);
 
   /// MINPS xmm, [mem]
-  void minpsXM(X86Xmm dst, X86Mem src) => _enc.minpsXmmMem(dst, src);
+  void minpsXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kMinps, [dst, src]);
 
   /// MINPD xmm, xmm
-  void minpd(X86Xmm dst, X86Xmm src) => _enc.minpdXmmXmm(dst, src);
-  void minpdXX(X86Xmm dst, X86Xmm src) => _enc.minpdXmmXmm(dst, src);
+  void minpd(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMinpd, [dst, src]);
+  void minpdXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMinpd, [dst, src]);
 
   /// MINPD xmm, [mem]
-  void minpdXM(X86Xmm dst, X86Mem src) => _enc.minpdXmmMem(dst, src);
+  void minpdXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kMinpd, [dst, src]);
 
   /// MAXPS xmm, xmm
-  void maxpsXX(X86Xmm dst, X86Xmm src) => _enc.maxpsXmmXmm(dst, src);
+  void maxpsXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMaxps, [dst, src]);
 
   /// MAXPS xmm, [mem]
-  void maxpsXM(X86Xmm dst, X86Mem src) => _enc.maxpsXmmMem(dst, src);
+  void maxpsXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kMaxps, [dst, src]);
 
   /// MAXPD xmm, xmm
-  void maxpd(X86Xmm dst, X86Xmm src) => _enc.maxpdXmmXmm(dst, src);
-  void maxpdXX(X86Xmm dst, X86Xmm src) => _enc.maxpdXmmXmm(dst, src);
+  void maxpd(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMaxpd, [dst, src]);
+  void maxpdXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMaxpd, [dst, src]);
 
   /// MAXPD xmm, [mem]
-  void maxpdXM(X86Xmm dst, X86Mem src) => _enc.maxpdXmmMem(dst, src);
+  void maxpdXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kMaxpd, [dst, src]);
 
   // ===========================================================================
   // SSE/SSE2 - Logical (convenience aliases)
   // ===========================================================================
 
   /// XORPS xmm, xmm (XOR packed single) - also used to zero registers
-  void xorps(X86Xmm dst, X86Xmm src) => _enc.xorpsXmmXmm(dst, src);
+  void xorps(X86Xmm dst, X86Xmm src) => emit(X86InstId.kXorps, [dst, src]);
 
   // ===========================================================================
   // SSE/SSE2 - Logical
   // ===========================================================================
 
   /// PXOR xmm, xmm (packed XOR, zero register: pxor xmm, xmm)
-  void pxor(X86Xmm dst, X86Xmm src) => _enc.pxorXmmXmm(dst, src);
-  void pxorXX(X86Xmm dst, X86Xmm src) => _enc.pxorXmmXmm(dst, src);
+  void pxor(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPxor, [dst, src]);
+  void pxorXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPxor, [dst, src]);
 
   /// PXOR xmm, [mem]
-  void pxorXM(X86Xmm dst, X86Mem mem) => _enc.pxorXmmMem(dst, mem);
+  void pxorXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kPxor, [dst, mem]);
 
   /// XORPS xmm, xmm (XOR packed single)
-  void xorpsXX(X86Xmm dst, X86Xmm src) => _enc.xorpsXmmXmm(dst, src);
+  void xorpsXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kXorps, [dst, src]);
 
   /// XORPS xmm, [mem]
-  void xorpsXM(X86Xmm dst, X86Mem mem) => _enc.xorpsXmmMem(dst, mem);
+  void xorpsXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kXorps, [dst, mem]);
 
   /// XORPD xmm, xmm (XOR packed double)
-  void xorpd(X86Xmm dst, X86Xmm src) => _enc.xorpdXmmXmm(dst, src);
-  void xorpdXX(X86Xmm dst, X86Xmm src) => _enc.xorpdXmmXmm(dst, src);
+  void xorpd(X86Xmm dst, X86Xmm src) => emit(X86InstId.kXorpd, [dst, src]);
+  void xorpdXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kXorpd, [dst, src]);
 
   /// XORPD xmm, [mem]
-  void xorpdXM(X86Xmm dst, X86Mem mem) => _enc.xorpdXmmMem(dst, mem);
+  void xorpdXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kXorpd, [dst, mem]);
 
   // ===========================================================================
   // SSE/SSE2 - Conversion
   // ===========================================================================
 
   /// CVTSI2SD xmm, r64 (convert int64 to double)
-  void cvtsi2sdXR(X86Xmm dst, X86Gp src) => _enc.cvtsi2sdXmmR64(dst, src);
+  void cvtsi2sdXR(X86Xmm dst, X86Gp src) =>
+      emit(X86InstId.kCvtsi2sd, [dst, src]);
 
   /// CVTSI2SS xmm, r64 (convert int64 to float)
-  void cvtsi2ssXR(X86Xmm dst, X86Gp src) => _enc.cvtsi2ssXmmR64(dst, src);
+  void cvtsi2ssXR(X86Xmm dst, X86Gp src) =>
+      emit(X86InstId.kCvtsi2ss, [dst, src]);
 
   /// CVTTSD2SI r64, xmm (convert double to int64 with truncation)
-  void cvttsd2siRX(X86Gp dst, X86Xmm src) => _enc.cvttsd2siR64Xmm(dst, src);
+  void cvttsd2siRX(X86Gp dst, X86Xmm src) =>
+      emit(X86InstId.kCvttsd2si, [dst, src]);
 
   /// CVTTSS2SI r64, xmm (convert float to int64 with truncation)
-  void cvttss2siRX(X86Gp dst, X86Xmm src) => _enc.cvttss2siR64Xmm(dst, src);
+  void cvttss2siRX(X86Gp dst, X86Xmm src) =>
+      emit(X86InstId.kCvttss2si, [dst, src]);
 
   /// CVTSD2SS xmm, xmm (convert double to float)
-  void cvtsd2ssXX(X86Xmm dst, X86Xmm src) => _enc.cvtsd2ssXmmXmm(dst, src);
+  void cvtsd2ssXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kCvtsd2ss, [dst, src]);
 
   /// CVTSS2SD xmm, xmm (convert float to double)
-  void cvtss2sdXX(X86Xmm dst, X86Xmm src) => _enc.cvtss2sdXmmXmm(dst, src);
+  void cvtss2sdXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kCvtss2sd, [dst, src]);
 
   /// CVTSD2SS xmm, [mem] (convert double to float)
-  void cvtsd2ssXM(X86Xmm dst, X86Mem src) => _enc.cvtsd2ssXmmMem(dst, src);
+  void cvtsd2ssXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kCvtsd2ss, [dst, src]);
 
   /// CVTSS2SD xmm, [mem] (convert float to double)
-  void cvtss2sdXM(X86Xmm dst, X86Mem src) => _enc.cvtss2sdXmmMem(dst, src);
+  void cvtss2sdXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kCvtss2sd, [dst, src]);
 
   /// CVTDQ2PS xmm, xmm
-  void cvtdq2psXX(X86Xmm dst, X86Xmm src) => _enc.cvtdq2psXmmXmm(dst, src);
+  void cvtdq2psXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kCvtdq2ps, [dst, src]);
 
   /// CVTDQ2PS xmm, [mem]
-  void cvtdq2psXM(X86Xmm dst, X86Mem src) => _enc.cvtdq2psXmmMem(dst, src);
+  void cvtdq2psXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kCvtdq2ps, [dst, src]);
 
   /// CVTPS2DQ xmm, xmm
-  void cvtps2dqXX(X86Xmm dst, X86Xmm src) => _enc.cvtps2dqXmmXmm(dst, src);
+  void cvtps2dqXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kCvtps2dq, [dst, src]);
 
   /// CVTPS2DQ xmm, [mem]
-  void cvtps2dqXM(X86Xmm dst, X86Mem src) => _enc.cvtps2dqXmmMem(dst, src);
+  void cvtps2dqXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kCvtps2dq, [dst, src]);
 
   /// CVTTPS2DQ xmm, xmm
-  void cvttps2dqXX(X86Xmm dst, X86Xmm src) => _enc.cvttps2dqXmmXmm(dst, src);
+  void cvttps2dqXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kCvttps2dq, [dst, src]);
 
   /// CVTTPS2DQ xmm, [mem]
-  void cvttps2dqXM(X86Xmm dst, X86Mem src) => _enc.cvttps2dqXmmMem(dst, src);
+  void cvttps2dqXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kCvttps2dq, [dst, src]);
 
   /// CVTSI2SD xmm, [mem] (convert int32/64 to double)
-  void cvtsi2sdXM(X86Xmm dst, X86Mem src) => _enc.cvtsi2sdXmmMem(dst, src);
+  void cvtsi2sdXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kCvtsi2sd, [dst, src]);
 
   /// CVTSI2SS xmm, [mem] (convert int32/64 to float)
-  void cvtsi2ssXM(X86Xmm dst, X86Mem src) => _enc.cvtsi2ssXmmMem(dst, src);
+  void cvtsi2ssXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kCvtsi2ss, [dst, src]);
 
   // ===========================================================================
   // SSE/SSE2 - Comparison
   // ===========================================================================
 
   /// COMISD xmm, xmm (ordered compare double, set EFLAGS)
-  void comisdXX(X86Xmm a, X86Xmm b) => _enc.comisdXmmXmm(a, b);
+  void comisdXX(X86Xmm a, X86Xmm b) => emit(X86InstId.kComisd, [a, b]);
 
   /// COMISS xmm, xmm (ordered compare single, set EFLAGS)
-  void comissXX(X86Xmm a, X86Xmm b) => _enc.comissXmmXmm(a, b);
+  void comissXX(X86Xmm a, X86Xmm b) => emit(X86InstId.kComiss, [a, b]);
 
   /// UCOMISD xmm, xmm (unordered compare double, set EFLAGS)
-  void ucomisdXX(X86Xmm a, X86Xmm b) => _enc.ucomisdXmmXmm(a, b);
+  void ucomisdXX(X86Xmm a, X86Xmm b) => emit(X86InstId.kUcomisd, [a, b]);
 
   /// UCOMISS xmm, xmm (unordered compare single, set EFLAGS)
-  void ucomissXX(X86Xmm a, X86Xmm b) => _enc.ucomissXmmXmm(a, b);
+  void ucomissXX(X86Xmm a, X86Xmm b) => emit(X86InstId.kUcomiss, [a, b]);
 
   /// CMPPS xmm, xmm, imm8
   void cmppsXXI(X86Xmm dst, X86Xmm src, int imm8) =>
-      _enc.cmppsXmmXmmImm8(dst, src, imm8);
+      emit(X86InstId.kCmpps, [dst, src, imm8]);
 
   /// CMPPS xmm, [mem], imm8
   void cmppsXMI(X86Xmm dst, X86Mem src, int imm8) =>
-      _enc.cmppsXmmMemImm8(dst, src, imm8);
+      emit(X86InstId.kCmpps, [dst, src, imm8]);
 
   /// CMPPD xmm, xmm, imm8
   void cmppdXXI(X86Xmm dst, X86Xmm src, int imm8) =>
-      _enc.cmppdXmmXmmImm8(dst, src, imm8);
+      emit(X86InstId.kCmppd, [dst, src, imm8]);
 
   /// CMPPD xmm, [mem], imm8
   void cmppdXMI(X86Xmm dst, X86Mem src, int imm8) =>
-      _enc.cmppdXmmMemImm8(dst, src, imm8);
+      emit(X86InstId.kCmppd, [dst, src, imm8]);
 
   /// CMPSS xmm, xmm, imm8
   void cmpssXXI(X86Xmm dst, X86Xmm src, int imm8) =>
-      _enc.cmpssXmmXmmImm8(dst, src, imm8);
+      emit(X86InstId.kCmpss, [dst, src, imm8]);
 
   /// CMPSS xmm, [mem], imm8
   void cmpssXMI(X86Xmm dst, X86Mem src, int imm8) =>
-      _enc.cmpssXmmMemImm8(dst, src, imm8);
+      emit(X86InstId.kCmpss, [dst, src, imm8]);
 
   /// CMPSD xmm, xmm, imm8
   void cmpsdXXI(X86Xmm dst, X86Xmm src, int imm8) =>
-      _enc.cmpsdXmmXmmImm8(dst, src, imm8);
+      emit(X86InstId.kCmpsd, [dst, src, imm8]);
 
   /// CMPSD xmm, [mem], imm8
   void cmpsdXMI(X86Xmm dst, X86Mem src, int imm8) =>
-      _enc.cmpsdXmmMemImm8(dst, src, imm8);
+      emit(X86InstId.kCmpsd, [dst, src, imm8]);
 
   // ===========================================================================
   // SSE/SSE2 - GP <-> XMM Transfer
   // ===========================================================================
 
   /// MOVQ xmm, r64 (move quadword from GP to XMM)
-  void movqXR(X86Xmm dst, X86Gp src) => _enc.movqXmmR64(dst, src);
+  void movqXR(X86Xmm dst, X86Gp src) => emit(X86InstId.kMovq, [dst, src]);
 
   /// MOVQ r64, xmm (move quadword from XMM to GP)
-  void movqRX(X86Gp dst, X86Xmm src) => _enc.movqR64Xmm(dst, src);
+  void movqRX(X86Gp dst, X86Xmm src) => emit(X86InstId.kMovq, [dst, src]);
 
   /// MOVQ xmm, m64
-  void movqXM(X86Xmm dst, X86Mem src) => _enc.movqXmmMem(dst, src);
+  void movqXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kMovq, [dst, src]);
 
   /// MOVQ m64, xmm
-  void movqMX(X86Mem dst, X86Xmm src) => _enc.movqMemXmm(dst, src);
+  void movqMX(X86Mem dst, X86Xmm src) => emit(X86InstId.kMovq, [dst, src]);
 
   /// MOVD xmm, r32 (move doubleword from GP to XMM)
-  void movdXR(X86Xmm dst, X86Gp src) => _enc.movdXmmR32(dst, src);
+  void movdXR(X86Xmm dst, X86Gp src) => emit(X86InstId.kMovd, [dst, src]);
 
   /// MOVD r32, xmm (move doubleword from XMM to GP)
-  void movdRX(X86Gp dst, X86Xmm src) => _enc.movdR32Xmm(dst, src);
+  void movdRX(X86Gp dst, X86Xmm src) => emit(X86InstId.kMovd, [dst, src]);
 
   /// KMOVW k, r32 (move 16-bit from GP to mask)
-  void kmovwKR(X86KReg dst, X86Gp src) => _enc.kmovwKRegR32(dst, src);
+  void kmovwKR(X86KReg dst, X86Gp src) => emit(X86InstId.kKmovw, [dst, src]);
 
   /// KMOVW r32, k (move 16-bit from mask to GP)
-  void kmovwRK(X86Gp dst, X86KReg src) => _enc.kmovwR32KReg(dst, src);
+  void kmovwRK(X86Gp dst, X86KReg src) => emit(X86InstId.kKmovw, [dst, src]);
 
   /// KMOVD k, r32 (move 32-bit from GP to mask)
-  void kmovdKR(X86KReg dst, X86Gp src) => _enc.kmovdKRegR32(dst, src);
+  void kmovdKR(X86KReg dst, X86Gp src) => emit(X86InstId.kKmovd, [dst, src]);
 
   /// KMOVD r32, k (move 32-bit from mask to GP)
-  void kmovdRK(X86Gp dst, X86KReg src) => _enc.kmovdR32KReg(dst, src);
+  void kmovdRK(X86Gp dst, X86KReg src) => emit(X86InstId.kKmovd, [dst, src]);
 
   /// KMOVQ k, r64 (move 64-bit from GP to mask)
-  void kmovqKR(X86KReg dst, X86Gp src) => _enc.kmovqKRegR64(dst, src);
+  void kmovqKR(X86KReg dst, X86Gp src) => emit(X86InstId.kKmovq, [dst, src]);
 
   /// KMOVQ r64, k (move 64-bit from mask to GP)
-  void kmovqRK(X86Gp dst, X86KReg src) => _enc.kmovqR64KReg(dst, src);
+  void kmovqRK(X86Gp dst, X86KReg src) => emit(X86InstId.kKmovq, [dst, src]);
 
   // ===========================================================================
   // AVX - Move instructions (VEX-encoded)
   // ===========================================================================
 
   /// VMOVAPS xmm, xmm (VEX move aligned packed single 128-bit)
-  void vmovapsXX(X86Xmm dst, X86Xmm src) => _enc.vmovapsXmmXmm(dst, src);
+  void vmovapsXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kVmovaps, [dst, src]);
 
   /// VMOVAPS ymm, ymm (VEX move aligned packed single 256-bit)
-  void vmovapsYY(X86Ymm dst, X86Ymm src) => _enc.vmovapsYmmYmm(dst, src);
+  void vmovapsYY(X86Ymm dst, X86Ymm src) =>
+      emit(X86InstId.kVmovaps, [dst, src]);
 
   /// VMOVUPS xmm, xmm (VEX move unaligned packed single 128-bit)
-  void vmovupsXX(X86Xmm dst, X86Xmm src) => _enc.vmovupsXmmXmm(dst, src);
+  void vmovupsXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kVmovups, [dst, src]);
 
   /// VMOVUPS ymm, ymm (VEX move unaligned packed single 256-bit)
-  void vmovupsYY(X86Ymm dst, X86Ymm src) => _enc.vmovupsYmmYmm(dst, src);
+  void vmovupsYY(X86Ymm dst, X86Ymm src) =>
+      emit(X86InstId.kVmovups, [dst, src]);
 
   /// VMOVD xmm, r32
-  void vmovdXR(X86Xmm dst, X86Gp src) => _enc.vmovdXmmR32(dst, src);
+  void vmovdXR(X86Xmm dst, X86Gp src) => emit(X86InstId.kVmovd, [dst, src]);
 
   /// VMOVD r32, xmm
-  void vmovdRX(X86Gp dst, X86Xmm src) => _enc.vmovdR32Xmm(dst, src);
+  void vmovdRX(X86Gp dst, X86Xmm src) => emit(X86InstId.kVmovd, [dst, src]);
 
   /// VMOVD xmm, [mem]
-  void vmovdXM(X86Xmm dst, X86Mem src) => _enc.vmovdXmmMem(dst, src);
+  void vmovdXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kVmovd, [dst, src]);
 
   /// VMOVD [mem], xmm
-  void vmovdMX(X86Mem dst, X86Xmm src) => _enc.vmovdMemXmm(dst, src);
+  void vmovdMX(X86Mem dst, X86Xmm src) => emit(X86InstId.kVmovd, [dst, src]);
 
   /// VMOVQ xmm, r64
-  void vmovqXR(X86Xmm dst, X86Gp src) => _enc.vmovqXmmR64(dst, src);
+  void vmovqXR(X86Xmm dst, X86Gp src) => emit(X86InstId.kVmovq, [dst, src]);
 
   /// VMOVQ r64, xmm
-  void vmovqRX(X86Gp dst, X86Xmm src) => _enc.vmovqR64Xmm(dst, src);
+  void vmovqRX(X86Gp dst, X86Xmm src) => emit(X86InstId.kVmovq, [dst, src]);
 
   /// VMOVQ xmm, [mem]
-  void vmovqXM(X86Xmm dst, X86Mem src) => _enc.vmovqXmmMem(dst, src);
+  void vmovqXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kVmovq, [dst, src]);
 
   /// VMOVQ [mem], xmm
-  void vmovqMX(X86Mem dst, X86Xmm src) => _enc.vmovqMemXmm(dst, src);
+  void vmovqMX(X86Mem dst, X86Xmm src) => emit(X86InstId.kVmovq, [dst, src]);
 
   /// VBROADCASTSS xmm, mem32
   void vbroadcastssXM(X86Xmm dst, X86Mem mem) =>
-      _enc.vbroadcastssXmmMem(dst, mem);
+      emit(X86InstId.kVbroadcastss, [dst, mem]);
 
   /// VBROADCASTSS ymm, mem32
   void vbroadcastssYM(X86Ymm dst, X86Mem mem) =>
-      _enc.vbroadcastssYmmMem(dst, mem);
+      emit(X86InstId.kVbroadcastss, [dst, mem]);
 
   /// VBROADCASTSD ymm, mem64
   void vbroadcastsdYM(X86Ymm dst, X86Mem mem) =>
-      _enc.vbroadcastsdYmmMem(dst, mem);
+      emit(X86InstId.kVbroadcastsd, [dst, mem]);
 
   /// VPBROADCASTB xmm, xmm
   void vpbroadcastbXX(X86Xmm dst, X86Xmm src) =>
-      _enc.vpbroadcastbXmmXmm(dst, src);
+      emit(X86InstId.kVpbroadcastb, [dst, src]);
   void vpbroadcastbXM(X86Xmm dst, X86Mem mem) =>
-      _enc.vpbroadcastbXmmMem(dst, mem);
+      emit(X86InstId.kVpbroadcastb, [dst, mem]);
 
   /// VPBROADCASTW xmm, xmm
   void vpbroadcastwXX(X86Xmm dst, X86Xmm src) =>
-      _enc.vpbroadcastwXmmXmm(dst, src);
+      emit(X86InstId.kVpbroadcastw, [dst, src]);
   void vpbroadcastwXM(X86Xmm dst, X86Mem mem) =>
-      _enc.vpbroadcastwXmmMem(dst, mem);
+      emit(X86InstId.kVpbroadcastw, [dst, mem]);
 
   /// VPBROADCASTD xmm, xmm
   void vpbroadcastdXX(X86Xmm dst, X86Xmm src) =>
-      _enc.vpbroadcastdXmmXmm(dst, src);
+      emit(X86InstId.kVpbroadcastd, [dst, src]);
   void vpbroadcastdXM(X86Xmm dst, X86Mem mem) =>
-      _enc.vpbroadcastdXmmMem(dst, mem);
+      emit(X86InstId.kVpbroadcastd, [dst, mem]);
 
   /// VPBROADCASTQ xmm, xmm
   void vpbroadcastqXX(X86Xmm dst, X86Xmm src) =>
-      _enc.vpbroadcastqXmmXmm(dst, src);
+      emit(X86InstId.kVpbroadcastq, [dst, src]);
   void vpbroadcastqXM(X86Xmm dst, X86Mem mem) =>
-      _enc.vpbroadcastqXmmMem(dst, mem);
+      emit(X86InstId.kVpbroadcastq, [dst, mem]);
 
   /// VPBROADCASTB ymm, xmm
   void vpbroadcastbYX(X86Ymm dst, X86Xmm src) =>
-      _enc.vpbroadcastbYmmXmm(dst, src);
+      emit(X86InstId.kVpbroadcastb, [dst, src]);
   void vpbroadcastbYM(X86Ymm dst, X86Mem mem) =>
-      _enc.vpbroadcastbYmmMem(dst, mem);
+      emit(X86InstId.kVpbroadcastb, [dst, mem]);
 
   /// VPBROADCASTW ymm, xmm
   void vpbroadcastwYX(X86Ymm dst, X86Xmm src) =>
-      _enc.vpbroadcastwYmmXmm(dst, src);
+      emit(X86InstId.kVpbroadcastw, [dst, src]);
   void vpbroadcastwYM(X86Ymm dst, X86Mem mem) =>
-      _enc.vpbroadcastwYmmMem(dst, mem);
+      emit(X86InstId.kVpbroadcastw, [dst, mem]);
 
   /// VPBROADCASTD ymm, xmm
   void vpbroadcastdYX(X86Ymm dst, X86Xmm src) =>
-      _enc.vpbroadcastdYmmXmm(dst, src);
+      emit(X86InstId.kVpbroadcastd, [dst, src]);
   void vpbroadcastdYM(X86Ymm dst, X86Mem mem) =>
-      _enc.vpbroadcastdYmmMem(dst, mem);
+      emit(X86InstId.kVpbroadcastd, [dst, mem]);
 
   /// VPBROADCASTQ ymm, xmm
   void vpbroadcastqYX(X86Ymm dst, X86Xmm src) =>
-      _enc.vpbroadcastqYmmXmm(dst, src);
+      emit(X86InstId.kVpbroadcastq, [dst, src]);
   void vpbroadcastqYM(X86Ymm dst, X86Mem mem) =>
-      _enc.vpbroadcastqYmmMem(dst, mem);
+      emit(X86InstId.kVpbroadcastq, [dst, mem]);
 
   // ===========================================================================
   // AVX - Scalar arithmetic (VEX-encoded)
@@ -1716,35 +1448,35 @@ class X86Assembler extends BaseEmitter {
 
   /// VADDSD xmm, xmm, xmm (VEX add scalar double)
   void vaddsdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vaddsdXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVaddsd, [dst, src1, src2]);
 
   /// VSUBSD xmm, xmm, xmm (VEX subtract scalar double)
   void vsubsdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vsubsdXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVsubsd, [dst, src1, src2]);
 
   /// VMULSD xmm, xmm, xmm (VEX multiply scalar double)
   void vmulsdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vmulsdXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVmulsd, [dst, src1, src2]);
 
   /// VDIVSD xmm, xmm, xmm (VEX divide scalar double)
   void vdivsdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vdivsdXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVdivsd, [dst, src1, src2]);
 
   /// VADDSD xmm, xmm, [mem]
   void vaddsdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vaddsdXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVaddsd, [dst, src1, mem]);
 
   /// VSUBSD xmm, xmm, [mem]
   void vsubsdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vsubsdXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVsubsd, [dst, src1, mem]);
 
   /// VMULSD xmm, xmm, [mem]
   void vmulsdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vmulsdXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVmulsd, [dst, src1, mem]);
 
   /// VDIVSD xmm, xmm, [mem]
   void vdivsdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vdivsdXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVdivsd, [dst, src1, mem]);
 
   // ===========================================================================
   // AVX - Scalar arithmetic (Single Precision)
@@ -1752,147 +1484,159 @@ class X86Assembler extends BaseEmitter {
 
   /// VADDSS xmm, xmm, xmm
   void vaddssXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vaddssXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVaddss, [dst, src1, src2]);
   void vaddssXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vaddssXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVaddss, [dst, src1, mem]);
 
   /// VSUBSS xmm, xmm, xmm
   void vsubssXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vsubssXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVsubss, [dst, src1, src2]);
   void vsubssXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vsubssXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVsubss, [dst, src1, mem]);
 
   /// VMULSS xmm, xmm, xmm
   void vmulssXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vmulssXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVmulss, [dst, src1, src2]);
   void vmulssXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vmulssXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVmulss, [dst, src1, mem]);
 
   /// VDIVSS xmm, xmm, xmm
   void vdivssXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vdivssXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVdivss, [dst, src1, src2]);
   void vdivssXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vdivssXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVdivss, [dst, src1, mem]);
 
   // ===========================================================================
   // AVX - Math (SQRT, MIN, MAX)
   // ===========================================================================
 
   /// VSQRTPS xmm, xmm
-  void vsqrtpsXX(X86Xmm dst, X86Xmm src) => _enc.vsqrtpsXmmXmm(dst, src);
-  void vsqrtpsXM(X86Xmm dst, X86Mem mem) => _enc.vsqrtpsXmmMem(dst, mem);
+  void vsqrtpsXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kVsqrtps, [dst, src]);
+  void vsqrtpsXM(X86Xmm dst, X86Mem mem) =>
+      emit(X86InstId.kVsqrtps, [dst, mem]);
 
   /// VSQRTPD xmm, xmm
-  void vsqrtpdXX(X86Xmm dst, X86Xmm src) => _enc.vsqrtpdXmmXmm(dst, src);
-  void vsqrtpdXM(X86Xmm dst, X86Mem mem) => _enc.vsqrtpdXmmMem(dst, mem);
+  void vsqrtpdXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kVsqrtpd, [dst, src]);
+  void vsqrtpdXM(X86Xmm dst, X86Mem mem) =>
+      emit(X86InstId.kVsqrtpd, [dst, mem]);
 
   /// VSQRTPS ymm, ymm
-  void vsqrtpsYY(X86Ymm dst, X86Ymm src) => _enc.vsqrtpsYmmYmm(dst, src);
-  void vsqrtpsYM(X86Ymm dst, X86Mem mem) => _enc.vsqrtpsYmmMem(dst, mem);
+  void vsqrtpsYY(X86Ymm dst, X86Ymm src) =>
+      emit(X86InstId.kVsqrtps, [dst, src]);
+  void vsqrtpsYM(X86Ymm dst, X86Mem mem) =>
+      emit(X86InstId.kVsqrtps, [dst, mem]);
 
   /// VSQRTPD ymm, ymm
-  void vsqrtpdYY(X86Ymm dst, X86Ymm src) => _enc.vsqrtpdYmmYmm(dst, src);
-  void vsqrtpdYM(X86Ymm dst, X86Mem mem) => _enc.vsqrtpdYmmMem(dst, mem);
+  void vsqrtpdYY(X86Ymm dst, X86Ymm src) =>
+      emit(X86InstId.kVsqrtpd, [dst, src]);
+  void vsqrtpdYM(X86Ymm dst, X86Mem mem) =>
+      emit(X86InstId.kVsqrtpd, [dst, mem]);
 
   /// VRSQRTPS xmm, xmm
-  void vrsqrtpsXX(X86Xmm dst, X86Xmm src) => _enc.vrsqrtpsXmmXmm(dst, src);
-  void vrsqrtpsXM(X86Xmm dst, X86Mem mem) => _enc.vrsqrtpsXmmMem(dst, mem);
+  void vrsqrtpsXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kVrsqrtps, [dst, src]);
+  void vrsqrtpsXM(X86Xmm dst, X86Mem mem) =>
+      emit(X86InstId.kVrsqrtps, [dst, mem]);
 
   /// VRSQRTPS ymm, ymm
-  void vrsqrtpsYY(X86Ymm dst, X86Ymm src) => _enc.vrsqrtpsYmmYmm(dst, src);
-  void vrsqrtpsYM(X86Ymm dst, X86Mem mem) => _enc.vrsqrtpsYmmMem(dst, mem);
+  void vrsqrtpsYY(X86Ymm dst, X86Ymm src) =>
+      emit(X86InstId.kVrsqrtps, [dst, src]);
+  void vrsqrtpsYM(X86Ymm dst, X86Mem mem) =>
+      emit(X86InstId.kVrsqrtps, [dst, mem]);
 
   /// VRCPPS xmm, xmm
-  void vrcppsXX(X86Xmm dst, X86Xmm src) => _enc.vrcppsXmmXmm(dst, src);
-  void vrcppsXM(X86Xmm dst, X86Mem mem) => _enc.vrcppsXmmMem(dst, mem);
+  void vrcppsXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kVrcpps, [dst, src]);
+  void vrcppsXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kVrcpps, [dst, mem]);
 
   /// VRCPPS ymm, ymm
-  void vrcppsYY(X86Ymm dst, X86Ymm src) => _enc.vrcppsYmmYmm(dst, src);
-  void vrcppsYM(X86Ymm dst, X86Mem mem) => _enc.vrcppsYmmMem(dst, mem);
+  void vrcppsYY(X86Ymm dst, X86Ymm src) => emit(X86InstId.kVrcpps, [dst, src]);
+  void vrcppsYM(X86Ymm dst, X86Mem mem) => emit(X86InstId.kVrcpps, [dst, mem]);
 
   /// VSQRTSS xmm, xmm, xmm
   void vsqrtssXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vsqrtssXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVsqrtss, [dst, src1, src2]);
   void vsqrtssXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vsqrtssXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVsqrtss, [dst, src1, mem]);
 
   /// VSQRTSD xmm, xmm, xmm
   void vsqrtsdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vsqrtsdXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVsqrtsd, [dst, src1, src2]);
   void vsqrtsdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vsqrtsdXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVsqrtsd, [dst, src1, mem]);
 
   /// VMINPS xmm, xmm, xmm
   void vminpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vminpsXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVminps, [dst, src1, src2]);
   void vminpsXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vminpsXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVminps, [dst, src1, mem]);
 
   /// VMINPD xmm, xmm, xmm
   void vminpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vminpdXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVminpd, [dst, src1, src2]);
   void vminpdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vminpdXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVminpd, [dst, src1, mem]);
 
   /// VMINPS ymm, ymm, ymm
   void vminpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vminpsYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVminps, [dst, src1, src2]);
   void vminpsYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vminpsYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVminps, [dst, src1, mem]);
 
   /// VMINPD ymm, ymm, ymm
   void vminpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vminpdYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVminpd, [dst, src1, src2]);
   void vminpdYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vminpdYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVminpd, [dst, src1, mem]);
 
   /// VMINSS xmm, xmm, xmm
   void vminssXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vminssXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVminss, [dst, src1, src2]);
   void vminssXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vminssXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVminss, [dst, src1, mem]);
 
   /// VMINSD xmm, xmm, xmm
   void vminsdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vminsdXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVminsd, [dst, src1, src2]);
   void vminsdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vminsdXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVminsd, [dst, src1, mem]);
 
   /// VMAXPS xmm, xmm, xmm
   void vmaxpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vmaxpsXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVmaxps, [dst, src1, src2]);
   void vmaxpsXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vmaxpsXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVmaxps, [dst, src1, mem]);
 
   /// VMAXPD xmm, xmm, xmm
   void vmaxpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vmaxpdXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVmaxpd, [dst, src1, src2]);
   void vmaxpdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vmaxpdXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVmaxpd, [dst, src1, mem]);
 
   /// VMAXPS ymm, ymm, ymm
   void vmaxpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vmaxpsYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVmaxps, [dst, src1, src2]);
   void vmaxpsYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vmaxpsYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVmaxps, [dst, src1, mem]);
 
   /// VMAXPD ymm, ymm, ymm
   void vmaxpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vmaxpdYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVmaxpd, [dst, src1, src2]);
   void vmaxpdYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vmaxpdYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVmaxpd, [dst, src1, mem]);
 
   /// VMAXSS xmm, xmm, xmm
   void vmaxssXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vmaxssXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVmaxss, [dst, src1, src2]);
   void vmaxssXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vmaxssXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVmaxss, [dst, src1, mem]);
 
   /// VMAXSD xmm, xmm, xmm
   void vmaxsdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vmaxsdXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVmaxsd, [dst, src1, src2]);
   void vmaxsdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vmaxsdXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVmaxsd, [dst, src1, mem]);
 
   // ===========================================================================
   // AVX - Shuffle / Permute
@@ -1900,35 +1644,35 @@ class X86Assembler extends BaseEmitter {
 
   /// VSHUFPS xmm, xmm, xmm, imm8
   void vshufpsXXXI(X86Xmm dst, X86Xmm src1, X86Xmm src2, int imm8) =>
-      _enc.vshufpsXmmXmmXmmImm8Corrected(dst, src1, src2, imm8);
+      emit(X86InstId.kVshufps, [dst, src1, src2, imm8]);
 
   /// VSHUFPD xmm, xmm, xmm, imm8
   void vshufpdXXXI(X86Xmm dst, X86Xmm src1, X86Xmm src2, int imm8) =>
-      _enc.vshufpdXmmXmmXmmImm8(dst, src1, src2, imm8);
+      emit(X86InstId.kVshufpd, [dst, src1, src2, imm8]);
 
   /// VPERMILPS xmm, xmm, imm8
   void vpermilpsXXI(X86Xmm dst, X86Xmm src, int imm8) =>
-      _enc.vpermilpsXmmXmmImm8(dst, src, imm8);
+      emit(X86InstId.kVpermilps, [dst, src, imm8]);
 
   /// VPERMILPD xmm, xmm, imm8
   void vpermilpdXXI(X86Xmm dst, X86Xmm src, int imm8) =>
-      _enc.vpermilpdXmmXmmImm8(dst, src, imm8);
+      emit(X86InstId.kVpermilpd, [dst, src, imm8]);
 
   /// VPERMD ymm, ymm, ymm (AVX2)
   void vpermdYYY(X86Ymm dst, X86Ymm idx, X86Ymm src) =>
-      _enc.vpermdYmmYmmYmm(dst, idx, src);
+      emit(X86InstId.kVpermd, [dst, idx, src]);
 
   /// VPERMQ ymm, ymm, imm8 (AVX2)
   void vpermqYYI(X86Ymm dst, X86Ymm src, int imm8) =>
-      _enc.vpermqYmmYmmImm8(dst, src, imm8);
+      emit(X86InstId.kVpermq, [dst, src, imm8]);
 
   /// VPERM2F128 ymm, ymm, ymm, imm8
   void vperm2f128YYYI(X86Ymm dst, X86Ymm src1, X86Ymm src2, int imm8) =>
-      _enc.vperm2f128YmmYmmYmmImm8(dst, src1, src2, imm8);
+      emit(X86InstId.kVperm2f128, [dst, src1, src2, imm8]);
 
   /// VPERM2I128 ymm, ymm, ymm, imm8 (AVX2)
   void vperm2i128YYYI(X86Ymm dst, X86Ymm src1, X86Ymm src2, int imm8) =>
-      _enc.vperm2i128YmmYmmYmmImm8(dst, src1, src2, imm8);
+      emit(X86InstId.kVperm2i128, [dst, src1, src2, imm8]);
 
   // ===========================================================================
   // AVX - Insert/Extract
@@ -1936,19 +1680,19 @@ class X86Assembler extends BaseEmitter {
 
   /// VINSERTF128 ymm, ymm, xmm, imm8
   void vinsertf128YYXI(X86Ymm dst, X86Ymm src1, X86Xmm src2, int imm8) =>
-      _enc.vinsertf128YmmYmmXmmImm8(dst, src1, src2, imm8);
+      emit(X86InstId.kVinsertf128, [dst, src1, src2, imm8]);
 
   /// VEXTRACTF128 xmm, ymm, imm8
   void vextractf128XYI(X86Xmm dst, X86Ymm src, int imm8) =>
-      _enc.vextractf128XmmYmmImm8(dst, src, imm8);
+      emit(X86InstId.kVextractf128, [dst, src, imm8]);
 
   /// VINSERTI128 ymm, ymm, xmm, imm8 (AVX2)
   void vinserti128YYXI(X86Ymm dst, X86Ymm src1, X86Xmm src2, int imm8) =>
-      _enc.vinserti128YmmYmmXmmImm8(dst, src1, src2, imm8);
+      emit(X86InstId.kVinserti128, [dst, src1, src2, imm8]);
 
   /// VEXTRACTI128 xmm, ymm, imm8
   void vextracti128XYI(X86Xmm dst, X86Ymm src, int imm8) =>
-      _enc.vextracti128XmmYmmImm8(dst, src, imm8);
+      emit(X86InstId.kVextracti128, [dst, src, imm8]);
 
   // ===========================================================================
   // AVX - Masked Move
@@ -1956,12 +1700,12 @@ class X86Assembler extends BaseEmitter {
 
   /// VPMASKMOVD xmm, xmm, mem (Load)
   void vpmaskmovdLoadXXM(X86Xmm dst, X86Xmm mask, X86Mem mem) =>
-      _enc.vpmaskmovdLoadXmmXmmMem(dst, mask, mem);
+      emit(X86InstId.kVpmaskmovd, [dst, mask, mem]);
 
   /// VPMASKMOVD mem, xmm, xmm (Store)
   // Note: Arguments are mem, mask, src (to match encoder logic)
   void vpmaskmovdStoreMXX(X86Mem mem, X86Xmm mask, X86Xmm src) =>
-      _enc.vpmaskmovdStoreMemXmmXmm(mem, mask, src);
+      emit(X86InstId.kVpmaskmovd, [mem, mask, src]);
 
   // ===========================================================================
   // AVX2 - Gather Instructions
@@ -1969,42 +1713,42 @@ class X86Assembler extends BaseEmitter {
 
   /// VGATHERDPS xmm, [mem], xmm
   void vgatherdpsXMX(X86Xmm dst, X86Mem mem, X86Xmm mask) =>
-      _enc.vgatherdpsXmm(dst, mem, mask);
+      emit(X86InstId.kVgatherdps, [dst, mem, mask]);
 
   /// VGATHERDPS ymm, [mem], ymm
   void vgatherdpsYMY(X86Ymm dst, X86Mem mem, X86Ymm mask) =>
-      _enc.vgatherdpsYmm(dst, mem, mask);
+      emit(X86InstId.kVgatherdps, [dst, mem, mask]);
 
   /// VGATHERDPD xmm, [mem], xmm
   void vgatherdpdXMX(X86Xmm dst, X86Mem mem, X86Xmm mask) =>
-      _enc.vgatherdpdXmm(dst, mem, mask);
+      emit(X86InstId.kVgatherdpd, [dst, mem, mask]);
 
   /// VGATHERDPD ymm, [mem], ymm
   void vgatherdpdYMY(X86Ymm dst, X86Mem mem, X86Ymm mask) =>
-      _enc.vgatherdpdYmm(dst, mem, mask);
+      emit(X86InstId.kVgatherdpd, [dst, mem, mask]);
 
   /// VGATHERQPS xmm, [mem], xmm
   void vgatherqpsXMX(X86Xmm dst, X86Mem mem, X86Xmm mask) =>
-      _enc.vgatherqpsXmm(dst, mem, mask);
+      emit(X86InstId.kVgatherqps, [dst, mem, mask]);
 
   /// VGATHERQPS ymm, [mem], ymm
   void vgatherqpsYMY(X86Ymm dst, X86Mem mem, X86Ymm mask) =>
-      _enc.vgatherqpsYmm(dst, mem, mask);
+      emit(X86InstId.kVgatherqps, [dst, mem, mask]);
 
   /// VGATHERQPD xmm, [mem], xmm
   void vgatherqpdXMX(X86Xmm dst, X86Mem mem, X86Xmm mask) =>
-      _enc.vgatherqpdXmm(dst, mem, mask);
+      emit(X86InstId.kVgatherqpd, [dst, mem, mask]);
 
   /// VGATHERQPD ymm, [mem], ymm
   void vgatherqpdYMY(X86Ymm dst, X86Mem mem, X86Ymm mask) =>
-      _enc.vgatherqpdYmm(dst, mem, mask);
+      emit(X86InstId.kVgatherqpd, [dst, mem, mask]);
 
   // ===========================================================================
   // AVX-512 - Mask Instructions
   // ===========================================================================
 
   /// KMOVW k, k
-  void kmovwKK(X86KReg dst, X86KReg src) => _enc.kmovwKK(dst, src);
+  void kmovwKK(X86KReg dst, X86KReg src) => emit(X86InstId.kKmovw, [dst, src]);
 
   // ===========================================================================
   // AVX-512 - Packed arithmetic
@@ -2012,19 +1756,24 @@ class X86Assembler extends BaseEmitter {
 
   /// VPADDD zmm, zmm, zmm
   void vpadddZmmZmmZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
-      _enc.vpadddZmmZmmZmm(dst, src1, src2);
+      emit(X86InstId.kVpaddd, [dst, src1, src2]);
 
   /// VPADDD zmm, zmm, zmm {k}
-  void vpadddZmmZmmZmmK(X86Zmm dst, X86Zmm src1, X86Zmm src2, X86KReg k) =>
-      _enc.vpadddZmmZmmZmmK(dst, src1, src2, k);
+  void vpadddZmmZmmZmmK(X86Zmm dst, X86Zmm src1, X86Zmm src2, X86KReg k) {
+    extraReg = k;
+    emit(X86InstId.kVpaddd, [dst, src1, src2]);
+  }
 
   /// VPADDD zmm, zmm, zmm {k}{z}
-  void vpadddZmmZmmZmmKz(X86Zmm dst, X86Zmm src1, X86Zmm src2, X86KReg k) =>
-      _enc.vpadddZmmZmmZmmKz(dst, src1, src2, k);
+  void vpadddZmmZmmZmmKz(X86Zmm dst, X86Zmm src1, X86Zmm src2, X86KReg k) {
+    instOptions |= X86EmitOptions.kX86_ZMask;
+    extraReg = k;
+    emit(X86InstId.kVpaddd, [dst, src1, src2]);
+  }
 
   /// VPTERNLOGD zmm, zmm, zmm, imm8
   void vpternlogdZmmZmmZmmI(X86Zmm dst, X86Zmm src1, X86Zmm src2, int imm8) =>
-      _enc.vpternlogdZmmZmmZmmImm8(dst, src1, src2, imm8);
+      emit(X86InstId.kVpternlogd, [dst, src1, src2, imm8]);
 
   // ===========================================================================
   // AVX - Packed arithmetic 128-bit (VEX-encoded)
@@ -2032,46 +1781,46 @@ class X86Assembler extends BaseEmitter {
 
   /// VADDPS xmm, xmm, xmm (VEX add packed single 128-bit)
   void vaddpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vaddpsXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVaddps, [dst, src1, src2]);
 
   /// VADDPS xmm, xmm, [mem]
   void vaddpsXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vaddpsXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVaddps, [dst, src1, mem]);
 
   void vaddpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vaddpdXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVaddpd, [dst, src1, src2]);
 
   /// VADDPD xmm, xmm, [mem]
   void vaddpdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vaddpdXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVaddpd, [dst, src1, mem]);
 
   /// VSUBPS xmm, xmm, xmm (VEX subtract packed single 128-bit)
   void vsubpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vsubpsXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVsubps, [dst, src1, src2]);
 
   /// VMULPS xmm, xmm, xmm (VEX multiply packed single 128-bit)
   void vmulpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vmulpsXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVmulps, [dst, src1, src2]);
 
   /// VMULPS xmm, xmm, [mem]
   void vmulpsXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vmulpsXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVmulps, [dst, src1, mem]);
 
   /// VMULPD xmm, xmm, xmm (VEX multiply packed double 128-bit)
   void vmulpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vmulpdXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVmulpd, [dst, src1, src2]);
 
   /// VSUBPS xmm, xmm, [mem]
   void vsubpsXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vsubpsXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVsubps, [dst, src1, mem]);
 
   /// VSUBPD xmm, xmm, xmm (VEX subtract packed double 128-bit)
   void vsubpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vsubpdXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVsubpd, [dst, src1, src2]);
 
   /// VSUBPD xmm, xmm, [mem]
   void vsubpdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vsubpdXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVsubpd, [dst, src1, mem]);
 
   // ===========================================================================
   // AVX - Packed arithmetic 256-bit (VEX-encoded)
@@ -2079,55 +1828,55 @@ class X86Assembler extends BaseEmitter {
 
   /// VADDPS ymm, ymm, ymm (VEX add packed single 256-bit)
   void vaddpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vaddpsYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVaddps, [dst, src1, src2]);
 
   /// VADDPS ymm, ymm, [mem]
   void vaddpsYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vaddpsYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVaddps, [dst, src1, mem]);
 
   /// VMULPS ymm, ymm, ymm (VEX multiply packed single 256-bit)
   void vmulpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vmulpsYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVmulps, [dst, src1, src2]);
 
   /// VMULPS ymm, ymm, [mem]
   void vmulpsYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vmulpsYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVmulps, [dst, src1, mem]);
 
   /// VADDPD ymm, ymm, ymm (VEX add packed double 256-bit)
   void vaddpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vaddpdYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVaddpd, [dst, src1, src2]);
 
   /// VADDPD ymm, ymm, [mem]
   void vaddpdYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vaddpdYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVaddpd, [dst, src1, mem]);
 
   /// VMULPD xmm, xmm, [mem]
   void vmulpdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vmulpdXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVmulpd, [dst, src1, mem]);
 
   /// VSUBPS ymm, ymm, ymm (VEX subtract packed single 256-bit)
   void vsubpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vsubpsYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVsubps, [dst, src1, src2]);
 
   /// VSUBPS ymm, ymm, [mem]
   void vsubpsYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vsubpsYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVsubps, [dst, src1, mem]);
 
   /// VSUBPD ymm, ymm, ymm (VEX subtract packed double 256-bit)
   void vsubpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vsubpdYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVsubpd, [dst, src1, src2]);
 
   /// VSUBPD ymm, ymm, [mem]
   void vsubpdYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vsubpdYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVsubpd, [dst, src1, mem]);
 
   /// VMULPD ymm, ymm, ymm (VEX multiply packed double 256-bit)
   void vmulpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vmulpdYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVmulpd, [dst, src1, src2]);
 
   /// VMULPD ymm, ymm, [mem]
   void vmulpdYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vmulpdYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVmulpd, [dst, src1, mem]);
 
   // ===========================================================================
   // AVX - Logical (VEX-encoded)
@@ -2135,51 +1884,51 @@ class X86Assembler extends BaseEmitter {
 
   /// VXORPS xmm, xmm, xmm (VEX XOR packed single) - use for zeroing
   void vxorpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vxorpsXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVxorps, [dst, src1, src2]);
 
   /// VXORPS xmm, xmm, [mem]
   void vxorpsXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vxorpsXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVxorps, [dst, src1, mem]);
 
   /// VXORPS ymm, ymm, ymm (VEX XOR packed single 256-bit) - use for zeroing
   void vxorpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vxorpsYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVxorps, [dst, src1, src2]);
 
   /// VXORPS ymm, ymm, [mem]
   void vxorpsYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vxorpsYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVxorps, [dst, src1, mem]);
 
   /// VXORPD xmm, xmm, xmm (VEX XOR packed double)
   void vxorpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vxorpdXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVxorpd, [dst, src1, src2]);
 
   /// VXORPD ymm, ymm, ymm (VEX XOR packed double 256-bit)
   void vxorpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vxorpdYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVxorpd, [dst, src1, src2]);
 
   /// VXORPD xmm, xmm, [mem]
   void vxorpdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vxorpdXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVxorpd, [dst, src1, mem]);
 
   /// VXORPD ymm, ymm, [mem]
   void vxorpdYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vxorpdYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVxorpd, [dst, src1, mem]);
 
   /// VPXOR xmm, xmm, xmm (VEX XOR packed integer)
   void vpxorXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vpxorXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVpxor, [dst, src1, src2]);
 
   /// VPXOR xmm, xmm, [mem]
   void vpxorXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vpxorXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVpxor, [dst, src1, mem]);
 
   /// VPXOR ymm, ymm, ymm (VEX XOR packed integer 256-bit)
   void vpxorYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vpxorYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVpxor, [dst, src1, src2]);
 
   /// VPXOR ymm, ymm, [mem]
   void vpxorYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vpxorYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVpxor, [dst, src1, mem]);
 
   // ===========================================================================
   // AVX2 - Integer arithmetic (VEX-encoded)
@@ -2187,19 +1936,19 @@ class X86Assembler extends BaseEmitter {
 
   /// VPADDD xmm, xmm, xmm (VEX add packed dwords)
   void vpadddXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vpadddXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVpaddd, [dst, src1, src2]);
 
   /// VPADDD ymm, ymm, ymm (VEX add packed dwords 256-bit)
   void vpadddYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vpadddYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVpaddd, [dst, src1, src2]);
 
   /// VPADDQ xmm, xmm, xmm (VEX add packed qwords)
   void vpaddqXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vpaddqXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVpaddq, [dst, src1, src2]);
 
   /// VPMULLD xmm, xmm, xmm (VEX multiply packed dwords low)
   void vpmulldXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vpmulldXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVpmulld, [dst, src1, src2]);
 
   // ===========================================================================
   // FMA - Fused Multiply-Add (VEX-encoded)
@@ -2207,11 +1956,11 @@ class X86Assembler extends BaseEmitter {
 
   /// VFMADD132SD xmm, xmm, xmm: dst = dst * src2 + src1
   void vfmadd132sdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vfmadd132sdXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVfmadd132sd, [dst, src1, src2]);
 
   /// VFMADD231SD xmm, xmm, xmm: dst = src1 * src2 + dst
   void vfmadd231sdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vfmadd231sdXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVfmadd231sd, [dst, src1, src2]);
 
   // ===========================================================================
   // AVX - Special
@@ -2221,10 +1970,10 @@ class X86Assembler extends BaseEmitter {
   ///
   /// CRITICAL: Call this before transitioning from AVX to SSE code!
   /// Avoids expensive AVX-SSE transition penalty.
-  void vzeroupper() => _enc.vzeroupper();
+  void vzeroupper() => emit(X86InstId.kVzeroupper, []);
 
   /// VZEROALL - Zero all YMM registers completely.
-  void vzeroall() => _enc.vzeroall();
+  void vzeroall() => emit(X86InstId.kVzeroall, []);
 
   // ===========================================================================
   // AVX-512 Instructions (EVEX-encoded)
@@ -2232,469 +1981,515 @@ class X86Assembler extends BaseEmitter {
 
   /// VADDPS zmm, zmm, zmm (AVX-512 add packed single 512-bit)
   void vaddpsZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
-      _enc.vaddpsZmmZmmZmm(dst, src1, src2);
+      emit(X86InstId.kVaddps, [dst, src1, src2]);
 
   /// VADDPD zmm, zmm, zmm (AVX-512 add packed double 512-bit)
   void vaddpdZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
-      _enc.vaddpdZmmZmmZmm(dst, src1, src2);
+      emit(X86InstId.kVaddpd, [dst, src1, src2]);
 
   // --- Move Instructions ---
 
   /// VMOVUPS zmm, zmm (AVX-512)
-  void vmovupsZmm(X86Zmm dst, X86Zmm src) => _enc.vmovupsZmmZmm(dst, src);
+  void vmovupsZmm(X86Zmm dst, X86Zmm src) =>
+      emit(X86InstId.kVmovups, [dst, src]);
 
   /// VMOVUPS zmm, [mem] (AVX-512)
-  void vmovupsZmmMem(X86Zmm dst, X86Mem mem) => _enc.vmovupsZmmMem(dst, mem);
+  void vmovupsZmmMem(X86Zmm dst, X86Mem mem) =>
+      emit(X86InstId.kVmovups, [dst, mem]);
 
   /// VMOVUPS [mem], zmm (AVX-512)
-  void vmovupsMemZmm(X86Mem mem, X86Zmm src) => _enc.vmovupsMemZmm(mem, src);
+  void vmovupsMemZmm(X86Mem mem, X86Zmm src) =>
+      emit(X86InstId.kVmovups, [mem, src]);
 
   /// VMOVUPD zmm, zmm (AVX-512)
-  void vmovupdZmm(X86Zmm dst, X86Zmm src) => _enc.vmovupdZmmZmm(dst, src);
+  void vmovupdZmm(X86Zmm dst, X86Zmm src) =>
+      emit(X86InstId.kVmovupd, [dst, src]);
 
   /// VMOVUPD zmm, [mem] (AVX-512)
-  void vmovupdZmmMem(X86Zmm dst, X86Mem mem) => _enc.vmovupdZmmMem(dst, mem);
+  void vmovupdZmmMem(X86Zmm dst, X86Mem mem) =>
+      emit(X86InstId.kVmovupd, [dst, mem]);
 
   /// VMOVUPD [mem], zmm (AVX-512)
-  void vmovupdMemZmm(X86Mem mem, X86Zmm src) => _enc.vmovupdMemZmm(mem, src);
+  void vmovupdMemZmm(X86Mem mem, X86Zmm src) =>
+      emit(X86InstId.kVmovupd, [mem, src]);
 
   /// VMOVDQU32 zmm, zmm (AVX-512)
-  void vmovdqu32Zmm(X86Zmm dst, X86Zmm src) => _enc.vmovdqu32ZmmZmm(dst, src);
+  void vmovdqu32Zmm(X86Zmm dst, X86Zmm src) =>
+      emit(X86InstId.kVmovdqu32, [dst, src]);
 
   /// VMOVDQU32 zmm, [mem] (AVX-512)
   void vmovdqu32ZmmMem(X86Zmm dst, X86Mem mem) =>
-      _enc.vmovdqu32ZmmMem(dst, mem);
+      emit(X86InstId.kVmovdqu32, [dst, mem]);
 
   /// VMOVDQU32 [mem], zmm (AVX-512)
   void vmovdqu32MemZmm(X86Mem mem, X86Zmm src) =>
-      _enc.vmovdqu32MemZmm(mem, src);
+      emit(X86InstId.kVmovdqu32, [mem, src]);
 
   /// VMOVDQU64 zmm, zmm (AVX-512)
-  void vmovdqu64Zmm(X86Zmm dst, X86Zmm src) => _enc.vmovdqu64ZmmZmm(dst, src);
+  void vmovdqu64Zmm(X86Zmm dst, X86Zmm src) =>
+      emit(X86InstId.kVmovdqu64, [dst, src]);
 
   /// VMOVDQU64 zmm, [mem] (AVX-512)
   void vmovdqu64ZmmMem(X86Zmm dst, X86Mem mem) =>
-      _enc.vmovdqu64ZmmMem(dst, mem);
+      emit(X86InstId.kVmovdqu64, [dst, mem]);
 
   /// VMOVDQU64 [mem], zmm (AVX-512)
   void vmovdqu64MemZmm(X86Mem mem, X86Zmm src) =>
-      _enc.vmovdqu64MemZmm(mem, src);
+      emit(X86InstId.kVmovdqu64, [mem, src]);
 
   // --- Logic Instructions ---
 
   /// VPANDD zmm, zmm, zmm (AVX-512)
   void vpanddZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
-      _enc.vpanddZmmZmmZmm(dst, src1, src2);
+      emit(X86InstId.kVpandd, [dst, src1, src2]);
 
   /// VPANDQ zmm, zmm, zmm (AVX-512)
   void vpandqZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
-      _enc.vpandqZmmZmmZmm(dst, src1, src2);
+      emit(X86InstId.kVpandq, [dst, src1, src2]);
 
   /// VPORD zmm, zmm, zmm (AVX-512)
   void vpordZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
-      _enc.vpordZmmZmmZmm(dst, src1, src2);
+      emit(X86InstId.kVpord, [dst, src1, src2]);
 
   /// VPORQ zmm, zmm, zmm (AVX-512)
   void vporqZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
-      _enc.vporqZmmZmmZmm(dst, src1, src2);
+      emit(X86InstId.kVporq, [dst, src1, src2]);
 
   /// VPXORD zmm, zmm, zmm (AVX-512)
   void vpxordZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
-      _enc.vpxordZmmZmmZmm(dst, src1, src2);
+      emit(X86InstId.kVpxord, [dst, src1, src2]);
 
   /// VPXORQ zmm, zmm, zmm (AVX-512)
   void vpxorqZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
-      _enc.vpxorqZmmZmmZmm(dst, src1, src2);
+      emit(X86InstId.kVpxorq, [dst, src1, src2]);
 
   /// VXORPS zmm, zmm, zmm (AVX-512)
   void vxorpsZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
-      _enc.vxorpsZmmZmmZmm(dst, src1, src2);
+      emit(X86InstId.kVxorps, [dst, src1, src2]);
 
   /// VXORPD zmm, zmm, zmm (AVX-512)
   void vxorpdZmm(X86Zmm dst, X86Zmm src1, X86Zmm src2) =>
-      _enc.vxorpdZmmZmmZmm(dst, src1, src2);
+      emit(X86InstId.kVxorpd, [dst, src1, src2]);
 
   // --- Conversion Instructions ---
 
   /// VCVTTPS2DQ zmm, zmm (AVX-512) - Convert with truncation
-  void vcvttps2dqZmm(X86Zmm dst, X86Zmm src) => _enc.vcvttps2dqZmmZmm(dst, src);
+  void vcvttps2dqZmm(X86Zmm dst, X86Zmm src) =>
+      emit(X86InstId.kVcvttps2dq, [dst, src]);
 
   /// VCVTDQ2PS zmm, zmm (AVX-512)
-  void vcvtdq2psZmm(X86Zmm dst, X86Zmm src) => _enc.vcvtdq2psZmmZmm(dst, src);
+  void vcvtdq2psZmm(X86Zmm dst, X86Zmm src) =>
+      emit(X86InstId.kVcvtdq2ps, [dst, src]);
 
   /// VCVTPS2PD zmm, ymm (AVX-512)
-  void vcvtps2pdZmm(X86Zmm dst, X86Ymm src) => _enc.vcvtps2pdZmmYmm(dst, src);
+  void vcvtps2pdZmm(X86Zmm dst, X86Ymm src) =>
+      emit(X86InstId.kVcvtps2pd, [dst, src]);
 
   /// VCVTPD2PS ymm, zmm (AVX-512)
-  void vcvtpd2psYmm(X86Ymm dst, X86Zmm src) => _enc.vcvtpd2psYmmZmm(dst, src);
+  void vcvtpd2psYmm(X86Ymm dst, X86Zmm src) =>
+      emit(X86InstId.kVcvtpd2ps, [dst, src]);
 
   /// MOVDQU xmm, xmm (SSE2)
-  void movdquXX(X86Xmm dst, X86Xmm src) => _enc.movdquXmmXmm(dst, src);
+  void movdquXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMovdqu, [dst, src]);
 
   /// MOVDQU xmm, [mem] (SSE2)
-  void movdquXM(X86Xmm dst, X86Mem src) => _enc.movdquXmmMem(dst, src);
+  void movdquXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kMovdqu, [dst, src]);
 
   /// MOVDQU [mem], xmm (SSE2)
-  void movdquMX(X86Mem dst, X86Xmm src) => _enc.movdquMemXmm(dst, src);
+  void movdquMX(X86Mem dst, X86Xmm src) => emit(X86InstId.kMovdqu, [dst, src]);
 
   /// MOVDQA xmm, xmm (SSE2)
-  void movdqaXX(X86Xmm dst, X86Xmm src) => _enc.movdqaXmmXmm(dst, src);
+  void movdqaXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kMovdqa, [dst, src]);
 
   /// MOVDQA xmm, [mem] (SSE2)
-  void movdqaXM(X86Xmm dst, X86Mem src) => _enc.movdqaXmmMem(dst, src);
+  void movdqaXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kMovdqa, [dst, src]);
 
   /// MOVDQA [mem], xmm (SSE2)
-  void movdqaMX(X86Mem dst, X86Xmm src) => _enc.movdqaMemXmm(dst, src);
+  void movdqaMX(X86Mem dst, X86Xmm src) => emit(X86InstId.kMovdqa, [dst, src]);
 
   /// VMOVDQU xmm, [mem] (AVX)
-  void vmovdquXmmMem(X86Xmm dst, X86Mem mem) => _enc.vmovdquXmmMem(dst, mem);
+  void vmovdquXmmMem(X86Xmm dst, X86Mem mem) =>
+      emit(X86InstId.kVmovdqu, [dst, mem]);
 
   /// VMOVDQU xmm, xmm (AVX)
-  void vmovdquXX(X86Xmm dst, X86Xmm src) => _enc.vmovdquXmmXmm(dst, src);
+  void vmovdquXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kVmovdqu, [dst, src]);
 
   /// VMOVDQU [mem], xmm (AVX)
-  void vmovdquMemXmm(X86Mem mem, X86Xmm src) => _enc.vmovdquMemXmm(mem, src);
+  void vmovdquMemXmm(X86Mem mem, X86Xmm src) =>
+      emit(X86InstId.kVmovdqu, [mem, src]);
 
   /// VMOVDQU ymm, [mem] (AVX)
-  void vmovdquYmmMem(X86Ymm dst, X86Mem mem) => _enc.vmovdquYmmMem(dst, mem);
+  void vmovdquYmmMem(X86Ymm dst, X86Mem mem) =>
+      emit(X86InstId.kVmovdqu, [dst, mem]);
 
   /// VMOVDQU ymm, ymm (AVX)
-  void vmovdquYY(X86Ymm dst, X86Ymm src) => _enc.vmovdquYmmYmm(dst, src);
+  void vmovdquYY(X86Ymm dst, X86Ymm src) =>
+      emit(X86InstId.kVmovdqu, [dst, src]);
 
   /// VMOVDQU [mem], ymm (AVX)
-  void vmovdquMemYmm(X86Mem mem, X86Ymm src) => _enc.vmovdquMemYmm(mem, src);
+  void vmovdquMemYmm(X86Mem mem, X86Ymm src) =>
+      emit(X86InstId.kVmovdqu, [mem, src]);
 
   /// VMOVDQA xmm, [mem] (AVX)
-  void vmovdqaXmmMem(X86Xmm dst, X86Mem mem) => _enc.vmovdqaXmmMem(dst, mem);
+  void vmovdqaXmmMem(X86Xmm dst, X86Mem mem) =>
+      emit(X86InstId.kVmovdqa, [dst, mem]);
 
   /// VMOVDQA [mem], xmm (AVX)
-  void vmovdqaMemXmm(X86Mem mem, X86Xmm src) => _enc.vmovdqaMemXmm(mem, src);
+  void vmovdqaMemXmm(X86Mem mem, X86Xmm src) =>
+      emit(X86InstId.kVmovdqa, [mem, src]);
 
   /// VMOVDQA xmm, xmm (AVX)
-  void vmovdqaXX(X86Xmm dst, X86Xmm src) => _enc.vmovdqaXmmXmm(dst, src);
+  void vmovdqaXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kVmovdqa, [dst, src]);
 
   /// VMOVDQA ymm, [mem] (AVX)
-  void vmovdqaYmmMem(X86Ymm dst, X86Mem mem) => _enc.vmovdqaYmmMem(dst, mem);
+  void vmovdqaYmmMem(X86Ymm dst, X86Mem mem) =>
+      emit(X86InstId.kVmovdqa, [dst, mem]);
 
   /// VMOVDQA [mem], ymm (AVX)
-  void vmovdqaMemYmm(X86Mem mem, X86Ymm src) => _enc.vmovdqaMemYmm(mem, src);
+  void vmovdqaMemYmm(X86Mem mem, X86Ymm src) =>
+      emit(X86InstId.kVmovdqa, [mem, src]);
 
   /// VMOVDQA ymm, ymm (AVX)
-  void vmovdqaYY(X86Ymm dst, X86Ymm src) => _enc.vmovdqaYmmYmm(dst, src);
+  void vmovdqaYY(X86Ymm dst, X86Ymm src) =>
+      emit(X86InstId.kVmovdqa, [dst, src]);
 
   /// VPSHUFD xmm, xmm/m128, imm8
   void vpshufdXXX(X86Xmm dst, X86Xmm src, int imm) =>
-      _enc.vpshufdXmmXmm(dst, src, imm);
+      emit(X86InstId.kVpshufd, [dst, src, imm]);
   void vpshufdXXM(X86Xmm dst, X86Mem src, int imm) =>
-      _enc.vpshufdXmmMem(dst, src, imm);
+      emit(X86InstId.kVpshufd, [dst, src, imm]);
 
   /// VPSHUFD ymm, ymm/m256, imm8
   void vpshufdYYY(X86Ymm dst, X86Ymm src, int imm) =>
-      _enc.vpshufdYmmYmm(dst, src, imm);
+      emit(X86InstId.kVpshufd, [dst, src, imm]);
   void vpshufdYYM(X86Ymm dst, X86Mem src, int imm) =>
-      _enc.vpshufdYmmMem(dst, src, imm);
+      emit(X86InstId.kVpshufd, [dst, src, imm]);
 
   // ===========================================================================
   // SSE2 - Packed Integer Arithmetic
   // ===========================================================================
 
   /// PADDD xmm, xmm
-  void padddXX(X86Xmm dst, X86Xmm src) => _enc.padddXmmXmm(dst, src);
+  void padddXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPaddd, [dst, src]);
 
   /// PADDD xmm, [mem]
-  void padddXM(X86Xmm dst, X86Mem src) => _enc.padddXmmMem(dst, src);
+  void padddXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPaddd, [dst, src]);
 
   /// PADDB xmm, xmm
-  void paddbXX(X86Xmm dst, X86Xmm src) => _enc.paddbXmmXmm(dst, src);
+  void paddbXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPaddb, [dst, src]);
 
   /// PADDB xmm, [mem]
-  void paddbXM(X86Xmm dst, X86Mem src) => _enc.paddbXmmMem(dst, src);
+  void paddbXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPaddb, [dst, src]);
 
   /// PADDW xmm, xmm
-  void paddwXX(X86Xmm dst, X86Xmm src) => _enc.paddwXmmXmm(dst, src);
+  void paddwXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPaddw, [dst, src]);
 
   /// PADDW xmm, [mem]
-  void paddwXM(X86Xmm dst, X86Mem src) => _enc.paddwXmmMem(dst, src);
+  void paddwXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPaddw, [dst, src]);
 
   /// PADDQ xmm, xmm
-  void paddqXX(X86Xmm dst, X86Xmm src) => _enc.paddqXmmXmm(dst, src);
+  void paddqXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPaddq, [dst, src]);
 
   /// PADDQ xmm, [mem]
-  void paddqXM(X86Xmm dst, X86Mem src) => _enc.paddqXmmMem(dst, src);
+  void paddqXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPaddq, [dst, src]);
 
   /// PSUBB xmm, xmm
-  void psubbXX(X86Xmm dst, X86Xmm src) => _enc.psubbXmmXmm(dst, src);
+  void psubbXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPsubb, [dst, src]);
 
   /// PSUBB xmm, [mem]
-  void psubbXM(X86Xmm dst, X86Mem src) => _enc.psubbXmmMem(dst, src);
+  void psubbXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPsubb, [dst, src]);
 
   /// PSUBW xmm, xmm
-  void psubwXX(X86Xmm dst, X86Xmm src) => _enc.psubwXmmXmm(dst, src);
+  void psubwXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPsubw, [dst, src]);
 
   /// PSUBW xmm, [mem]
-  void psubwXM(X86Xmm dst, X86Mem src) => _enc.psubwXmmMem(dst, src);
+  void psubwXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPsubw, [dst, src]);
 
   /// PSUBD xmm, xmm
-  void psubdXX(X86Xmm dst, X86Xmm src) => _enc.psubdXmmXmm(dst, src);
+  void psubdXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPsubd, [dst, src]);
 
   /// PSUBD xmm, [mem]
-  void psubdXM(X86Xmm dst, X86Mem src) => _enc.psubdXmmMem(dst, src);
+  void psubdXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPsubd, [dst, src]);
 
   /// PSUBQ xmm, xmm
-  void psubqXX(X86Xmm dst, X86Xmm src) => _enc.psubqXmmXmm(dst, src);
+  void psubqXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPsubq, [dst, src]);
 
   /// PSUBQ xmm, [mem]
-  void psubqXM(X86Xmm dst, X86Mem src) => _enc.psubqXmmMem(dst, src);
+  void psubqXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPsubq, [dst, src]);
 
   /// PMULLW xmm, xmm
-  void pmullwXX(X86Xmm dst, X86Xmm src) => _enc.pmullwXmmXmm(dst, src);
+  void pmullwXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPmullw, [dst, src]);
 
   /// PMULLW xmm, [mem]
-  void pmullwXM(X86Xmm dst, X86Mem src) => _enc.pmullwXmmMem(dst, src);
+  void pmullwXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPmullw, [dst, src]);
 
   /// PMULLD xmm, xmm (SSE4.1)
-  void pmulldXX(X86Xmm dst, X86Xmm src) => _enc.pmulldXmmXmm(dst, src);
+  void pmulldXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPmulld, [dst, src]);
 
   /// PMULLD xmm, [mem] (SSE4.1)
-  void pmulldXM(X86Xmm dst, X86Mem src) => _enc.pmulldXmmMem(dst, src);
+  void pmulldXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPmulld, [dst, src]);
 
   /// PMULHW xmm, xmm
-  void pmulhwXX(X86Xmm dst, X86Xmm src) => _enc.pmulhwXmmXmm(dst, src);
+  void pmulhwXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPmulhw, [dst, src]);
 
   /// PMULHW xmm, [mem]
-  void pmulhwXM(X86Xmm dst, X86Mem src) => _enc.pmulhwXmmMem(dst, src);
+  void pmulhwXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPmulhw, [dst, src]);
 
   /// PMULHUW xmm, xmm
-  void pmulhuwXX(X86Xmm dst, X86Xmm src) => _enc.pmulhuwXmmXmm(dst, src);
+  void pmulhuwXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPmulhuw, [dst, src]);
 
   /// PMULHUW xmm, [mem]
-  void pmulhuwXM(X86Xmm dst, X86Mem src) => _enc.pmulhuwXmmMem(dst, src);
+  void pmulhuwXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPmulhuw, [dst, src]);
 
   /// PMADDWD xmm, xmm
-  void pmaddwdXX(X86Xmm dst, X86Xmm src) => _enc.pmaddwdXmmXmm(dst, src);
+  void pmaddwdXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPmaddwd, [dst, src]);
 
   /// PMADDWD xmm, [mem]
-  void pmaddwdXM(X86Xmm dst, X86Mem src) => _enc.pmaddwdXmmMem(dst, src);
+  void pmaddwdXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPmaddwd, [dst, src]);
 
   /// PMADDUBSW xmm, xmm (SSSE3)
-  void pmaddubswXX(X86Xmm dst, X86Xmm src) => _enc.pmaddubswXmmXmm(dst, src);
+  void pmaddubswXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPmaddubsw, [dst, src]);
 
   /// PMADDUBSW xmm, [mem] (SSSE3)
-  void pmaddubswXM(X86Xmm dst, X86Mem src) => _enc.pmaddubswXmmMem(dst, src);
+  void pmaddubswXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPmaddubsw, [dst, src]);
 
   /// PABSB xmm, xmm (SSSE3)
-  void pabsbXX(X86Xmm dst, X86Xmm src) => _enc.pabsbXmmXmm(dst, src);
+  void pabsbXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPabsb, [dst, src]);
 
   /// PABSB xmm, [mem] (SSSE3)
-  void pabsbXM(X86Xmm dst, X86Mem src) => _enc.pabsbXmmMem(dst, src);
+  void pabsbXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPabsb, [dst, src]);
 
   /// PABSW xmm, xmm (SSSE3)
-  void pabswXX(X86Xmm dst, X86Xmm src) => _enc.pabswXmmXmm(dst, src);
+  void pabswXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPabsw, [dst, src]);
 
   /// PABSW xmm, [mem] (SSSE3)
-  void pabswXM(X86Xmm dst, X86Mem src) => _enc.pabswXmmMem(dst, src);
+  void pabswXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPabsw, [dst, src]);
 
   /// PABSD xmm, xmm (SSSE3)
-  void pabsdXX(X86Xmm dst, X86Xmm src) => _enc.pabsdXmmXmm(dst, src);
+  void pabsdXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPabsd, [dst, src]);
 
   /// PABSD xmm, [mem] (SSSE3)
-  void pabsdXM(X86Xmm dst, X86Mem src) => _enc.pabsdXmmMem(dst, src);
+  void pabsdXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPabsd, [dst, src]);
 
   /// PSADBW xmm, xmm
-  void psadbwXX(X86Xmm dst, X86Xmm src) => _enc.psadbwXmmXmm(dst, src);
+  void psadbwXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPsadbw, [dst, src]);
 
   /// PSADBW xmm, [mem]
-  void psadbwXM(X86Xmm dst, X86Mem src) => _enc.psadbwXmmMem(dst, src);
+  void psadbwXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPsadbw, [dst, src]);
 
   // ===========================================================================
   // SSE2/SSE4.1 - Packed Integer Compare
   // ===========================================================================
 
   /// PCMPEQB xmm, xmm
-  void pcmpeqbXX(X86Xmm dst, X86Xmm src) => _enc.pcmpeqbXmmXmm(dst, src);
+  void pcmpeqbXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPcmpeqb, [dst, src]);
 
   /// PCMPEQB xmm, [mem]
-  void pcmpeqbXM(X86Xmm dst, X86Mem src) => _enc.pcmpeqbXmmMem(dst, src);
+  void pcmpeqbXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPcmpeqb, [dst, src]);
 
   /// PCMPEQW xmm, xmm
-  void pcmpeqwXX(X86Xmm dst, X86Xmm src) => _enc.pcmpeqwXmmXmm(dst, src);
+  void pcmpeqwXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPcmpeqw, [dst, src]);
 
   /// PCMPEQW xmm, [mem]
-  void pcmpeqwXM(X86Xmm dst, X86Mem src) => _enc.pcmpeqwXmmMem(dst, src);
+  void pcmpeqwXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPcmpeqw, [dst, src]);
 
   /// PCMPEQD xmm, xmm
-  void pcmpeqdXX(X86Xmm dst, X86Xmm src) => _enc.pcmpeqdXmmXmm(dst, src);
+  void pcmpeqdXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPcmpeqd, [dst, src]);
 
   /// PCMPEQD xmm, [mem]
-  void pcmpeqdXM(X86Xmm dst, X86Mem src) => _enc.pcmpeqdXmmMem(dst, src);
+  void pcmpeqdXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPcmpeqd, [dst, src]);
 
   /// PCMPEQQ xmm, xmm (SSE4.1)
-  void pcmpeqqXX(X86Xmm dst, X86Xmm src) => _enc.pcmpeqqXmmXmm(dst, src);
+  void pcmpeqqXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPcmpeqq, [dst, src]);
 
   /// PCMPEQQ xmm, [mem] (SSE4.1)
-  void pcmpeqqXM(X86Xmm dst, X86Mem src) => _enc.pcmpeqqXmmMem(dst, src);
+  void pcmpeqqXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPcmpeqq, [dst, src]);
 
   /// PCMPGTB xmm, xmm
-  void pcmpgtbXX(X86Xmm dst, X86Xmm src) => _enc.pcmpgtbXmmXmm(dst, src);
+  void pcmpgtbXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPcmpgtb, [dst, src]);
 
   /// PCMPGTB xmm, [mem]
-  void pcmpgtbXM(X86Xmm dst, X86Mem src) => _enc.pcmpgtbXmmMem(dst, src);
+  void pcmpgtbXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPcmpgtb, [dst, src]);
 
   /// PCMPGTW xmm, xmm
-  void pcmpgtwXX(X86Xmm dst, X86Xmm src) => _enc.pcmpgtwXmmXmm(dst, src);
+  void pcmpgtwXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPcmpgtw, [dst, src]);
 
   /// PCMPGTW xmm, [mem]
-  void pcmpgtwXM(X86Xmm dst, X86Mem src) => _enc.pcmpgtwXmmMem(dst, src);
+  void pcmpgtwXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPcmpgtw, [dst, src]);
 
   /// PCMPGTD xmm, xmm
-  void pcmpgtdXX(X86Xmm dst, X86Xmm src) => _enc.pcmpgtdXmmXmm(dst, src);
+  void pcmpgtdXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPcmpgtd, [dst, src]);
 
   /// PCMPGTD xmm, [mem]
-  void pcmpgtdXM(X86Xmm dst, X86Mem src) => _enc.pcmpgtdXmmMem(dst, src);
+  void pcmpgtdXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPcmpgtd, [dst, src]);
 
   /// PCMPGTQ xmm, xmm (SSE4.2)
-  void pcmpgtqXX(X86Xmm dst, X86Xmm src) => _enc.pcmpgtqXmmXmm(dst, src);
+  void pcmpgtqXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPcmpgtq, [dst, src]);
 
   /// PCMPGTQ xmm, [mem] (SSE4.2)
-  void pcmpgtqXM(X86Xmm dst, X86Mem src) => _enc.pcmpgtqXmmMem(dst, src);
+  void pcmpgtqXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPcmpgtq, [dst, src]);
 
   // ===========================================================================
   // SSE2/SSE4.1 - Packed Integer Min/Max
   // ===========================================================================
 
   /// PMINUB xmm, xmm
-  void pminubXX(X86Xmm dst, X86Xmm src) => _enc.pminubXmmXmm(dst, src);
+  void pminubXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPminub, [dst, src]);
 
   /// PMINUB xmm, [mem]
-  void pminubXM(X86Xmm dst, X86Mem src) => _enc.pminubXmmMem(dst, src);
+  void pminubXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPminub, [dst, src]);
 
   /// PMAXUB xmm, xmm
-  void pmaxubXX(X86Xmm dst, X86Xmm src) => _enc.pmaxubXmmXmm(dst, src);
+  void pmaxubXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPmaxub, [dst, src]);
 
   /// PMAXUB xmm, [mem]
-  void pmaxubXM(X86Xmm dst, X86Mem src) => _enc.pmaxubXmmMem(dst, src);
+  void pmaxubXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPmaxub, [dst, src]);
 
   /// PMINSW xmm, xmm
-  void pminswXX(X86Xmm dst, X86Xmm src) => _enc.pminswXmmXmm(dst, src);
+  void pminswXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPminsw, [dst, src]);
 
   /// PMINSW xmm, [mem]
-  void pminswXM(X86Xmm dst, X86Mem src) => _enc.pminswXmmMem(dst, src);
+  void pminswXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPminsw, [dst, src]);
 
   /// PMAXSW xmm, xmm
-  void pmaxswXX(X86Xmm dst, X86Xmm src) => _enc.pmaxswXmmXmm(dst, src);
+  void pmaxswXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPmaxsw, [dst, src]);
 
   /// PMAXSW xmm, [mem]
-  void pmaxswXM(X86Xmm dst, X86Mem src) => _enc.pmaxswXmmMem(dst, src);
+  void pmaxswXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPmaxsw, [dst, src]);
 
   /// PMINUD xmm, xmm (SSE4.1)
-  void pminudXX(X86Xmm dst, X86Xmm src) => _enc.pminudXmmXmm(dst, src);
+  void pminudXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPminud, [dst, src]);
 
   /// PMINUD xmm, [mem] (SSE4.1)
-  void pminudXM(X86Xmm dst, X86Mem src) => _enc.pminudXmmMem(dst, src);
+  void pminudXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPminud, [dst, src]);
 
   /// PMAXUD xmm, xmm (SSE4.1)
-  void pmaxudXX(X86Xmm dst, X86Xmm src) => _enc.pmaxudXmmXmm(dst, src);
+  void pmaxudXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPmaxud, [dst, src]);
 
   /// PMAXUD xmm, [mem] (SSE4.1)
-  void pmaxudXM(X86Xmm dst, X86Mem src) => _enc.pmaxudXmmMem(dst, src);
+  void pmaxudXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPmaxud, [dst, src]);
 
   /// PMINSD xmm, xmm (SSE4.1)
-  void pminsdXX(X86Xmm dst, X86Xmm src) => _enc.pminsdXmmXmm(dst, src);
+  void pminsdXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPminsd, [dst, src]);
 
   /// PMINSD xmm, [mem] (SSE4.1)
-  void pminsdXM(X86Xmm dst, X86Mem src) => _enc.pminsdXmmMem(dst, src);
+  void pminsdXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPminsd, [dst, src]);
 
   /// PMAXSD xmm, xmm (SSE4.1)
-  void pmaxsdXX(X86Xmm dst, X86Xmm src) => _enc.pmaxsdXmmXmm(dst, src);
+  void pmaxsdXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPmaxsd, [dst, src]);
 
   /// PMAXSD xmm, [mem] (SSE4.1)
-  void pmaxsdXM(X86Xmm dst, X86Mem src) => _enc.pmaxsdXmmMem(dst, src);
+  void pmaxsdXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPmaxsd, [dst, src]);
 
   // ===========================================================================
   // SSE2 - Packed Integer Shift
   // ===========================================================================
 
   /// PSLLW xmm, xmm
-  void psllwXX(X86Xmm dst, X86Xmm src) => _enc.psllwXmmXmm(dst, src);
+  void psllwXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPsllw, [dst, src]);
 
   /// PSLLW xmm, imm8
-  void psllwXI(X86Xmm dst, int imm8) => _enc.psllwXmmImm8(dst, imm8);
+  void psllwXI(X86Xmm dst, int imm8) => emit(X86InstId.kPsllw, [dst, imm8]);
 
   /// PSLLD xmm, xmm
-  void pslldXX(X86Xmm dst, X86Xmm src) => _enc.pslldXmmXmm(dst, src);
+  void pslldXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPslld, [dst, src]);
 
   /// PSLLD xmm, imm8
-  void pslldXI(X86Xmm dst, int imm8) => _enc.pslldXmmImm8(dst, imm8);
+  void pslldXI(X86Xmm dst, int imm8) => emit(X86InstId.kPslld, [dst, imm8]);
 
   /// PSLLQ xmm, xmm
-  void psllqXX(X86Xmm dst, X86Xmm src) => _enc.psllqXmmXmm(dst, src);
+  void psllqXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPsllq, [dst, src]);
 
   /// PSLLQ xmm, imm8
-  void psllqXI(X86Xmm dst, int imm8) => _enc.psllqXmmImm8(dst, imm8);
+  void psllqXI(X86Xmm dst, int imm8) => emit(X86InstId.kPsllq, [dst, imm8]);
 
   /// PSRLW xmm, xmm
-  void psrlwXX(X86Xmm dst, X86Xmm src) => _enc.psrlwXmmXmm(dst, src);
+  void psrlwXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPsrlw, [dst, src]);
 
   /// PSRLW xmm, imm8
-  void psrlwXI(X86Xmm dst, int imm8) => _enc.psrlwXmmImm8(dst, imm8);
+  void psrlwXI(X86Xmm dst, int imm8) => emit(X86InstId.kPsrlw, [dst, imm8]);
 
   /// PSRLD xmm, xmm
-  void psrldXX(X86Xmm dst, X86Xmm src) => _enc.psrldXmmXmm(dst, src);
+  void psrldXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPsrld, [dst, src]);
 
   /// PSRLD xmm, imm8
-  void psrldXI(X86Xmm dst, int imm8) => _enc.psrldXmmImm8(dst, imm8);
+  void psrldXI(X86Xmm dst, int imm8) => emit(X86InstId.kPsrld, [dst, imm8]);
 
   /// VPSLLD xmm, xmm, imm8 (AVX)
   void vpslld(X86Xmm dst, X86Xmm src, int imm8) =>
-      _enc.vpslldXmmXmmImm8(dst, src, imm8);
+      emit(X86InstId.kVpslld, [dst, src, imm8]);
 
   /// VPSRLD xmm, xmm, imm8 (AVX)
   void vpsrld(X86Xmm dst, X86Xmm src, int imm8) =>
-      _enc.vpsrldXmmXmmImm8(dst, src, imm8);
+      emit(X86InstId.kVpsrld, [dst, src, imm8]);
 
   /// VPSHUFD xmm, xmm, imm8 (AVX)
   void vpshufd(X86Xmm dst, X86Xmm src, int imm8) =>
-      _enc.vpshufdXmmXmmImm8(dst, src, imm8);
+      emit(X86InstId.kVpshufd, [dst, src, imm8]);
 
   /// PSRLQ xmm, xmm
-  void psrlqXX(X86Xmm dst, X86Xmm src) => _enc.psrlqXmmXmm(dst, src);
+  void psrlqXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPsrlq, [dst, src]);
 
   /// PSRLQ xmm, imm8
-  void psrlqXI(X86Xmm dst, int imm8) => _enc.psrlqXmmImm8(dst, imm8);
+  void psrlqXI(X86Xmm dst, int imm8) => emit(X86InstId.kPsrlq, [dst, imm8]);
 
   /// PSRAW xmm, xmm
-  void psrawXX(X86Xmm dst, X86Xmm src) => _enc.psrawXmmXmm(dst, src);
+  void psrawXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPsraw, [dst, src]);
 
   /// PSRAW xmm, imm8
-  void psrawXI(X86Xmm dst, int imm8) => _enc.psrawXmmImm8(dst, imm8);
+  void psrawXI(X86Xmm dst, int imm8) => emit(X86InstId.kPsraw, [dst, imm8]);
 
   /// PSRAD xmm, xmm
-  void psradXX(X86Xmm dst, X86Xmm src) => _enc.psradXmmXmm(dst, src);
+  void psradXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPsrad, [dst, src]);
 
   /// PSRAD xmm, imm8
-  void psradXI(X86Xmm dst, int imm8) => _enc.psradXmmImm8(dst, imm8);
+  void psradXI(X86Xmm dst, int imm8) => emit(X86InstId.kPsrad, [dst, imm8]);
 
   /// PSLLDQ xmm, imm8 (byte shift left)
-  void pslldqXI(X86Xmm dst, int imm8) => _enc.pslldqXmmImm8(dst, imm8);
+  void pslldqXI(X86Xmm dst, int imm8) => emit(X86InstId.kPslldq, [dst, imm8]);
 
   /// PSRLDQ xmm, imm8 (byte shift right)
-  void psrldqXI(X86Xmm dst, int imm8) => _enc.psrldqXmmImm8(dst, imm8);
+  void psrldqXI(X86Xmm dst, int imm8) => emit(X86InstId.kPsrldq, [dst, imm8]);
 
   // ===========================================================================
   // SSE2/SSE4.1 - Packed Integer Logic
   // ===========================================================================
 
   /// PAND xmm, xmm
-  void pandXX(X86Xmm dst, X86Xmm src) => _enc.pandXmmXmm(dst, src);
+  void pandXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPand, [dst, src]);
 
   /// PAND xmm, [mem]
-  void pandXM(X86Xmm dst, X86Mem src) => _enc.pandXmmMem(dst, src);
+  void pandXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPand, [dst, src]);
 
   /// PANDN xmm, xmm
-  void pandnXX(X86Xmm dst, X86Xmm src) => _enc.pandnXmmXmm(dst, src);
+  void pandnXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPandn, [dst, src]);
 
   /// PANDN xmm, [mem]
-  void pandnXM(X86Xmm dst, X86Mem src) => _enc.pandnXmmMem(dst, src);
+  void pandnXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPandn, [dst, src]);
 
   // POR and PXOR are already implemented as porXX/porXM and pxorXX/pxorXM
 
@@ -2703,76 +2498,100 @@ class X86Assembler extends BaseEmitter {
   // ===========================================================================
 
   /// PACKSSWB xmm, xmm
-  void packsswbXX(X86Xmm dst, X86Xmm src) => _enc.packsswbXmmXmm(dst, src);
+  void packsswbXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPacksswb, [dst, src]);
 
   /// PACKSSWB xmm, [mem]
-  void packsswbXM(X86Xmm dst, X86Mem src) => _enc.packsswbXmmMem(dst, src);
+  void packsswbXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPacksswb, [dst, src]);
 
   /// PACKSSDW xmm, xmm
-  void packssdwXX(X86Xmm dst, X86Xmm src) => _enc.packssdwXmmXmm(dst, src);
+  void packssdwXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPackssdw, [dst, src]);
 
   /// PACKSSDW xmm, [mem]
-  void packssdwXM(X86Xmm dst, X86Mem src) => _enc.packssdwXmmMem(dst, src);
+  void packssdwXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPackssdw, [dst, src]);
 
   /// PACKUSWB xmm, xmm
-  void packuswbXX(X86Xmm dst, X86Xmm src) => _enc.packuswbXmmXmm(dst, src);
+  void packuswbXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPackuswb, [dst, src]);
 
   /// PACKUSWB xmm, [mem]
-  void packuswbXM(X86Xmm dst, X86Mem src) => _enc.packuswbXmmMem(dst, src);
+  void packuswbXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPackuswb, [dst, src]);
 
   /// PACKUSDW xmm, xmm (SSE4.1)
-  void packusdwXX(X86Xmm dst, X86Xmm src) => _enc.packusdwXmmXmm(dst, src);
+  void packusdwXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPackusdw, [dst, src]);
 
   /// PACKUSDW xmm, [mem] (SSE4.1)
-  void packusdwXM(X86Xmm dst, X86Mem src) => _enc.packusdwXmmMem(dst, src);
+  void packusdwXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPackusdw, [dst, src]);
 
   /// PUNPCKLBW xmm, xmm
-  void punpcklbwXX(X86Xmm dst, X86Xmm src) => _enc.punpcklbwXmmXmm(dst, src);
+  void punpcklbwXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPunpcklbw, [dst, src]);
 
   /// PUNPCKLBW xmm, [mem]
-  void punpcklbwXM(X86Xmm dst, X86Mem src) => _enc.punpcklbwXmmMem(dst, src);
+  void punpcklbwXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPunpcklbw, [dst, src]);
 
   /// PUNPCKLWD xmm, xmm
-  void punpcklwdXX(X86Xmm dst, X86Xmm src) => _enc.punpcklwdXmmXmm(dst, src);
+  void punpcklwdXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPunpcklwd, [dst, src]);
 
   /// PUNPCKLWD xmm, [mem]
-  void punpcklwdXM(X86Xmm dst, X86Mem src) => _enc.punpcklwdXmmMem(dst, src);
+  void punpcklwdXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPunpcklwd, [dst, src]);
 
   /// PUNPCKLDQ xmm, xmm
-  void punpckldqXX(X86Xmm dst, X86Xmm src) => _enc.punpckldqXmmXmm(dst, src);
+  void punpckldqXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPunpckldq, [dst, src]);
 
   /// PUNPCKLDQ xmm, [mem]
-  void punpckldqXM(X86Xmm dst, X86Mem src) => _enc.punpckldqXmmMem(dst, src);
+  void punpckldqXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPunpckldq, [dst, src]);
 
   /// PUNPCKLQDQ xmm, xmm
-  void punpcklqdqXX(X86Xmm dst, X86Xmm src) => _enc.punpcklqdqXmmXmm(dst, src);
+  void punpcklqdqXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPunpcklqdq, [dst, src]);
 
   /// PUNPCKLQDQ xmm, [mem]
-  void punpcklqdqXM(X86Xmm dst, X86Mem src) => _enc.punpcklqdqXmmMem(dst, src);
+  void punpcklqdqXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPunpcklqdq, [dst, src]);
 
   /// PUNPCKHBW xmm, xmm
-  void punpckhbwXX(X86Xmm dst, X86Xmm src) => _enc.punpckhbwXmmXmm(dst, src);
+  void punpckhbwXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPunpckhbw, [dst, src]);
 
   /// PUNPCKHBW xmm, [mem]
-  void punpckhbwXM(X86Xmm dst, X86Mem src) => _enc.punpckhbwXmmMem(dst, src);
+  void punpckhbwXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPunpckhbw, [dst, src]);
 
   /// PUNPCKHWD xmm, xmm
-  void punpckhwdXX(X86Xmm dst, X86Xmm src) => _enc.punpckhwdXmmXmm(dst, src);
+  void punpckhwdXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPunpckhwd, [dst, src]);
 
   /// PUNPCKHWD xmm, [mem]
-  void punpckhwdXM(X86Xmm dst, X86Mem src) => _enc.punpckhwdXmmMem(dst, src);
+  void punpckhwdXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPunpckhwd, [dst, src]);
 
   /// PUNPCKHDQ xmm, xmm
-  void punpckhdqXX(X86Xmm dst, X86Xmm src) => _enc.punpckhdqXmmXmm(dst, src);
+  void punpckhdqXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPunpckhdq, [dst, src]);
 
   /// PUNPCKHDQ xmm, [mem]
-  void punpckhdqXM(X86Xmm dst, X86Mem src) => _enc.punpckhdqXmmMem(dst, src);
+  void punpckhdqXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPunpckhdq, [dst, src]);
 
   /// PUNPCKHQDQ xmm, xmm
-  void punpckhqdqXX(X86Xmm dst, X86Xmm src) => _enc.punpckhqdqXmmXmm(dst, src);
+  void punpckhqdqXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPunpckhqdq, [dst, src]);
 
   /// PUNPCKHQDQ xmm, [mem]
-  void punpckhqdqXM(X86Xmm dst, X86Mem src) => _enc.punpckhqdqXmmMem(dst, src);
+  void punpckhqdqXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPunpckhqdq, [dst, src]);
 
   // ===========================================================================
   // SSE2/SSSE3 - Shuffle and Align
@@ -2780,294 +2599,332 @@ class X86Assembler extends BaseEmitter {
 
   /// PSHUFD xmm, xmm, imm8
   void pshufdXXI(X86Xmm dst, X86Xmm src, int imm8) =>
-      _enc.pshufdXmmXmmImm8(dst, src, imm8);
+      emit(X86InstId.kPshufd, [dst, src, imm8]);
 
   /// PSHUFD xmm, [mem], imm8
   void pshufdXMI(X86Xmm dst, X86Mem src, int imm8) =>
-      _enc.pshufdXmmMemImm8(dst, src, imm8);
+      emit(X86InstId.kPshufd, [dst, src, imm8]);
 
   /// PSHUFB xmm, xmm (SSSE3)
-  void pshufbXX(X86Xmm dst, X86Xmm src) => _enc.pshufbXmmXmm(dst, src);
+  void pshufbXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPshufb, [dst, src]);
 
   /// PSHUFB xmm, [mem] (SSSE3)
-  void pshufbXM(X86Xmm dst, X86Mem src) => _enc.pshufbXmmMem(dst, src);
+  void pshufbXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPshufb, [dst, src]);
 
   /// PSHUFLW xmm, xmm, imm8
   void pshuflwXXI(X86Xmm dst, X86Xmm src, int imm8) =>
-      _enc.pshuflwXmmXmmImm8(dst, src, imm8);
+      emit(X86InstId.kPshuflw, [dst, src, imm8]);
 
   /// PSHUFLW xmm, [mem], imm8
   void pshuflwXMI(X86Xmm dst, X86Mem src, int imm8) =>
-      _enc.pshuflwXmmMemImm8(dst, src, imm8);
+      emit(X86InstId.kPshuflw, [dst, src, imm8]);
 
   /// PSHUFHW xmm, xmm, imm8
   void pshufhwXXI(X86Xmm dst, X86Xmm src, int imm8) =>
-      _enc.pshufhwXmmXmmImm8(dst, src, imm8);
+      emit(X86InstId.kPshufhw, [dst, src, imm8]);
 
   /// PSHUFHW xmm, [mem], imm8
   void pshufhwXMI(X86Xmm dst, X86Mem src, int imm8) =>
-      _enc.pshufhwXmmMemImm8(dst, src, imm8);
+      emit(X86InstId.kPshufhw, [dst, src, imm8]);
 
   /// PALIGNR xmm, xmm, imm8 (SSSE3)
   void palignrXXI(X86Xmm dst, X86Xmm src, int imm8) =>
-      _enc.palignrXmmXmmImm8(dst, src, imm8);
+      emit(X86InstId.kPalignr, [dst, src, imm8]);
 
   /// PALIGNR xmm, [mem], imm8 (SSSE3)
   void palignrXMI(X86Xmm dst, X86Mem src, int imm8) =>
-      _enc.palignrXmmMemImm8(dst, src, imm8);
+      emit(X86InstId.kPalignr, [dst, src, imm8]);
 
   // ===========================================================================
   // SSE4.1 - Packed Integer Extend
   // ===========================================================================
 
-  void pmovzxbwXX(X86Xmm dst, X86Xmm src) => _enc.pmovzxbwXmmXmm(dst, src);
-  void pmovzxbwXM(X86Xmm dst, X86Mem src) => _enc.pmovzxbwXmmMem(dst, src);
+  void pmovzxbwXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPmovzxbw, [dst, src]);
+  void pmovzxbwXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPmovzxbw, [dst, src]);
 
-  void pmovzxbdXX(X86Xmm dst, X86Xmm src) => _enc.pmovzxbdXmmXmm(dst, src);
-  void pmovzxbdXM(X86Xmm dst, X86Mem src) => _enc.pmovzxbdXmmMem(dst, src);
+  void pmovzxbdXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPmovzxbd, [dst, src]);
+  void pmovzxbdXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPmovzxbd, [dst, src]);
 
-  void pmovzxbqXX(X86Xmm dst, X86Xmm src) => _enc.pmovzxbqXmmXmm(dst, src);
-  void pmovzxbqXM(X86Xmm dst, X86Mem src) => _enc.pmovzxbqXmmMem(dst, src);
+  void pmovzxbqXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPmovzxbq, [dst, src]);
+  void pmovzxbqXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPmovzxbq, [dst, src]);
 
-  void pmovzxwdXX(X86Xmm dst, X86Xmm src) => _enc.pmovzxwdXmmXmm(dst, src);
-  void pmovzxwdXM(X86Xmm dst, X86Mem src) => _enc.pmovzxwdXmmMem(dst, src);
+  void pmovzxwdXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPmovzxwd, [dst, src]);
+  void pmovzxwdXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPmovzxwd, [dst, src]);
 
-  void pmovzxwqXX(X86Xmm dst, X86Xmm src) => _enc.pmovzxwqXmmXmm(dst, src);
-  void pmovzxwqXM(X86Xmm dst, X86Mem src) => _enc.pmovzxwqXmmMem(dst, src);
+  void pmovzxwqXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPmovzxwq, [dst, src]);
+  void pmovzxwqXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPmovzxwq, [dst, src]);
 
-  void pmovzxdqXX(X86Xmm dst, X86Xmm src) => _enc.pmovzxdqXmmXmm(dst, src);
-  void pmovzxdqXM(X86Xmm dst, X86Mem src) => _enc.pmovzxdqXmmMem(dst, src);
+  void pmovzxdqXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPmovzxdq, [dst, src]);
+  void pmovzxdqXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPmovzxdq, [dst, src]);
 
-  void pmovsxbwXX(X86Xmm dst, X86Xmm src) => _enc.pmovsxbwXmmXmm(dst, src);
-  void pmovsxbwXM(X86Xmm dst, X86Mem src) => _enc.pmovsxbwXmmMem(dst, src);
+  void pmovsxbwXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPmovsxbw, [dst, src]);
+  void pmovsxbwXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPmovsxbw, [dst, src]);
 
-  void pmovsxbdXX(X86Xmm dst, X86Xmm src) => _enc.pmovsxbdXmmXmm(dst, src);
-  void pmovsxbdXM(X86Xmm dst, X86Mem src) => _enc.pmovsxbdXmmMem(dst, src);
+  void pmovsxbdXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPmovsxbd, [dst, src]);
+  void pmovsxbdXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPmovsxbd, [dst, src]);
 
-  void pmovsxbqXX(X86Xmm dst, X86Xmm src) => _enc.pmovsxbqXmmXmm(dst, src);
-  void pmovsxbqXM(X86Xmm dst, X86Mem src) => _enc.pmovsxbqXmmMem(dst, src);
+  void pmovsxbqXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPmovsxbq, [dst, src]);
+  void pmovsxbqXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPmovsxbq, [dst, src]);
 
-  void pmovsxwdXX(X86Xmm dst, X86Xmm src) => _enc.pmovsxwdXmmXmm(dst, src);
-  void pmovsxwdXM(X86Xmm dst, X86Mem src) => _enc.pmovsxwdXmmMem(dst, src);
+  void pmovsxwdXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPmovsxwd, [dst, src]);
+  void pmovsxwdXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPmovsxwd, [dst, src]);
 
-  void pmovsxwqXX(X86Xmm dst, X86Xmm src) => _enc.pmovsxwqXmmXmm(dst, src);
-  void pmovsxwqXM(X86Xmm dst, X86Mem src) => _enc.pmovsxwqXmmMem(dst, src);
+  void pmovsxwqXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPmovsxwq, [dst, src]);
+  void pmovsxwqXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPmovsxwq, [dst, src]);
 
-  void pmovsxdqXX(X86Xmm dst, X86Xmm src) => _enc.pmovsxdqXmmXmm(dst, src);
-  void pmovsxdqXM(X86Xmm dst, X86Mem src) => _enc.pmovsxdqXmmMem(dst, src);
+  void pmovsxdqXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPmovsxdq, [dst, src]);
+  void pmovsxdqXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPmovsxdq, [dst, src]);
 
   // ===========================================================================
   // SSE4.1 - Insert/Extract
   // ===========================================================================
 
   void pinsrbR(X86Xmm dst, X86Gp src, int imm8) =>
-      _enc.pinsrbXmmRegImm8(dst, src, imm8);
+      emit(X86InstId.kPinsrb, [dst, src, imm8]);
   void pinsrbM(X86Xmm dst, X86Mem src, int imm8) =>
-      _enc.pinsrbXmmMemImm8(dst, src, imm8);
+      emit(X86InstId.kPinsrb, [dst, src, imm8]);
 
   void pinsrdR(X86Xmm dst, X86Gp src, int imm8) =>
-      _enc.pinsrdXmmRegImm8(dst, src, imm8);
+      emit(X86InstId.kPinsrd, [dst, src, imm8]);
   void pinsrdM(X86Xmm dst, X86Mem src, int imm8) =>
-      _enc.pinsrdXmmMemImm8(dst, src, imm8);
+      emit(X86InstId.kPinsrd, [dst, src, imm8]);
 
   void pinsrqR(X86Xmm dst, X86Gp src, int imm8) =>
-      _enc.pinsrqXmmRegImm8(dst, src, imm8);
+      emit(X86InstId.kPinsrq, [dst, src, imm8]);
   void pinsrqM(X86Xmm dst, X86Mem src, int imm8) =>
-      _enc.pinsrqXmmMemImm8(dst, src, imm8);
+      emit(X86InstId.kPinsrq, [dst, src, imm8]);
 
   void pextrbR(X86Gp dst, X86Xmm src, int imm8) =>
-      _enc.pextrbRegXmmImm8(dst, src, imm8);
+      emit(X86InstId.kPextrb, [dst, src, imm8]);
   void pextrbM(X86Mem dst, X86Xmm src, int imm8) =>
-      _enc.pextrbMemXmmImm8(dst, src, imm8);
+      emit(X86InstId.kPextrb, [dst, src, imm8]);
 
   void pextrdR(X86Gp dst, X86Xmm src, int imm8) =>
-      _enc.pextrdRegXmmImm8(dst, src, imm8);
+      emit(X86InstId.kPextrd, [dst, src, imm8]);
   void pextrdM(X86Mem dst, X86Xmm src, int imm8) =>
-      _enc.pextrdMemXmmImm8(dst, src, imm8);
+      emit(X86InstId.kPextrd, [dst, src, imm8]);
 
   void pextrqR(X86Gp dst, X86Xmm src, int imm8) =>
-      _enc.pextrqRegXmmImm8(dst, src, imm8);
+      emit(X86InstId.kPextrq, [dst, src, imm8]);
   void pextrqM(X86Mem dst, X86Xmm src, int imm8) =>
-      _enc.pextrqMemXmmImm8(dst, src, imm8);
+      emit(X86InstId.kPextrq, [dst, src, imm8]);
 
   // ===========================================================================
   // SSE4.1 - Blend
   // ===========================================================================
 
   void pblendwXXI(X86Xmm dst, X86Xmm src, int imm8) =>
-      _enc.pblendwXmmXmmImm8(dst, src, imm8);
+      emit(X86InstId.kPblendw, [dst, src, imm8]);
   void pblendwXMI(X86Xmm dst, X86Mem src, int imm8) =>
-      _enc.pblendwXmmMemImm8(dst, src, imm8);
+      emit(X86InstId.kPblendw, [dst, src, imm8]);
 
-  void pblendvbXX(X86Xmm dst, X86Xmm src) => _enc.pblendvbXmmXmm(dst, src);
-  void pblendvbXM(X86Xmm dst, X86Mem src) => _enc.pblendvbXmmMem(dst, src);
+  void pblendvbXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kPblendvb, [dst, src]);
+  void pblendvbXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kPblendvb, [dst, src]);
 
   void blendpsXXI(X86Xmm dst, X86Xmm src, int imm8) =>
-      _enc.blendpsXmmXmmImm8(dst, src, imm8);
+      emit(X86InstId.kBlendps, [dst, src, imm8]);
   void blendpsXMI(X86Xmm dst, X86Mem src, int imm8) =>
-      _enc.blendpsXmmMemImm8(dst, src, imm8);
+      emit(X86InstId.kBlendps, [dst, src, imm8]);
 
   /// POR xmm, xmm
-  void porXX(X86Xmm dst, X86Xmm src) => _enc.porXmmXmm(dst, src);
+  void porXX(X86Xmm dst, X86Xmm src) => emit(X86InstId.kPor, [dst, src]);
 
   /// POR xmm, [mem]
-  void porXM(X86Xmm dst, X86Mem src) => _enc.porXmmMem(dst, src);
+  void porXM(X86Xmm dst, X86Mem src) => emit(X86InstId.kPor, [dst, src]);
 
-  void vmovups(X86Xmm dst, X86Xmm src) => _enc.vmovupsXmmXmm(dst, src);
-  void vmovupsXM(X86Xmm dst, X86Mem mem) => _enc.vmovupsXmmMem(dst, mem);
-  void vmovupsMX(X86Mem mem, X86Xmm src) => _enc.vmovupsMemXmm(mem, src);
+  void vmovups(X86Xmm dst, X86Xmm src) => emit(X86InstId.kVmovups, [dst, src]);
+  void vmovupsXM(X86Xmm dst, X86Mem mem) =>
+      emit(X86InstId.kVmovups, [dst, mem]);
+  void vmovupsMX(X86Mem mem, X86Xmm src) =>
+      emit(X86InstId.kVmovups, [mem, src]);
 
-  void vmovaps(X86Xmm dst, X86Xmm src) => _enc.vmovapsXmmXmm(dst, src);
-  void vmovapsXM(X86Xmm dst, X86Mem mem) => _enc.vmovapsXmmMem(dst, mem);
-  void vmovapsMX(X86Mem mem, X86Xmm src) => _enc.vmovapsMemXmm(mem, src);
+  void vmovaps(X86Xmm dst, X86Xmm src) => emit(X86InstId.kVmovaps, [dst, src]);
+  void vmovapsXM(X86Xmm dst, X86Mem mem) =>
+      emit(X86InstId.kVmovaps, [dst, mem]);
+  void vmovapsMX(X86Mem mem, X86Xmm src) =>
+      emit(X86InstId.kVmovaps, [mem, src]);
 
-  void vmovupsY(X86Ymm dst, X86Ymm src) => _enc.vmovupsYmmYmm(dst, src);
-  void vmovupsYM(X86Ymm dst, X86Mem mem) => _enc.vmovupsYmmMem(dst, mem);
-  void vmovupsMY(X86Mem mem, X86Ymm src) => _enc.vmovupsMemYmm(mem, src);
+  void vmovupsY(X86Ymm dst, X86Ymm src) => emit(X86InstId.kVmovups, [dst, src]);
+  void vmovupsYM(X86Ymm dst, X86Mem mem) =>
+      emit(X86InstId.kVmovups, [dst, mem]);
+  void vmovupsMY(X86Mem mem, X86Ymm src) =>
+      emit(X86InstId.kVmovups, [mem, src]);
 
-  void vmovapsY(X86Ymm dst, X86Ymm src) => _enc.vmovapsYmmYmm(dst, src);
-  void vmovapsYM(X86Ymm dst, X86Mem mem) => _enc.vmovapsYmmMem(dst, mem);
-  void vmovapsMY(X86Mem mem, X86Ymm src) => _enc.vmovapsMemYmm(mem, src);
+  void vmovapsY(X86Ymm dst, X86Ymm src) => emit(X86InstId.kVmovaps, [dst, src]);
+  void vmovapsYM(X86Ymm dst, X86Mem mem) =>
+      emit(X86InstId.kVmovaps, [dst, mem]);
+  void vmovapsMY(X86Mem mem, X86Ymm src) =>
+      emit(X86InstId.kVmovaps, [mem, src]);
 
   // VDIVPS/VDIVPD forms
   void vdivpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vdivpsXXX(dst, src1, src2);
+      emit(X86InstId.kVdivps, [dst, src1, src2]);
   void vdivpsXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vdivpsXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVdivps, [dst, src1, mem]);
   void vdivpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vdivpsYYY(dst, src1, src2);
+      emit(X86InstId.kVdivps, [dst, src1, src2]);
   void vdivpsYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vdivpsYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVdivps, [dst, src1, mem]);
 
   void vdivpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vdivpdXXX(dst, src1, src2);
+      emit(X86InstId.kVdivpd, [dst, src1, src2]);
   void vdivpdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vdivpdXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVdivpd, [dst, src1, mem]);
   void vdivpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vdivpdYYY(dst, src1, src2);
+      emit(X86InstId.kVdivpd, [dst, src1, src2]);
   void vdivpdYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vdivpdYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVdivpd, [dst, src1, mem]);
 
   // SSE Logical operations
-  void andps(X86Xmm dst, X86Xmm src) => _enc.andpsXmmXmm(dst, src);
-  void andpsXM(X86Xmm dst, X86Mem mem) => _enc.andpsXmmMem(dst, mem);
-  void andpd(X86Xmm dst, X86Xmm src) => _enc.andpdXmmXmm(dst, src);
-  void andpdXM(X86Xmm dst, X86Mem mem) => _enc.andpdXmmMem(dst, mem);
+  void andps(X86Xmm dst, X86Xmm src) => emit(X86InstId.kAndps, [dst, src]);
+  void andpsXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kAndps, [dst, mem]);
+  void andpd(X86Xmm dst, X86Xmm src) => emit(X86InstId.kAndpd, [dst, src]);
+  void andpdXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kAndpd, [dst, mem]);
 
-  void orps(X86Xmm dst, X86Xmm src) => _enc.orpsXmmXmm(dst, src);
-  void orpsXM(X86Xmm dst, X86Mem mem) => _enc.orpsXmmMem(dst, mem);
-  void orpd(X86Xmm dst, X86Xmm src) => _enc.orpdXmmXmm(dst, src);
-  void orpdXM(X86Xmm dst, X86Mem mem) => _enc.orpdXmmMem(dst, mem);
+  void orps(X86Xmm dst, X86Xmm src) => emit(X86InstId.kOrps, [dst, src]);
+  void orpsXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kOrps, [dst, mem]);
+  void orpd(X86Xmm dst, X86Xmm src) => emit(X86InstId.kOrpd, [dst, src]);
+  void orpdXM(X86Xmm dst, X86Mem mem) => emit(X86InstId.kOrpd, [dst, mem]);
 
   // SSE Compare operations (min/max)
 
   // AVX Logical operations
   void vandpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vandpsXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVandps, [dst, src1, src2]);
   void vandpsXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vandpsXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVandps, [dst, src1, mem]);
   void vandpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vandpsYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVandps, [dst, src1, src2]);
   void vandpsYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vandpsYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVandps, [dst, src1, mem]);
 
   void vandpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vandpdXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVandpd, [dst, src1, src2]);
   void vandpdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vandpdXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVandpd, [dst, src1, mem]);
   void vandpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vandpdYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVandpd, [dst, src1, src2]);
   void vandpdYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vandpdYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVandpd, [dst, src1, mem]);
 
   void vorpsXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vorpsXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVorps, [dst, src1, src2]);
   void vorpsXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vorpsXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVorps, [dst, src1, mem]);
   void vorpsYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vorpsYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVorps, [dst, src1, src2]);
   void vorpsYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vorpsYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVorps, [dst, src1, mem]);
 
   void vorpdXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vorpdXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVorpd, [dst, src1, src2]);
   void vorpdXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vorpdXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVorpd, [dst, src1, mem]);
   void vorpdYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vorpdYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVorpd, [dst, src1, src2]);
   void vorpdYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vorpdYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVorpd, [dst, src1, mem]);
 
   void vporXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vporXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVpor, [dst, src1, src2]);
   void vporXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vporXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVpor, [dst, src1, mem]);
   void vporYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vporYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVpor, [dst, src1, src2]);
   void vporYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vporYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVpor, [dst, src1, mem]);
 
   void vpandXXX(X86Xmm dst, X86Xmm src1, X86Xmm src2) =>
-      _enc.vpandXmmXmmXmm(dst, src1, src2);
+      emit(X86InstId.kVpand, [dst, src1, src2]);
   void vpandXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vpandXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVpand, [dst, src1, mem]);
   void vpandYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vpandYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVpand, [dst, src1, src2]);
   void vpandYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vpandYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVpand, [dst, src1, mem]);
 
   void vpaddqXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vpaddqXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVpaddq, [dst, src1, mem]);
 
   void vpaddqYYY(X86Ymm dst, X86Ymm src1, X86Ymm src2) =>
-      _enc.vpaddqYmmYmmYmm(dst, src1, src2);
+      emit(X86InstId.kVpaddq, [dst, src1, src2]);
 
   void vpaddqYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vpaddqYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVpaddq, [dst, src1, mem]);
 
   void vpadddXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vpadddXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVpaddd, [dst, src1, mem]);
   void vpadddYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vpadddYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVpaddd, [dst, src1, mem]);
 
   void vpmulldXXM(X86Xmm dst, X86Xmm src1, X86Mem mem) =>
-      _enc.vpmulldXmmXmmMem(dst, src1, mem);
+      emit(X86InstId.kVpmulld, [dst, src1, mem]);
   void vpmulldYYM(X86Ymm dst, X86Ymm src1, X86Mem mem) =>
-      _enc.vpmulldYmmYmmMem(dst, src1, mem);
+      emit(X86InstId.kVpmulld, [dst, src1, mem]);
 
   // ===========================================================================
   // SSE4.1 - Blend (Variable)
   // ===========================================================================
 
-  void blendvpsXX(X86Xmm dst, X86Xmm src) => _enc.blendvpsXmmXmm(dst, src);
-  void blendvpsXM(X86Xmm dst, X86Mem src) => _enc.blendvpsXmmMem(dst, src);
+  void blendvpsXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kBlendvps, [dst, src]);
+  void blendvpsXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kBlendvps, [dst, src]);
 
-  void blendvpdXX(X86Xmm dst, X86Xmm src) => _enc.blendvpdXmmXmm(dst, src);
-  void blendvpdXM(X86Xmm dst, X86Mem src) => _enc.blendvpdXmmMem(dst, src);
+  void blendvpdXX(X86Xmm dst, X86Xmm src) =>
+      emit(X86InstId.kBlendvpd, [dst, src]);
+  void blendvpdXM(X86Xmm dst, X86Mem src) =>
+      emit(X86InstId.kBlendvpd, [dst, src]);
 
   // ===========================================================================
   // SSE4.1 - Insert/Extract (Remaining)
   // ===========================================================================
 
   void pextrwRX(X86Gp dst, X86Xmm src, int imm8) =>
-      _enc.pextrwRegXmmImm8(dst, src, imm8);
+      emit(X86InstId.kPextrw, [dst, src, imm8]);
   void pextrwMX(X86Mem dst, X86Xmm src, int imm8) =>
-      _enc.pextrwMemXmmImm8(dst, src, imm8);
+      emit(X86InstId.kPextrw, [dst, src, imm8]);
 
   void pinsrwXR(X86Xmm dst, X86Gp src, int imm8) =>
-      _enc.pinsrwXmmRegImm8(dst, src, imm8);
+      emit(X86InstId.kPinsrw, [dst, src, imm8]);
   void pinsrwXM(X86Xmm dst, X86Mem src, int imm8) =>
-      _enc.pinsrwXmmMemImm8(dst, src, imm8);
+      emit(X86InstId.kPinsrw, [dst, src, imm8]);
 
   void insertpsXXI(X86Xmm dst, X86Xmm src, int imm8) =>
-      _enc.insertpsXmmXmmImm8(dst, src, imm8);
+      emit(X86InstId.kInsertps, [dst, src, imm8]);
   void insertpsXMI(X86Xmm dst, X86Mem src, int imm8) =>
-      _enc.insertpsXmmMemImm8(dst, src, imm8);
+      emit(X86InstId.kInsertps, [dst, src, imm8]);
 
   void extractpsRX(X86Gp dst, X86Xmm src, int imm8) =>
-      _enc.extractpsRegXmmImm8(dst, src, imm8);
+      emit(X86InstId.kExtractps, [dst, src, imm8]);
   void extractpsMX(X86Mem dst, X86Xmm src, int imm8) =>
-      _enc.extractpsMemXmmImm8(dst, src, imm8);
+      emit(X86InstId.kExtractps, [dst, src, imm8]);
 
   // ===========================================================================
   // AVX-512 Mask Operations (k*)
