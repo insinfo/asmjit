@@ -143,40 +143,6 @@ int _mask(bool c, int bytes) =>
 
 Uint8List _bytes(List<int> v) => Uint8List.fromList(v);
 
-/// emit2v cases whose x86 lowering is still missing (SSE2 fallbacks or not
-/// ported yet), per feature set. Remove entries as they get implemented.
-const _x86Pending2v = <String, Set<String>>{
-  'baseline': {
-    'absF32S (low lane)',
-    'absI16',
-    'absI32',
-    'absI8',
-    'ceilF32',
-    'cvtF64ToF32Lo',
-    'cvtI16HiToI32',
-    'cvtI8LoToI16',
-    'cvtRoundF32ToI32',
-    'cvtU32LoToU64',
-    'cvtU8LoToU16',
-    'cvtU8ToU32',
-    'floorF32',
-    'movU64',
-    'roundEvenF32',
-    'sqrtF64S (low lane)',
-    'truncF32'
-  },
-  'host': {
-    'absF32S (low lane)',
-    'cvtF64ToF32Lo',
-    'cvtI16HiToI32',
-    'cvtRoundF32ToI32',
-    'cvtU8ToU32',
-    'movU64',
-    'roundEvenF32',
-    'sqrtF64S (low lane)'
-  },
-};
-
 /// x86 lowering variants: SSE2 baseline (no features) and the host CPU.
 final _featureSets = <String, CpuFeatures?>{
   'baseline': null,
@@ -576,9 +542,7 @@ void main() {
             _bytes([...ib.sublist(4), ...ia.sublist(0, 4)]));
       });
       vvCases.forEach((name, c) {
-        final pending = _host == Arch.x64 &&
-            (_x86Pending2v[fs.key]?.contains(name) ?? false);
-        test(name, skip: pending ? 'x86 lowering pending' : false, () {
+        test(name, () {
           final r = _runEmit((cc, d, x, y) => cc.emit2v(c.$1, d, x), c.$2, c.$2,
               features: f);
           expect(r.sublist(0, c.$4), c.$3(c.$2).sublist(0, c.$4));

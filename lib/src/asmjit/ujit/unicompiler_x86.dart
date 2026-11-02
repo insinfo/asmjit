@@ -717,6 +717,7 @@ mixin UniCompilerX86 on UniCompilerBase {
     if (dst is! BaseReg) {
       throw ArgumentError('SIMD dst must be register');
     }
+    if (_emit2vEmulatedX86(op, dst, src)) return;
     switch (op) {
       case UniOpVV.mov:
         _vMovX86(dst, src);
@@ -1212,6 +1213,226 @@ mixin UniCompilerX86 on UniCompilerBase {
       return true;
     }
 
+    return false;
+  }
+
+  /// `dst = op(dst, src, imm)` in legacy or VEX form.
+  void _sseOpImmX86(int legacyId, BaseReg dst, Operand src, int imm) {
+    if (hasAvx) {
+      cc.addNode(InstNode(_vexIdX86(legacyId), [dst, dst, src, Imm(imm)]));
+    } else {
+      cc.addNode(InstNode(legacyId, [dst, src, Imm(imm)]));
+    }
+  }
+
+  /// Two-operand form (`cvtps2dq dst, src`): legacy or VEX (no vvvv).
+  void _sse2OpX86(int legacyId, BaseReg dst, Operand src) {
+    cc.addNode(InstNode(hasAvx ? _vexIdX86(legacyId) : legacyId, [dst, src]));
+  }
+
+  BaseReg _zeroX86() {
+    final t = _tmpVecX86();
+    _sseOpX86(X86InstId.kPxor, t, t);
+    return t;
+  }
+
+  Operand _constX86(VecConst c) =>
+      (this as UniCompiler).simdConst(c, Bcst.kNA_Unique, VecWidth.k128);
+
+  /// Rounds [src] (packed f32 or f64) with ROUNDPS/ROUNDPD [mode] semantics
+  /// (0 = nearest even, 1 = floor, 2 = ceil, 3 = trunc). Without SSE4.1 uses
+  /// the 2^23 / 2^52 magic number trick. Returns a new register.
+  BaseReg _roundX86(Operand src, int mode, bool f64) {
+    final r = _tmpVecX86();
+    if (hasSse41 || hasAvx) {
+      // Bit 3 suppresses the precision exception, as asmjit does.
+      final id = f64
+          ? (hasAvx ? X86InstId.kVroundpd : X86InstId.kRoundpd)
+          : (hasAvx ? X86InstId.kVroundps : X86InstId.kRoundps);
+      cc.addNode(InstNode(id, [r, src, Imm(mode | 8)]));
+      return r;
+    }
+    final and = f64 ? X86InstId.kAndpd : X86InstId.kAndps;
+    final or = f64 ? X86InstId.kOrpd : X86InstId.kOrps;
+    final add = f64 ? X86InstId.kAddpd : X86InstId.kAddps;
+    final sub = f64 ? X86InstId.kSubpd : X86InstId.kSubps;
+    final cmp = f64 ? X86InstId.kCmppd : X86InstId.kCmpps;
+    final absMask = _constX86(f64
+        ? VecConstTable.p_7FFFFFFFFFFFFFFF
+        : VecConstTable.p_7FFFFFFF7FFFFFFF);
+    final magic = _constX86(
+        f64 ? VecConstTable.f64_round_magic : VecConstTable.f32_round_magic);
+    final one = _constX86(f64 ? VecConstTable.f64_1 : VecConstTable.f32_1);
+
+    // a = |x|, sign = x ^ a
+    final a = _copyVecX86(src);
+    _sseOpX86(and, a, absMask);
+    final sign = _copyVecX86(src);
+    _sseOpX86(X86InstId.kPxor, sign, a);
+
+    // r = (a + magic) - magic where a < magic, otherwise a (already integral
+    // or NaN).
+    _vMovX86(r, a);
+    _sseOpX86(add, r, magic);
+    _sseOpX86(sub, r, magic);
+    final small = _copyVecX86(a);
+    _sseOpImmX86(cmp, small, magic, 1); // a < magic
+    _selectX86(r, a, r, small);
+
+    if (mode == 1 || mode == 3) {
+      // floor(|x|) for trunc; floor(x) handled after restoring the sign.
+      if (mode == 3) {
+        final gt = _copyVecX86(a);
+        _sseOpImmX86(cmp, gt, r, 1); // a < r -> r rounded up
+        _sseOpX86(and, gt, one);
+        _sseOpX86(sub, r, gt);
+      }
+    }
+    _sseOpX86(or, r, sign);
+
+    if (mode == 1 || mode == 2) {
+      // floor: r -= (x < r) ? 1 : 0 ; ceil: r += (r < x) ? 1 : 0
+      final m = _tmpVecX86();
+      if (mode == 1) {
+        _vMovX86(m, src);
+        _sseOpImmX86(cmp, m, r, 1);
+      } else {
+        _vMovX86(m, r);
+        _sseOpImmX86(cmp, m, src, 1);
+      }
+      _sseOpX86(and, m, one);
+      _sseOpX86(mode == 1 ? sub : add, r, m);
+      // Rounded values keep the sign of x; `-0 + 0` would yield +0.
+      _sseOpX86(or, r, sign);
+    }
+    return r;
+  }
+
+  /// UniOpVV lowerings that need SSE2 sequences (or were not ported yet).
+  /// Returns false when the regular lowering in [_emit2vX86] applies.
+  bool _emit2vEmulatedX86(UniOpVV op, BaseReg dst, Operand src) {
+    final name = op.name;
+
+    // Integer widening conversions (SSE2 unpacks; SSE4.1 pmov* only for the
+    // low forms, handled by the regular lowering when available).
+    final cvt = RegExp(r'^cvt([IU])(8|16|32)(Lo|Hi)?To[IU](16|32|64)$')
+        .firstMatch(name);
+    if (cvt != null) {
+      final signed = cvt.group(1) == 'I';
+      final from = int.parse(cvt.group(2)!);
+      final to = int.parse(cvt.group(4)!);
+      final hi = cvt.group(3) == 'Hi';
+      if (cvt.group(3) == 'Lo' && (hasSse41 || hasAvx)) return false;
+      final r = _copyVecX86(src);
+      final steps = <(int, int)>[];
+      for (int w = from; w < to; w *= 2) {
+        steps.add((w, w * 2));
+      }
+      for (int i = 0; i < steps.length; i++) {
+        final w = steps[i].$1;
+        final unpack = hi && i == 0
+            ? {
+                8: X86InstId.kPunpckhbw,
+                16: X86InstId.kPunpckhwd,
+                32: X86InstId.kPunpckhdq
+              }[w]!
+            : {
+                8: X86InstId.kPunpcklbw,
+                16: X86InstId.kPunpcklwd,
+                32: X86InstId.kPunpckldq
+              }[w]!;
+        if (!signed) {
+          _sseOpX86(unpack, r, _zeroX86());
+        } else if (w < 32) {
+          _sseOpX86(unpack, r, r); // duplicate, then arithmetic shift below
+        } else {
+          final s = _copyVecX86(r);
+          _sseShiftImmX86(X86InstId.kPsrad, s, 31);
+          _sseOpX86(unpack, r, s);
+        }
+      }
+      if (signed && to <= 32) {
+        // Elements were duplicated by the unpacks: shift the copies out.
+        _sseShiftImmX86(
+            to == 16 ? X86InstId.kPsraw : X86InstId.kPsrad, r, to - from);
+      }
+      _vMovX86(dst, r);
+      return true;
+    }
+
+    switch (op) {
+      case UniOpVV.movU64:
+        cc.addNode(
+            InstNode(hasAvx ? X86InstId.kVmovq : X86InstId.kMovq, [dst, src]));
+        return true;
+
+      case UniOpVV.absI8 when !hasSsse3 && !hasAvx:
+      case UniOpVV.absI16 when !hasSsse3 && !hasAvx:
+        // |x| = umin8(x, -x) / smax16(x, -x).
+        final n = _zeroX86();
+        _sseOpX86(
+            op == UniOpVV.absI8 ? X86InstId.kPsubb : X86InstId.kPsubw, n, src);
+        final r = _copyVecX86(src);
+        _sseOpX86(
+            op == UniOpVV.absI8 ? X86InstId.kPminub : X86InstId.kPmaxsw, r, n);
+        _vMovX86(dst, r);
+        return true;
+
+      case UniOpVV.absI32 when !hasSsse3 && !hasAvx:
+        // |x| = (x ^ s) - s with s = x >> 31.
+        final sgn = _copyVecX86(src);
+        _sseShiftImmX86(X86InstId.kPsrad, sgn, 31);
+        final r = _copyVecX86(src);
+        _sseOpX86(X86InstId.kPxor, r, sgn);
+        _sseOpX86(X86InstId.kPsubd, r, sgn);
+        _vMovX86(dst, r);
+        return true;
+
+      case UniOpVV.cvtRoundF32ToI32:
+        _sse2OpX86(X86InstId.kCvtps2dq, dst, src);
+        return true;
+
+      case UniOpVV.cvtF64ToF32Lo:
+        _sse2OpX86(X86InstId.kCvtpd2ps, dst, src);
+        return true;
+
+      case UniOpVV.sqrtF32S:
+      case UniOpVV.sqrtF64S:
+        final id =
+            op == UniOpVV.sqrtF32S ? X86InstId.kSqrtss : X86InstId.kSqrtsd;
+        final r = _copyVecX86(src);
+        _sseOpX86(id, r, src);
+        _vMovX86(dst, r);
+        return true;
+
+      case UniOpVV.absF32S:
+      case UniOpVV.absF64S:
+        _emit2vX86(
+            op == UniOpVV.absF32S ? UniOpVV.absF32 : UniOpVV.absF64, dst, src);
+        return true;
+
+      case UniOpVV.negF32S:
+      case UniOpVV.negF64S:
+        _emit2vX86(
+            op == UniOpVV.negF32S ? UniOpVV.negF32 : UniOpVV.negF64, dst, src);
+        return true;
+
+      default:
+        break;
+    }
+
+    final rnd =
+        RegExp(r'^(roundEven|floor|ceil|trunc)F(32|64)S?$').firstMatch(name);
+    if (rnd != null) {
+      final mode = const {
+        'roundEven': 0,
+        'floor': 1,
+        'ceil': 2,
+        'trunc': 3
+      }[rnd.group(1)]!;
+      _vMovX86(dst, _roundX86(src, mode, rnd.group(2) == '64'));
+      return true;
+    }
     return false;
   }
 

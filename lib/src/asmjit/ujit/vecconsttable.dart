@@ -68,6 +68,15 @@ class VecConstTable {
   static final VecConst p_7FFFFFFFFFFFFFFF =
       _register(VecConst.splat64(0x7FFFFFFFFFFFFFFF));
 
+  // 1.0 and the rounding magic numbers (2^23 / 2^52): adding and
+  // subtracting them rounds to an integer in the current rounding mode.
+  static final VecConst f32_1 = _register(VecConst.splat64(0x3F8000003F800000));
+  static final VecConst f32_round_magic =
+      _register(VecConst.splat64(0x4B0000004B000000));
+  static final VecConst f64_1 = _register(VecConst.splat64(0x3FF0000000000000));
+  static final VecConst f64_round_magic =
+      _register(VecConst.splat64(0x4330000000000000));
+
   static int _currentOffset = 0;
 
   static VecConst _register(VecConst vc) {

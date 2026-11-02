@@ -219,6 +219,8 @@ const Map<String, X86SimdOp> kX86SimdOps = {
   'unpckhps': X86SimdOp(0, 1, 0x15),
   'unpcklpd': X86SimdOp(_66, 1, 0x14),
   'unpckhpd': X86SimdOp(_66, 1, 0x15),
+  'sqrtss': X86SimdOp(_F3, 1, 0x51),
+  'sqrtsd': X86SimdOp(_F2, 1, 0x51),
   'sqrtps': X86SimdOp(0, 1, 0x51, kind: _rm2),
   'sqrtpd': X86SimdOp(_66, 1, 0x51, kind: _rm2),
   'cvtdq2ps': X86SimdOp(0, 1, 0x5B, kind: _rm2),
@@ -227,4 +229,9 @@ const Map<String, X86SimdOp> kX86SimdOps = {
   'cvtps2pd': X86SimdOp(0, 1, 0x5A, kind: _rm2),
   'cvtpd2ps': X86SimdOp(_66, 1, 0x5A, kind: _rm2),
   'movddup': X86SimdOp(_F2, 1, 0x12, kind: _rm2),
+
+  // MOVQ xmm, xmm/m64 (load form; zero-extends to 128 bits).
+  'movq': X86SimdOp(_F3, 1, 0x7E, kind: _rm2),
+  'cvtpd2dq': X86SimdOp(_F2, 1, 0xE6, kind: _rm2),
+  'cvttpd2dq': X86SimdOp(_66, 1, 0xE6, kind: _rm2),
 };

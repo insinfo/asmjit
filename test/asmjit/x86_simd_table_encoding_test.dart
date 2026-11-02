@@ -716,6 +716,14 @@ const _expected = <String, String>{
   'vunpckhpd xmm9, xmm10, xmm2': 'c52915ca',
   'vunpckhpd xmm1, xmm10, xmmword ptr [r9 + 2*rax + 64]': 'c4c129154c4140',
   'vunpckhpd ymm9, ymm10, ymm2': 'c52d15ca',
+  'sqrtss xmm9, xmm2': 'f3440f51ca',
+  'sqrtss xmm1, dword ptr [r9 + 2*rax + 64]': 'f3410f514c4140',
+  'vsqrtss xmm9, xmm10, xmm2': 'c52a51ca',
+  'vsqrtss xmm1, xmm10, dword ptr [r9 + 2*rax + 64]': 'c4c12a514c4140',
+  'sqrtsd xmm9, xmm2': 'f2440f51ca',
+  'sqrtsd xmm1, qword ptr [r9 + 2*rax + 64]': 'f2410f514c4140',
+  'vsqrtsd xmm9, xmm10, xmm2': 'c52b51ca',
+  'vsqrtsd xmm1, xmm10, qword ptr [r9 + 2*rax + 64]': 'c4c12b514c4140',
   'sqrtps xmm9, xmm2': '440f51ca',
   'vsqrtps xmm9, xmm2': 'c57851ca',
   'sqrtpd xmm9, xmm2': '66440f51ca',
@@ -732,6 +740,12 @@ const _expected = <String, String>{
   'vcvtpd2ps xmm9, xmm2': 'c5795aca',
   'movddup xmm9, xmm2': 'f2440f12ca',
   'vmovddup xmm9, xmm2': 'c57b12ca',
+  'movq xmm9, xmm2': 'f3440f7eca',
+  'vmovq xmm9, xmm2': 'c57a7eca',
+  'cvtpd2dq xmm9, xmm2': 'f2440fe6ca',
+  'vcvtpd2dq xmm9, xmm2': 'c57be6ca',
+  'cvttpd2dq xmm9, xmm2': '66440fe6ca',
+  'vcvttpd2dq xmm9, xmm2': 'c579e6ca',
 };
 
 void main() {
