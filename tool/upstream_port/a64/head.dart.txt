@@ -685,12 +685,16 @@ final class _Writer {
 /// Encodes AArch64 instructions as upstream `a64::Assembler::_emit()`.
 final class A64Emitter {
   final CodeHolder code;
-  final CodeBuffer buffer;
+
+  /// The section being written (the assembler's `_section`).
+  Section section;
+
+  CodeBuffer get buffer => section.buffer;
 
   /// `inst_options()` of the next instruction.
   int instOptions = 0;
 
-  A64Emitter(this.code, this.buffer);
+  A64Emitter(this.code, this.section);
 
   static final Map<String, int> _upIds = {
     for (final (i, n) in kA64UpInstNames.indexed)

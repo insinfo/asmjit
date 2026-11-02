@@ -5,6 +5,7 @@
 
 import '../core/code_holder.dart';
 import '../core/code_buffer.dart';
+import '../core/assembler.dart';
 import '../core/emitter.dart';
 import '../core/error.dart';
 import '../core/func.dart';
@@ -25,9 +26,9 @@ import 'x86_emit_helper.dart';
 ///
 /// Provides a high-level API for emitting x86/x64 instructions.
 /// Handles label binding, relocations, and instruction encoding.
-class X86Assembler extends BaseEmitter {
-  /// The internal code buffer.
-  late final CodeBuffer _buf;
+class X86Assembler extends BaseAssembler {
+  /// The buffer of the current section.
+  CodeBuffer get _buf => buffer;
 
   /// Encoding options (used by higher-level pipelines).
   int encodingOptions = EncodingOptions.kNone;
@@ -36,12 +37,13 @@ class X86Assembler extends BaseEmitter {
   int diagnosticOptions = DiagnosticOptions.kNone;
 
   /// Creates an x86 assembler for the given code holder.
-  X86Assembler(CodeHolder code) : super(code) {
-    _buf = code.text.buffer;
-  }
+  X86Assembler(super.code);
 
   /// Port of upstream `x86::Assembler::_emit()` (x86_emit.dart).
-  late final X86Emitter _emitter = X86Emitter(code, _buf);
+  late final X86Emitter _emitter = X86Emitter(code, currentSection);
+
+  @override
+  void onSectionChanged(Section section) => _emitter.section = section;
 
   /// Options of the next instruction ([X86EmitOptions]: prefixes such as
   /// LOCK/REP, `{sae}`/`{er}`, `{z}`, forced VEX3/EVEX, short/long forms);
@@ -78,9 +80,6 @@ class X86Assembler extends BaseEmitter {
   // Properties
   // ===========================================================================
 
-  /// The current offset in the code buffer.
-  int get offset => _buf.length;
-
   /// The environment.
   Environment get environment => code.env;
 
@@ -89,19 +88,6 @@ class X86Assembler extends BaseEmitter {
 
   /// The calling convention for this environment.
   CallingConvention get callingConvention => environment.callingConvention;
-
-  // ===========================================================================
-  // Label management
-  // ===========================================================================
-
-  /// Creates a new label.
-  Label newLabel() => code.newLabel();
-
-  /// Creates a new named label.
-  Label newNamedLabel(String name) => code.newNamedLabel(name);
-
-  /// Binds a label to the current position.
-  void bind(Label label) => code.bind(label);
 
   // ===========================================================================
   // Raw byte emission

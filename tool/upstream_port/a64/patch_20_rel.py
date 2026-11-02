@@ -9,7 +9,7 @@ _span("      case _S.EmitOp_Rel:\n", "      case _S.EmitOp_DispImm:", """      c
       final label = rmRel!.label!;
       final labelOffset = rmRel!.isLabel() ? 0 : rmRel!.offset;
 
-      final bound = code.isLabelBoundTo(label, code.text.id)
+      final bound = code.isLabelBoundTo(label, section.id)
           ? code.getLabelOffset(label)
           : null;
       if (bound != null) {
@@ -20,7 +20,7 @@ _span("      case _S.EmitOp_Rel:\n", "      case _S.EmitOp_DispImm:", """      c
       else {
         // Create a fixup referencing an non-bound label.
         final codeOffset = _w.cursor;
-        code.newFixup(label, code.text.id, codeOffset, labelOffset,
+        code.newFixup(label, section.id, codeOffset, labelOffset,
             offsetFormat.copy());
         { state = _S.EmitOp; continue loop; }
       }
@@ -36,7 +36,7 @@ _span("      case _S.EmitOp_Rel:\n", "      case _S.EmitOp_DispImm:", """      c
       // Create a new RelocEntry as we cannot calculate the offset right now.
       final re = code.newRelocEntry(RelocType.absToRel);
 
-      re.sourceSectionId = code.text.id;
+      re.sourceSectionId = section.id;
       re.sourceOffset = codeOffset;
       re.format = offsetFormat.copy();
       re.payload = rmRel!.imm + 4;

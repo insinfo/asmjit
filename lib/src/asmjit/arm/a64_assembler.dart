@@ -9,20 +9,18 @@ import 'a64.dart';
 import 'a64_emit.dart';
 import 'a64_inst_db.g.dart';
 
-import '../core/emitter.dart';
+import '../core/assembler.dart';
 
 /// ARM64 Assembler.
 ///
 /// Provides a high-level API for emitting ARM64 instructions.
 /// Handles label binding, relocations, and instruction encoding.
-class A64Assembler extends BaseEmitter {
-  /// The internal code buffer.
-  late final CodeBuffer _buf;
+class A64Assembler extends BaseAssembler {
+  /// The buffer of the current section.
+  CodeBuffer get _buf => buffer;
 
   /// Creates an ARM64 assembler for the given code holder.
-  A64Assembler(CodeHolder code) : super(code) {
-    _buf = code.text.buffer;
-  }
+  A64Assembler(super.code);
 
   /// Creates an ARM64 assembler with a new code holder.
   factory A64Assembler.create() {
@@ -31,7 +29,10 @@ class A64Assembler extends BaseEmitter {
   }
 
   /// Port of upstream `a64::Assembler::_emit()` (a64_emit.dart).
-  late final A64Emitter _emitter = A64Emitter(code, code.text.buffer);
+  late final A64Emitter _emitter = A64Emitter(code, currentSection);
+
+  @override
+  void onSectionChanged(Section section) => _emitter.section = section;
 
   /// Emits a raw instruction by ID with generic operands (registers,
   /// [A64Mem], integers, [A64ShiftOp], [A64Cond] and [Label]s), encoded as
@@ -39,28 +40,6 @@ class A64Assembler extends BaseEmitter {
   void emit(int instId, List<Object> ops) {
     instructionCount++;
     _emitter.emit(instId, ops);
-  }
-
-  // ===========================================================================
-  // Properties
-  // ===========================================================================
-
-  /// The current offset in the code buffer.
-  int get offset => _buf.length;
-
-  // ===========================================================================
-  // Labels
-  // ===========================================================================
-
-  /// Creates a new label.
-  Label newLabel() => code.newLabel();
-
-  /// Creates a new named label.
-  Label newNamedLabel(String name) => code.newNamedLabel(name);
-
-  /// Binds a label to the current position.
-  void bind(Label label) {
-    code.bindAt(label, offset);
   }
 
   // ===========================================================================
@@ -500,7 +479,7 @@ class A64Assembler extends BaseEmitter {
   /// or an absolute address).
   Label _pcRel(int offset) {
     final label = newLabel();
-    code.bindAt(label, this.offset + offset);
+    code.bindLabel(label, currentSection.id, this.offset + offset);
     return label;
   }
 

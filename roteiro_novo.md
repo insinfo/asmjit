@@ -180,8 +180,17 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - `test/asmjit/reloc_test.dart`: imagens relocadas idênticas às do upstream (programa C++ com `relocate_to_base`), erros iguais (jcc fora de ±2GB, `adrp` a distância não múltipla de 4096 — limitação do upstream, que rejeita em vez de errar —, `b` fora de ±128MB) e execução JIT de `jmp` para outra função JIT por endereço.
 - Pendente: `[LABEL|RIP]` em 32 bits (RelToAbs com fixup de label ligado à relocação) e `embedLabel`/`embedLabelDelta` (o serializer ignora `EmbedLabelNode`; o upstream usa RelToAbs), necessários para jump tables.
 
+### Labels/fixups, seções e `embed*` como no upstream
+- Fixups de label: `Fixup` (seção, offset, `rel`, `OffsetFormat`, `labelOrRelocId`), `CodeHolder.newFixup()`, `bindLabel()` resolve os da mesma seção no bind (via `CodeWriterUtils.writeOffset`) e `resolveCrossSectionFixups()` os entre seções depois do `flatten()`. Substitui `RelocKind`/`Reloc`, que eram reaplicados a cada `finalize()`. `finalize()`/`JitRuntime.add()` continuam falhando se um label referenciado nunca for ligado.
+- `core/assembler.dart`: `BaseAssembler` (base de `X86Assembler`/`A64Assembler`) com `section()`, `currentSection`, `offset`, `bind()` na seção corrente, `embed()`, `embedDataArray()`/`embedUInt8..64()`, `embedLabel()` (RelToAbs) e `embedLabelDelta()` (`Expression` `sub`, avaliada no `relocateToBase`). Os encoders escrevem na seção corrente.
+- `finalize().textBytes` é a imagem achatada (text + demais seções nos seus offsets).
+- **Bugs do upstream provados** (executando o asmjit C++):
+  - `embed_label()` tem a checagem invertida (`if (is_label_valid(label)) return kInvalidLabel`): falha com `kInvalidLabel` para todo label válido e dá segfault para um inválido. O port usa `!isValid`; as imagens de referência vieram do upstream recompilado só com esse `!`.
+  - Referenciar um label já ligado em outra seção (`mov(eax, dword_ptr(L))` com L ligado no `.data`): `new_fixup` encadeia o fixup no label ligado e o union `_offset_or_fixups` troca o offset de L por um ponteiro (0x4 → 0x7a86c000d8), com deslocamento 0. O port coloca esse fixup direto na lista entre seções.
+- `test/asmjit/sections_test.dart`: `asmjit_test_x86_sections` (imagem do upstream e execução JIT x64/A64), jump table em `.rodata` com `embedLabel` (execução JIT), `embedLabel/embedLabelDelta`, label ligado antes em outra seção.
+
 ### Próximos passos
-1. `embed_label`/`embed_label_delta` (RelToAbs) e jump tables; `[LABEL|RIP]` em 32 bits.
+1. Builder/Compiler: `SectionNode`/`EmbedLabelNode`/`EmbedLabelDeltaNode` e `section()`/`embedLabel()` no builder (o serializer ignora esses nós hoje); `[LABEL|RIP]` em 32 bits; `align(AlignMode)` do upstream (NOPs otimizados).
 2. `emit_2vs` (UniOpVR) no lugar de `emitCV`.
 3. Portar `asmjit_test_unicompiler*.cpp` e os testes do compiler.
 4. Acesso de outros operandos além do 0 (xadd/cmpxchg) a partir do banco.

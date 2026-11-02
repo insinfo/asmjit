@@ -120,6 +120,42 @@ class SectionFlags {
   int get hashCode => _value.hashCode;
 }
 
+/// Operator of an [Expression] (`ExpressionOpType`).
+enum ExpressionOpType {
+  /// Addition.
+  add,
+
+  /// Subtraction.
+  sub,
+
+  /// Multiplication.
+  mul,
+
+  /// Logical left shift.
+  sll,
+
+  /// Logical right shift.
+  srl,
+
+  /// Arithmetic right shift.
+  sra,
+}
+
+/// Expression node that can reference constants, labels and other
+/// expressions (`Expression`); evaluated by [CodeHolder.relocateToBase].
+///
+/// A value is an `int` constant, a [Label] (its offset in the flattened
+/// image) or another [Expression].
+final class Expression {
+  /// Operation type.
+  final ExpressionOpType opType;
+
+  /// Left and right values.
+  final List<Object?> value;
+
+  Expression(this.opType, Object? a, Object? b) : value = [a, b];
+}
+
 /// Relocation type (`RelocType`).
 enum RelocType {
   /// None/deleted (no relocation).
@@ -165,8 +201,12 @@ final class RelocEntry {
   /// Source offset (relative to the start of the source section).
   int sourceOffset = 0;
 
-  /// Payload (target offset, target address, expression, etc).
+  /// Payload (target offset, target address, etc).
   int payload = 0;
+
+  /// The expression of a [RelocType.expression] entry (upstream keeps a
+  /// pointer to it in the payload).
+  Expression? expression;
 
   RelocEntry._(this.id, this.relocType);
 }
@@ -186,8 +226,8 @@ class FinalizedCode {
   /// The target environment.
   final Environment env;
 
-  /// The text (code) section bytes; after [CodeHolder.relocateToBase] the
-  /// whole flattened image (text first, then the address table).
+  /// The flattened image: the text section first, then the other sections
+  /// at their [Section.offset]s.
   final Uint8List textBytes;
 
   /// The data section bytes (if any).
@@ -390,6 +430,9 @@ class CodeHolder {
       final buffer = sourceSection.buffer;
 
       switch (re.relocType) {
+        case RelocType.expression:
+          value = _evaluateExpression(re.expression!);
+
         case RelocType.absToAbs:
           break;
 
@@ -487,6 +530,38 @@ class CodeHolder {
   }
 
   static int _x86EncodeMod(int m, int o, int rm) => (m << 6) | (o << 3) | rm;
+
+  /// `CodeHolder_evaluate_expression()`.
+  int _evaluateExpression(Expression exp) {
+    final value = [
+      for (final v in exp.value)
+        switch (v) {
+          null => 0,
+          final int constant => constant,
+          final Label label => () {
+              final le = _labelManager.getState(label);
+              if (!le.isBound) {
+                throw AsmJitException(AsmJitError.expressionLabelNotBound,
+                    'Expression label ${label.id} is not bound');
+              }
+              return _sections[le.sectionId].offset + le.boundOffset!;
+            }(),
+          final Expression nested => _evaluateExpression(nested),
+          _ => throw AsmJitException(
+              AsmJitError.invalidState, 'Invalid expression value $v'),
+        }
+    ];
+    final a = value[0];
+    final b = value[1];
+    return switch (exp.opType) {
+      ExpressionOpType.add => a + b,
+      ExpressionOpType.sub => a - b,
+      ExpressionOpType.mul => a * b,
+      ExpressionOpType.sll => (b < 0 || b > 63) ? 0 : a << b,
+      ExpressionOpType.srl => (b < 0 || b > 63) ? 0 : a >>> b,
+      ExpressionOpType.sra => a >> ((b < 0 || b > 63) ? 63 : b),
+    };
+  }
 
   /// Copies the flattened image into [dst] (`copy_flattened_data`), padding
   /// the space between sections with zeros.
@@ -586,14 +661,24 @@ class CodeHolder {
   bool get hasUnresolvedFixups => _unresolvedFixupCount != 0;
 
   /// Creates a fixup of the region at [offset] of section [sectionId] that
-  /// references the unbound [label] (`new_fixup`).
+  /// references [label], unbound or bound to another section (`new_fixup`).
   Fixup newFixup(
       Label label, int sectionId, int offset, int rel, OffsetFormat format) {
     final le = _labelManager.getState(label);
-    // Cannot be bound if we are creating a link.
-    assert(!le.isBound);
     final fixup = Fixup(sectionId, offset, rel, format);
-    le.fixups.add(fixup);
+    if (le.isBound) {
+      // Deviation from upstream, which asserts that the label is not bound:
+      // the encoders also create a fixup for a label bound to another
+      // section, and upstream then links it into the label's fixup list,
+      // which shares storage with the label offset. Executing upstream,
+      // `mov(eax, dword_ptr(L))` with L bound in .data turns the offset of L
+      // into a pointer and leaves the displacement 0. Here it waits for
+      // [resolveCrossSectionFixups] like any cross-section fixup.
+      fixup.labelOrRelocId = label.id;
+      _fixups.add(fixup);
+    } else {
+      le.fixups.add(fixup);
+    }
     _unresolvedFixupCount++;
     return fixup;
   }
@@ -701,11 +786,9 @@ class CodeHolder {
           'JitRuntime.add() or flatten() + relocateToBase()');
     }
 
-    Uint8List bytes = text.buffer.bytes;
-    if (_relocatedBase != null) {
-      bytes = Uint8List(codeSize);
-      copyFlattenedData(bytes);
-    }
+    // The flattened image: text first, then the other sections.
+    final bytes = Uint8List(codeSize);
+    copyFlattenedData(bytes);
 
     _finalizedCode = FinalizedCode._(
       env: env,

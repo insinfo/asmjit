@@ -800,12 +800,16 @@ final class _Writer {
 /// Encodes AArch64 instructions as upstream `a64::Assembler::_emit()`.
 final class A64Emitter {
   final CodeHolder code;
-  final CodeBuffer buffer;
+
+  /// The section being written (the assembler's `_section`).
+  Section section;
+
+  CodeBuffer get buffer => section.buffer;
 
   /// `inst_options()` of the next instruction.
   int instOptions = 0;
 
-  A64Emitter(this.code, this.buffer);
+  A64Emitter(this.code, this.section);
 
   static final Map<String, int> _upIds = {
     for (final (i, n) in kA64UpInstNames.indexed)
@@ -7252,7 +7256,7 @@ final class A64Emitter {
               final label = rmRel!.label!;
               final labelOffset = rmRel!.isLabel() ? 0 : rmRel!.offset;
 
-              final bound = code.isLabelBoundTo(label, code.text.id)
+              final bound = code.isLabelBoundTo(label, section.id)
                   ? code.getLabelOffset(label)
                   : null;
               if (bound != null) {
@@ -7265,7 +7269,7 @@ final class A64Emitter {
               } else {
                 // Create a fixup referencing an non-bound label.
                 final codeOffset = _w.cursor;
-                code.newFixup(label, code.text.id, codeOffset, labelOffset,
+                code.newFixup(label, section.id, codeOffset, labelOffset,
                     offsetFormat.copy());
                 {
                   state = _S.EmitOp;
@@ -7284,7 +7288,7 @@ final class A64Emitter {
               // Create a new RelocEntry as we cannot calculate the offset right now.
               final re = code.newRelocEntry(RelocType.absToRel);
 
-              re.sourceSectionId = code.text.id;
+              re.sourceSectionId = section.id;
               re.sourceOffset = codeOffset;
               re.format = offsetFormat.copy();
               re.payload = rmRel!.imm + 4;

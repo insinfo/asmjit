@@ -41,7 +41,7 @@ _span("        if (addr_type == _Addr.kDefault) {\n          if (baseAddress == 
 
             _w.emit8(encodeMod(0, opReg, 5));
 
-            re.sourceSectionId = code.text.id;
+            re.sourceSectionId = section.id;
             re.sourceOffset = instStart;
             re.format
               ..resetToSimpleValue(OffsetType.kSignedOffset, 4)
@@ -83,7 +83,7 @@ _span("        if ((rmInfo & _kMemInfoBaseLabel) != 0) {\n          // [RIP].\n 
           label = rmRel!.label;
           relOffset -= (4 + immSize);
 
-          final bound = code.isLabelBoundTo(label!, code.text.id)
+          final bound = code.isLabelBoundTo(label!, section.id)
           ? code.getLabelOffset(label!)
           : null;
           if (bound != null) {
@@ -104,7 +104,7 @@ _rep("    var ip = (_w.offsetFrom(_buffer_data));\n    var rel32 = 0;\n    var o
 _rep("    var inst32_size = 1 + 4;", "    inst32_size = 1 + 4;")
 _span("      var label_id = rmRel!.labelId;\n      if (!_code->is_label_valid(label_id)) {", "        { s = _S.EmitJmpCallRel; continue loop; }\n      }",
 """      label = rmRel!.label;
-      final bound = code.isLabelBoundTo(label!, code.text.id)
+      final bound = code.isLabelBoundTo(label!, section.id)
           ? code.getLabelOffset(label!)
           : null;
       if (bound != null) {
@@ -140,7 +140,7 @@ _span("    if (rmRel!.isImm()) {\n      var baseAddress = code()->baseAddress();
       final re = code.newRelocEntry(RelocType.absToRel);
 
       re.sourceOffset = instStart;
-      re.sourceSectionId = code.text.id;
+      re.sourceSectionId = section.id;
       re.payload = jump_address;
 
       if (opcode != 0) {
@@ -186,7 +186,7 @@ _span("    // Chain with label.\n    var offset = (_w.offsetFrom(_buffer_data));
     final of = OffsetFormat()
       ..resetToSimpleValue(OffsetType.kSignedOffset, relSize);
 
-    code.newFixup(label!, code.text.id, offset, relOffset, of);
+    code.newFixup(label!, section.id, offset, relOffset, of);
 
     // Emit dummy zeros, must be patched later when the reference becomes known.
     _w.emitZeros(relSize);

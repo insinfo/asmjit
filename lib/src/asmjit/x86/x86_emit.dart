@@ -564,7 +564,11 @@ final class _Writer {
 /// Encodes x86/x64 instructions as upstream `x86::Assembler::_emit()`.
 final class X86Emitter {
   final CodeHolder code;
-  final CodeBuffer buffer;
+
+  /// The section being written (the assembler's `_section`).
+  Section section;
+
+  CodeBuffer get buffer => section.buffer;
 
   /// `inst_options()`: options of the next instruction (prefixes, forms).
   int instOptions = 0;
@@ -578,7 +582,7 @@ final class X86Emitter {
   /// `encoding_options()` (`EncodingOptions`).
   int encodingOptions = 0;
 
-  X86Emitter(this.code, this.buffer);
+  X86Emitter(this.code, this.section);
 
   /// Sets the extra register (`{k}` selector) of the next instruction.
   set extraReg(Object? reg) => _extraReg = _Op.of(reg);
@@ -5875,7 +5879,7 @@ final class X86Emitter {
 
                     _w.emit8(encodeMod(0, opReg, 5));
 
-                    re.sourceSectionId = code.text.id;
+                    re.sourceSectionId = section.id;
                     re.sourceOffset = instStart;
                     re.format
                       ..resetToSimpleValue(OffsetType.kSignedOffset, 4)
@@ -5977,7 +5981,7 @@ final class X86Emitter {
                   label = rmRel!.label;
                   relOffset -= (4 + immSize);
 
-                  final bound = code.isLabelBoundTo(label!, code.text.id)
+                  final bound = code.isLabelBoundTo(label!, section.id)
                       ? code.getLabelOffset(label!)
                       : null;
                   if (bound != null) {
@@ -6504,7 +6508,7 @@ final class X86Emitter {
 
             if (rmRel!.isLabel()) {
               label = rmRel!.label;
-              final bound = code.isLabelBoundTo(label!, code.text.id)
+              final bound = code.isLabelBoundTo(label!, section.id)
                   ? code.getLabelOffset(label!)
                   : null;
               if (bound != null) {
@@ -6577,7 +6581,7 @@ final class X86Emitter {
               final re = code.newRelocEntry(RelocType.absToRel);
 
               re.sourceOffset = instStart;
-              re.sourceSectionId = code.text.id;
+              re.sourceSectionId = section.id;
               re.payload = jump_address;
 
               if (opcode != 0) {
@@ -6641,7 +6645,7 @@ final class X86Emitter {
             final of = OffsetFormat()
               ..resetToSimpleValue(OffsetType.kSignedOffset, relSize);
 
-            code.newFixup(label!, code.text.id, offset, relOffset, of);
+            code.newFixup(label!, section.id, offset, relOffset, of);
 
             // Emit dummy zeros, must be patched later when the reference becomes known.
             _w.emitZeros(relSize);

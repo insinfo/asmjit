@@ -559,7 +559,11 @@ final class _Writer {
 /// Encodes x86/x64 instructions as upstream `x86::Assembler::_emit()`.
 final class X86Emitter {
   final CodeHolder code;
-  final CodeBuffer buffer;
+
+  /// The section being written (the assembler's `_section`).
+  Section section;
+
+  CodeBuffer get buffer => section.buffer;
 
   /// `inst_options()`: options of the next instruction (prefixes, forms).
   int instOptions = 0;
@@ -573,7 +577,7 @@ final class X86Emitter {
   /// `encoding_options()` (`EncodingOptions`).
   int encodingOptions = 0;
 
-  X86Emitter(this.code, this.buffer);
+  X86Emitter(this.code, this.section);
 
   /// Sets the extra register (`{k}` selector) of the next instruction.
   set extraReg(Object? reg) => _extraReg = _Op.of(reg);
