@@ -278,6 +278,152 @@ void main() {
       (a) => a.rshrnVec(vv(1, A64Layout.b16), vv(0, A64Layout.h8), 8),
       0x4F088C01
     ),
+    'abs v1.4s, v0.4s': (
+      (a) => a.abs(vv(1, A64Layout.s4), vv(0, A64Layout.s4)),
+      0x4EA0B801
+    ),
+    'abs v1.2d, v0.2d': (
+      (a) => a.abs(vv(1, A64Layout.d2), vv(0, A64Layout.d2)),
+      0x4EE0B801
+    ),
+    'abs v1.8b, v0.8b': (
+      (a) => a.abs(vv(1, A64Layout.b8, 64), vv(0, A64Layout.b8, 64)),
+      0x0E20B801
+    ),
+    'mvn v1.16b, v0.16b': (
+      (a) => a.mvnVec(vv(1, A64Layout.b16), vv(0, A64Layout.b16)),
+      0x6E205801
+    ),
+    'mvn v1.8b, v0.8b': (
+      (a) => a.mvnVec(vv(1, A64Layout.b8, 64), vv(0, A64Layout.b8, 64)),
+      0x2E205801
+    ),
+    'fabs v1.4s, v0.4s': (
+      (a) => a.fabsVec(vv(1, A64Layout.s4), vv(0, A64Layout.s4)),
+      0x4EA0F801
+    ),
+    'fneg v1.2d, v0.2d': (
+      (a) => a.fnegVec(vv(1, A64Layout.d2), vv(0, A64Layout.d2)),
+      0x6EE0F801
+    ),
+    'fsqrt v1.4s, v0.4s': (
+      (a) => a.fsqrtVec(vv(1, A64Layout.s4), vv(0, A64Layout.s4)),
+      0x6EA1F801
+    ),
+    'frintn v1.4s, v0.4s': (
+      (a) => a.frintnVec(vv(1, A64Layout.s4), vv(0, A64Layout.s4)),
+      0x4E218801
+    ),
+    'frintm v1.2d, v0.2d': (
+      (a) => a.frintmVec(vv(1, A64Layout.d2), vv(0, A64Layout.d2)),
+      0x4E619801
+    ),
+    'frintp v1.4s, v0.4s': (
+      (a) => a.frintpVec(vv(1, A64Layout.s4), vv(0, A64Layout.s4)),
+      0x4EA18801
+    ),
+    'frintz v1.2s, v0.2s': (
+      (a) => a.frintzVec(vv(1, A64Layout.s2, 64), vv(0, A64Layout.s2, 64)),
+      0x0EA19801
+    ),
+    'frinta v1.2d, v0.2d': (
+      (a) => a.frintaVec(vv(1, A64Layout.d2), vv(0, A64Layout.d2)),
+      0x6E618801
+    ),
+    'scvtf v1.4s, v0.4s': (
+      (a) => a.scvtfVec(vv(1, A64Layout.s4), vv(0, A64Layout.s4)),
+      0x4E21D801
+    ),
+    'ucvtf v1.2d, v0.2d': (
+      (a) => a.ucvtfVec(vv(1, A64Layout.d2), vv(0, A64Layout.d2)),
+      0x6E61D801
+    ),
+    'fcvtzs v1.4s, v0.4s': (
+      (a) => a.fcvtzsVec(vv(1, A64Layout.s4), vv(0, A64Layout.s4)),
+      0x4EA1B801
+    ),
+    'fcvtns v1.2d, v0.2d': (
+      (a) => a.fcvtnsVec(vv(1, A64Layout.d2), vv(0, A64Layout.d2)),
+      0x4E61A801
+    ),
+    'fcvtl v1.2d, v0.2s': (
+      (a) => a.fcvtlVec(vv(1, A64Layout.d2), vv(0, A64Layout.s2, 64)),
+      0x0E617801
+    ),
+    'fcvtl2 v1.2d, v0.4s': (
+      (a) => a.fcvtlVec(vv(1, A64Layout.d2), vv(0, A64Layout.s4)),
+      0x4E617801
+    ),
+    'fcvtn v1.2s, v0.2d': (
+      (a) => a.fcvtnVec(vv(1, A64Layout.s2, 64), vv(0, A64Layout.d2)),
+      0x0E616801
+    ),
+    'fcvtn2 v1.4s, v0.2d': (
+      (a) => a.fcvtnVec(vv(1, A64Layout.s4), vv(0, A64Layout.d2)),
+      0x4E616801
+    ),
+    'fabs s1, s0': ((a) => a.fabs(A64Vec(1, 32), A64Vec(0, 32)), 0x1E20C001),
+    'fneg d1, d0': ((a) => a.fneg(A64Vec(1, 64), A64Vec(0, 64)), 0x1E614001),
+    'fsqrt s1, s0': ((a) => a.fsqrt(A64Vec(1, 32), A64Vec(0, 32)), 0x1E21C001),
+    'fsqrt d1, d0': ((a) => a.fsqrt(A64Vec(1, 64), A64Vec(0, 64)), 0x1E61C001),
+    'frintn s1, s0': (
+      (a) => a.frintnS(A64Vec(1, 32), A64Vec(0, 32)),
+      0x1E244001
+    ),
+    'frintp d1, d0': (
+      (a) => a.frintpS(A64Vec(1, 64), A64Vec(0, 64)),
+      0x1E64C001
+    ),
+    'frintm s1, s0': (
+      (a) => a.frintmS(A64Vec(1, 32), A64Vec(0, 32)),
+      0x1E254001
+    ),
+    'frintz d1, d0': (
+      (a) => a.frintzS(A64Vec(1, 64), A64Vec(0, 64)),
+      0x1E65C001
+    ),
+    'frinta s1, s0': (
+      (a) => a.frintaS(A64Vec(1, 32), A64Vec(0, 32)),
+      0x1E264001
+    ),
+    'fcvt d1, s0': ((a) => a.fcvt(A64Vec(1, 64), A64Vec(0, 32)), 0x1E22C001),
+    'fcvt s1, d0': ((a) => a.fcvt(A64Vec(1, 32), A64Vec(0, 64)), 0x1E624001),
+    'dup v1.4s, v0.s[2]': (
+      (a) => a.dup(vv(1, A64Layout.s4), vv(0, A64Layout.s4), 2),
+      0x4E140401
+    ),
+    'dup v1.16b, v0.b[5]': (
+      (a) => a.dup(vv(1, A64Layout.b16), vv(0, A64Layout.b16), 5),
+      0x4E0B0401
+    ),
+    'dup v1.2d, v0.d[1]': (
+      (a) => a.dup(vv(1, A64Layout.d2), vv(0, A64Layout.d2), 1),
+      0x4E180401
+    ),
+    'dup v1.8h, v0.h[7]': (
+      (a) => a.dup(vv(1, A64Layout.h8), vv(0, A64Layout.h8), 7),
+      0x4E1E0401
+    ),
+    'dup v1.4s, w2': (
+      (a) => a.dupGp(vv(1, A64Layout.s4), A64Gp(2, 32)),
+      0x4E040C41
+    ),
+    'dup v1.16b, w2': (
+      (a) => a.dupGp(vv(1, A64Layout.b16), A64Gp(2, 32)),
+      0x4E010C41
+    ),
+    'dup v1.8h, w3': (
+      (a) => a.dupGp(vv(1, A64Layout.h8), A64Gp(3, 32)),
+      0x4E020C61
+    ),
+    'dup v1.2d, x4': (
+      (a) => a.dupGp(vv(1, A64Layout.d2), A64Gp(4, 64)),
+      0x4E080C81
+    ),
+    'dup v1.2s, w5': (
+      (a) => a.dupGp(vv(1, A64Layout.s2, 64), A64Gp(5, 32)),
+      0x0E040CA1
+    ),
   };
 
   group('A64 Advanced SIMD encoding', () {

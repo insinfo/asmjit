@@ -346,12 +346,19 @@ class X86Encoder {
       // - 64-bit: [RIP + disp32] (RIP-relative)
       emitModRm(0, regOp, 5);
 
-      if (emitter != null) {
-        final is64 = emitter!.code.env.is64Bit;
-        final kind = is64 ? RelocKind.ripRel32 : RelocKind.abs32;
-        emitter!.code.labelManager
-            .addFixup(mem.label!, buffer.offset, kind, mem.displacement);
+      final e = emitter;
+      if (e == null) {
+        throw StateError(
+            'Label memory operands need an encoder attached to a CodeHolder');
       }
+      // RIP-relative displacements are relative to the end of the
+      // instruction; X86Serializer/X86Assembler.fixupRipRelocs() adjust the
+      // addend when bytes (e.g. an imm8) follow the disp32.
+      e.code.addReloc(Reloc(
+          kind: e.code.env.is64Bit ? RelocKind.ripRel32 : RelocKind.abs32,
+          atOffset: buffer.offset,
+          target: mem.label!,
+          addend: mem.displacement));
 
       buffer.emit32(0); // Placeholder
       return;

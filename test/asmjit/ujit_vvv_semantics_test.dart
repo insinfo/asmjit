@@ -143,6 +143,40 @@ int _mask(bool c, int bytes) =>
 
 Uint8List _bytes(List<int> v) => Uint8List.fromList(v);
 
+/// emit2v cases whose x86 lowering is still missing (SSE2 fallbacks or not
+/// ported yet), per feature set. Remove entries as they get implemented.
+const _x86Pending2v = <String, Set<String>>{
+  'baseline': {
+    'absF32S (low lane)',
+    'absI16',
+    'absI32',
+    'absI8',
+    'ceilF32',
+    'cvtF64ToF32Lo',
+    'cvtI16HiToI32',
+    'cvtI8LoToI16',
+    'cvtRoundF32ToI32',
+    'cvtU32LoToU64',
+    'cvtU8LoToU16',
+    'cvtU8ToU32',
+    'floorF32',
+    'movU64',
+    'roundEvenF32',
+    'sqrtF64S (low lane)',
+    'truncF32'
+  },
+  'host': {
+    'absF32S (low lane)',
+    'cvtF64ToF32Lo',
+    'cvtI16HiToI32',
+    'cvtRoundF32ToI32',
+    'cvtU8ToU32',
+    'movU64',
+    'roundEvenF32',
+    'sqrtF64S (low lane)'
+  },
+};
+
 /// x86 lowering variants: SSE2 baseline (no features) and the host CPU.
 final _featureSets = <String, CpuFeatures?>{
   'baseline': null,
@@ -320,6 +354,197 @@ void main() {
     ),
   };
 
+  // emit2v cases: (op, input, reference, bytes compared from the low end).
+  Uint8List f32s(List<double> v) =>
+      Float32List.fromList(v).buffer.asUint8List();
+  Uint8List f64s(List<double> v) =>
+      Float64List.fromList(v).buffer.asUint8List();
+  Uint8List i32s(List<int> v) => Int32List.fromList(v).buffer.asUint8List();
+  List<double> rf32(Uint8List b) =>
+      Float32List.view(b.buffer, b.offsetInBytes, 4);
+  final fin = f32s([1.5, -2.5, 3.75, -0.25]);
+  final fin64 = f64s([2.5, -7.25]);
+  final vvCases =
+      <String, (UniOpVV, Uint8List, Uint8List Function(Uint8List), int)>{
+    'absI8': (
+      UniOpVV.absI8,
+      ia,
+      (a) => _lanes(1, true, (x, _) => x.abs())(a, a),
+      16
+    ),
+    'absI16': (
+      UniOpVV.absI16,
+      ia,
+      (a) => _lanes(2, true, (x, _) => x.abs())(a, a),
+      16
+    ),
+    'absI32': (
+      UniOpVV.absI32,
+      ia,
+      (a) => _lanes(4, true, (x, _) => x.abs())(a, a),
+      16
+    ),
+    'notU32': (
+      UniOpVV.notU32,
+      ia,
+      (a) => _lanes(1, false, (x, _) => ~x)(a, a),
+      16
+    ),
+    'broadcastU8': (
+      UniOpVV.broadcastU8,
+      ia,
+      (a) => Uint8List(16)..fillRange(0, 16, a[0]),
+      16
+    ),
+    'broadcastU16': (
+      UniOpVV.broadcastU16,
+      ia,
+      (a) => _bytes([for (int i = 0; i < 8; i++) ...a.sublist(0, 2)]),
+      16
+    ),
+    'broadcastU32': (
+      UniOpVV.broadcastU32,
+      ia,
+      (a) => _bytes([for (int i = 0; i < 4; i++) ...a.sublist(0, 4)]),
+      16
+    ),
+    'broadcastU64': (
+      UniOpVV.broadcastU64,
+      ia,
+      (a) => _bytes([...a.sublist(0, 8), ...a.sublist(0, 8)]),
+      16
+    ),
+    'cvtU8LoToU16': (
+      UniOpVV.cvtU8LoToU16,
+      ia,
+      (a) => _bytes([
+            for (int i = 0; i < 8; i++) ...[a[i], 0]
+          ]),
+      16
+    ),
+    'cvtI8LoToI16': (
+      UniOpVV.cvtI8LoToI16,
+      ia,
+      (a) => _bytes([
+            for (int i = 0; i < 8; i++) ...[a[i], a[i] >= 0x80 ? 0xFF : 0]
+          ]),
+      16
+    ),
+    'cvtI16HiToI32': (
+      UniOpVV.cvtI16HiToI32,
+      ia,
+      (a) {
+        final o = ByteData(16), d = ByteData.sublistView(a);
+        for (int i = 0; i < 4; i++) {
+          o.setInt32(
+              i * 4, d.getInt16(8 + i * 2, Endian.little), Endian.little);
+        }
+        return o.buffer.asUint8List();
+      },
+      16
+    ),
+    'cvtU32LoToU64': (
+      UniOpVV.cvtU32LoToU64,
+      ia,
+      (a) => _bytes(
+          [...a.sublist(0, 4), 0, 0, 0, 0, ...a.sublist(4, 8), 0, 0, 0, 0]),
+      16
+    ),
+    'cvtU8ToU32': (
+      UniOpVV.cvtU8ToU32,
+      ia,
+      (a) => _bytes([
+            for (int i = 0; i < 4; i++) ...[a[i], 0, 0, 0]
+          ]),
+      16
+    ),
+    'movU64': (
+      UniOpVV.movU64,
+      ia,
+      (a) => _bytes([...a.sublist(0, 8), ...List.filled(8, 0)]),
+      16
+    ),
+    'absF32': (
+      UniOpVV.absF32,
+      fin,
+      (a) => f32s([for (final x in rf32(a)) x.abs()]),
+      16
+    ),
+    'negF32': (
+      UniOpVV.negF32,
+      fin,
+      (a) => f32s([for (final x in rf32(a)) -x]),
+      16
+    ),
+    'sqrtF32': (
+      UniOpVV.sqrtF32,
+      f32s([4, 9, 2.25, 16]),
+      (a) => f32s([2, 3, 1.5, 4]),
+      16
+    ),
+    'floorF32': (
+      UniOpVV.floorF32,
+      fin,
+      (a) => f32s([for (final x in rf32(a)) x.floorToDouble()]),
+      16
+    ),
+    'ceilF32': (
+      UniOpVV.ceilF32,
+      fin,
+      (a) => f32s([for (final x in rf32(a)) x.ceilToDouble()]),
+      16
+    ),
+    'truncF32': (
+      UniOpVV.truncF32,
+      fin,
+      (a) => f32s([for (final x in rf32(a)) x.truncateToDouble()]),
+      16
+    ),
+    'roundEvenF32': (
+      UniOpVV.roundEvenF32,
+      f32s([0.5, 1.5, 2.5, -2.5]),
+      (a) => f32s([0, 2, 2, -2]),
+      16
+    ),
+    'cvtI32ToF32': (
+      UniOpVV.cvtI32ToF32,
+      i32s([1, -2, 100000, -7]),
+      (a) => f32s([1, -2, 100000, -7]),
+      16
+    ),
+    'cvtTruncF32ToI32': (
+      UniOpVV.cvtTruncF32ToI32,
+      fin,
+      (a) => i32s([1, -2, 3, 0]),
+      16
+    ),
+    'cvtRoundF32ToI32': (
+      UniOpVV.cvtRoundF32ToI32,
+      f32s([1.5, -2.5, 3.75, -0.25]),
+      (a) => i32s([2, -2, 4, 0]),
+      16
+    ),
+    'cvtF32LoToF64': (UniOpVV.cvtF32LoToF64, fin, (a) => f64s([1.5, -2.5]), 16),
+    'cvtF64ToF32Lo': (
+      UniOpVV.cvtF64ToF32Lo,
+      fin64,
+      (a) => f32s([2.5, -7.25, 0, 0]),
+      8
+    ),
+    'sqrtF64S (low lane)': (
+      UniOpVV.sqrtF64S,
+      f64s([6.25, 1]),
+      (a) => f64s([2.5, 0]),
+      8
+    ),
+    'absF32S (low lane)': (
+      UniOpVV.absF32S,
+      fin,
+      (a) => f32s([1.5, 0, 0, 0]),
+      4
+    ),
+  };
+
   for (final fs in _featureSets.entries) {
     group('UniOpVVV semantics (${fs.key})', () {
       final f = fs.value;
@@ -349,6 +574,15 @@ void main() {
                 ib,
                 features: f),
             _bytes([...ib.sublist(4), ...ia.sublist(0, 4)]));
+      });
+      vvCases.forEach((name, c) {
+        final pending = _host == Arch.x64 &&
+            (_x86Pending2v[fs.key]?.contains(name) ?? false);
+        test(name, skip: pending ? 'x86 lowering pending' : false, () {
+          final r = _runEmit((cc, d, x, y) => cc.emit2v(c.$1, d, x), c.$2, c.$2,
+              features: f);
+          expect(r.sublist(0, c.$4), c.$3(c.$2).sublist(0, c.$4));
+        });
       });
       test('same source register shortcuts', () {
         final ones = Uint8List(16)..fillRange(0, 16, 0xFF);

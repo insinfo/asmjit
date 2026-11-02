@@ -447,6 +447,14 @@ class A64Assembler extends BaseEmitter {
     _enc.adr(rd, offset);
   }
 
+  /// ADR - PC-relative address of [label] (resolved by CodeHolder).
+  void adrLabel(A64Gp rd, Label label) {
+    final at = offset;
+    _enc.adr(rd, 0);
+    code.addReloc(
+        Reloc(kind: RelocKind.arm64Adr21, atOffset: at, target: label));
+  }
+
   /// ADRP - PC-relative page address (immediate, offset is byte distance).
   void adrp(A64Gp rd, int offset) {
     _enc.adrp(rd, offset);
@@ -805,6 +813,26 @@ class A64Assembler extends BaseEmitter {
   void ushllVec(A64Vec rd, A64Vec rn, int shift) =>
       _enc.ushllVec(rd, rn, shift);
 
+  void fabsVec(A64Vec rd, A64Vec rn) => _enc.fabsVec(rd, rn);
+  void fnegVec(A64Vec rd, A64Vec rn) => _enc.fnegVec(rd, rn);
+  void fsqrtVec(A64Vec rd, A64Vec rn) => _enc.fsqrtVec(rd, rn);
+  void frintnVec(A64Vec rd, A64Vec rn) => _enc.frintnVec(rd, rn);
+  void frintmVec(A64Vec rd, A64Vec rn) => _enc.frintmVec(rd, rn);
+  void frintpVec(A64Vec rd, A64Vec rn) => _enc.frintpVec(rd, rn);
+  void frintzVec(A64Vec rd, A64Vec rn) => _enc.frintzVec(rd, rn);
+  void frintaVec(A64Vec rd, A64Vec rn) => _enc.frintaVec(rd, rn);
+  void scvtfVec(A64Vec rd, A64Vec rn) => _enc.scvtfVec(rd, rn);
+  void ucvtfVec(A64Vec rd, A64Vec rn) => _enc.ucvtfVec(rd, rn);
+  void fcvtzsVec(A64Vec rd, A64Vec rn) => _enc.fcvtzsVec(rd, rn);
+  void fcvtnsVec(A64Vec rd, A64Vec rn) => _enc.fcvtnsVec(rd, rn);
+  void fcvtlVec(A64Vec rd, A64Vec rn) => _enc.fcvtlVec(rd, rn);
+  void fcvtnVec(A64Vec rd, A64Vec rn) => _enc.fcvtnVec(rd, rn);
+  void frintnS(A64Vec rd, A64Vec rn) => _enc.frintnS(rd, rn);
+  void frintpS(A64Vec rd, A64Vec rn) => _enc.frintpS(rd, rn);
+  void frintmS(A64Vec rd, A64Vec rn) => _enc.frintmS(rd, rn);
+  void frintzS(A64Vec rd, A64Vec rn) => _enc.frintzS(rd, rn);
+  void frintaS(A64Vec rd, A64Vec rn) => _enc.frintaS(rd, rn);
+
   /// MOVI (per-byte immediate).
   void moviB(A64Vec rd, int imm8) => _enc.moviB(rd, imm8);
   void faddp(A64Vec rd, A64Vec rn, A64Vec rm, {bool wide = true}) =>
@@ -839,6 +867,7 @@ class A64Assembler extends BaseEmitter {
   // ===========================================================================
 
   void dup(A64Vec rd, A64Vec rn, int index) => _enc.dup(rd, rn, index);
+  void dupGp(A64Vec rd, A64Gp rn) => _enc.dupGp(rd, rn);
   void ins(A64Vec rd, int rdIdx, A64Vec rn, int rnIdx) =>
       _enc.ins(rd, rdIdx, rn, rnIdx);
   void umov(A64Gp rd, A64Vec rn, int index) => _enc.umov(rd, rn, index);

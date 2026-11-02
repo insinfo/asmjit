@@ -364,29 +364,140 @@ mixin UniCompilerA64 on UniCompilerBase {
   // [Dispatchers]
   // ============================================================================
 
-  void _emit2vA64(UniOpVV op, Operand dst, Operand src) {
+  /// Port of `UniCompiler::emit_2v()` (unicompiler_a64.cpp).
+  void _emit2vA64(UniOpVV op, Operand dst_, Operand src_) {
+    final dst = dst_ as BaseReg;
+    final info = kA64OpcodeInfo2v[op.index];
+    final name = op.name;
+
     switch (op) {
       case UniOpVV.mov:
+        _vMovA64(dst, src_);
+        return;
+
       case UniOpVV.movU64:
-        if (src is A64Mem) {
-          cc.addNode(InstNode(A64InstId.kLdr, [dst, src]));
+        // dst.d[0] = src.d[0], upper half zeroed (MOV Vd.8B, Vn.8B).
+        final src = _asVecA64(src_, dst, kFmF64S);
+        final d = A64Vec(dst.id, 64, A64Layout.b8);
+        final n = A64Vec(src.id, 64, A64Layout.b8);
+        cc.addNode(InstNode(A64InstId.kOrr, [d, n, n]));
+        return;
+
+      case UniOpVV.broadcastU8Z:
+      case UniOpVV.broadcastU16Z:
+      case UniOpVV.broadcastU8:
+      case UniOpVV.broadcastU16:
+      case UniOpVV.broadcastU32:
+      case UniOpVV.broadcastF32:
+      case UniOpVV.broadcastU64:
+      case UniOpVV.broadcastF64:
+        final el = info.dstElement;
+        final d = _vArr(dst, el);
+        if (src_ is A64Gp) {
+          cc.addNode(InstNode(A64InstId.kDup, [d, el <= 2 ? src_.w : src_.x]));
+          return;
+        }
+        BaseReg src;
+        if (src_ is A64Mem) {
+          // Load exactly one element, then duplicate it.
+          src = newVecWithWidth(VecWidth.k128, '@bcst');
+          cc.addNode(InstNode(A64InstId.kLdr, [A64Vec(src.id, 8 << el), src_]));
         } else {
-          _vMovA64(dst as BaseReg, src);
+          src = src_ as BaseReg;
         }
-        break;
-      case UniOpVV.notU32:
-      case UniOpVV.notU64:
-        if (dst is BaseReg && dst.isVec && src is BaseReg && src.isVec) {
-          final d = _toA64Vec(dst, A64Layout.b16);
-          final s = _toA64Vec(src, A64Layout.b16);
-          cc.addNode(InstNode(A64InstId.kNot, [d, s]));
+        cc.addNode(InstNode(A64InstId.kDup, [d, _vArr(src, el), Imm(0)]));
+        return;
+
+      case UniOpVV.broadcastV128U32:
+      case UniOpVV.broadcastV128U64:
+      case UniOpVV.broadcastV128F32:
+      case UniOpVV.broadcastV128F64:
+        // 128-bit broadcast is a plain move (NEON vectors are 128-bit).
+        _vMovA64(dst, src_);
+        return;
+
+      case UniOpVV.cvtI8ToI32:
+      case UniOpVV.cvtU8ToU32:
+        final src = _asVecA64(src_, dst, kFmNone);
+        cc.addNode(InstNode(info.instId,
+            [_vArr(dst, 1), A64Vec(src.id, 64, A64Layout.b8), Imm(0)]));
+        cc.addNode(InstNode(info.instId,
+            [_vArr(dst, 2), A64Vec(dst.id, 64, A64Layout.h4), Imm(0)]));
+        return;
+
+      case UniOpVV.cvtF32ToF64S:
+      case UniOpVV.cvtF64ToF32S:
+        final src = _asVecA64(src_, dst, kFmNone);
+        final toDouble = op == UniOpVV.cvtF32ToF64S;
+        cc.addNode(InstNode(A64InstId.kFcvt, [
+          A64Vec(dst.id, toDouble ? 64 : 32),
+          A64Vec(src.id, toDouble ? 32 : 64)
+        ]));
+        return;
+
+      case UniOpVV.cvtI32LoToF64:
+      case UniOpVV.cvtI32HiToF64:
+        final src = _asVecA64(src_, dst, kFmNone);
+        final lo = info.srcPart == kPartLo;
+        cc.addNode(InstNode(lo ? A64InstId.kSshll : A64InstId.kSshll2,
+            [_vArr(dst, 3), _vArr(src, 2, lo: lo), Imm(0)]));
+        cc.addNode(InstNode(A64InstId.kScvtf, [_vArr(dst, 3), _vArr(dst, 3)]));
+        return;
+
+      case UniOpVV.cvtTruncF64ToI32Lo:
+      case UniOpVV.cvtRoundF64ToI32Lo:
+      case UniOpVV.cvtTruncF64ToI32Hi:
+      case UniOpVV.cvtRoundF64ToI32Hi:
+        final src = _asVecA64(src_, dst, kFmNone);
+        final tmp = newVecWithWidth(VecWidth.k128, '@tmp');
+        cc.addNode(InstNode(info.instId, [_vArr(tmp, 3), _vArr(src, 3)]));
+        if (info.dstPart == kPartLo) {
+          cc.addNode(InstNode(
+              A64InstId.kSqxtn, [_vArr(dst, 2, lo: true), _vArr(tmp, 3)]));
+        } else {
+          cc.addNode(
+              InstNode(A64InstId.kSqxtn2, [_vArr(dst, 2), _vArr(tmp, 3)]));
         }
-        break;
+        return;
+
       default:
-        if (op == UniOpVV.broadcastU64 || op == UniOpVV.broadcastU32) {
-          throw UnimplementedError('_emit2vA64: $op');
-        }
-        throw UnimplementedError('_emit2vA64: $op');
+        break;
+    }
+
+    // Widening integer conversions (SSHLL/USHLL[2] #0).
+    if (name.startsWith('cvt') &&
+        (info.instId == A64InstId.kSshll ||
+            info.instId == A64InstId.kUshll ||
+            info.instId == A64InstId.kSshll2 ||
+            info.instId == A64InstId.kUshll2)) {
+      final lo = info.srcPart == kPartLo;
+      final src = _asVecA64(src_, dst, kFmNone);
+      cc.addNode(InstNode(info.instId, [
+        _vArr(dst, info.dstElement),
+        _vArr(src, info.srcElement, lo: lo),
+        Imm(0)
+      ]));
+      return;
+    }
+
+    if (!info.asimd || info.instId < 0) {
+      throw UnimplementedError('_emit2vA64: $op');
+    }
+
+    final src = _asVecA64(src_, dst, info.floatMode);
+    switch (info.floatMode) {
+      case kFmF32S:
+        cc.addNode(
+            InstNode(info.instId, [A64Vec(dst.id, 32), A64Vec(src.id, 32)]));
+      case kFmF64S:
+        cc.addNode(
+            InstNode(info.instId, [A64Vec(dst.id, 64), A64Vec(src.id, 64)]));
+      default:
+        // FCVTL/FCVTN read/write a 64-bit half.
+        cc.addNode(InstNode(info.instId, [
+          _vArr(dst, info.dstElement, lo: info.dstPart == kPartLo),
+          _vArr(src, info.srcElement, lo: info.srcPart == kPartLo)
+        ]));
     }
   }
 

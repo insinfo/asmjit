@@ -31,6 +31,26 @@ class X86Assembler extends BaseEmitter {
   late final CodeBuffer _buf;
 
   /// The instruction encoder.
+  /// Accounts for bytes emitted after a RIP-relative disp32 (an immediate)
+  /// in relocations recorded since [instStart]: the CPU computes the target
+  /// from the end of the instruction, not from the end of the disp32.
+  void fixupRipRelocs(int instStart) {
+    final relocs = code.text.relocs;
+    for (int i = relocs.length - 1; i >= 0; i--) {
+      final r = relocs[i];
+      if (r.atOffset < instStart) break;
+      if (r.kind != RelocKind.ripRel32) continue;
+      final trailing = offset - (r.atOffset + 4);
+      if (trailing > 0) {
+        relocs[i] = Reloc(
+            kind: r.kind,
+            atOffset: r.atOffset,
+            target: r.target,
+            addend: r.addend - trailing);
+      }
+    }
+  }
+
   /// Table-driven SSE encoding (see [kX86SimdOps]).
   void simdLegacy(X86SimdOp op, int regField, Object rm, {int? imm8}) =>
       _enc.simdLegacy(op, regField, rm, imm8: imm8);
@@ -51,7 +71,7 @@ class X86Assembler extends BaseEmitter {
   /// Creates an x86 assembler for the given code holder.
   X86Assembler(CodeHolder code) : super(code) {
     _buf = code.text.buffer;
-    _enc = X86Encoder(_buf);
+    _enc = X86Encoder(_buf, this);
   }
 
   /// Emits a raw instruction by ID with generic operands.

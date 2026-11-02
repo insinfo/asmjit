@@ -66,6 +66,7 @@ class X86Serializer implements ir.SerializerContext {
     // dropping it would produce wrong machine code.
     final start = asm.offset;
     x86Dispatch(asm, instId, ops);
+    asm.fixupRipRelocs(start);
     if (asm.offset == start) {
       final name = instId >= 0 && instId < kX86InstDb.length
           ? kX86InstDb[instId].name

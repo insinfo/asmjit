@@ -208,7 +208,7 @@ void _dispatch(A64Assembler asm, int instId, List<Object> ops) {
             ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp, ops[3] as int);
       break;
     case A64InstId.kFabs:
-      _vec2(asm, ops, (rd, rn) => asm.fabs(rd, rn));
+      _fp2(asm, ops, asm.fabs, asm.fabsVec);
       break;
     case A64InstId.kFadd:
       _fp3(asm, ops, asm.fadd, asm.faddVec);
@@ -241,10 +241,10 @@ void _dispatch(A64Assembler asm, int instId, List<Object> ops) {
       _fp3(asm, ops, asm.fmul, asm.fmulVec);
       break;
     case A64InstId.kFneg:
-      _vec2(asm, ops, (rd, rn) => asm.fneg(rd, rn));
+      _fp2(asm, ops, asm.fneg, asm.fnegVec);
       break;
     case A64InstId.kFsqrt:
-      _vec2(asm, ops, (rd, rn) => asm.fsqrt(rd, rn));
+      _fp2(asm, ops, asm.fsqrt, asm.fsqrtVec);
       break;
     case A64InstId.kFsub:
       _fp3(asm, ops, asm.fsub, asm.fsubVec);
@@ -629,6 +629,48 @@ void _dispatch(A64Assembler asm, int instId, List<Object> ops) {
     case A64InstId.kRshrn2:
       _vShift(asm, ops, asm.rshrnVec);
       break;
+    case A64InstId.kFrintn:
+      _fp2(asm, ops, asm.frintnS, asm.frintnVec);
+      break;
+    case A64InstId.kFrintm:
+      _fp2(asm, ops, asm.frintmS, asm.frintmVec);
+      break;
+    case A64InstId.kFrintp:
+      _fp2(asm, ops, asm.frintpS, asm.frintpVec);
+      break;
+    case A64InstId.kFrintz:
+      _fp2(asm, ops, asm.frintzS, asm.frintzVec);
+      break;
+    case A64InstId.kFrinta:
+      _fp2(asm, ops, asm.frintaS, asm.frintaVec);
+      break;
+    case A64InstId.kFcvtns:
+      _fp2(asm, ops, null, asm.fcvtnsVec);
+      break;
+    case A64InstId.kFcvtl:
+      _fp2(asm, ops, null, asm.fcvtlVec);
+      break;
+    case A64InstId.kFcvtl2:
+      _fp2(asm, ops, null, asm.fcvtlVec);
+      break;
+    case A64InstId.kFcvtn:
+      _fp2(asm, ops, null, asm.fcvtnVec);
+      break;
+    case A64InstId.kFcvtn2:
+      _fp2(asm, ops, null, asm.fcvtnVec);
+      break;
+    case A64InstId.kScvtf:
+      _fp2(asm, ops, asm.scvtf, asm.scvtfVec);
+      break;
+    case A64InstId.kUcvtf:
+      _fp2(asm, ops, null, asm.ucvtfVec);
+      break;
+    case A64InstId.kFcvtzs:
+      _fp2(asm, ops, asm.fcvtzs, asm.fcvtzsVec);
+      break;
+    case A64InstId.kFcvt:
+      _v2(asm, ops, asm.fcvt);
+      break;
     default:
       break;
   }
@@ -814,8 +856,12 @@ void _movk(A64Assembler asm, List<Object> ops) {
 }
 
 void _adr(A64Assembler asm, List<Object> ops) {
-  if (ops.length == 2 && ops[0] is A64Gp && ops[1] is int) {
-    asm.adr(ops[0] as A64Gp, ops[1] as int);
+  if (ops.length != 2 || ops[0] is! A64Gp) return;
+  final rd = ops[0] as A64Gp, target = ops[1];
+  if (target is Label) {
+    asm.adrLabel(rd, target);
+  } else if (target is int) {
+    asm.adr(rd, target);
   }
 }
 
@@ -870,6 +916,22 @@ bool _isWideArrangement(A64Vec v) =>
     v.layout == A64Layout.h8 ||
     v.layout == A64Layout.s4 ||
     v.layout == A64Layout.d2;
+
+/// FP two-operand op: vector form when the destination has an arrangement,
+/// scalar form otherwise.
+void _fp2(
+    A64Assembler asm,
+    List<Object> ops,
+    void Function(A64Vec, A64Vec)? scalar,
+    void Function(A64Vec, A64Vec) vector) {
+  if (ops.length != 2 || ops[0] is! A64Vec || ops[1] is! A64Vec) return;
+  final rd = ops[0] as A64Vec, rn = ops[1] as A64Vec;
+  if (_hasArrangement(rd)) {
+    vector(rd, rn);
+  } else if (scalar != null) {
+    scalar(rd, rn);
+  }
+}
 
 /// FP three-operand op: vector form when the destination has an arrangement,
 /// scalar form otherwise.
@@ -1236,6 +1298,10 @@ void _fcsel(A64Assembler asm, List<Object> ops) {
 }
 
 void _dup(A64Assembler asm, List<Object> ops) {
+  if (ops.length == 2 && ops[0] is A64Vec && ops[1] is A64Gp) {
+    asm.dupGp(ops[0] as A64Vec, ops[1] as A64Gp);
+    return;
+  }
   if (ops.length == 3 &&
       ops[0] is A64Vec &&
       ops[1] is A64Vec &&

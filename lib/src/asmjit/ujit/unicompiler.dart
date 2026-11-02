@@ -1362,15 +1362,19 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
   }
 
   void _embedConsts() {
-    if (_vecConsts.isEmpty || _commonTableLabel == null) return;
+    // Only the function-local table (no ctRef) is embedded; it is addressed
+    // through `lea ptr, [label]` / `adr ptr, label`.
+    if (_commonTableLabel == null) return;
 
-    // Bind label at end of function. Constants are data.
-    cc.bind(_commonTableLabel!);
+    // Align first: the label must point at the data, not at the padding.
     cc.align(AlignMode.data, 16);
+    cc.bind(_commonTableLabel!);
 
+    // Registered constants at their VecConstTable offsets, then ad-hoc
+    // constants starting at VecConstTable.kSize.
+    cc.embedData(VecConstTable.image());
     for (final vc in _vecConsts) {
       cc.embedData(vc.constant.data);
-      // Align to 16 bytes
       int pad = 16 - (vc.constant.width % 16);
       if (pad < 16) {
         cc.embedData(Uint8List(pad));
@@ -1408,12 +1412,13 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
           // If _ctRef is not null but we are here, it means we have mixed constants.
           // For now assume _ctRef is null or we reuse ptr if possible (but we can't reuse global ptr for local).
 
+          final offset = VecConstTable.kSize + vc.offset;
           if (isX86Family) {
             return X86Mem.base(_commonTablePtr! as X86Gp,
-                disp: vc.offset, size: c.width);
+                disp: offset, size: c.width);
           }
           if (isArm64) {
-            return A64Mem.baseOffset(_commonTablePtr! as A64Gp, vc.offset);
+            return A64Mem.baseOffset(_commonTablePtr! as A64Gp, offset);
           }
         }
       }

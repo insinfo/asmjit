@@ -1380,13 +1380,7 @@ class A64Encoder {
   }
 
   /// FNEG (scalar).
-  void fneg(A64Vec rd, A64Vec rn) {
-    final type = rd.sizeBits == 64 ? 1 : 0;
-    final inst = ((type == 1 ? 0x1E604000 : 0x1E204000)) |
-        (_encVec(rn) << 5) |
-        _encVec(rd);
-    emit32(inst);
-  }
+  void fneg(A64Vec rd, A64Vec rn) => _fp1Src(0x02, rd, rn);
 
   /// FABS (scalar).
   void fabs(A64Vec rd, A64Vec rn) {
@@ -1473,7 +1467,7 @@ class A64Encoder {
   void _vec2Misc(A64Vec rd, A64Vec rn, int u, int opcode,
       {int sizeOverride = -1}) {
     final sz = (sizeOverride != -1) ? sizeOverride : _vecElemSizeBits(rd);
-    final q = rd.sizeBits == 128 ? 1 : 0;
+    final q = _resolveWide(rd, true) ? 1 : 0;
     final inst = (0x0E200800) |
         (q << 30) |
         (u << 29) |
@@ -1483,6 +1477,64 @@ class A64Encoder {
         _encVec(rd);
     emit32(inst);
   }
+
+  /// FP two-register misc (vector): `0|Q|U|01110|a|sz|10000|opcode|10|Rn|Rd`.
+  /// `sz` (double elements) comes from [sizeOf] (default: [rd]) and Q from
+  /// [qOf] (default: [rd]).
+  void _vec2MiscFp(int u, int a, int opcode, A64Vec rd, A64Vec rn,
+      {A64Vec? sizeOf, A64Vec? qOf}) {
+    final sz = _vecElemSizeBits(sizeOf ?? rd) == 3 ? 1 : 0;
+    final q = _resolveWide(qOf ?? rd, true) ? 1 : 0;
+    emit32((q << 30) |
+        (u << 29) |
+        (0x0E << 24) |
+        (a << 23) |
+        (sz << 22) |
+        (0x10 << 17) |
+        (opcode << 12) |
+        (2 << 10) |
+        (_encVec(rn) << 5) |
+        _encVec(rd));
+  }
+
+  void fabsVec(A64Vec rd, A64Vec rn) => _vec2MiscFp(0, 1, 0x0F, rd, rn);
+  void fnegVec(A64Vec rd, A64Vec rn) => _vec2MiscFp(1, 1, 0x0F, rd, rn);
+  void fsqrtVec(A64Vec rd, A64Vec rn) => _vec2MiscFp(1, 1, 0x1F, rd, rn);
+  void frintnVec(A64Vec rd, A64Vec rn) => _vec2MiscFp(0, 0, 0x18, rd, rn);
+  void frintmVec(A64Vec rd, A64Vec rn) => _vec2MiscFp(0, 0, 0x19, rd, rn);
+  void frintpVec(A64Vec rd, A64Vec rn) => _vec2MiscFp(0, 1, 0x18, rd, rn);
+  void frintzVec(A64Vec rd, A64Vec rn) => _vec2MiscFp(0, 1, 0x19, rd, rn);
+  void frintaVec(A64Vec rd, A64Vec rn) => _vec2MiscFp(1, 0, 0x18, rd, rn);
+  void scvtfVec(A64Vec rd, A64Vec rn) => _vec2MiscFp(0, 0, 0x1D, rd, rn);
+  void ucvtfVec(A64Vec rd, A64Vec rn) => _vec2MiscFp(1, 0, 0x1D, rd, rn);
+  void fcvtzsVec(A64Vec rd, A64Vec rn) => _vec2MiscFp(0, 1, 0x1B, rd, rn);
+  void fcvtnsVec(A64Vec rd, A64Vec rn) => _vec2MiscFp(0, 0, 0x1A, rd, rn);
+
+  /// FCVTL/FCVTL2 (single -> double): size from the double destination,
+  /// Q from the single-precision source (`.4s` selects FCVTL2).
+  void fcvtlVec(A64Vec rd, A64Vec rn) =>
+      _vec2MiscFp(0, 0, 0x17, rd, rn, sizeOf: rd, qOf: rn);
+
+  /// FCVTN/FCVTN2 (double -> single): size from the double source,
+  /// Q from the destination (`.4s` selects FCVTN2).
+  void fcvtnVec(A64Vec rd, A64Vec rn) =>
+      _vec2MiscFp(0, 0, 0x16, rd, rn, sizeOf: rn, qOf: rd);
+
+  /// FP data-processing (1 source), scalar: `0|0|0|11110|type|1|opcode|10000`.
+  void _fp1Src(int opcode, A64Vec rd, A64Vec rn, {int? type}) {
+    final t = type ?? (rn.sizeBits == 64 ? 1 : 0);
+    emit32(0x1E204000 |
+        (t << 22) |
+        (opcode << 15) |
+        (_encVec(rn) << 5) |
+        _encVec(rd));
+  }
+
+  void frintnS(A64Vec rd, A64Vec rn) => _fp1Src(0x08, rd, rn);
+  void frintpS(A64Vec rd, A64Vec rn) => _fp1Src(0x09, rd, rn);
+  void frintmS(A64Vec rd, A64Vec rn) => _fp1Src(0x0A, rd, rn);
+  void frintzS(A64Vec rd, A64Vec rn) => _fp1Src(0x0B, rd, rn);
+  void frintaS(A64Vec rd, A64Vec rn) => _fp1Src(0x0C, rd, rn);
 
   /// NEG (vector).
   void negVec(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 1, 11);
@@ -1797,6 +1849,19 @@ class A64Encoder {
         (imm4 << 11) |
         (1 << 10) |
         (_encVec(rn) << 5) |
+        _encVec(rd));
+  }
+
+  /// DUP (general): `dup Vd.T, Wn|Xn` - 0|Q|0|01110000|imm5|0|0001|1|Rn|Rd.
+  void dupGp(A64Vec rd, A64Gp rn) {
+    final sz = _vecElemSizeBits(rd);
+    final q = _resolveWide(rd, true) ? 1 : 0;
+    emit32((q << 30) |
+        (0x0E << 24) |
+        ((1 << sz) << 16) |
+        (1 << 11) |
+        (1 << 10) |
+        (_encReg(rn) << 5) |
         _encVec(rd));
   }
 
@@ -2123,19 +2188,11 @@ class A64Encoder {
 
   /// FCVT - Floating-point convert precision (scalar)
   void fcvt(A64Vec rd, A64Vec rn) {
-    // Encoding: 000 11110 type 1 0001 opcode 10000 Rn Rd
-    // type: 00=SP, 01=DP, 11=HP
-    // opcode: 01=SP->DP, 00=DP->SP, etc.
-    // Simplified: assume SP<->DP conversion
-    final type = rn.sizeBits == 32 ? 0 : 1;
-    final opcode = rn.sizeBits == 32 ? 1 : 0;
-    final inst = (0x1E << 24) |
-        (type << 22) |
-        (1 << 21) |
-        (opcode << 15) |
-        (0x10 << 10) | // 010000
-        (_encVec(rn) << 5) |
-        _encVec(rd);
-    emit32(inst);
+    // FCVT: type is the source precision, opcode 0001|opc selects the
+    // destination (opc 00 = single, 01 = double).
+    if (rn.sizeBits == rd.sizeBits) {
+      throw ArgumentError('FCVT needs different precisions: $rd, $rn');
+    }
+    _fp1Src(rd.sizeBits == 64 ? 0x05 : 0x04, rd, rn);
   }
 }

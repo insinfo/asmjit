@@ -75,6 +75,13 @@ class VecConstTable {
       throw StateError('VecConstTable overflow');
     }
     _offsets[vc] = _currentOffset;
+    // Constants are registered lazily (static finals); keep an already
+    // materialized global table in sync.
+    if (_memory != null) {
+      Pointer<Uint8>.fromAddress(_alignedAddress)
+          .asTypedList(kSize)
+          .setRange(_currentOffset, _currentOffset + vc.width, vc.data);
+    }
     _currentOffset += vc.width;
     // Align next to 32 bytes to be safe/perf friendly
     if (_currentOffset % 32 != 0) {
@@ -90,6 +97,15 @@ class VecConstTable {
       throw ArgumentError('VecConst not registered in table');
     }
     return _offsets[c]!;
+  }
+
+  /// Contents of the table (every constant registered so far at its offset),
+  /// padded to [kSize]; embedded by UniCompiler as a function-local table.
+  static Uint8List image() {
+    final out = Uint8List(kSize);
+    _offsets.forEach(
+        (vc, offset) => out.setRange(offset, offset + vc.width, vc.data));
+    return out;
   }
 
   /// Returns the base address of the table (aligned).
