@@ -165,4 +165,28 @@ void main() {
       }, skip: skipUnlessJitHost);
     }
   }
+
+  // 256-bit vectors (AVX2): every UniOpVVI works on each 128-bit lane (as the
+  // upstream test references do); the high lane gets other data and each
+  // lane is compared with the 128-bit reference.
+  final host = hostIsX64 ? CpuInfo.host().features : null;
+  final hi = _u8([for (var i = 15; i >= 0; i--) input[i] ^ 0x5A]);
+  final wide = Uint8List.fromList([...input, ...hi]);
+  for (final layout in _layouts.entries) {
+    group('UniOpVVI avx2-256 ${layout.key}', () {
+      for (final c in cases) {
+        test(c.name, () {
+          final r = runUjit(
+              (cc, d, a, b, cv, m) => layout.value(cc, c.op, c.imm, d, cv, m),
+              wide,
+              wide,
+              wide,
+              features: host,
+              width: VecWidth.k256);
+          expect(_hex(r),
+              _hex(Uint8List.fromList([...c.ref(input), ...c.ref(hi)])));
+        });
+      }
+    }, skip: (host?.avx2 ?? false) ? null : 'needs an AVX2 host');
+  }
 }
