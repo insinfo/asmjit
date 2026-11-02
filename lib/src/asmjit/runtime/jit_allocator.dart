@@ -736,6 +736,24 @@ final class JitAllocatorBlock extends ArenaTreeNode
       assert(_searchStart >= releasedAreaSize);
       _searchStart -= releasedAreaSize;
       _largestUnusedArea += releasedAreaSize;
+
+      // Deviation from upstream: upstream doesn't check whether the block
+      // became empty in this branch, so a block whose allocations are
+      // released in reverse order (always the case of a single allocation)
+      // never gets `kFlagEmpty`: it is neither released with
+      // kImmediateRelease nor counted as the pool's empty block. Proof
+      // (upstream release build, tool/upstream_repro/jitallocator_counts.cpp):
+      // with kImmediateRelease, alloc(100) followed by release() leaves
+      // block_count=1 with allocation_count=0 and used_size=64 (only the
+      // initial padding). The block is marked empty here exactly as the
+      // other branch does (its state is then the one of `clear_block()`).
+      if (_areaUsed == _initialAreaStart) {
+        _searchStart = _initialAreaStart;
+        _searchEnd = _areaSize;
+        _largestUnusedArea = _areaSize - _initialAreaStart;
+        _clearFlags(kFlagDirty);
+        _addFlags(kFlagEmpty);
+      }
     } else {
       _searchStart = _min(_searchStart, releasedAreaStart);
       _searchEnd = _max(_searchEnd, releasedAreaEnd);
@@ -1234,6 +1252,14 @@ class JitAllocator {
     if (impl == null) return;
 
     impl.tree.reset();
+
+    // Deviation from upstream: upstream never resets `allocation_count`, so
+    // `statistics().allocation_count()` keeps counting the allocations that
+    // reset() has just invalidated. Proof (upstream release build,
+    // tool/upstream_repro/jitallocator_counts.cpp): after 100 allocations
+    // `reset(kSoft)` reports allocation_count=100 with block_count=1 and
+    // `reset(kHard)` reports allocation_count=100 with block_count=0.
+    impl.allocationCount = 0;
 
     for (final pool in impl.pools) {
       var block = pool.blocks.first;
