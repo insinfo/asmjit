@@ -1860,7 +1860,7 @@ const baseLdSt = <BaseLdSt>[
   BaseLdSt(0x2e6, 0x5c4, 0x5c5, 0x98, kX, 0, 2, 240 /* Ldursw */), // ldrsw
   BaseLdSt(0x2e4, 0x5c0, 0x5c1, 0, kWX, 30, 2, 371 /* Stur */), // str
   BaseLdSt(0xe4, 0x1c0, 0x1c1, 0, kW, 30, 0, 372 /* Sturb */), // strb
-  BaseLdSt(0x1e4, 0x3c0, 0x3c1, 0, kWX, 30, 1, 373 /* Sturh */), // strh
+  BaseLdSt(0x1e4, 0x3c0, 0x3c1, 0, kW, 30, 1, 373 /* Sturh */), // strh
 ];
 
 const baseLdpStp = <BaseLdpStp>[

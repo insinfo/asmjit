@@ -40,10 +40,18 @@ void main(List<String> args) {
   }
   File('assets/db/a64_instdb.txt').writeAsStringSync(out.toString());
 
-  final data = section('EncodingData');
+  // Deviation from upstream (proven by executing upstream): its `strh` row
+  // accepts an X register (`kWX`, size bit 30), so `strh(x1, ptr(x2, 2))`
+  // emits 0x39000441, `strb w1, [x2, #1]`. LLVM rejects `strh x1, [x2]` and
+  // upstream itself rejects `strb x1`, `ldrh x1` and `sturh x1` (all `kW`).
+  const strhBug = 'kWX, 30, 1, Inst::kIdSturh }';
+  var data = section('EncodingData');
+  if (!data.contains(strhBug)) throw StateError('strh row changed upstream');
+  data = data.replaceFirst(strhBug, 'kW , 30, 1, Inst::kIdSturh }');
   File('assets/db/a64_encoding_data.txt').writeAsStringSync(
       '// Copied from asmjit/arm/a64instdb.cpp (EncodingData) by '
-      'tool/vendor_a64_instdb.dart; do not edit.\n$data\n');
+      'tool/vendor_a64_instdb.dart; do not edit. The `strh` row only takes\n'
+      '// W registers (an upstream bug, see the tool).\n$data\n');
   stdout.writeln('assets/db/a64_instdb.txt: $count instructions; '
       'assets/db/a64_encoding_data.txt: '
       '${RegExp(r'^const ', multiLine: true).allMatches(data).length} arrays');

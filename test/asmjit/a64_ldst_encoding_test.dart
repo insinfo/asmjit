@@ -76,10 +76,46 @@ void main() {
       });
     });
 
+    test('emitPrologue/emitEpilogue keep the frame record balanced', () {
+      // stp x29, x30, [sp, #-16]!; mov x29, sp; sub sp, sp, #32;
+      // add sp, sp, #32; ldp x29, x30, [sp], #16; ret
+      final code = CodeHolder(env: Environment.aarch64());
+      final a = A64Assembler(code)
+        ..emitPrologue(stackSize: 32)
+        ..emitEpilogue(stackSize: 32);
+      expect(a.offset, 24);
+      final words =
+          ByteData.sublistView(Uint8List.fromList(code.finalize().textBytes));
+      expect(
+          [for (var i = 0; i < 24; i += 4) words.getUint32(i, Endian.little)]
+              .map((w) => w.toRadixString(16)),
+          [
+            'a9bf7bfd',
+            '910003fd',
+            'd10083ff',
+            '910083ff',
+            'a8c17bfd',
+            'd65f03c0'
+          ]);
+    });
+
     test('rejects offsets that cannot be encoded', () {
       expect(() => _word((a) => a.ldrVecUnscaled(A64Vec(0, 128), x1, 256)),
           throwsArgumentError);
       expect(() => _word((a) => a.stp(x29, x30, _sp, 4)), throwsArgumentError);
+    });
+
+    test('strh only takes a W register (upstream encodes x1 as strb)', () {
+      expect(_word((a) => a.strh(w1, x2, 2)), 0x79000441);
+      // Upstream emits 0x39000441 (`strb w1, [x2, #1]`) here.
+      expect(
+          () => _word(
+              (a) => a.emit(A64InstId.kStrh, [x1, A64Mem.baseOffset(x2, 2)])),
+          throwsArgumentError);
+      expect(
+          () => _word(
+              (a) => a.emit(A64InstId.kStrb, [x1, A64Mem.baseOffset(x2, 2)])),
+          throwsArgumentError);
     });
   });
 }

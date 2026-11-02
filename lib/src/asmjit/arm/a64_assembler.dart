@@ -1128,8 +1128,8 @@ class A64Assembler extends BaseEmitter {
 
   /// Emit a standard AAPCS64 prologue.
   void emitPrologue({int stackSize = 0}) {
-    // STP x29, x30, [sp, #-16]!
-    stp(x29, x30, sp, -16);
+    // STP x29, x30, [sp, #-16]! (pre-index: SP moves down by 16).
+    stpPre(x29, x30, sp, -16);
     mov(x29, sp);
     if (stackSize > 0) {
       subImm(sp, sp, stackSize);
@@ -1141,7 +1141,8 @@ class A64Assembler extends BaseEmitter {
     if (stackSize > 0) {
       addImm(sp, sp, stackSize);
     }
-    ldp(x29, x30, sp, 16);
+    // LDP x29, x30, [sp], #16 (post-index: restores SP).
+    ldpPost(x29, x30, sp, 16);
     ret();
   }
 

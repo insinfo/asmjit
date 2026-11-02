@@ -23,7 +23,7 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 | **x86 Assembler (`_emit`)** | ✅ Port fiel de `x86assembler.cpp` dirigido pelas tabelas do `x86instdb` | **17891/17891 goldens do upstream** (x64), 873 formas SIMD idênticas ao LLVM |
 | x86 Encoder GP (ALU) | ✅ ADD/OR/AND/SUB/XOR/CMP/TEST/IMUL e MOV mem,imm respeitam o tamanho (8/16/32/64) | 215 formas idênticas ao LLVM |
 | **A64 Assembler (`_emit`)** | ✅ Port fiel de `a64assembler.cpp` dirigido pelas tabelas do `a64instdb` | **3992/3992 goldens do upstream** |
-| Dispatchers x86/A64 | ✅ Escritos à mão, **fail-loud** (instrução sem bytes = erro) | |
+| Métodos de conveniência x86/A64 | ✅ Todos via `emit()` (port do `_emit`); `X86Encoder`/`A64Encoder` escritos à mão removidos | goldens x86 32 bits **8327/8327** |
 | Bancos de instruções | ✅ Gerados e indexados por id | `inst_db_consistency_test` |
 | **UJIT emit_3v (x86 e A64)** | ✅ Port fiel de `emit_3v` + tabela `opcode_info_3v` do x86; **todas as 179 ops comuns** validadas em runtime com 4 layouts de operandos | `ujit_vvv_ops_test`: SSE2, SSE4.1, host (AVX2 no Windows) e AArch64 |
 | **UJIT emit_2vi (x86 e A64)** | ✅ Port fiel (tabela `opcode_info_2vi`, `emit_swizzle32_impl` + `swizzle_32_data`); imediatos `Swizzle2`/`Swizzle4` como no upstream | `ujit_vvi_ops_test`: os 256 swizzles de 32/16 bits, os 4 de 64 bits e shifts nos limites |
@@ -137,7 +137,7 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - Tabelas: `assets/db/x86_instdb.txt` copia do `x86instdb.cpp` a tabela `INST(...)` mantida à mão no upstream (encoding, opcode principal/alternativo) e os flags da `InstCommonTable` (`tool/vendor_x86_instdb.dart`); o `tool/gen_x86_db.dart` gera `encoding`, `mainOpcode`, `altOpcode`, `dbFlags` e `avx512Flags` em `x86_inst_db.g.dart` (valores `Opcode` das macros `O()/V()/E()/O_FPU()`). `x86_opcode.dart` porta `x86opcode_p.h` e os enums `EncodingId`/`InstFlags`/`Avx512Flags`.
 - `X86Assembler.emit()` e o serializer (compiler/UJIT) usam o encoder portado; `instOptions` e `extraReg` como `inst_options()`/`extra_reg()` do upstream (`X86EmitOptions`: LOCK/REP, `{k}`, `{z}`, `{er}`/`{sae}`, VEX3/EVEX, short/long). O dispatcher x86 escrito à mão (`x86_dispatcher.dart`) foi removido.
 - API: `X86Mem.broadcast` (`X86Broadcast`, `withBroadcast()`), `X86Mem.withSize/withDisplacement` preservam o label, e os registradores do upstream que faltavam (`X86Mm`, `X86St`, `X86Bnd`, `X86SReg`, `X86CReg`, `X86DReg`, `X86Tmm`).
-- Diferenças conhecidas: o `CodeHolder` do port não tem base address, então endereço absoluto que exige relocação AbsToRel (e `jmp/call` para endereço absoluto) dá erro em vez de relocação; o caminho de 32 bits não é usado.
+- Diferenças conhecidas: endereço absoluto que exige relocação AbsToRel (e `jmp/call` para endereço absoluto sem base address) dá erro em vez de relocação.
 - **Goldens x64: 17886/17891** (antes 2674), todos os grupos, inclusive AVX-512; faltam `ptr_abs`, VSIB sem base e broadcast em `[rip]` (API). A tabela SIMD (873 formas LLVM) também bate.
 - Defeitos que o encoder antigo escondia, corrigidos: o UJIT montava a constante vetorial com tamanho de memória (`ymmword` para constantes de 32 bytes); o upstream usa `x86::ptr()` sem tamanho. Com o encoder fiel isso virava `vmovdqa ymm` (VEX.256) e falhava por alinhamento em hosts AVX. O `x86_avx512_test` usava `kAddps` (SSE) com ZMM; agora usa `kVaddps/kVaddpd` com bytes do LLVM.
 - Suítes: arm64 17749, Rosetta 44636, Windows AVX2 44750.
@@ -164,14 +164,23 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - Scripts do port mecânico em `tool/upstream_port/`.
 - Suítes: arm64 17750, Rosetta 44636, Windows AVX2 44750.
 
+### Métodos de conveniência sobre o encoder portado (`82f52a0`, `ca2d060`)
+- x86: todos os métodos públicos do `X86Assembler` (`addRR`, `movRI`, `push`, `jmp/jcc/call` para label, SSE/AVX/AVX-512) montam operandos e chamam `emit()`. Saltos usam a seleção short/near do upstream; `mov` com imediato, a seleção `mov`/`movabs`; instruções de string, `rep(zcx)` com `ptr_zdi/ptr_zsi`. `X86Encoder` (`x86_encoder.dart`) e `x86_simd_ops.dart` removidos; `X86Cond` foi para `x86_cond.dart`.
+- O tradutor assumia modo 64 bits (`is_32bit()` traduzido como `false`); agora `is_32bit/is_64bit/register_size/_address_override_mask` dependem da arquitetura. **Goldens x86 (32 bits) do upstream: 8327/8327.**
+- A64: todos os métodos do `A64Assembler` chamam `emit()` com os ids do upstream (aliases `cset`, `cinc`, `mvn`, `neg`, `sxtb`, `lsl #imm`, `bfi`...); `movImm64` é `mov(rd, imm)`; LDUR é escolhido para offsets não escalados como no upstream. O `A64Encoder` à mão foi removido (ficaram só os codificadores estáticos de imediato).
+- O encoder antigo emitia instruções erradas para `adc/adcs/sbc/sbcs/ngc/ngcs` (opcodes de CSEL/CSINV), `rev16/rev32`, `ld1r`, `smull/umull/smlal/umlal`, `scvtf/ucvtf/fcvtzs/fcvtzu` vetoriais e outras; os testes que fixavam esses bytes foram corrigidos (LLVM).
+- Expectativas trocadas só onde o upstream emite outra codificação válida: `mov r64, imm pequeno` (`48 C7 C0`, `B8` sob `kOptimizeForSize`), `mulx` (VEX.X limpo), `ldr q0, [x1, #8]` como LDUR.
+- `emitPrologue/emitEpilogue` do A64 usavam `stp x29, x30, [sp]` sem writeback e `ldp [sp, #16]`, corrompendo o frame record; agora `stp ..., [sp, #-16]!` e `ldp ..., [sp], #16` (bytes do LLVM no `a64_ldst_encoding_test`).
+- **Bug do upstream provado** (executando o asmjit C++ arm64): a linha `strh` do `EncodingData` aceita registrador X (`kWX`, bit 30), e `strh(x1, ptr(x2, 2))` emite `0x39000441` = `strb w1, [x2, #1]` (store do tamanho errado, em silêncio). O LLVM rejeita `strh x1`, e o próprio upstream rejeita `strb x1`, `ldrh x1` e `sturh x1` (todos `kW`). Desvio aplicado em `tool/vendor_a64_instdb.dart` (linha passa a `kW`, falha se a linha mudar no upstream); teste no `a64_ldst_encoding_test`.
+
 ### Próximos passos
-1. Relocação AbsToRel (endereço absoluto sem base address conhecido) no `CodeHolder`.
-2. Reescrever os métodos de conveniência do `X86Assembler`/`A64Assembler` sobre `emit()` e remover os encoders escritos à mão.
-2. Reescrever os métodos de conveniência do `X86Assembler` (`addRR`, `movRI`...) sobre `emit()` e remover o `X86Encoder` escrito à mão.
+1. Relocação AbsToRel/RelToAbs (endereço absoluto sem base address conhecido; `[LABEL|RIP]` em 32 bits) no `CodeHolder`.
+2. `emit_2vs` (UniOpVR) no lugar de `emitCV`.
 3. Portar `asmjit_test_unicompiler*.cpp` e os testes do compiler.
-4. `emit_2vs` (UniOpVR) no lugar de `emitCV`.
-3. Avaliar acesso de outros operandos além do 0 (xadd/cmpxchg) a partir do banco.
-4. AVX-512/EVEX, validado no runner linux-x64 do CI (tem AVX-512F).
+4. Acesso de outros operandos além do 0 (xadd/cmpxchg) a partir do banco.
+5. AVX-512/EVEX no UJIT, validado no runner linux-x64 do CI (tem AVX-512F).
+
+---
 
 ## ✅ Progresso Recente (02/11/2026 - RA multiarquitetura, UJIT A64, x86 SIMD)
 
