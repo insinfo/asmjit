@@ -1400,7 +1400,20 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     } else {
       final m = _getMemConst(c);
       if (isX86Family) {
-        _vLoadAX86(vec, m as X86Mem);
+        // As upstream `_new_vec_const()`: the table holds 128-bit lanes, which
+        // 256/512-bit constants broadcast.
+        final x86 = this as UniCompilerX86;
+        final isVec128 = vec is X86Xmm;
+        if (hasAvx512 && !isVec128 && !isUnique) {
+          cc.addNode(InstNode(X86InstId.kVbroadcasti32x4, [vec, m]));
+        } else if (hasAvx2 && vec is X86Ymm && !isUnique) {
+          cc.addNode(InstNode(X86InstId.kVbroadcasti128, [vec, m]));
+        } else if (hasAvx512) {
+          // EVEX prefix has a compressed displacement, which is smaller.
+          cc.addNode(InstNode(X86InstId.kVmovdqa32, [vec, m]));
+        } else {
+          x86._vLoadAX86(vec, m as X86Mem);
+        }
       } else if (isArm64) {
         (this as UniCompilerA64)._vLoadAA64(vec as A64Vec, m as A64Mem);
       }
