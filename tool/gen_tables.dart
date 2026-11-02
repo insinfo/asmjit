@@ -13,6 +13,7 @@
 import 'dart:async';
 
 import 'gen_a64_db.dart' as a64;
+import 'gen_a64_encoder.dart' as a64enc;
 import 'gen_x86_db.dart' as x86;
 import 'gen_enum.dart' as enumgen;
 
@@ -25,6 +26,9 @@ Future<void> main(List<String> args) async {
   print('=== Running all table generators (Dart port) ===');
   await x86.generateX86Db(jsonPath: x86Json);
   await a64.generateA64Db(jsonPath: a64Json);
+  a64enc.generateA64Encoder(
+      instdbPath: '$dbDir/a64_instdb.txt',
+      dataPath: '$dbDir/a64_encoding_data.txt');
   if (enumHeader != null) {
     final out = 'tool/generated_enum.g.dart';
     print('Enumgen: $enumHeader -> $out');
