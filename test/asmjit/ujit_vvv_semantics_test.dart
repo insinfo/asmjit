@@ -22,7 +22,8 @@ final Object _skip = _host == Arch.x64 || _host == Arch.aarch64
     ? false
     : 'requires an x86-64 or AArch64 host';
 
-Uint8List _run(UniOpVVV op, Uint8List a, Uint8List b, {bool sameSrc = false}) {
+Uint8List _run(UniOpVVV op, Uint8List a, Uint8List b,
+    {bool sameSrc = false, CpuFeatures? features}) {
   final rt = JitRuntime();
   try {
     final code = CodeHolder(env: rt.environment);
@@ -30,7 +31,7 @@ Uint8List _run(UniOpVVV op, Uint8List a, Uint8List b, {bool sameSrc = false}) {
     final BaseCompiler archCc = isA64
         ? A64Compiler(env: code.env, labelManager: code.labelManager)
         : X86Compiler(env: code.env, labelManager: code.labelManager);
-    final cc = UniCompiler(archCc);
+    final cc = UniCompiler(archCc, features: features);
     BaseMem mem(BaseReg p, int off) => p is A64Gp
         ? A64Mem.baseOffset(p, off)
         : X86Mem.baseDisp(p as X86Gp, off);
@@ -133,57 +134,11 @@ int _mask(bool c, int bytes) =>
 
 Uint8List _bytes(List<int> v) => Uint8List.fromList(v);
 
-/// Ops whose x86 lowering is known to be wrong or not dispatchable yet
-/// (missing dispatcher cases / wrong instruction selection). Tracked in
-/// roteiro_novo.md; remove entries as the x86 backend gets fixed.
-final _knownBrokenOnX86 = <UniOpVVV>{
-  UniOpVVV.addF32,
-  UniOpVVV.addsI16,
-  UniOpVVV.addsI8,
-  UniOpVVV.addsU8,
-  UniOpVVV.andnU64,
-  UniOpVVV.avgrU16,
-  UniOpVVV.avgrU8,
-  UniOpVVV.bicU32,
-  UniOpVVV.cmpEqF32,
-  UniOpVVV.cmpEqU8,
-  UniOpVVV.cmpGeF32,
-  UniOpVVV.cmpGeU16,
-  UniOpVVV.cmpGtI32,
-  UniOpVVV.cmpGtI8,
-  UniOpVVV.cmpGtU8,
-  UniOpVVV.cmpLeU32,
-  UniOpVVV.cmpLtF32,
-  UniOpVVV.cmpLtI16,
-  UniOpVVV.cmpNeF32,
-  UniOpVVV.combineLoHiU64,
-  UniOpVVV.interleaveHiU16,
-  UniOpVVV.interleaveLoU32,
-  UniOpVVV.interleaveLoU64,
-  UniOpVVV.maxI32,
-  UniOpVVV.maxI64,
-  UniOpVVV.maxU16,
-  UniOpVVV.maxU32,
-  UniOpVVV.maxU64,
-  UniOpVVV.minI16,
-  UniOpVVV.minI32,
-  UniOpVVV.minI64,
-  UniOpVVV.minI8,
-  UniOpVVV.minU32,
-  UniOpVVV.minU64,
-  UniOpVVV.minU8,
-  UniOpVVV.mulU32,
-  UniOpVVV.packsI16I8,
-  UniOpVVV.packsI32I16,
-  UniOpVVV.subU64,
-  UniOpVVV.subsI16,
-  UniOpVVV.subsU8,
+/// x86 lowering variants: SSE2 baseline (no features) and the host CPU.
+final _featureSets = <String, CpuFeatures?>{
+  'baseline': null,
+  if (_host == Arch.x64) 'host': CpuInfo.host().features,
 };
-
-Object _skipFor(UniOpVVV op) =>
-    _host == Arch.x64 && _knownBrokenOnX86.contains(op)
-        ? 'known broken on x86 (see _knownBrokenOnX86)'
-        : false;
 
 void main() {
   // Inputs chosen to exercise signedness, saturation and overflow.
@@ -286,25 +241,29 @@ void main() {
     UniOpVVV.cmpGeF32: _f32Mask((x, y) => x >= y),
   };
 
-  group('UniOpVVV semantics', () {
-    intCases.forEach((op, ref) {
-      test(op.name, () {
-        expect(_run(op, ia, ib), ref(ia, ib));
-      }, skip: _skipFor(op));
-    });
-    fpCases.forEach((op, ref) {
-      test(op.name, () {
-        expect(_run(op, fa, fb), ref(fa, fb));
-      }, skip: _skipFor(op));
-    });
-    test('same source register shortcuts',
-        skip: _host == Arch.x64 ? 'known broken on x86' : false, () {
-      final ones = Uint8List(16)..fillRange(0, 16, 0xFF);
-      expect(_run(UniOpVVV.xorU32, ia, ib, sameSrc: true), Uint8List(16));
-      expect(_run(UniOpVVV.subU32, ia, ib, sameSrc: true), Uint8List(16));
-      expect(_run(UniOpVVV.cmpEqU32, ia, ib, sameSrc: true), ones);
-      expect(_run(UniOpVVV.andU32, ia, ib, sameSrc: true), ia);
-      expect(_run(UniOpVVV.minI32, ia, ib, sameSrc: true), ia);
-    });
-  }, skip: _skip);
+  for (final fs in _featureSets.entries) {
+    group('UniOpVVV semantics (${fs.key})', () {
+      final f = fs.value;
+      intCases.forEach((op, ref) {
+        test(op.name, () {
+          expect(_run(op, ia, ib, features: f), ref(ia, ib));
+        });
+      });
+      fpCases.forEach((op, ref) {
+        test(op.name, () {
+          expect(_run(op, fa, fb, features: f), ref(fa, fb));
+        });
+      });
+      test('same source register shortcuts', () {
+        final ones = Uint8List(16)..fillRange(0, 16, 0xFF);
+        Uint8List same(UniOpVVV op) =>
+            _run(op, ia, ib, sameSrc: true, features: f);
+        expect(same(UniOpVVV.xorU32), Uint8List(16));
+        expect(same(UniOpVVV.subU32), Uint8List(16));
+        expect(same(UniOpVVV.cmpEqU32), ones);
+        expect(same(UniOpVVV.andU32), ia);
+        expect(same(UniOpVVV.minI32), ia);
+      });
+    }, skip: _skip);
+  }
 }

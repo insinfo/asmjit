@@ -10,7 +10,9 @@ void main() {
       code = CodeHolder(env: Environment.x64Windows());
       final compiler =
           X86Compiler(env: code.env, labelManager: code.labelManager);
-      cc = UniCompiler(compiler);
+      // The cases below use SSE4.1 ops (pmulld, pminsd, ...).
+      cc = UniCompiler(compiler,
+          features: CpuFeatures(sse3: true, ssse3: true, sse41: true));
       cc.addFunc(FuncSignature.noArgs(cc: CallConvId.x64Windows));
     });
 

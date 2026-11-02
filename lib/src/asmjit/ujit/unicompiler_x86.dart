@@ -186,25 +186,31 @@ mixin UniCompilerX86 on UniCompilerBase {
     }
   }
 
+  /// `dst = ~a & b` (PANDN semantics, UniOpVVV.andn*).
   void _vAndNotX86(BaseReg dst, BaseReg a, Operand b) {
     if (hasAvx) {
-      cc.addNode(InstNode(X86InstId.kVpandn, [dst, b, a]));
+      cc.addNode(InstNode(X86InstId.kVpandn, [dst, a, b]));
     } else {
-      // ANDN in SSE: dst = (not b) & a ? No, PANDN dst, src -> dst = (not dst) & src
-      // Op: dst = b & ~a (Wait, pandn dest, src is dest = ~dest & src)
-      // UniOp AndNot(dst, a, b) => dst = a & ~b ? Or ~a & b?
-      // Convention: vAndNot(dst, a, b) -> dst = a & ~b (usually)
-      // AsmJit: fn(a, b) -> andn(a, b) usually targets ~a & b in PANDN semantics.
-      // VPANDN dest, src1, src2 -> dest = ~src1 & src2.
-      // So UniOpVVVV.andn implies: ~src1 & src2.
-      // _vAndNotX86(dst, a, b) passed map: a=src1, b=src2.
-      // So dst = ~a & b.
-      // SSE PANDN dst, src -> dst = ~dst & src.
-      // We need dst = ~a & b.
-      // So ensure dst holds 'a'.
-      // Then PANDN dst, b.
+      // PANDN dst, src computes dst = ~dst & src.
       if (dst.id != a.id) _vMovX86(dst, a);
       cc.addNode(InstNode(X86InstId.kPandn, [dst, b]));
+    }
+  }
+
+  /// `dst = a & ~b` (UniOpVVV.bic*), i.e. andn with swapped sources.
+  void _vBicX86(BaseReg dst, BaseReg a, Operand b) {
+    final bReg = b is BaseReg ? b : newVecWithWidth(VecWidth.k128, '@bic');
+    if (b is! BaseReg) _vMovX86(bReg, b);
+    if (hasAvx) {
+      cc.addNode(InstNode(X86InstId.kVpandn, [dst, bReg, a]));
+    } else if (dst.id == a.id) {
+      final tmp = newVecWithWidth(VecWidth.k128, '@bic');
+      _vMovX86(tmp, bReg);
+      cc.addNode(InstNode(X86InstId.kPandn, [tmp, a]));
+      _vMovX86(dst, tmp);
+    } else {
+      if (dst.id != bReg.id) _vMovX86(dst, bReg);
+      cc.addNode(InstNode(X86InstId.kPandn, [dst, a]));
     }
   }
 
@@ -431,15 +437,26 @@ mixin UniCompilerX86 on UniCompilerBase {
     } else if (hasSse41) {
       if (dst.id != src1.id) _vMovX86(dst, src1);
       cc.addNode(InstNode(X86InstId.kPblendw, [dst, src2, Imm(imm)]));
+    } else {
+      throw _requiresX86('pblendw', 'SSE4.1');
     }
   }
 
   void _vBlendVX86(BaseReg dst, BaseReg src1, Operand src2, BaseReg mask) {
     if (hasAvx) {
       cc.addNode(InstNode(X86InstId.kVpblendvb, [dst, src1, src2, mask]));
-    } else if (hasSse41) {
-      if (dst.id != src1.id) _vMovX86(dst, src1);
-      cc.addNode(InstNode(X86InstId.kPblendvb, [dst, src2]));
+    } else {
+      // PBLENDVB (SSE4.1) takes its mask implicitly in XMM0, which the
+      // register allocator cannot pin, so use the SSE2 bitwise select:
+      // dst = (src1 & ~mask) | (src2 & mask).
+      final tmp = newVecWithWidth(VecWidth.k128, '@blend');
+      _vMovX86(tmp, mask);
+      cc.addNode(InstNode(X86InstId.kPand, [tmp, src2]));
+      final notMask = newVecWithWidth(VecWidth.k128, '@nmask');
+      _vMovX86(notMask, mask);
+      cc.addNode(InstNode(X86InstId.kPandn, [notMask, src1]));
+      cc.addNode(InstNode(X86InstId.kPor, [tmp, notMask]));
+      _vMovX86(dst, tmp);
     }
   }
 
@@ -754,6 +771,8 @@ mixin UniCompilerX86 on UniCompilerBase {
         } else if (hasSsse3) {
           if (dst != src) _vMovX86(dst, src);
           cc.addNode(InstNode(X86InstId.kPabsb, [dst, dst]));
+        } else {
+          throw _requiresX86(op, 'SSSE3');
         }
         break;
       case UniOpVV.absI16:
@@ -762,6 +781,8 @@ mixin UniCompilerX86 on UniCompilerBase {
         } else if (hasSsse3) {
           if (dst != src) _vMovX86(dst, src);
           cc.addNode(InstNode(X86InstId.kPabsw, [dst, dst]));
+        } else {
+          throw _requiresX86(op, 'SSSE3');
         }
         break;
       case UniOpVV.absI32:
@@ -770,6 +791,8 @@ mixin UniCompilerX86 on UniCompilerBase {
         } else if (hasSsse3) {
           if (dst != src) _vMovX86(dst, src);
           cc.addNode(InstNode(X86InstId.kPabsd, [dst, dst]));
+        } else {
+          throw _requiresX86(op, 'SSSE3');
         }
         break;
       case UniOpVV.notU32:
@@ -797,6 +820,8 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVpmovsxbw, [dst, src]));
         } else if (hasSse41) {
           cc.addNode(InstNode(X86InstId.kPmovsxbw, [dst, src]));
+        } else {
+          throw _requiresX86(op, 'SSE4.1');
         }
         break;
       case UniOpVV.cvtU16LoToU32:
@@ -814,6 +839,8 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVpmovsxwd, [dst, src]));
         } else if (hasSse41) {
           cc.addNode(InstNode(X86InstId.kPmovsxwd, [dst, src]));
+        } else {
+          throw _requiresX86(op, 'SSE4.1');
         }
         break;
       case UniOpVV.cvtU32LoToU64:
@@ -831,6 +858,8 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVpmovsxdq, [dst, src]));
         } else if (hasSse41) {
           cc.addNode(InstNode(X86InstId.kPmovsxdq, [dst, src]));
+        } else {
+          throw _requiresX86(op, 'SSE4.1');
         }
         break;
       case UniOpVV.sqrtF32:
@@ -874,6 +903,8 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVroundps, [dst, src, Imm(3)]));
         } else if (hasSse41) {
           cc.addNode(InstNode(X86InstId.kRoundps, [dst, src, Imm(3)]));
+        } else {
+          throw _requiresX86(op, 'SSE4.1');
         }
         break;
       case UniOpVV.truncF64:
@@ -881,6 +912,8 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVroundpd, [dst, src, Imm(3)]));
         } else if (hasSse41) {
           cc.addNode(InstNode(X86InstId.kRoundpd, [dst, src, Imm(3)]));
+        } else {
+          throw _requiresX86(op, 'SSE4.1');
         }
         break;
       case UniOpVV.floorF32:
@@ -888,6 +921,8 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVroundps, [dst, src, Imm(1)]));
         } else if (hasSse41) {
           cc.addNode(InstNode(X86InstId.kRoundps, [dst, src, Imm(1)]));
+        } else {
+          throw _requiresX86(op, 'SSE4.1');
         }
         break;
       case UniOpVV.floorF64:
@@ -895,6 +930,8 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVroundpd, [dst, src, Imm(1)]));
         } else if (hasSse41) {
           cc.addNode(InstNode(X86InstId.kRoundpd, [dst, src, Imm(1)]));
+        } else {
+          throw _requiresX86(op, 'SSE4.1');
         }
         break;
       case UniOpVV.ceilF32:
@@ -902,6 +939,8 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVroundps, [dst, src, Imm(2)]));
         } else if (hasSse41) {
           cc.addNode(InstNode(X86InstId.kRoundps, [dst, src, Imm(2)]));
+        } else {
+          throw _requiresX86(op, 'SSE4.1');
         }
         break;
       case UniOpVV.ceilF64:
@@ -909,6 +948,8 @@ mixin UniCompilerX86 on UniCompilerBase {
           cc.addNode(InstNode(X86InstId.kVroundpd, [dst, src, Imm(2)]));
         } else if (hasSse41) {
           cc.addNode(InstNode(X86InstId.kRoundpd, [dst, src, Imm(2)]));
+        } else {
+          throw _requiresX86(op, 'SSE4.1');
         }
         break;
       case UniOpVV.negF32:
@@ -967,10 +1008,224 @@ mixin UniCompilerX86 on UniCompilerBase {
     }
   }
 
+  // ===========================================================================
+  // SSE2 sequences for ops without a native instruction on the target
+  // (ported from the sse_* helpers in unicompiler_x86.cpp).
+  // ===========================================================================
+
+  static final Map<int, int> _vexIdCache = {};
+
+  /// VEX counterpart of a legacy SSE instruction (`paddq` -> `vpaddq`).
+  int _vexIdX86(int legacyId) => _vexIdCache.putIfAbsent(legacyId, () {
+        final name = 'v${kX86InstDb[legacyId].name}';
+        return kX86InstDb.firstWhere((i) => i.name == name).id;
+      });
+
+  /// `dst = op(dst, src)`: legacy 2-operand form, or the VEX form with dst
+  /// as both destination and first source.
+  void _sseOpX86(int legacyId, BaseReg dst, Operand src) {
+    if (hasAvx) {
+      cc.addNode(InstNode(_vexIdX86(legacyId), [dst, dst, src]));
+    } else {
+      cc.addNode(InstNode(legacyId, [dst, src]));
+    }
+  }
+
+  void _sseShiftImmX86(int legacyId, BaseReg dst, int imm) {
+    if (hasAvx) {
+      cc.addNode(InstNode(_vexIdX86(legacyId), [dst, dst, Imm(imm)]));
+    } else {
+      cc.addNode(InstNode(legacyId, [dst, Imm(imm)]));
+    }
+  }
+
+  BaseReg _tmpVecX86() => newVecWithWidth(VecWidth.k128, '@tmp');
+
+  BaseReg _copyVecX86(Operand src) {
+    final t = _tmpVecX86();
+    _vMovX86(t, src);
+    return t;
+  }
+
+  /// All bits set.
+  BaseReg _onesX86() {
+    final t = _tmpVecX86();
+    _sseOpX86(X86InstId.kPcmpeqd, t, t);
+    return t;
+  }
+
+  /// Sign bit of every element of size `8 << el` bits.
+  BaseReg _signMaskX86(int el) {
+    final t = _onesX86();
+    switch (el) {
+      case 0: // 0xFF80 per word, saturating pack -> 0x80 per byte.
+        _sseShiftImmX86(X86InstId.kPsllw, t, 7);
+        _sseOpX86(X86InstId.kPacksswb, t, t);
+      case 1:
+        _sseShiftImmX86(X86InstId.kPsllw, t, 15);
+      case 2:
+        _sseShiftImmX86(X86InstId.kPslld, t, 31);
+      default:
+        _sseShiftImmX86(X86InstId.kPsllq, t, 63);
+    }
+    return t;
+  }
+
+  /// Signed `a > b` per element; returns a new register.
+  BaseReg _cmpGtSignedX86(Operand a, Operand b, int el) {
+    if (el < 3) {
+      final r = _copyVecX86(a);
+      _sseOpX86(
+          [X86InstId.kPcmpgtb, X86InstId.kPcmpgtw, X86InstId.kPcmpgtd][el],
+          r,
+          b);
+      return r;
+    }
+    if (hasSse42 || hasAvx) {
+      final r = _copyVecX86(a);
+      _sseOpX86(X86InstId.kPcmpgtq, r, b);
+      return r;
+    }
+    // hi(a) > hi(b) || (hi(a) == hi(b) && lo(a) >u lo(b)), then broadcast
+    // the high dword of each qword.
+    final t1 = _copyVecX86(a);
+    final t2 = _copyVecX86(b);
+    _sseOpX86(X86InstId.kPcmpeqd, t1, t2);
+    _sseOpX86(X86InstId.kPsubq, t2, a);
+    _sseOpX86(X86InstId.kPand, t1, t2);
+    final r = _copyVecX86(a);
+    _sseOpX86(X86InstId.kPcmpgtd, r, b);
+    _sseOpX86(X86InstId.kPor, r, t1);
+    final out = _tmpVecX86();
+    cc.addNode(InstNode(
+        hasAvx ? X86InstId.kVpshufd : X86InstId.kPshufd, [out, r, Imm(0xF5)]));
+    return out;
+  }
+
+  /// Unsigned `a > b` per element: flip the sign bits, compare signed.
+  BaseReg _cmpGtUnsignedX86(Operand a, Operand b, int el) {
+    final m = _signMaskX86(el);
+    final fa = _copyVecX86(a);
+    _sseOpX86(X86InstId.kPxor, fa, m);
+    final fb = _copyVecX86(b);
+    _sseOpX86(X86InstId.kPxor, fb, m);
+    return _cmpGtSignedX86(fa, fb, el);
+  }
+
+  BaseReg _cmpGtX86(Operand a, Operand b, int el, bool signed) =>
+      signed ? _cmpGtSignedX86(a, b, el) : _cmpGtUnsignedX86(a, b, el);
+
+  BaseReg _notX86(BaseReg v) {
+    _sseOpX86(X86InstId.kPxor, v, _onesX86());
+    return v;
+  }
+
+  /// `dst = mask ? y : x` (bitwise).
+  void _selectX86(BaseReg dst, Operand x, Operand y, BaseReg mask) {
+    final hi = _copyVecX86(y);
+    _sseOpX86(X86InstId.kPand, hi, mask);
+    final lo = _copyVecX86(mask);
+    _sseOpX86(X86InstId.kPandn, lo, x);
+    _sseOpX86(X86InstId.kPor, hi, lo);
+    _vMovX86(dst, hi);
+  }
+
+  /// Integer compare/min/max (and a few others) that have no native
+  /// instruction for the enabled features. Returns false when the regular
+  /// lowering in [_emit3vX86] should be used.
+  bool _emit3vEmulatedX86(
+      UniOpVVV op, BaseReg dst, BaseReg src1, Operand src2) {
+    final name = op.name;
+    final cmp =
+        RegExp(r'^cmp(Gt|Ge|Lt|Le)([IU])(8|16|32|64)$').firstMatch(name);
+    if (cmp != null) {
+      final kind = cmp.group(1)!;
+      final signed = cmp.group(2) == 'I';
+      final el = const {'8': 0, '16': 1, '32': 2, '64': 3}[cmp.group(3)]!;
+      // Native signed > for 8/16/32 is handled by the regular lowering.
+      if (kind == 'Gt' && signed && el < 3) return false;
+      final BaseReg r = switch (kind) {
+        'Gt' => _cmpGtX86(src1, src2, el, signed),
+        'Lt' => _cmpGtX86(src2, src1, el, signed),
+        'Ge' => _notX86(_cmpGtX86(src2, src1, el, signed)),
+        _ => _notX86(_cmpGtX86(src1, src2, el, signed)),
+      };
+      _vMovX86(dst, r);
+      return true;
+    }
+
+    if (name == 'cmpEqU64' && !hasSse41 && !hasAvx) {
+      // 32-bit equality of both halves.
+      final r = _copyVecX86(src1);
+      _sseOpX86(X86InstId.kPcmpeqd, r, src2);
+      final t = _tmpVecX86();
+      cc.addNode(InstNode(X86InstId.kPshufd, [t, r, Imm(0xB1)]));
+      _sseOpX86(X86InstId.kPand, r, t);
+      _vMovX86(dst, r);
+      return true;
+    }
+
+    final mm = RegExp(r'^(min|max)([IU])(8|16|32|64)$').firstMatch(name);
+    if (mm != null) {
+      final isMin = mm.group(1) == 'min';
+      final signed = mm.group(2) == 'I';
+      final el = const {'8': 0, '16': 1, '32': 2, '64': 3}[mm.group(3)]!;
+      // SSE2 has pminub/pmaxub and pminsw/pmaxsw; SSE4.1 (or AVX) covers the
+      // remaining 8/16/32-bit forms natively.
+      final sse2Native = (el == 0 && !signed) || (el == 1 && signed);
+      if (el < 3 && (sse2Native || hasSse41 || hasAvx)) return false;
+      final gt = _cmpGtX86(src1, src2, el, signed); // a > b
+      // min: a > b ? b : a ; max: a > b ? a : b
+      if (isMin) {
+        _selectX86(dst, src1, src2, gt);
+      } else {
+        _selectX86(dst, src2, src1, gt);
+      }
+      return true;
+    }
+
+    if (op == UniOpVVV.mulU32 && !hasSse41 && !hasAvx) {
+      // pmuludq multiplies the even dwords; do even and odd lanes and merge.
+      final even = _copyVecX86(src1);
+      _sseOpX86(X86InstId.kPmuludq, even, src2);
+      final a1 = _tmpVecX86();
+      cc.addNode(InstNode(X86InstId.kPshufd, [a1, src1, Imm(0xF5)]));
+      final b1 = _tmpVecX86();
+      cc.addNode(InstNode(X86InstId.kPshufd, [b1, src2, Imm(0xF5)]));
+      _sseOpX86(X86InstId.kPmuludq, a1, b1);
+      cc.addNode(InstNode(X86InstId.kPshufd, [even, even, Imm(0x08)]));
+      cc.addNode(InstNode(X86InstId.kPshufd, [a1, a1, Imm(0x08)]));
+      _sseOpX86(X86InstId.kPunpckldq, even, a1);
+      _vMovX86(dst, even);
+      return true;
+    }
+
+    if (op == UniOpVVV.combineLoHiU64 || op == UniOpVVV.combineLoHiF64) {
+      // dst = {src2.u64[1], src1.u64[0]} (low, high).
+      final r = _copyVecX86(src2);
+      if (hasAvx) {
+        cc.addNode(InstNode(X86InstId.kVshufpd, [r, r, src1, Imm(1)]));
+      } else {
+        cc.addNode(InstNode(X86InstId.kShufpd, [r, src1, Imm(1)]));
+      }
+      _vMovX86(dst, r);
+      return true;
+    }
+
+    return false;
+  }
+
+  /// Error for an operation whose x86 lowering needs a CPU extension that is
+  /// not enabled in the compiler's [CpuFeatures] (no SSE2 fallback yet).
+  UnsupportedError _requiresX86(Object op, String ext) => UnsupportedError(
+      'UniCompiler x86: $op requires $ext, which is not enabled in the '
+      'CpuFeatures given to UniCompiler');
+
   void _emit3vX86(UniOpVVV op, Operand dst, Operand src1, Operand src2) {
     if (dst is! BaseReg || src1 is! BaseReg) {
       throw ArgumentError('SIMD operands must be registers');
     }
+    if (_emit3vEmulatedX86(op, dst, src1, src2)) return;
     switch (op) {
       case UniOpVVV.andU32:
       case UniOpVVV.andU64:
@@ -1088,7 +1343,7 @@ mixin UniCompilerX86 on UniCompilerBase {
         break;
       case UniOpVVV.bicU32:
       case UniOpVVV.bicU64:
-        _vAndNotX86(dst, src1, src2);
+        _vBicX86(dst, src1, src2);
         break;
       case UniOpVVV.avgrU8:
         if (hasAvx) {
@@ -1121,6 +1376,8 @@ mixin UniCompilerX86 on UniCompilerBase {
         } else if (hasSse41) {
           if (dst.id != src1.id) _vMovX86(dst, src1);
           cc.addNode(InstNode(X86InstId.kPmulld, [dst, src2]));
+        } else {
+          throw _requiresX86(op, 'SSE4.1');
         }
         break;
       case UniOpVVV.cmpEqU8:
@@ -1162,6 +1419,8 @@ mixin UniCompilerX86 on UniCompilerBase {
         } else if (hasSse41) {
           if (dst.id != src1.id) _vMovX86(dst, src1);
           cc.addNode(InstNode(X86InstId.kPminsb, [dst, src2]));
+        } else {
+          throw _requiresX86(op, 'SSE4.1');
         }
         break;
       case UniOpVVV.minU8:
@@ -1186,6 +1445,8 @@ mixin UniCompilerX86 on UniCompilerBase {
         } else if (hasSse41) {
           if (dst.id != src1.id) _vMovX86(dst, src1);
           cc.addNode(InstNode(X86InstId.kPminuw, [dst, src2]));
+        } else {
+          throw _requiresX86(op, 'SSE4.1');
         }
         break;
       case UniOpVVV.maxI8:
@@ -1194,6 +1455,8 @@ mixin UniCompilerX86 on UniCompilerBase {
         } else if (hasSse41) {
           if (dst.id != src1.id) _vMovX86(dst, src1);
           cc.addNode(InstNode(X86InstId.kPmaxsb, [dst, src2]));
+        } else {
+          throw _requiresX86(op, 'SSE4.1');
         }
         break;
       case UniOpVVV.maxU8:
@@ -1218,6 +1481,8 @@ mixin UniCompilerX86 on UniCompilerBase {
         } else if (hasSse41) {
           if (dst.id != src1.id) _vMovX86(dst, src1);
           cc.addNode(InstNode(X86InstId.kPmaxuw, [dst, src2]));
+        } else {
+          throw _requiresX86(op, 'SSE4.1');
         }
         break;
       case UniOpVVV.minI32:
@@ -1226,6 +1491,8 @@ mixin UniCompilerX86 on UniCompilerBase {
         } else if (hasSse41) {
           if (dst.id != src1.id) _vMovX86(dst, src1);
           cc.addNode(InstNode(X86InstId.kPminsd, [dst, src2]));
+        } else {
+          throw _requiresX86(op, 'SSE4.1');
         }
         break;
       case UniOpVVV.minU32:
@@ -1234,6 +1501,8 @@ mixin UniCompilerX86 on UniCompilerBase {
         } else if (hasSse41) {
           if (dst.id != src1.id) _vMovX86(dst, src1);
           cc.addNode(InstNode(X86InstId.kPminud, [dst, src2]));
+        } else {
+          throw _requiresX86(op, 'SSE4.1');
         }
         break;
       case UniOpVVV.maxI32:
@@ -1242,6 +1511,8 @@ mixin UniCompilerX86 on UniCompilerBase {
         } else if (hasSse41) {
           if (dst.id != src1.id) _vMovX86(dst, src1);
           cc.addNode(InstNode(X86InstId.kPmaxsd, [dst, src2]));
+        } else {
+          throw _requiresX86(op, 'SSE4.1');
         }
         break;
       case UniOpVVV.maxU32:
@@ -1250,6 +1521,8 @@ mixin UniCompilerX86 on UniCompilerBase {
         } else if (hasSse41) {
           if (dst.id != src1.id) _vMovX86(dst, src1);
           cc.addNode(InstNode(X86InstId.kPmaxud, [dst, src2]));
+        } else {
+          throw _requiresX86(op, 'SSE4.1');
         }
         break;
       case UniOpVVV.packsI16I8:
@@ -1704,6 +1977,8 @@ mixin UniCompilerX86 on UniCompilerBase {
         } else if (hasSsse3) {
           if (dst != src) _vMovX86(dst, src);
           cc.addNode(InstNode(X86InstId.kPshufb, [dst, Imm(imm)]));
+        } else {
+          throw _requiresX86(op, 'SSSE3');
         }
         break;
       case UniOpVVI.swizzleU32x4:
@@ -1730,6 +2005,8 @@ mixin UniCompilerX86 on UniCompilerBase {
             _vMovX86(dst, src1);
           }
           cc.addNode(InstNode(X86InstId.kPalignr, [dst, src2, Imm(imm)]));
+        } else {
+          throw _requiresX86(op, 'SSSE3');
         }
         break;
       default:
