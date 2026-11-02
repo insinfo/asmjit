@@ -113,6 +113,24 @@ mixin UniCompilerA64 on UniCompilerBase {
       return;
     }
 
+    // loadInsert*: load one element and insert it into lane [idx].
+    final ins = const {
+      UniOpVM.loadInsertU8: 0,
+      UniOpVM.loadInsertU16: 1,
+      UniOpVM.loadInsertU32: 2,
+      UniOpVM.loadInsertF32: 2,
+      UniOpVM.loadInsertU64: 3,
+      UniOpVM.loadInsertF64: 3,
+      UniOpVM.loadInsertF32x2: 3,
+    }[op];
+    if (ins != null) {
+      final tmp = newVecWithWidth(VecWidth.k128, '@ins');
+      cc.addNode(InstNode(A64InstId.kLdr, [_vecView(tmp, 8 << ins), src]));
+      cc.addNode(InstNode(A64InstId.kMov,
+          [_vArr(dst, ins), Imm(idx), _vArr(tmp, ins), Imm(0)]));
+      return;
+    }
+
     switch (op) {
       case UniOpVM.loadDup16:
         cc.addNode(
@@ -136,6 +154,23 @@ mixin UniCompilerA64 on UniCompilerBase {
     if (!src.isVec) {
       throw ArgumentError('_emitMVA64 expects a vector source: $src');
     }
+    // storeExtract*: store lane [idx] (moved to lane 0 of a temporary first).
+    final ext = const {
+      UniOpMV.storeExtractU16: 1,
+      UniOpMV.storeExtractU32: 2,
+      UniOpMV.storeExtractU64: 3,
+    }[op];
+    if (ext != null) {
+      var from = src;
+      if (idx != 0) {
+        from = newVecWithWidth(VecWidth.k128, '@ext');
+        cc.addNode(InstNode(A64InstId.kMov,
+            [_vArr(from, ext), Imm(0), _vArr(src, ext), Imm(idx)]));
+      }
+      cc.addNode(InstNode(A64InstId.kStr, [_vecView(from, 8 << ext), dst]));
+      return;
+    }
+
     // Stores write exactly the access size (emit_mv in unicompiler_a64.cpp).
     final int bits;
     switch (op) {
@@ -436,6 +471,43 @@ mixin UniCompilerA64 on UniCompilerBase {
             [_vArr(dst, 1), A64Vec(src.id, 64, A64Layout.b8), Imm(0)]));
         cc.addNode(InstNode(info.instId,
             [_vArr(dst, 2), A64Vec(dst.id, 64, A64Layout.h4), Imm(0)]));
+        return;
+
+      case UniOpVV.rcpF32:
+      case UniOpVV.rcpF64:
+        // Intrinsic (emit_2v): dst = 1.0 / src.
+        final f32 = op == UniOpVV.rcpF32;
+        final one = (this as UniCompiler).simdConst(
+            f32 ? VecConstTable.f32_1 : VecConstTable.f64_1,
+            Bcst.kNA_Unique,
+            VecWidth.k128) as BaseReg;
+        final src = _asVecA64(src_, dst, kFmNone);
+        final el = f32 ? 2 : 3;
+        cc.addNode(InstNode(
+            A64InstId.kFdiv, [_vArr(dst, el), _vArr(one, el), _vArr(src, el)]));
+        return;
+
+      case UniOpVV.roundHalfUpF32S:
+      case UniOpVV.roundHalfUpF64S:
+      case UniOpVV.roundHalfUpF32:
+      case UniOpVV.roundHalfUpF64:
+        // Intrinsic (emit_2v): dst = floor(src + (0.5 - 1ulp)).
+        final f32 =
+            op == UniOpVV.roundHalfUpF32S || op == UniOpVV.roundHalfUpF32;
+        final scalar =
+            op == UniOpVV.roundHalfUpF32S || op == UniOpVV.roundHalfUpF64S;
+        final half = (this as UniCompiler).simdConst(
+            f32
+                ? VecConstTable.f32_0_5_minus_1ulp
+                : VecConstTable.f64_0_5_minus_1ulp,
+            Bcst.kNA_Unique,
+            VecWidth.k128) as BaseReg;
+        final src = _asVecA64(src_, dst, kFmNone);
+        A64Vec view(BaseReg r) =>
+            scalar ? A64Vec(r.id, f32 ? 32 : 64) : _vArr(r, f32 ? 2 : 3);
+        cc.addNode(
+            InstNode(A64InstId.kFadd, [view(dst), view(src), view(half)]));
+        cc.addNode(InstNode(A64InstId.kFrintm, [view(dst), view(dst)]));
         return;
 
       case UniOpVV.cvtF32ToF64S:

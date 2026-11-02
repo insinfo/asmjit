@@ -493,6 +493,13 @@ mixin UniCompilerX86 on UniCompilerBase {
       UniOpVM op, BaseReg dst, X86Mem src, Alignment alignment, int idx) {
     final info = _getUniOpVMInfo(op);
     if (info == null) {
+      // loadInsert*: port of the kLoadInsert* cases of emit_vm()
+      // (unicompiler_x86.cpp).
+      if (op.name.startsWith('loadInsert')) {
+        _loadInsertX86(op, dst, src, idx);
+        return;
+      }
+
       // loadCvt*: load exactly the source bytes, then widen in registers.
       final cvt =
           RegExp(r'^loadCvt(16|32|64|N)([IU])(8|16|32)To[IU](16|32|64)$')
@@ -666,6 +673,11 @@ mixin UniCompilerX86 on UniCompilerBase {
 
     final info = _getUniOpMVInfo(op);
     if (info == null) {
+      // storeExtract*: port of the kStoreExtract* cases of emit_mv().
+      if (op.name.startsWith('storeExtract')) {
+        _storeExtractX86(op, dst, src, idx);
+        return;
+      }
       throw UnimplementedError('UniOpMV $op not implemented for X86');
     }
 
@@ -1262,73 +1274,301 @@ mixin UniCompilerX86 on UniCompilerBase {
   Operand _constX86(VecConst c) =>
       (this as UniCompiler).simdConst(c, Bcst.kNA_Unique, VecWidth.k128);
 
-  /// Rounds [src] (packed f32 or f64) with ROUNDPS/ROUNDPD [mode] semantics
-  /// (0 = nearest even, 1 = floor, 2 = ceil, 3 = trunc). Without SSE4.1 uses
-  /// the 2^23 / 2^52 magic number trick. Returns a new register.
-  BaseReg _roundX86(Operand src, int mode, bool f64) {
-    final r = _tmpVecX86();
-    if (hasSse41 || hasAvx) {
-      // Bit 3 suppresses the precision exception, as asmjit does.
-      final id = f64
-          ? (hasAvx ? X86InstId.kVroundpd : X86InstId.kRoundpd)
-          : (hasAvx ? X86InstId.kVroundps : X86InstId.kRoundps);
-      cc.addNode(InstNode(id, [r, src, Imm(mode | 8)]));
-      return r;
-    }
-    final and = f64 ? X86InstId.kAndpd : X86InstId.kAndps;
-    final or = f64 ? X86InstId.kOrpd : X86InstId.kOrps;
-    final add = f64 ? X86InstId.kAddpd : X86InstId.kAddps;
-    final sub = f64 ? X86InstId.kSubpd : X86InstId.kSubps;
-    final cmp = f64 ? X86InstId.kCmppd : X86InstId.kCmpps;
-    final absMask = _constX86(f64
-        ? VecConstTable.p_7FFFFFFFFFFFFFFF
-        : VecConstTable.p_7FFFFFFF7FFFFFFF);
-    final magic = _constX86(
-        f64 ? VecConstTable.f64_round_magic : VecConstTable.f32_round_magic);
-    final one = _constX86(f64 ? VecConstTable.f64_1 : VecConstTable.f32_1);
+  // Port of `sse_float_inst` / `sse_fmov()` / `sse_round()`
+  // (unicompiler_x86.cpp). Float modes: 0 = F32S, 1 = F64S, 2 = F32V,
+  // 3 = F64V.
+  static const _sseFloatInst = [
+    _X86FloatInst(
+        X86InstId.kMovss,
+        X86InstId.kAndps,
+        X86InstId.kOrps,
+        X86InstId.kXorps,
+        X86InstId.kAndnps,
+        X86InstId.kAddss,
+        X86InstId.kSubss,
+        X86InstId.kCmpss,
+        X86InstId.kRoundss,
+        X86InstId.kPsrld,
+        X86InstId.kPslld,
+        X86InstId.kMovups),
+    _X86FloatInst(
+        X86InstId.kMovsd,
+        X86InstId.kAndpd,
+        X86InstId.kOrpd,
+        X86InstId.kXorpd,
+        X86InstId.kAndnpd,
+        X86InstId.kAddsd,
+        X86InstId.kSubsd,
+        X86InstId.kCmpsd,
+        X86InstId.kRoundsd,
+        X86InstId.kPsrlq,
+        X86InstId.kPsllq,
+        X86InstId.kMovups),
+    _X86FloatInst(
+        X86InstId.kMovaps,
+        X86InstId.kAndps,
+        X86InstId.kOrps,
+        X86InstId.kXorps,
+        X86InstId.kAndnps,
+        X86InstId.kAddps,
+        X86InstId.kSubps,
+        X86InstId.kCmpps,
+        X86InstId.kRoundps,
+        X86InstId.kPsrld,
+        X86InstId.kPslld,
+        X86InstId.kMovups),
+    _X86FloatInst(
+        X86InstId.kMovaps,
+        X86InstId.kAndpd,
+        X86InstId.kOrpd,
+        X86InstId.kXorpd,
+        X86InstId.kAndnpd,
+        X86InstId.kAddpd,
+        X86InstId.kSubpd,
+        X86InstId.kCmppd,
+        X86InstId.kRoundpd,
+        X86InstId.kPsrlq,
+        X86InstId.kPsllq,
+        X86InstId.kMovups),
+  ];
 
-    // a = |x|, sign = x ^ a
-    final a = _copyVecX86(src);
-    _sseOpX86(and, a, absMask);
+  static bool _isF32Fm(int fm) => fm == 0 || fm == 2;
+  static bool _isScalarFm(int fm) => fm < 2;
+
+  void _emitX86(int id, List<Operand> ops) => cc.addNode(InstNode(id, ops));
+
+  /// `sse_fmov()`.
+  void _sseFmovX86(BaseReg dst, Operand src, int fm) {
+    if (src is BaseReg) {
+      if (dst.id != src.id) _emitX86(X86InstId.kMovaps, [dst, src]);
+    } else if (_isScalarFm(fm)) {
+      _emitX86(_sseFloatInst[fm].fmovs, [dst, src]);
+    } else {
+      _emitX86(_sseFloatInst[fm].fmovu, [dst, src]);
+    }
+  }
+
+  /// `sse_round()`: [roundMode] is x86 RoundImm (0 nearest, 1 down, 2 up,
+  /// 3 trunc).
+  void _sseRoundX86(BaseReg dst, Operand src, int fm, int roundMode) {
+    final fi = _sseFloatInst[fm];
+    final isF32 = _isF32Fm(fm);
+
+    if (hasSse41) {
+      _emitX86(fi.fround, [dst, src, Imm(roundMode | 8)]);
+      return;
+    }
+
+    // Deviation from upstream (proven by executing upstream's sse_round with
+    // SSE2-only features: ceil(-0.25), trunc(-0.25) and round(-0.25) give
+    // +0.0 while its own SSE4.1 path and IEEE give -0.0). Rounding never
+    // changes the sign, so the sign of the input is OR-ed into the result.
     final sign = _copyVecX86(src);
-    _sseOpX86(X86InstId.kPxor, sign, a);
+    _emitX86(_sseFloatInst[fm].fand, [
+      sign,
+      _constX86(isF32
+          ? VecConstTable.p_8000000080000000
+          : VecConstTable.p_8000000000000000)
+    ]);
+    _sseRoundUpstreamX86(dst, src, fm, roundMode);
+    _emitX86(_sseFloatInst[fm].for_, [dst, sign]);
+  }
 
-    // r = (a + magic) - magic where a < magic, otherwise a (already integral
-    // or NaN).
-    _vMovX86(r, a);
-    _sseOpX86(add, r, magic);
-    _sseOpX86(sub, r, magic);
-    final small = _copyVecX86(a);
-    _sseOpImmX86(cmp, small, magic, 1); // a < magic
-    _selectX86(r, a, r, small);
+  /// `sse_round()` without SSE4.1, as in upstream.
+  void _sseRoundUpstreamX86(BaseReg dst, Operand src, int fm, int roundMode) {
+    final fi = _sseFloatInst[fm];
+    final isF32 = _isF32Fm(fm);
+    const kLT = 1, kNLT = 5, kNLE = 6;
+    final maxn = _constX86(
+        isF32 ? VecConstTable.f32_round_magic : VecConstTable.f64_round_magic);
+    final t1 = _tmpVecX86();
+    final t2 = _tmpVecX86();
+    final t3 = _tmpVecX86();
 
-    if (mode == 1 || mode == 3) {
-      // floor(|x|) for trunc; floor(x) handled after restoring the sign.
-      if (mode == 3) {
-        final gt = _copyVecX86(a);
-        _sseOpImmX86(cmp, gt, r, 1); // a < r -> r rounded up
-        _sseOpX86(and, gt, one);
-        _sseOpX86(sub, r, gt);
-      }
+    if (roundMode == 3 && (fm == 0 || fm == 1)) {
+      final uc = this as UniCompiler;
+      final r = fm == 0 ? uc.newGp32('@gp_tmp') : uc.newGp64('@gp_tmp');
+      final msb = _constX86(fm == 0
+          ? VecConstTable.p_8000000080000000
+          : VecConstTable.p_8000000000000000);
+      _sseFmovX86(dst, src, fm);
+      _emitX86(fm == 0 ? X86InstId.kCvttss2si : X86InstId.kCvttsd2si, [r, dst]);
+      _emitX86(fi.fmova, [t2, msb]);
+      _emitX86(fi.fandn, [t2, dst]);
+      _emitX86(fi.fxor, [t1, t1]);
+      _emitX86(fm == 0 ? X86InstId.kCvtsi2ss : X86InstId.kCvtsi2sd, [t1, r]);
+      _emitX86(fi.fcmp, [t2, maxn, Imm(kLT)]);
+      _emitX86(fi.fand, [t1, t2]);
+      _emitX86(fi.fandn, [t2, dst]);
+      _emitX86(fi.for_, [t2, t1]);
+      _emitX86(fi.fmovs, [dst, t2]);
+      return;
     }
-    _sseOpX86(or, r, sign);
 
-    if (mode == 1 || mode == 2) {
-      // floor: r -= (x < r) ? 1 : 0 ; ceil: r += (r < x) ? 1 : 0
-      final m = _tmpVecX86();
-      if (mode == 1) {
-        _vMovX86(m, src);
-        _sseOpImmX86(cmp, m, r, 1);
+    if (roundMode == 0) {
+      _sseFmovX86(dst, src, fm);
+      _emitX86(fi.fmova, [t3, dst]);
+      _emitX86(fi.psrl, [t3, Imm(isF32 ? 31 : 63)]);
+      _emitX86(fi.psll, [t3, Imm(isF32 ? 23 : 52)]);
+      _emitX86(isF32 ? X86InstId.kPaddd : X86InstId.kPaddq, [t3, maxn]);
+      _emitX86(fi.fmova, [t1, dst]);
+      _emitX86(fi.fcmp, [t1, t3, Imm(kLT)]);
+      _emitX86(fi.fand, [t1, t3]);
+      _emitX86(fi.fadd, [dst, t1]);
+      _emitX86(fi.fsub, [dst, t1]);
+      return;
+    }
+
+    final one = _constX86(isF32 ? VecConstTable.f32_1 : VecConstTable.f64_1);
+
+    if (roundMode == 3) {
+      if (fm == 2) {
+        final msb = _constX86(VecConstTable.p_8000000080000000);
+        _sseFmovX86(dst, src, fm);
+        _emitX86(X86InstId.kCvttps2dq, [t1, dst]);
+        _emitX86(fi.fmova, [t2, msb]);
+        _emitX86(fi.fandn, [t2, dst]);
+        _emitX86(X86InstId.kCvtdq2ps, [t1, t1]);
+        _emitX86(fi.fcmp, [t2, maxn, Imm(kLT)]);
+        _emitX86(fi.fand, [t1, t2]);
+        _emitX86(fi.fandn, [t2, dst]);
+        _emitX86(fi.for_, [t2, t1]);
+        _emitX86(fi.fmova, [dst, t2]);
       } else {
-        _vMovX86(m, r);
-        _sseOpImmX86(cmp, m, src, 1);
+        final msb = _constX86(VecConstTable.p_8000000000000000);
+        _sseFmovX86(dst, src, fm);
+        _emitX86(fi.fmova, [t3, msb]);
+        _emitX86(fi.fandn, [t3, dst]);
+        _emitX86(fi.fmova, [t2, t3]);
+        _emitX86(fi.fcmp, [t2, maxn, Imm(kLT)]);
+        _emitX86(fi.fand, [t2, maxn]);
+        _emitX86(fi.fmova, [t1, t3]);
+        _emitX86(fi.fadd, [t1, t2]);
+        _emitX86(fi.fsub, [t1, t2]);
+        _emitX86(fi.fcmp, [t3, t1, Imm(kLT)]);
+        _emitX86(fi.fand, [t3, one]);
+        _emitX86(fi.fsub, [t1, t3]);
+        _emitX86(fi.fand, [dst, msb]);
+        _emitX86(fi.for_, [dst, t1]);
       }
-      _sseOpX86(and, m, one);
-      _sseOpX86(mode == 1 ? sub : add, r, m);
-      // Rounded values keep the sign of x; `-0 + 0` would yield +0.
-      _sseOpX86(or, r, sign);
+      return;
     }
-    return r;
+
+    // Round down / up: adding and subtracting the magic number rounds to
+    // nearest, so correct by one where needed.
+    final correction = roundMode == 1 ? fi.fsub : fi.fadd;
+    final predicate = roundMode == 1 ? kLT : kNLE;
+    _sseFmovX86(dst, src, fm);
+    _emitX86(fi.fmova, [t3, dst]);
+    _emitX86(fi.psrl, [t3, Imm(isF32 ? 31 : 63)]);
+    _emitX86(fi.psll, [t3, Imm(isF32 ? 23 : 52)]);
+    _emitX86(isF32 ? X86InstId.kPaddd : X86InstId.kPaddq, [t3, maxn]);
+    _emitX86(fi.fmova, [t1, dst]);
+    _emitX86(fi.fmova, [t2, dst]);
+    _emitX86(fi.fadd, [t2, t3]);
+    _emitX86(fi.fsub, [t2, t3]);
+    _emitX86(fi.fcmp, [t1, t3, Imm(kNLT)]);
+    _emitX86(fi.fmova, [t3, dst]);
+    _emitX86(fi.fcmp, [t3, t2, Imm(predicate)]);
+    _emitX86(fi.fand, [t3, one]);
+    _emitX86(fi.fand, [dst, t1]);
+    _emitX86(correction, [t2, t3]);
+    _emitX86(fi.fandn, [t1, t2]);
+    _emitX86(fi.for_, [dst, t1]);
+  }
+
+  /// Rounding ops of `emit_2v()` (unicompiler_x86.cpp): (float mode, imm).
+  static const Map<UniOpVV, (int, int)> _roundOps = {
+    UniOpVV.truncF32S: (0, 0x0B),
+    UniOpVV.truncF64S: (1, 0x0B),
+    UniOpVV.truncF32: (2, 0x0B),
+    UniOpVV.truncF64: (3, 0x0B),
+    UniOpVV.floorF32S: (0, 0x09),
+    UniOpVV.floorF64S: (1, 0x09),
+    UniOpVV.floorF32: (2, 0x09),
+    UniOpVV.floorF64: (3, 0x09),
+    UniOpVV.ceilF32S: (0, 0x0A),
+    UniOpVV.ceilF64S: (1, 0x0A),
+    UniOpVV.ceilF32: (2, 0x0A),
+    UniOpVV.ceilF64: (3, 0x0A),
+    UniOpVV.roundEvenF32S: (0, 0x08),
+    UniOpVV.roundEvenF64S: (1, 0x08),
+    UniOpVV.roundEvenF32: (2, 0x08),
+    UniOpVV.roundEvenF64: (3, 0x08),
+  };
+
+  /// Port of the rounding / reciprocal cases of `emit_2v()`.
+  bool _emit2vRoundX86(UniOpVV op, BaseReg dst, Operand src) {
+    final r = _roundOps[op];
+    if (r != null) {
+      final (fm, imm) = r;
+      if (hasAvx) {
+        final vid = _vexIdX86(_sseFloatInst[fm].fround);
+        final s = src is BaseReg ? src : _copyVecX86(src);
+        _emitX86(
+            vid, _isScalarFm(fm) ? [dst, s, s, Imm(imm)] : [dst, s, Imm(imm)]);
+      } else if (hasSse41) {
+        _sseFmovX86(dst, src, fm);
+        _emitX86(_sseFloatInst[fm].fround, [dst, dst, Imm(imm)]);
+      } else {
+        _sseRoundX86(dst, src, fm, imm & 7);
+      }
+      return true;
+    }
+
+    final halfUp = const {
+      UniOpVV.roundHalfUpF32S: 0,
+      UniOpVV.roundHalfUpF64S: 1,
+      UniOpVV.roundHalfUpF32: 2,
+      UniOpVV.roundHalfUpF64: 3,
+    }[op];
+    if (halfUp != null) {
+      final fm = halfUp;
+      final half = _constX86(_isF32Fm(fm)
+          ? VecConstTable.f32_0_5_minus_1ulp
+          : VecConstTable.f64_0_5_minus_1ulp);
+      if (hasAvx) {
+        const add = [
+          UniOpVVV.addF32S,
+          UniOpVVV.addF64S,
+          UniOpVVV.addF32,
+          UniOpVVV.addF64
+        ];
+        const floor = [
+          UniOpVV.floorF32S,
+          UniOpVV.floorF64S,
+          UniOpVV.floorF32,
+          UniOpVV.floorF64
+        ];
+        final s = src is BaseReg ? src : _copyVecX86(src);
+        _emit3vX86(add[fm], dst, s, half);
+        _emit2vX86(floor[fm], dst, dst);
+      } else {
+        _sseFmovX86(dst, src, fm);
+        _emitX86(_sseFloatInst[fm].fadd, [dst, half]);
+        _sseRoundX86(dst, dst, fm, 0x09 & 7);
+      }
+      return true;
+    }
+
+    if (op == UniOpVV.rcpF32 || op == UniOpVV.rcpF64) {
+      final f32 = op == UniOpVV.rcpF32;
+      final one = _constX86(f32 ? VecConstTable.f32_1 : VecConstTable.f64_1);
+      final div = f32 ? X86InstId.kDivps : X86InstId.kDivpd;
+      if (hasAvx) {
+        final o = _copyVecX86(one);
+        _emitX86(_vexIdX86(div), [dst, o, src]);
+      } else if (src is BaseReg && src.id == dst.id) {
+        final tmp = _copyVecX86(one);
+        _emitX86(div, [tmp, src]);
+        _vMovX86(dst, tmp);
+      } else {
+        _vMovX86(dst, one);
+        _emitX86(div, [dst, src]);
+      }
+      return true;
+    }
+    return false;
   }
 
   /// UniOpVV lowerings that need SSE2 sequences (or were not ported yet).
@@ -1444,19 +1684,161 @@ mixin UniCompilerX86 on UniCompilerBase {
         break;
     }
 
-    final rnd =
-        RegExp(r'^(roundEven|floor|ceil|trunc)F(32|64)S?$').firstMatch(name);
-    if (rnd != null) {
-      final mode = const {
-        'roundEven': 0,
-        'floor': 1,
-        'ceil': 2,
-        'trunc': 3
-      }[rnd.group(1)]!;
-      _vMovX86(dst, _roundX86(src, mode, rnd.group(2) == '64'));
-      return true;
-    }
+    if (_emit2vRoundX86(op, dst, src)) return true;
     return false;
+  }
+
+  /// Port of the kLoadInsert* cases of `UniCompiler::emit_vm()`
+  /// (unicompiler_x86.cpp). Only 64-bit targets are supported.
+  void _loadInsertX86(UniOpVM op, BaseReg dst, X86Mem src, int idx) {
+    if (hasAvx) {
+      switch (op) {
+        case UniOpVM.loadInsertU8:
+        case UniOpVM.loadInsertU16:
+        case UniOpVM.loadInsertU32:
+        case UniOpVM.loadInsertF32:
+        case UniOpVM.loadInsertU64:
+          final (id, size) = switch (op) {
+            UniOpVM.loadInsertU8 => (X86InstId.kVpinsrb, 1),
+            UniOpVM.loadInsertU16 => (X86InstId.kVpinsrw, 2),
+            UniOpVM.loadInsertU64 => (X86InstId.kVpinsrq, 8),
+            _ => (X86InstId.kVpinsrd, 4),
+          };
+          cc.addNode(InstNode(id, [dst, dst, src.withSize(size), Imm(idx)]));
+        case UniOpVM.loadInsertF32x2:
+          cc.addNode(InstNode(
+              idx == 0 ? X86InstId.kVmovlps : X86InstId.kVmovhps,
+              [dst, dst, src.withSize(8)]));
+        case UniOpVM.loadInsertF64:
+          cc.addNode(InstNode(
+              idx == 0 ? X86InstId.kVmovlpd : X86InstId.kVmovhpd,
+              [dst, dst, src.withSize(8)]));
+        default:
+          throw UnimplementedError('_loadInsertX86: $op');
+      }
+      return;
+    }
+
+    switch (op) {
+      case UniOpVM.loadInsertU16:
+        // Upstream emits `pinsrw dst, dst, idx` here, which looks like a bug;
+        // the inserted value is the memory operand.
+        cc.addNode(
+            InstNode(X86InstId.kPinsrw, [dst, src.withSize(2), Imm(idx)]));
+      case UniOpVM.loadInsertF32:
+      case UniOpVM.loadInsertU8:
+      case UniOpVM.loadInsertU32:
+      case UniOpVM.loadInsertU64:
+        final u = op == UniOpVM.loadInsertF32 ? UniOpVM.loadInsertU32 : op;
+        if (hasSse41) {
+          final (id, size) = switch (u) {
+            UniOpVM.loadInsertU8 => (X86InstId.kPinsrb, 1),
+            UniOpVM.loadInsertU64 => (X86InstId.kPinsrq, 8),
+            _ => (X86InstId.kPinsrd, 4),
+          };
+          cc.addNode(InstNode(id, [dst, src.withSize(size), Imm(idx)]));
+          return;
+        }
+        if (u == UniOpVM.loadInsertU8) {
+          // Upstream merges the byte through a high-byte register (AH...);
+          // those cannot be allocated freely, so merge with shifts instead.
+          final uc = this as UniCompiler;
+          final tmp = uc.newGp32('@tmp');
+          cc.addNode(InstNode(X86InstId.kPextrw, [tmp, dst, Imm(idx ~/ 2)]));
+          final byte = uc.newGp32('@byte');
+          cc.addNode(InstNode(X86InstId.kMovzx, [byte, src.withSize(1)]));
+          if (idx & 1 != 0) {
+            cc.addNode(InstNode(X86InstId.kShl, [byte, Imm(8)]));
+            cc.addNode(InstNode(X86InstId.kAnd, [tmp, Imm(0xFF)]));
+          } else {
+            cc.addNode(InstNode(X86InstId.kAnd, [tmp, Imm(0xFF00)]));
+          }
+          cc.addNode(InstNode(X86InstId.kOr, [tmp, byte]));
+          cc.addNode(InstNode(X86InstId.kPinsrw, [dst, tmp, Imm(idx ~/ 2)]));
+          return;
+        }
+        if (u == UniOpVM.loadInsertU32) {
+          if (idx == 0) {
+            final tmp = _tmpVecX86();
+            cc.addNode(InstNode(X86InstId.kMovd, [tmp, src.withSize(4)]));
+            cc.addNode(InstNode(X86InstId.kMovss, [dst, tmp]));
+          } else {
+            cc.addNode(InstNode(
+                X86InstId.kPinsrw, [dst, src.withSize(2), Imm(idx * 2)]));
+            cc.addNode(InstNode(X86InstId.kPinsrw, [
+              dst,
+              X86Mem(
+                  base: src.base,
+                  index: src.index,
+                  scale: src.scale,
+                  displacement: src.displacement + 2,
+                  size: 2,
+                  segment: src.segment,
+                  label: src.label),
+              Imm(idx * 2 + 1)
+            ]));
+          }
+          return;
+        }
+        cc.addNode(InstNode(idx == 0 ? X86InstId.kMovlpd : X86InstId.kMovhpd,
+            [dst, src.withSize(8)]));
+      case UniOpVM.loadInsertF32x2:
+        cc.addNode(InstNode(idx == 0 ? X86InstId.kMovlps : X86InstId.kMovhps,
+            [dst, src.withSize(8)]));
+      case UniOpVM.loadInsertF64:
+        cc.addNode(InstNode(idx == 0 ? X86InstId.kMovlpd : X86InstId.kMovhpd,
+            [dst, src.withSize(8)]));
+      default:
+        throw UnimplementedError('_loadInsertX86: $op');
+    }
+  }
+
+  /// Port of the kStoreExtract* cases of `UniCompiler::emit_mv()`
+  /// (unicompiler_x86.cpp). Only 64-bit targets are supported.
+  void _storeExtractX86(UniOpMV op, X86Mem dst, BaseReg src, int idx) {
+    if (op == UniOpMV.storeExtractU32 && idx == 0) {
+      cc.addNode(InstNode(
+          hasAvx ? X86InstId.kVmovd : X86InstId.kMovd, [dst.withSize(4), src]));
+      return;
+    }
+    if (op == UniOpMV.storeExtractU64 && idx == 0) {
+      cc.addNode(InstNode(
+          hasAvx ? X86InstId.kVmovq : X86InstId.kMovq, [dst.withSize(8), src]));
+      return;
+    }
+    final (int pextr, int vpextr, int size) = switch (op) {
+      UniOpMV.storeExtractU16 => (X86InstId.kPextrw, X86InstId.kVpextrw, 2),
+      UniOpMV.storeExtractU32 => (X86InstId.kPextrd, X86InstId.kVpextrd, 4),
+      _ => (X86InstId.kPextrq, X86InstId.kVpextrq, 8),
+    };
+    if (hasAvx) {
+      cc.addNode(InstNode(vpextr, [dst.withSize(size), src, Imm(idx)]));
+      return;
+    }
+    if (op == UniOpMV.storeExtractU64 && idx == 1) {
+      cc.addNode(InstNode(X86InstId.kMovhps, [dst.withSize(8), src]));
+      return;
+    }
+    if (hasSse41) {
+      cc.addNode(InstNode(pextr, [dst.withSize(size), src, Imm(idx)]));
+      return;
+    }
+    // No SSE4.1: PEXTRW to memory and PEXTRD do not exist in SSE2.
+    if (op == UniOpMV.storeExtractU16) {
+      final tmp = (this as UniCompiler).newGp32('@pextrw_tmp');
+      cc.addNode(InstNode(X86InstId.kPextrw, [tmp, src, Imm(idx)]));
+      cc.addNode(
+          InstNode(X86InstId.kMov, [dst.withSize(2), (tmp as X86Gp).as16]));
+      return;
+    }
+    if (op == UniOpMV.storeExtractU32) {
+      final tmp = _tmpVecX86();
+      cc.addNode(InstNode(X86InstId.kPshufd,
+          [tmp, src, Imm(idx | (idx << 2) | (idx << 4) | (idx << 6))]));
+      cc.addNode(InstNode(X86InstId.kMovd, [dst.withSize(4), tmp]));
+      return;
+    }
+    throw UnimplementedError('_storeExtractX86: $op');
   }
 
   /// Error for an operation whose x86 lowering needs a CPU extension that is
@@ -2645,4 +3027,26 @@ mixin UniCompilerX86 on UniCompilerBase {
         return null;
     }
   }
+}
+
+/// Row of `sse_float_inst` (unicompiler_x86.cpp) used by the SSE rounding
+/// helpers.
+class _X86FloatInst {
+  final int fmovs, fand, for_, fxor, fandn, fadd, fsub, fcmp, fround;
+  final int psrl, psll, fmovu;
+  int get fmova => X86InstId.kMovaps;
+
+  const _X86FloatInst(
+      this.fmovs,
+      this.fand,
+      this.for_,
+      this.fxor,
+      this.fandn,
+      this.fadd,
+      this.fsub,
+      this.fcmp,
+      this.fround,
+      this.psrl,
+      this.psll,
+      this.fmovu);
 }

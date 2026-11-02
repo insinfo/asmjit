@@ -527,6 +527,62 @@ void main() {
       (a) => f64s([2.5, 0]),
       8
     ),
+    'floorF64': (
+      UniOpVV.floorF64,
+      f64s([-2.5, 7.75]),
+      (a) => f64s([-3, 7]),
+      16
+    ),
+    'ceilF64': (UniOpVV.ceilF64, f64s([-2.5, 7.25]), (a) => f64s([-2, 8]), 16),
+    'truncF64': (
+      UniOpVV.truncF64,
+      f64s([-2.75, 7.75]),
+      (a) => f64s([-2, 7]),
+      16
+    ),
+    'roundEvenF64': (
+      UniOpVV.roundEvenF64,
+      f64s([2.5, -3.5]),
+      (a) => f64s([2, -4]),
+      16
+    ),
+    'truncF32S (low lane)': (
+      UniOpVV.truncF32S,
+      f32s([-7.75, 0, 0, 0]),
+      (a) => f32s([-7, 0, 0, 0]),
+      4
+    ),
+    'truncF64S (low lane)': (
+      UniOpVV.truncF64S,
+      f64s([9.5, 0]),
+      (a) => f64s([9, 0]),
+      8
+    ),
+    'floorF32S (low lane)': (
+      UniOpVV.floorF32S,
+      f32s([-1.25, 0, 0, 0]),
+      (a) => f32s([-2, 0, 0, 0]),
+      4
+    ),
+    'roundHalfUpF32': (
+      UniOpVV.roundHalfUpF32,
+      f32s([2.5, -2.5, 1.4, -1.6]),
+      (a) => f32s([3, -2, 1, -2]),
+      16
+    ),
+    'roundHalfUpF64': (
+      UniOpVV.roundHalfUpF64,
+      f64s([0.5, -3.5]),
+      (a) => f64s([1, -3]),
+      16
+    ),
+    'rcpF32': (
+      UniOpVV.rcpF32,
+      f32s([2, 4, 0.5, -8]),
+      (a) => f32s([0.5, 0.25, 2, -0.125]),
+      16
+    ),
+    'rcpF64': (UniOpVV.rcpF64, f64s([4, -0.25]), (a) => f64s([0.25, -4]), 16),
     'absF32S (low lane)': (
       UniOpVV.absF32S,
       fin,
@@ -679,6 +735,23 @@ void main() {
     UniOpVM.loadCvt16U8ToU64: (a) => widen(a, 2, 1, 8, false),
   };
 
+  // loadInsert: (op, idx, element bytes); dst starts as `ib`, memory = `ia`.
+  final insertCases = <String, (UniOpVM, int, int)>{
+    'loadInsertU8 [5]': (UniOpVM.loadInsertU8, 5, 1),
+    'loadInsertU16 [3]': (UniOpVM.loadInsertU16, 3, 2),
+    'loadInsertU32 [2]': (UniOpVM.loadInsertU32, 2, 4),
+    'loadInsertF32 [1]': (UniOpVM.loadInsertF32, 1, 4),
+    'loadInsertU64 [1]': (UniOpVM.loadInsertU64, 1, 8),
+    'loadInsertF64 [0]': (UniOpVM.loadInsertF64, 0, 8),
+    'loadInsertF32x2 [1]': (UniOpVM.loadInsertF32x2, 1, 8),
+  };
+  // storeExtract: (op, idx, element bytes); memory starts as `ib`, src = `ia`.
+  final extractCases = <String, (UniOpMV, int, int)>{
+    'storeExtractU16 [6]': (UniOpMV.storeExtractU16, 6, 2),
+    'storeExtractU32 [3]': (UniOpMV.storeExtractU32, 3, 4),
+    'storeExtractU64 [1]': (UniOpMV.storeExtractU64, 1, 8),
+  };
+
   for (final fs in _featureSets.entries) {
     group('UniOpVVV semantics (${fs.key})', () {
       final f = fs.value;
@@ -731,6 +804,32 @@ void main() {
             p.emitVM(op, d, _scratch(cc));
           }, ia, ib, ib, features: f);
           expect(r, ref(ia));
+        });
+      });
+      insertCases.forEach((name, c) {
+        test(name, () {
+          final (op, idx, size) = c;
+          final r = _runEmit3((cc, d, x, y, z) {
+            cc.emitMV(UniOpMV.store128U32, _scratch(cc), x); // memory = a
+            cc.emit2v(UniOpVV.mov, d, y); // dst = b
+            cc.emitVM(op, d, _scratch(cc), idx: idx);
+          }, ia, ib, ib, features: f);
+          final expected = Uint8List.fromList(ib)
+            ..setRange(idx * size, idx * size + size, ia);
+          expect(r, expected);
+        });
+      });
+      extractCases.forEach((name, c) {
+        test(name, () {
+          final (op, idx, size) = c;
+          // memory = c (= b); store lane idx of a; read the memory back.
+          final r = _runEmit3((cc, d, x, y, z) {
+            cc.emitMV(op, _scratch(cc), x, idx: idx);
+            cc.emitVM(UniOpVM.load128U32, d, _scratch(cc));
+          }, ia, ib, ib, features: f);
+          final expected = Uint8List.fromList(ib)
+            ..setRange(0, size, ia.sublist(idx * size, idx * size + size));
+          expect(r, expected);
         });
       });
       test('same source register shortcuts', () {

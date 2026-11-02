@@ -1527,6 +1527,7 @@ final Map<int, (String, bool)> _simdById = () {
   final byName = {for (final i in kX86InstDb) i.name: i.id};
   final map = <int, (String, bool)>{};
   for (var name in kX86SimdOps.keys) {
+    if (name.endsWith('_st')) continue;
     if (name.endsWith('_i')) {
       // Immediate-only shifts (pslldq/psrldq) are registered under the base
       // mnemonic; the others are selected by a trailing immediate below.
@@ -1546,14 +1547,40 @@ bool _isVecOp(Object o) =>
     (o is X86Xmm || o is X86Ymm) && (o as BaseReg).id < 16;
 bool _isVecOrMem(Object o) => _isVecOp(o) || o is X86Mem;
 
+/// Whether [o] is an acceptable r/m source for [op].
+bool _rmOk(X86SimdOp op, Object o) =>
+    op.memOnly ? o is X86Mem : (_isVecOrMem(o) || (op.rmGp && o is X86Gp));
+
 /// Encodes [instId] through [kX86SimdOps] when the operands match one of the
 /// table forms; returns false to let the hand-written cases handle the rest
 /// (e.g. AVX-512 registers).
 bool _dispatchSimd(X86Assembler asm, int instId, List<Object> ops) {
   final entry = _simdById[instId];
-  if (entry == null || ops.isEmpty || !_isVecOp(ops[0])) return false;
+  if (entry == null || ops.isEmpty) return false;
   final (name, isVex) = entry;
   var op = kX86SimdOps[name] ?? kX86SimdOps['${name}_i']!;
+
+  // Store / extract forms: the destination is memory (or a GP register).
+  if (ops[0] is X86Mem || ops[0] is X86Gp) {
+    final st = op.kind == X86SimdKind.mri ? op : kX86SimdOps['${name}_st'];
+    if (st == null || ops.length < 2 || !_isVecOp(ops[1])) return false;
+    if (ops[0] is X86Gp && !st.rmGp) return false;
+    final src = (ops[1] as BaseReg).id;
+    if (st.kind == X86SimdKind.mr && ops.length == 2) {
+      isVex
+          ? asm.simdVex(st, src, 0, ops[0], l: false)
+          : asm.simdLegacy(st, src, ops[0]);
+      return true;
+    }
+    if (st.kind == X86SimdKind.mri && ops.length == 3 && ops[2] is int) {
+      isVex
+          ? asm.simdVex(st, src, 0, ops[0], l: false, imm8: ops[2] as int)
+          : asm.simdLegacy(st, src, ops[0], imm8: ops[2] as int);
+      return true;
+    }
+    return false;
+  }
+  if (!_isVecOp(ops[0])) return false;
   if (ops.last is int) {
     // Shifts by immediate use the group opcodes (0F 71/72/73 /ext ib).
     op = kX86SimdOps['${name}_i'] ?? op;
@@ -1566,17 +1593,19 @@ bool _dispatchSimd(X86Assembler asm, int instId, List<Object> ops) {
     switch (op.kind) {
       case X86SimdKind.rm:
       case X86SimdKind.rm2:
-        if (n != 2 || !_isVecOrMem(ops[1])) return false;
+        if (n != 2 || !_rmOk(op, ops[1])) return false;
         asm.simdLegacy(op, dst.id, ops[1]);
       case X86SimdKind.rmi:
       case X86SimdKind.rm2i:
-        if (n != 3 || !_isVecOrMem(ops[1]) || ops[2] is! int) return false;
+        if (n != 3 || !_rmOk(op, ops[1]) || ops[2] is! int) return false;
         asm.simdLegacy(op, dst.id, ops[1], imm8: ops[2] as int);
       case X86SimdKind.shiftImm:
         if (n != 2 || ops[1] is! int) return false;
         asm.simdLegacy(op, op.regExt, dst, imm8: ops[1] as int);
       case X86SimdKind.is4:
-        return false; // Implicit XMM0 mask: not table-encoded.
+      case X86SimdKind.mr:
+      case X86SimdKind.mri:
+        return false; // Implicit XMM0 mask / store forms handled above.
     }
     return true;
   }
@@ -1584,13 +1613,10 @@ bool _dispatchSimd(X86Assembler asm, int instId, List<Object> ops) {
   final l = dst is X86Ymm;
   switch (op.kind) {
     case X86SimdKind.rm:
-      if (n != 3 || !_isVecOp(ops[1]) || !_isVecOrMem(ops[2])) return false;
+      if (n != 3 || !_isVecOp(ops[1]) || !_rmOk(op, ops[2])) return false;
       asm.simdVex(op, dst.id, (ops[1] as BaseReg).id, ops[2], l: l);
     case X86SimdKind.rmi:
-      if (n != 4 ||
-          !_isVecOp(ops[1]) ||
-          !_isVecOrMem(ops[2]) ||
-          ops[3] is! int) {
+      if (n != 4 || !_isVecOp(ops[1]) || !_rmOk(op, ops[2]) || ops[3] is! int) {
         return false;
       }
       asm.simdVex(op, dst.id, (ops[1] as BaseReg).id, ops[2],
@@ -1613,6 +1639,9 @@ bool _dispatchSimd(X86Assembler asm, int instId, List<Object> ops) {
       }
       asm.simdVex(op, dst.id, (ops[1] as BaseReg).id, ops[2],
           l: l, imm8: (ops[3] as BaseReg).id << 4);
+    case X86SimdKind.mr:
+    case X86SimdKind.mri:
+      return false;
   }
   return true;
 }

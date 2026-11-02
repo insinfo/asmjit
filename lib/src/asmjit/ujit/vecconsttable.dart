@@ -77,6 +77,13 @@ class VecConstTable {
   static final VecConst f64_round_magic =
       _register(VecConst.splat64(0x4330000000000000));
 
+  // 0.5 minus one ulp: floor(x + this) rounds halves up without rounding
+  // values just below .5 up (used by roundHalfUp).
+  static final VecConst f32_0_5_minus_1ulp =
+      _register(VecConst.splat64(0x3EFFFFFF3EFFFFFF));
+  static final VecConst f64_0_5_minus_1ulp =
+      _register(VecConst.splat64(0x3FDFFFFFFFFFFFFF));
+
   static int _currentOffset = 0;
 
   static VecConst _register(VecConst vc) {

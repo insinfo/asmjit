@@ -29,6 +29,12 @@ enum X86SimdKind {
   /// (`vpblendvb dst, src1, src2/m, mask`). The legacy SSE4.1 form takes the
   /// mask implicitly in XMM0 and is not encoded through the table.
   is4,
+
+  /// Store form `op mem, xmm` (ModRM.reg = xmm, r/m = memory, no VEX.vvvv).
+  mr,
+
+  /// Extract form `op mem|gp, xmm, imm8` (ModRM.reg = xmm, r/m = destination).
+  mri,
 }
 
 class X86SimdOp {
@@ -46,8 +52,20 @@ class X86SimdOp {
   /// VEX.W / REX.W.
   final bool w;
 
+  /// The r/m operand must be memory (the register form is another
+  /// instruction, e.g. `movlps xmm, xmm` would be MOVHLPS).
+  final bool memOnly;
+
+  /// The r/m operand may be a general purpose register (`pinsrd xmm, r32`,
+  /// `pextrd r32, xmm`).
+  final bool rmGp;
+
   const X86SimdOp(this.prefix, this.map, this.opcode,
-      {this.kind = X86SimdKind.rm, this.regExt = 0, this.w = false});
+      {this.kind = X86SimdKind.rm,
+      this.regExt = 0,
+      this.w = false,
+      this.memOnly = false,
+      this.rmGp = false});
 
   /// VEX.pp encoding of [prefix].
   int get pp => switch (prefix) { 0x66 => 1, 0xF3 => 2, 0xF2 => 3, _ => 0 };
@@ -237,6 +255,27 @@ const Map<String, X86SimdOp> kX86SimdOps = {
   'cvtps2pd': X86SimdOp(0, 1, 0x5A, kind: _rm2),
   'cvtpd2ps': X86SimdOp(_66, 1, 0x5A, kind: _rm2),
   'movddup': X86SimdOp(_F2, 1, 0x12, kind: _rm2),
+
+  // 64-bit half loads (rm, memory only) and stores (`*_st`, mr).
+  'movlps': X86SimdOp(0, 1, 0x12, memOnly: true),
+  'movhps': X86SimdOp(0, 1, 0x16, memOnly: true),
+  'movlpd': X86SimdOp(_66, 1, 0x12, memOnly: true),
+  'movhpd': X86SimdOp(_66, 1, 0x16, memOnly: true),
+  'movlps_st': X86SimdOp(0, 1, 0x13, kind: X86SimdKind.mr),
+  'movhps_st': X86SimdOp(0, 1, 0x17, kind: X86SimdKind.mr),
+  'movlpd_st': X86SimdOp(_66, 1, 0x13, kind: X86SimdKind.mr),
+  'movhpd_st': X86SimdOp(_66, 1, 0x17, kind: X86SimdKind.mr),
+
+  // Element insert/extract (SSE4.1 except pinsrw; the SSE2 pextrw r32 form is
+  // handled by the hand-written dispatcher case).
+  'pinsrw': X86SimdOp(_66, 1, 0xC4, kind: _rmi, rmGp: true),
+  'pinsrb': X86SimdOp(_66, 3, 0x20, kind: _rmi, rmGp: true),
+  'pinsrd': X86SimdOp(_66, 3, 0x22, kind: _rmi, rmGp: true),
+  'pinsrq': X86SimdOp(_66, 3, 0x22, kind: _rmi, rmGp: true, w: true),
+  'pextrb': X86SimdOp(_66, 3, 0x14, kind: X86SimdKind.mri, rmGp: true),
+  'pextrw': X86SimdOp(_66, 3, 0x15, kind: X86SimdKind.mri),
+  'pextrd': X86SimdOp(_66, 3, 0x16, kind: X86SimdKind.mri, rmGp: true),
+  'pextrq': X86SimdOp(_66, 3, 0x16, kind: X86SimdKind.mri, rmGp: true, w: true),
 
   // MOVQ xmm, xmm/m64 (load form; zero-extends to 128 bits).
   'movq': X86SimdOp(_F3, 1, 0x7E, kind: _rm2),

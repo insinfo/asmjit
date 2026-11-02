@@ -50,6 +50,9 @@ Map<String, String> _encodeAll() {
     final scalar = n.endsWith('ss') ||
         (n.endsWith('sd') && n != 'pminsd' && n != 'pmaxsd');
     switch (op.kind) {
+      case X86SimdKind.rm when op.memOnly:
+        emit('$n xmm1, qword ptr $memText', n, [x1, mem]);
+        emit('v$n xmm9, xmm10, qword ptr $memText', 'v$n', [x9, x10, mem]);
       case X86SimdKind.rm:
         emit('$n xmm9, xmm2', n, [x9, x2]);
         emit('$n xmm1, ${memSize(n)} $memText', n, [x1, mem]);
@@ -60,6 +63,18 @@ Map<String, String> _encodeAll() {
           emit('v$n ymm9, ymm10, ymm2', 'v$n', [y9, y10, y2]);
         }
         if (countShift) emit('v$n ymm9, ymm10, xmm2', 'v$n', [y9, y10, x2]);
+      case X86SimdKind.rmi when op.rmGp:
+        final sz = const {
+          'pinsrb': 'byte',
+          'pinsrw': 'word',
+          'pinsrd': 'dword',
+          'pinsrq': 'qword'
+        }[n]!;
+        final gp = n == 'pinsrq' ? X86Gp.r64(10) : X86Gp.r32(10);
+        final gpName = n == 'pinsrq' ? 'r10' : 'r10d';
+        emit('$n xmm9, $gpName, 1', n, [x9, gp, 1]);
+        emit('$n xmm1, $sz ptr $memText, 1', n, [x1, mem, 1]);
+        emit('v$n xmm9, xmm10, $sz ptr $memText, 1', 'v$n', [x9, x10, mem, 1]);
       case X86SimdKind.rmi:
         emit('$n xmm9, xmm2, 5', n, [x9, x2, 5]);
         emit('v$n xmm9, xmm10, xmm2, 5', 'v$n', [x9, x10, x2, 5]);
@@ -71,6 +86,24 @@ Map<String, String> _encodeAll() {
         emit('v$n xmm9, xmm2, 5', 'v$n', [x9, x2, 5]);
       case X86SimdKind.shiftImm:
         break;
+      case X86SimdKind.mr:
+        final base = n.substring(0, n.length - 3); // strip '_st'
+        emit('$base qword ptr $memText, xmm9', base, [mem, x9]);
+        emit('v$base qword ptr $memText, xmm1', 'v$base', [mem, x1]);
+      case X86SimdKind.mri:
+        final sz = const {
+          'pextrb': 'byte',
+          'pextrw': 'word',
+          'pextrd': 'dword',
+          'pextrq': 'qword'
+        }[n]!;
+        emit('$n $sz ptr $memText, xmm9, 3', n, [mem, x9, 3]);
+        emit('v$n $sz ptr $memText, xmm1, 1', 'v$n', [mem, x1, 1]);
+        if (op.rmGp) {
+          final gp = n == 'pextrq' ? X86Gp.r64(10) : X86Gp.r32(10);
+          final gpName = n == 'pextrq' ? 'r10' : 'r10d';
+          emit('$n $gpName, xmm9, 1', n, [gp, x9, 1]);
+        }
       case X86SimdKind.is4:
         emit('v$n xmm9, xmm10, xmm2, xmm3', 'v$n', [x9, x10, x2, X86Xmm(3)]);
         emit('v$n ymm9, ymm10, ymm2, ymm11', 'v$n', [y9, y10, y2, X86Ymm(11)]);
@@ -749,6 +782,45 @@ const _expected = <String, String>{
   'vcvtpd2ps xmm9, xmm2': 'c5795aca',
   'movddup xmm9, xmm2': 'f2440f12ca',
   'vmovddup xmm9, xmm2': 'c57b12ca',
+  'movlps xmm1, qword ptr [r9 + 2*rax + 64]': '410f124c4140',
+  'vmovlps xmm9, xmm10, qword ptr [r9 + 2*rax + 64]': 'c44128124c4140',
+  'movhps xmm1, qword ptr [r9 + 2*rax + 64]': '410f164c4140',
+  'vmovhps xmm9, xmm10, qword ptr [r9 + 2*rax + 64]': 'c44128164c4140',
+  'movlpd xmm1, qword ptr [r9 + 2*rax + 64]': '66410f124c4140',
+  'vmovlpd xmm9, xmm10, qword ptr [r9 + 2*rax + 64]': 'c44129124c4140',
+  'movhpd xmm1, qword ptr [r9 + 2*rax + 64]': '66410f164c4140',
+  'vmovhpd xmm9, xmm10, qword ptr [r9 + 2*rax + 64]': 'c44129164c4140',
+  'movlps qword ptr [r9 + 2*rax + 64], xmm9': '450f134c4140',
+  'vmovlps qword ptr [r9 + 2*rax + 64], xmm1': 'c4c178134c4140',
+  'movhps qword ptr [r9 + 2*rax + 64], xmm9': '450f174c4140',
+  'vmovhps qword ptr [r9 + 2*rax + 64], xmm1': 'c4c178174c4140',
+  'movlpd qword ptr [r9 + 2*rax + 64], xmm9': '66450f134c4140',
+  'vmovlpd qword ptr [r9 + 2*rax + 64], xmm1': 'c4c179134c4140',
+  'movhpd qword ptr [r9 + 2*rax + 64], xmm9': '66450f174c4140',
+  'vmovhpd qword ptr [r9 + 2*rax + 64], xmm1': 'c4c179174c4140',
+  'pinsrw xmm9, r10d, 1': '66450fc4ca01',
+  'pinsrw xmm1, word ptr [r9 + 2*rax + 64], 1': '66410fc44c414001',
+  'vpinsrw xmm9, xmm10, word ptr [r9 + 2*rax + 64], 1': 'c44129c44c414001',
+  'pinsrb xmm9, r10d, 1': '66450f3a20ca01',
+  'pinsrb xmm1, byte ptr [r9 + 2*rax + 64], 1': '66410f3a204c414001',
+  'vpinsrb xmm9, xmm10, byte ptr [r9 + 2*rax + 64], 1': 'c44329204c414001',
+  'pinsrd xmm9, r10d, 1': '66450f3a22ca01',
+  'pinsrd xmm1, dword ptr [r9 + 2*rax + 64], 1': '66410f3a224c414001',
+  'vpinsrd xmm9, xmm10, dword ptr [r9 + 2*rax + 64], 1': 'c44329224c414001',
+  'pinsrq xmm9, r10, 1': '664d0f3a22ca01',
+  'pinsrq xmm1, qword ptr [r9 + 2*rax + 64], 1': '66490f3a224c414001',
+  'vpinsrq xmm9, xmm10, qword ptr [r9 + 2*rax + 64], 1': 'c443a9224c414001',
+  'pextrb byte ptr [r9 + 2*rax + 64], xmm9, 3': '66450f3a144c414003',
+  'vpextrb byte ptr [r9 + 2*rax + 64], xmm1, 1': 'c4c379144c414001',
+  'pextrb r10d, xmm9, 1': '66450f3a14ca01',
+  'pextrw word ptr [r9 + 2*rax + 64], xmm9, 3': '66450f3a154c414003',
+  'vpextrw word ptr [r9 + 2*rax + 64], xmm1, 1': 'c4c379154c414001',
+  'pextrd dword ptr [r9 + 2*rax + 64], xmm9, 3': '66450f3a164c414003',
+  'vpextrd dword ptr [r9 + 2*rax + 64], xmm1, 1': 'c4c379164c414001',
+  'pextrd r10d, xmm9, 1': '66450f3a16ca01',
+  'pextrq qword ptr [r9 + 2*rax + 64], xmm9, 3': '664d0f3a164c414003',
+  'vpextrq qword ptr [r9 + 2*rax + 64], xmm1, 1': 'c4c3f9164c414001',
+  'pextrq r10, xmm9, 1': '664d0f3a16ca01',
   'movq xmm9, xmm2': 'f3440f7eca',
   'vmovq xmm9, xmm2': 'c57a7eca',
   'cvtpd2dq xmm9, xmm2': 'f2440fe6ca',
