@@ -56,6 +56,13 @@ class RAPass extends CompilerPass {
   // Liveness info (block-local)
   final Map<int, int> _lastUsePos = {};
 
+  /// Live-out registers of the block being allocated: a last use does not
+  /// kill a register that is live-out (a loop back edge reads it again).
+  BitVector? _blockLiveOut;
+
+  bool _isKill(int virtId, int workId, int pos) =>
+      _lastUsePos[virtId] == pos && !(_blockLiveOut?.testBit(workId) ?? false);
+
   // Global Liveness data
   final Map<int, RABlockData> _blockData = {};
   int _numWorkRegs = 0;
@@ -168,7 +175,7 @@ class RAPass extends CompilerPass {
           if (physArg.isReg) {
             // workReg.homeRegId = physArg.regId;
           }
-          // Stack arguments are handled later (only register arguments enter here).
+          // Stack arguments are loaded by [_insertArgMoves].
         }
       }
     }
@@ -204,6 +211,14 @@ class RAPass extends CompilerPass {
             final movNode = _arch.move(virtReg, virtReg.toPhys(physArg.regId));
             _insertNodeAfter(insertPoint!, movNode);
             insertPoint = movNode;
+          } else if (physArg.isStack) {
+            // An argument passed on the stack: load it from the caller's
+            // argument area (`emit_args_assignment()` loads it in the prolog).
+            final workReg = _allocator.workRegById(_virtIdToWorkId[virtId]!);
+            final loadNode = _arch.loadStackArg(
+                workReg.virtReg, physArg.stackOffset, physArg.typeId);
+            _insertNodeAfter(insertPoint!, loadNode);
+            insertPoint = loadNode;
           }
         }
       }
@@ -1217,6 +1232,7 @@ class RAPass extends CompilerPass {
 
   void _processBlock(BlockNode block) {
     final data = _blockData[block.label.id]!;
+    _blockLiveOut = data.liveOut;
 
     if (data.entryAssignment != null) {
       _allocator.copyAssignmentFrom(data.entryAssignment!);
@@ -1308,7 +1324,7 @@ class RAPass extends CompilerPass {
 
         // Check for Last Use (Kill)
         if ((currentFlags & RATiedFlags.kRead) != 0) {
-          if (_lastUsePos[op.id] == node.position) {
+          if (_isKill(op.id, workId, node.position)) {
             currentFlags |= RATiedFlags.kKill;
           }
         }
@@ -1373,7 +1389,7 @@ class RAPass extends CompilerPass {
           // Use | Read | UseFixed
           int flags =
               RATiedFlags.kUse | RATiedFlags.kRead | RATiedFlags.kUseFixed;
-          if (_lastUsePos[op.id] == node.position) {
+          if (_isKill(op.id, workId, node.position)) {
             flags |= RATiedFlags.kKill;
           }
 
@@ -1421,7 +1437,7 @@ class RAPass extends CompilerPass {
     final workReg = _allocator.workRegById(workId);
     int flags = RATiedFlags.kRead | RATiedFlags.kUse;
 
-    if (_lastUsePos[reg.id] == pos) {
+    if (_isKill(reg.id, workId, pos)) {
       flags |= RATiedFlags.kKill;
     }
 

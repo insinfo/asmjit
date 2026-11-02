@@ -430,6 +430,17 @@ class BaseCompiler extends BaseBuilder {
   AsmJitError endFunc() {
     if (_func == null) return AsmJitError.invalidState;
 
+    // Upstream emits the epilog once, at the exit label, so a function whose
+    // body can fall through its end returns there; the port emits the epilog
+    // at each return, so such a function gets an explicit return.
+    final last = nodes.last;
+    final analyzer = instructionAnalyzer;
+    final fallsThrough = !(last is FuncRetNode ||
+        (last is InstNode &&
+            analyzer != null &&
+            (analyzer.isUnconditionalJump(last) || analyzer.isReturn(last))));
+    if (fallsThrough) addNode(FuncRetNode(const []));
+
     // Add exit label
     addNode(_func!.exitNode!);
     // Add sentinel
@@ -513,7 +524,9 @@ class BaseCompiler extends BaseBuilder {
 class CFGBuilder extends CompilerPass {
   final InstructionAnalyzer analyzer;
 
-  CFGBuilder(BaseCompiler compiler, this.analyzer) : super(compiler);
+  CFGBuilder(BaseCompiler compiler, this.analyzer) : super(compiler) {
+    compiler.instructionAnalyzer = analyzer;
+  }
 
   @override
   void run(NodeList nodes) {

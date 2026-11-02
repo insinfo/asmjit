@@ -17,6 +17,7 @@ import '../core/compiler.dart';
 import '../core/labels.dart';
 import '../core/raarch.dart';
 import '../core/radefs.dart';
+import '../core/type.dart';
 import 'a64.dart';
 import 'a64_inst_db.g.dart';
 
@@ -152,6 +153,24 @@ class A64RAArch extends RAArch {
   @override
   InstNode load(BaseReg dst, BaseMem src) =>
       InstNode(A64InstId.kLdr, [_full(dst), src]);
+
+  @override
+  InstNode loadStackArg(BaseReg dst, int stackOffset, TypeId typeId) {
+    final size = typeId.sizeInBytes;
+    final mem = A64Mem.baseOffset(_fp, 16 + stackOffset);
+    if (dst is A64Vec) {
+      return InstNode(A64InstId.kLdr, [A64Vec(dst.id, size * 8), mem]);
+    }
+    final gp = dst as A64Gp;
+    final id = switch ((size, typeId.isSigned)) {
+      (1, false) => A64InstId.kLdrb,
+      (1, true) => A64InstId.kLdrsb,
+      (2, false) => A64InstId.kLdrh,
+      (2, true) => A64InstId.kLdrsh,
+      _ => A64InstId.kLdr,
+    };
+    return InstNode(id, [size <= 4 ? gp.w : gp.x, mem]);
+  }
 
   @override
   InstNode save(BaseMem dst, BaseReg src) =>

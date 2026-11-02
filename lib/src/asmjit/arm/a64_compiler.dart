@@ -178,6 +178,12 @@ class A64Compiler extends BaseCompiler {
   void subs(Operand rd, Operand rn, Operand rm) =>
       inst(A64InstId.kSubs, [rd, rn, rm]);
 
+  /// Branch to a register [target] (a jump table) whose possible targets
+  /// are [annotation] (`br(target, annotation)`); without one the register
+  /// allocator assumes it can reach any block.
+  JumpNode br(A64Gp target, [JumpAnnotation? annotation]) =>
+      emitAnnotatedJump(A64InstId.kBr, target, annotation);
+
   void bHi(Label target) =>
       inst(A64InstId.kB_cond, [A64CondOp(A64Cond.hi), ir.LabelOp(target)],
           type: ir.NodeType.jump);

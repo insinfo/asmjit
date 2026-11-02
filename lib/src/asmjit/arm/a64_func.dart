@@ -143,7 +143,26 @@ class A64FuncInternal {
     final argCount = func.argCount;
     var stackOffset = 0;
 
-    int minStackArgSize = cc.strategy == CallConvStrategy.aarch64Apple ? 4 : 8;
+    final isApple = cc.strategy == CallConvStrategy.aarch64Apple;
+    int minStackArgSize = isApple ? 4 : 8;
+
+    // Deviation from upstream, which gives every Apple stack argument at
+    // least 4 bytes (`min_stack_arg_size`): executing upstream's FuncDetail
+    // for (8 x int64, int8, int16, int32, uint8, uint16) on macOS arm64 gives
+    // the stack offsets 0, 4, 8, 12, 16, while clang (the platform ABI)
+    // reads them at 0, 2, 4, 8, 10: Apple packs stack arguments by their
+    // natural size and alignment.
+    int nextStackOffset(int size) {
+      if (isApple) {
+        stackOffset = support.alignUp(stackOffset, size);
+      } else {
+        size = support.max(size, minStackArgSize);
+        if (size >= 8) stackOffset = support.alignUp(stackOffset, 8);
+      }
+      final offset = stackOffset;
+      stackOffset += size;
+      return offset;
+    }
 
     if (func.hasRet()) {
       for (int i = 0; i < Globals.kMaxValuePack; i++) {
@@ -197,12 +216,7 @@ class A64FuncInternal {
             func.addUsedRegs(RegGroup.gp, support.bitMask(regId));
             gpPos++;
           } else {
-            var size = support.max(typeId.sizeInBytes, minStackArgSize);
-            if (size >= 8) {
-              stackOffset = support.alignUp(stackOffset, 8);
-            }
-            arg.assignStackOffset(stackOffset);
-            stackOffset += size;
+            arg.assignStackOffset(nextStackOffset(typeId.sizeInBytes));
           }
           continue;
         }
@@ -220,12 +234,7 @@ class A64FuncInternal {
             func.addUsedRegs(RegGroup.vec, support.bitMask(regId));
             vecPos++;
           } else {
-            var size = support.max(typeId.sizeInBytes, minStackArgSize);
-            if (size >= 8) {
-              stackOffset = support.alignUp(stackOffset, 8);
-            }
-            arg.assignStackOffset(stackOffset);
-            stackOffset += size;
+            arg.assignStackOffset(nextStackOffset(typeId.sizeInBytes));
           }
           continue;
         }

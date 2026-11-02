@@ -10,6 +10,7 @@ import '../core/compiler.dart';
 import '../core/labels.dart';
 import '../core/raarch.dart';
 import '../core/radefs.dart';
+import '../core/type.dart';
 import 'x86.dart';
 import 'x86_inst_db.g.dart';
 import 'x86_operands.dart';
@@ -228,6 +229,27 @@ class X86RAArch extends RAArch {
           _hasAvx(_cc) ? X86InstId.kVmovups : X86InstId.kMovups, [dst, src]);
     }
     return InstNode(X86InstId.kMov, [dst, src]);
+  }
+
+  @override
+  InstNode loadStackArg(BaseReg dst, int stackOffset, TypeId typeId) {
+    final size = typeId.sizeInBytes;
+    final mem = X86Mem.baseDisp(X86Gp.r64(X86RegId.rbp.index), 16 + stackOffset,
+        size: size);
+    if (dst.group == RegGroup.vec) {
+      final id = switch (size) {
+        4 => _hasAvx(_cc) ? X86InstId.kVmovss : X86InstId.kMovss,
+        8 => _hasAvx(_cc) ? X86InstId.kVmovsd : X86InstId.kMovsd,
+        _ => _hasAvx(_cc) ? X86InstId.kVmovups : X86InstId.kMovups,
+      };
+      return InstNode(id, [dst, mem]);
+    }
+    final gp = dst as X86Gp;
+    if (size < 4) {
+      return InstNode(typeId.isSigned ? X86InstId.kMovsx : X86InstId.kMovzx,
+          [gp.as32, mem]);
+    }
+    return InstNode(X86InstId.kMov, [size == 8 ? gp.as64 : gp.as32, mem]);
   }
 
   @override

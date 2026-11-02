@@ -8,6 +8,7 @@
 import 'compiler.dart';
 import 'labels.dart';
 import 'radefs.dart';
+import 'type.dart';
 
 /// Information [RAArch.insertPrologEpilog] needs once allocation finished.
 class RAFrameContext {
@@ -83,6 +84,12 @@ abstract class RAArch {
 
   /// Loads [dst] from a spill slot.
   InstNode load(BaseReg dst, BaseMem src);
+
+  /// Loads the function argument passed at [stackOffset] of the caller's
+  /// argument area into [dst] ([typeId] gives the width). The prolog keeps
+  /// the frame pointer, so the area starts at `fp + 16` (after the saved
+  /// frame pointer and the return address / link register).
+  InstNode loadStackArg(BaseReg dst, int stackOffset, TypeId typeId);
 
   /// Stores [src] into a spill slot.
   InstNode save(BaseMem dst, BaseReg src);

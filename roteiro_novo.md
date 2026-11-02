@@ -207,8 +207,18 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - `X86Compiler.movsxd`.
 - `test/asmjit/compiler_jump_table_test.dart`: ports de `X86Test_JumpTable1` (anotado e desconhecido), `JumpTable2` (alvo de volta ao começo), `JumpTable3` e `JumpTable4`, executados via JIT x64.
 
+### Testes de compiler A64 do upstream e bugs de RA encontrados
+- `test/asmjit/upstream_compiler_a64_test.dart`: port de `asmjit_test_compiler_a64.cpp` (GpArgs 0..16 com/sem FP preservado, Simd1, GpRegs 2..63, Adr, Branch1, JumpTable anotado/desconhecido), executado via JIT no AArch64. Invoke1-3 ficam em `skip`: o RA do port ainda não trata `InvokeNode` (chamadas pelo compiler).
+- Bugs do port corrigidos:
+  - **Kill em laço**: o último uso linear de um registrador o liberava mesmo estando em `liveOut` do bloco; num laço a aresta de volta recarregava `i/p/count` de slots de pilha nunca gravados (crash). Agora o kill exige que a variável não seja live-out (`_isKill`).
+  - **Argumentos na pilha** nunca eram carregados (o vreg ficava com um registrador arbitrário). `_insertArgMoves` carrega de `[fp + 16 + offset]` via `RAArch.loadStackArg` (largura/sinal pelo tipo; x86 inclui o shadow space do Win64).
+  - **Função sem `ret` explícito** caía nos bytes seguintes: `endFunc()` acrescenta um retorno quando o fluxo pode chegar ao fim (o upstream emite o epílogo no exit label).
+  - `A64Compiler.br(target, [annotation])`.
+- **Bug do upstream provado**: na ABI da Apple o `FuncDetail` dá no mínimo 4 bytes a cada argumento na pilha (`min_stack_arg_size`); para (8×int64, int8, int16, int32, uint8, uint16) o upstream calcula os offsets 0, 4, 8, 12, 16, enquanto o clang lê 0, 2, 4, 8, 10. O port empacota pelo tamanho/alinhamento natural na Apple.
+- `test/asmjit/compiler_stack_args_test.dart`: 12 argumentos int64 e argumentos pequenos/mistos na pilha (SysV, Win64, AAPCS64/Apple).
+
 ### Próximos passos
-1. Portar o restante de `asmjit_test_compiler_x86.cpp`/`_a64.cpp` como testes (guia para o RA); `[LABEL|RIP]` em 32 bits.
+1. Port de `asmjit_test_compiler_x86.cpp` (em andamento, num agente) e `InvokeNode` no RA; `[LABEL|RIP]` em 32 bits.
 2. `emit_2vs` (UniOpVR) no lugar de `emitCV`.
 3. Portar `asmjit_test_unicompiler*.cpp` e os testes do compiler.
 4. Acesso de outros operandos além do 0 (xadd/cmpxchg) a partir do banco.
