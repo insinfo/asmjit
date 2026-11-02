@@ -223,13 +223,20 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
   - AVX, `extract_u64` com índice 1: gera `vmovq rax, xmm0` (elemento 0), enquanto o caminho SSE4.1 gera `pextrq rax, xmm0, 1`. O port só usa `vmovq` no índice 0.
 - `test/asmjit/ujit_vr_ops_test.dart`: todas as `UniOpVR` em todos os índices (SSE2, SSE4.1 e host no x86; AArch64).
 
+### `JitAllocator` e `VirtMem` portados (`eb4f584`, `b42944f`)
+- `runtime/jit_allocator.dart`: port do `JitAllocator` (pools por granularidade, blocos com bitvectors usado/stop, busca incremental, crescimento de blocos, fill pattern, padding inicial, páginas grandes, `kImmediateRelease`, reset policies, alloc/release/shrink/query, `write`/`writeWith`, estatísticas). `runtime/virtmem.dart` reescrito sobre o `VirtMem` do upstream: dual mapping (Windows, `mach_vm_remap` no macOS x86, `memfd_create`/`shm_open`/arquivo temporário no Linux), detecção do hardened runtime com `MAP_JIT`, `ProtectJitReadWriteScope` (`pthread_jit_write_protect_np` no Apple Silicon), flush de icache. Estruturas de apoio: `support/arena_tree.dart` (RB-tree), `arena_list.dart`, `bit_vector_ops.dart`.
+- `JitRuntime.add()` aloca um span do `JitAllocator` (como `JitRuntime::_add()`): relocação para `span.rx`, cópia via `span.rw` dentro do escopo de escrita JIT, shrink. Antes cada função ganhava páginas próprias via mmap; agora 1000 funções pequenas cabem num bloco de 128KB.
+- Corrigido de quebra: no Windows a granularidade de alocação era lida no offset errado do `SYSTEM_INFO` (28 em vez de 40 no x64).
+- **Bugs do upstream provados** (repros em `tool/upstream_repro/`): `reset(kSoft)` deixa os links da RB-tree do bloco mantido apontando para blocos apagados (assert em debug, heap-use-after-free sob ASan); reset com `kFillUnusedMemory` preenche os intervalos livres em vez dos usados (código antigo sobrevive e é reentregue); `is_initialized()` invertido; `reset()` não zera a contagem de alocações; bloco esvaziado em modo incremental nunca é marcado vazio.
+- `test/asmjit/jit_allocator_test.dart`: testes unitários do upstream (iterador de bits, stress alloc/release/shrink nas 12 configurações com as mesmas estatísticas do upstream em todas as fases), query, deviações, VirtMem, e 1000 funções JIT compartilhando blocos.
+- Não portado: lock (um isolate por allocator), caminhos só de BSD; Linux (dual mapping/huge pages) validado só pelo CI.
+
 ### UJIT com vetores de 256 bits (AVX2)
 - `runUjit()` aceita a largura do vetor (cargas/stores de 256 bits, buffers alinhados a 32). As ops do UniCompiler a 256 bits trabalham por faixa de 128 bits (como as referências do teste do upstream), então `ujit_vvv_ops_test` e `ujit_vvvv_ops_test` rodam todas as `UniOpVVV`/`UniOpVVVV` a 256 bits em hosts AVX2 (com e sem FMA), comparando cada faixa com a referência de 128 bits: todos os 1548 + 228 casos passam (Windows AVX2).
 - `vv`/`vvi` ficam de fora: no upstream as conversões lo/hi e os broadcasts a 256 bits cruzam faixas e precisam de referências próprias.
 
 ### Próximos passos
 1. Port de `asmjit_test_compiler_x86.cpp` (em andamento, num agente) e `InvokeNode` no RA.
-2. `JitAllocator` do upstream no `JitRuntime` (em andamento, num agente).
 3. Portar `asmjit_test_unicompiler*.cpp` e os testes do compiler.
 4. Acesso de outros operandos além do 0 (xadd/cmpxchg) a partir do banco.
 5. AVX-512/EVEX no UJIT, validado no runner linux-x64 do CI (tem AVX-512F).
