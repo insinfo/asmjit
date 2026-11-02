@@ -281,9 +281,7 @@ class X86Assembler extends BaseEmitter {
   }
 
   /// ADD reg, imm.
-  void addRI(X86Gp dst, int imm) {
-    _enc.addRI(dst, imm);
-  }
+  void addRI(X86Gp dst, int imm) => _enc.aluRI(X86Encoder.kAluAdd, dst, imm);
 
   /// ADD reg, [mem].
   void addRM(X86Gp dst, X86Mem mem) => _enc.addRM(dst, mem);
@@ -295,21 +293,13 @@ class X86Assembler extends BaseEmitter {
   void addMI(X86Mem mem, int imm) => _enc.addMI(mem, imm);
 
   /// SUB dst, src.
-  void subRR(X86Gp dst, X86Gp src) {
-    _enc.subR64R64(dst, src);
-  }
+  void subRR(X86Gp dst, X86Gp src) => _enc.aluRR(X86Encoder.kAluSub, dst, src);
 
-  /// SUB r64, imm.
-  void subRI(X86Gp dst, int imm) {
-    if (imm >= -128 && imm <= 127) {
-      _enc.subR64Imm8(dst, imm);
-    } else {
-      _enc.subR64Imm32(dst, imm);
-    }
-  }
+  /// SUB reg, imm.
+  void subRI(X86Gp dst, int imm) => _enc.aluRI(X86Encoder.kAluSub, dst, imm);
 
-  /// SUB r64, [mem].
-  void subRM(X86Gp dst, X86Mem mem) => _enc.subR64Mem(dst, mem);
+  /// SUB reg, [mem].
+  void subRM(X86Gp dst, X86Mem mem) => _enc.aluRM(X86Encoder.kAluSub, dst, mem);
 
   /// AND r64, [mem].
   void andRM(X86Gp dst, X86Mem mem) => _enc.andRM(dst, mem);
@@ -320,45 +310,30 @@ class X86Assembler extends BaseEmitter {
   /// AND [mem], imm.
   void andMI(X86Mem mem, int imm) => _enc.andMI(mem, imm);
 
-  /// OR r64, [mem].
-  void orRM(X86Gp dst, X86Mem mem) => _enc.orR64Mem(dst, mem);
+  /// OR reg, [mem].
+  void orRM(X86Gp dst, X86Mem mem) => _enc.aluRM(X86Encoder.kAluOr, dst, mem);
 
-  /// XOR r64, [mem].
-  void xorRM(X86Gp dst, X86Mem mem) => _enc.xorR64Mem(dst, mem);
+  /// XOR reg, [mem].
+  void xorRM(X86Gp dst, X86Mem mem) => _enc.aluRM(X86Encoder.kAluXor, dst, mem);
 
-  /// CMP r64, [mem].
-  void cmpRM(X86Gp dst, X86Mem mem) => _enc.cmpR64Mem(dst, mem);
+  /// CMP reg, [mem].
+  void cmpRM(X86Gp dst, X86Mem mem) => _enc.aluRM(X86Encoder.kAluCmp, dst, mem);
 
-  /// TEST r64, [mem].
-  void testRM(X86Gp dst, X86Mem mem) => _enc.testR64Mem(dst, mem);
+  /// TEST [mem], reg.
+  void testRM(X86Gp dst, X86Mem mem) => _enc.testMRSized(mem, dst);
 
   /// IMUL dst, src.
-  void imulRR(X86Gp dst, X86Gp src) {
-    _enc.imulR64R64(dst, src);
-  }
+  void imulRR(X86Gp dst, X86Gp src) => _enc.imulRRSized(dst, src);
 
   /// IMUL dst, src, imm (three-operand form).
-  void imulRRI(X86Gp dst, X86Gp src, int imm) {
-    if (imm >= -128 && imm <= 127) {
-      _enc.imulR64R64Imm8(dst, src, imm);
-    } else {
-      _enc.imulR64R64Imm32(dst, src, imm);
-    }
-  }
+  void imulRRI(X86Gp dst, X86Gp src, int imm) =>
+      _enc.imulRRISized(dst, src, imm);
 
   /// IMUL dst, imm (dst = dst * imm).
-  void imulRI(X86Gp dst, int imm) {
-    if (imm >= -128 && imm <= 127) {
-      _enc.imulR64Imm8(dst, imm);
-    } else {
-      _enc.imulR64Imm32(dst, imm);
-    }
-  }
+  void imulRI(X86Gp dst, int imm) => _enc.imulRRISized(dst, dst, imm);
 
   /// XOR dst, src.
-  void xorRR(X86Gp dst, X86Gp src) {
-    _enc.xorR64R64(dst, src);
-  }
+  void xorRR(X86Gp dst, X86Gp src) => _enc.aluRR(X86Encoder.kAluXor, dst, src);
 
   /// AND dst, src.
   void andRR(X86Gp dst, X86Gp src) {
@@ -366,52 +341,28 @@ class X86Assembler extends BaseEmitter {
   }
 
   /// OR dst, src.
-  void orRR(X86Gp dst, X86Gp src) {
-    _enc.orR64R64(dst, src);
-  }
+  void orRR(X86Gp dst, X86Gp src) => _enc.aluRR(X86Encoder.kAluOr, dst, src);
 
   /// CMP dst, src.
-  void cmpRR(X86Gp dst, X86Gp src) {
-    _enc.cmpR64R64(dst, src);
-  }
+  void cmpRR(X86Gp dst, X86Gp src) => _enc.aluRR(X86Encoder.kAluCmp, dst, src);
 
-  /// CMP r64, imm32.
-  void cmpRI(X86Gp dst, int imm) {
-    _enc.cmpR64Imm32(dst, imm);
-  }
+  /// CMP reg, imm.
+  void cmpRI(X86Gp dst, int imm) => _enc.aluRI(X86Encoder.kAluCmp, dst, imm);
 
   /// TEST dst, src.
-  void testRR(X86Gp dst, X86Gp src) {
-    _enc.testR64R64(dst, src);
-  }
+  void testRR(X86Gp dst, X86Gp src) => _enc.testRRSized(dst, src);
 
-  /// TEST r64, imm32.
-  void testRI(X86Gp dst, int imm) {
-    _enc.testR64Imm32(dst, imm);
-  }
+  /// TEST reg, imm.
+  void testRI(X86Gp dst, int imm) => _enc.testRISized(dst, imm);
 
   /// AND r64, imm.
-  void andRI(X86Gp dst, int imm) {
-    _enc.andRI(dst, imm);
-  }
+  void andRI(X86Gp dst, int imm) => _enc.aluRI(X86Encoder.kAluAnd, dst, imm);
 
-  /// OR r64, imm.
-  void orRI(X86Gp dst, int imm) {
-    if (imm >= -128 && imm <= 127) {
-      _enc.orR64Imm8(dst, imm);
-    } else {
-      _enc.orR64Imm32(dst, imm);
-    }
-  }
+  /// OR reg, imm.
+  void orRI(X86Gp dst, int imm) => _enc.aluRI(X86Encoder.kAluOr, dst, imm);
 
-  /// XOR r64, imm.
-  void xorRI(X86Gp dst, int imm) {
-    if (imm >= -128 && imm <= 127) {
-      _enc.xorR64Imm8(dst, imm);
-    } else {
-      _enc.xorR64Imm32(dst, imm);
-    }
-  }
+  /// XOR reg, imm.
+  void xorRI(X86Gp dst, int imm) => _enc.aluRI(X86Encoder.kAluXor, dst, imm);
 
   /// MOVSX r64, r8 (sign-extend byte).
   void movsxB(X86Gp dst, X86Gp src) {

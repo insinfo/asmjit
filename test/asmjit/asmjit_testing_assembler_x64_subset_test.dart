@@ -84,11 +84,11 @@ void main() {
     });
 
     test('cmp rax, 1', () {
-      _testInst('483d01000000', (a) => a.cmpRI(rax, 1));
+      _testInst('4883f801', (a) => a.cmpRI(rax, 1));
     });
 
     test('cmp rcx, 1', () {
-      _testInst('4881f901000000', (a) => a.cmpRI(rcx, 1));
+      _testInst('4883f901', (a) => a.cmpRI(rcx, 1));
     });
 
     test('push rax; pop rax', () {

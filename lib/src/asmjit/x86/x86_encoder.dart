@@ -894,6 +894,126 @@ class X86Encoder {
     emitModRmReg(src.encoding, dst);
   }
 
+  // ALU opcode bases (`op r/m, reg`): the `op reg, r/m` form is base + 2,
+  // 8-bit forms use base and the others base + 1.
+  static const int kAluAdd = 0x00, kAluOr = 0x08, kAluAnd = 0x20;
+  static const int kAluSub = 0x28, kAluXor = 0x30, kAluCmp = 0x38;
+
+  /// `op r/m, reg` with the operand size of the registers.
+  void aluRR(int opBase, X86Gp dst, X86Gp src) {
+    if (dst.bits != src.bits) {
+      throw ArgumentError('ALU register operands must have the same size');
+    }
+    _emitOpSizeAndRexForRegRm(src, dst);
+    buffer.emit8(dst.bits == 8 ? opBase : opBase + 1);
+    emitModRmReg(src.encoding, dst);
+  }
+
+  /// `op reg, [mem]` with the operand size of [dst].
+  void aluRM(int opBase, X86Gp dst, X86Mem mem) {
+    _emitOp66If16(dst);
+    emitRexForRegMem(dst, mem, w: dst.bits == 64);
+    buffer.emit8(dst.bits == 8 ? opBase + 2 : opBase + 3);
+    emitModRmMem(dst.encoding, mem);
+  }
+
+  /// `op r/m, imm` (80 ib, 83 ib or 81 iw/id with ModRM.reg = opBase >> 3),
+  /// choosing the form like asmjit's `kEncodingX86Arith`: imm8 when the value
+  /// fits, and the AL/AX/EAX/RAX short form (`opBase + 4/5`) for AL or when
+  /// the immediate does not fit in 8 bits.
+  void aluRI(int opBase, X86Gp dst, int imm) {
+    final ext = opBase >> 3;
+    final imm8 = dst.bits == 8 || (imm >= -128 && imm <= 127);
+    if (dst.id == 0 && (dst.bits == 8 || !imm8)) {
+      _emitOpSizeAndRexForReg(dst);
+      buffer.emit8(opBase + (dst.bits == 8 ? 4 : 5));
+      _emitImmOfSize(dst.bits, imm);
+      return;
+    }
+    _emitOpSizeAndRexForReg(dst);
+    if (dst.bits == 8) {
+      buffer.emit8(0x80);
+      emitModRmReg(ext, dst);
+      buffer.emit8(imm & 0xFF);
+    } else if (imm8) {
+      buffer.emit8(0x83);
+      emitModRmReg(ext, dst);
+      buffer.emit8(imm & 0xFF);
+    } else {
+      buffer.emit8(0x81);
+      emitModRmReg(ext, dst);
+      _emitImmOfSize(dst.bits, imm);
+    }
+  }
+
+  /// Immediate of an instruction with operand size [bits] (imm8, imm16 or
+  /// imm32; 64-bit operations take a sign-extended imm32).
+  void _emitImmOfSize(int bits, int imm) {
+    switch (bits) {
+      case 8:
+        buffer.emit8(imm & 0xFF);
+      case 16:
+        buffer.emit16(imm & 0xFFFF);
+      default:
+        final max = bits == 64 ? 0x7FFFFFFF : 0xFFFFFFFF;
+        if (imm < -0x80000000 || imm > max) {
+          throw ArgumentError('immediate $imm does not fit in the operand');
+        }
+        buffer.emit32(imm);
+    }
+  }
+
+  /// TEST r/m, reg (84 /r, 85 /r).
+  void testRRSized(X86Gp dst, X86Gp src) => aluRR(0x84, dst, src);
+
+  /// TEST [mem], reg (85 /r) with the operand size of [reg].
+  void testMRSized(X86Mem mem, X86Gp reg) {
+    _emitOp66If16(reg);
+    emitRexForRegMem(reg, mem, w: reg.bits == 64);
+    buffer.emit8(reg.bits == 8 ? 0x84 : 0x85);
+    emitModRmMem(reg.encoding, mem);
+  }
+
+  /// TEST r/m, imm (F6 /0 ib, F7 /0 iw/id; A8/A9 for AL/AX/EAX/RAX).
+  void testRISized(X86Gp dst, int imm) {
+    _emitOpSizeAndRexForReg(dst);
+    if (dst.id == 0) {
+      buffer.emit8(dst.bits == 8 ? 0xA8 : 0xA9);
+    } else {
+      buffer.emit8(dst.bits == 8 ? 0xF6 : 0xF7);
+      emitModRmReg(0, dst);
+    }
+    _emitImmOfSize(dst.bits, imm);
+  }
+
+  /// IMUL reg, r/m (0F AF /r).
+  void imulRRSized(X86Gp dst, X86Gp src) {
+    if (dst.bits != src.bits || dst.bits == 8) {
+      throw ArgumentError('IMUL requires 16/32/64-bit operands of one size');
+    }
+    _emitOpSizeAndRexForRegRm(dst, src);
+    buffer.emit8(0x0F);
+    buffer.emit8(0xAF);
+    emitModRmReg(dst.encoding, src);
+  }
+
+  /// IMUL reg, r/m, imm (6B /r ib, 69 /r iw/id).
+  void imulRRISized(X86Gp dst, X86Gp src, int imm) {
+    if (dst.bits != src.bits || dst.bits == 8) {
+      throw ArgumentError('IMUL requires 16/32/64-bit operands of one size');
+    }
+    _emitOpSizeAndRexForRegRm(dst, src);
+    if (imm >= -128 && imm <= 127) {
+      buffer.emit8(0x6B);
+      emitModRmReg(dst.encoding, src);
+      buffer.emit8(imm & 0xFF);
+    } else {
+      buffer.emit8(0x69);
+      emitModRmReg(dst.encoding, src);
+      dst.bits == 16 ? buffer.emit16(imm) : buffer.emit32(imm);
+    }
+  }
+
   void andRR(X86Gp dst, X86Gp src) {
     if (dst.bits != src.bits) {
       throw ArgumentError('andRR requires same operand size');
@@ -5962,17 +6082,27 @@ class X86Encoder {
   // ===========================================================================
 
   /// MOV [mem], imm32 - Move immediate to memory (64-bit mode writes 32-bit)
+  ///
+  /// The operand size comes from the memory operand (1, 2, 4 or 8 bytes);
+  /// memory without a size is a qword (imm32 sign-extended).
   void movMemImm32(X86Mem mem, int imm32) {
+    final size = mem.size == 0 ? 8 : mem.size;
     final baseExt = _memBase(mem)?.isExtended ?? false;
     final indexExt = _isExt(_memIndex(mem));
-    if (baseExt || indexExt) {
-      emitRex(true, false, indexExt, baseExt);
-    } else {
-      buffer.emit8(0x48); // REX.W for 64-bit
+    if (size == 2) buffer.emit8(0x66);
+    if (size == 8 || baseExt || indexExt) {
+      emitRex(size == 8, false, indexExt, baseExt);
     }
-    buffer.emit8(0xC7);
+    buffer.emit8(size == 1 ? 0xC6 : 0xC7);
     emitModRmMem(0, mem);
-    buffer.emit32(imm32);
+    switch (size) {
+      case 1:
+        buffer.emit8(imm32 & 0xFF);
+      case 2:
+        buffer.emit16(imm32 & 0xFFFF);
+      default:
+        buffer.emit32(imm32);
+    }
   }
 
   /// ADD [mem], imm32 - Add immediate to memory
