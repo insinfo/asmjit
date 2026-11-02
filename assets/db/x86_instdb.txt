@@ -1,0 +1,1650 @@
+# Copied from asmjit/x86/x86instdb.cpp by tool/vendor_x86_instdb.dart; do not edit.
+# Name;Encoding;Opcode0;Opcode1;InstFlags;Avx512Flags
+None;None;0;0;;
+Aaa;X86Op_xAX;O(000000,37,_,_,_,_,_,_  );0;;
+Aad;X86I_xAX;O(000000,D5,_,_,_,_,_,_  );0;;
+Aadd;X86Mr;O(000F38,FC,_,_,_,_,_,_  );0;;
+Aam;X86I_xAX;O(000000,D4,_,_,_,_,_,_  );0;;
+Aand;X86Mr;O(660F38,FC,_,_,_,_,_,_  );0;;
+Aas;X86Op_xAX;O(000000,3F,_,_,_,_,_,_  );0;;
+Adc;X86Arith;O(000000,10,2,_,x,_,_,_  );0;Lock|XAcquire|XRelease;
+Adcx;X86Rm;O(660F38,F6,_,_,x,_,_,_  );0;;
+Add;X86Arith;O(000000,00,0,_,x,_,_,_  );0;Lock|XAcquire|XRelease;
+Addpd;ExtRm;O(660F00,58,_,_,_,_,_,_  );0;Vec;
+Addps;ExtRm;O(000F00,58,_,_,_,_,_,_  );0;Vec;
+Addsd;ExtRm;O(F20F00,58,_,_,_,_,_,_  );0;Vec;
+Addss;ExtRm;O(F30F00,58,_,_,_,_,_,_  );0;Vec;
+Addsubpd;ExtRm;O(660F00,D0,_,_,_,_,_,_  );0;Vec;
+Addsubps;ExtRm;O(F20F00,D0,_,_,_,_,_,_  );0;Vec;
+Adox;X86Rm;O(F30F38,F6,_,_,x,_,_,_  );0;;
+Aesdec;ExtRm;O(660F38,DE,_,_,_,_,_,_  );0;Vec;
+Aesdeclast;ExtRm;O(660F38,DF,_,_,_,_,_,_  );0;Vec;
+Aesenc;ExtRm;O(660F38,DC,_,_,_,_,_,_  );0;Vec;
+Aesenclast;ExtRm;O(660F38,DD,_,_,_,_,_,_  );0;Vec;
+Aesimc;ExtRm;O(660F38,DB,_,_,_,_,_,_  );0;Vec;
+Aeskeygenassist;ExtRmi;O(660F3A,DF,_,_,_,_,_,_  );0;Vec;
+And;X86Arith;O(000000,20,4,_,x,_,_,_  );0;Lock|XAcquire|XRelease;
+Andn;VexRvm_Wx;V(000F38,F2,_,0,x,_,_,_  );0;Vex;
+Andnpd;ExtRm;O(660F00,55,_,_,_,_,_,_  );0;Vec;
+Andnps;ExtRm;O(000F00,55,_,_,_,_,_,_  );0;Vec;
+Andpd;ExtRm;O(660F00,54,_,_,_,_,_,_  );0;Vec;
+Andps;ExtRm;O(000F00,54,_,_,_,_,_,_  );0;Vec;
+Aor;X86Mr;O(F20F38,FC,_,_,_,_,_,_  );0;;
+Arpl;X86Mr_NoSize;O(000000,63,_,_,_,_,_,_  );0;;
+Axor;X86Mr;O(F30F38,FC,_,_,_,_,_,_  );0;;
+Bextr;VexRmv_Wx;V(000F38,F7,_,0,x,_,_,_  );0;Vex;
+Blcfill;VexVm_Wx;V(XOP_M9,01,1,0,x,_,_,_  );0;Vex;
+Blci;VexVm_Wx;V(XOP_M9,02,6,0,x,_,_,_  );0;Vex;
+Blcic;VexVm_Wx;V(XOP_M9,01,5,0,x,_,_,_  );0;Vex;
+Blcmsk;VexVm_Wx;V(XOP_M9,02,1,0,x,_,_,_  );0;Vex;
+Blcs;VexVm_Wx;V(XOP_M9,01,3,0,x,_,_,_  );0;Vex;
+Blendpd;ExtRmi;O(660F3A,0D,_,_,_,_,_,_  );0;Vec;
+Blendps;ExtRmi;O(660F3A,0C,_,_,_,_,_,_  );0;Vec;
+Blendvpd;ExtRm_XMM0;O(660F38,15,_,_,_,_,_,_  );0;Vec;
+Blendvps;ExtRm_XMM0;O(660F38,14,_,_,_,_,_,_  );0;Vec;
+Blsfill;VexVm_Wx;V(XOP_M9,01,2,0,x,_,_,_  );0;Vex;
+Blsi;VexVm_Wx;V(000F38,F3,3,0,x,_,_,_  );0;Vex;
+Blsic;VexVm_Wx;V(XOP_M9,01,6,0,x,_,_,_  );0;Vex;
+Blsmsk;VexVm_Wx;V(000F38,F3,2,0,x,_,_,_  );0;Vex;
+Blsr;VexVm_Wx;V(000F38,F3,1,0,x,_,_,_  );0;Vex;
+Bndcl;X86Rm;O(F30F00,1A,_,_,_,_,_,_  );0;;
+Bndcn;X86Rm;O(F20F00,1B,_,_,_,_,_,_  );0;;
+Bndcu;X86Rm;O(F20F00,1A,_,_,_,_,_,_  );0;;
+Bndldx;X86Rm;O(000F00,1A,_,_,_,_,_,_  );0;Mib;
+Bndmk;X86Rm;O(F30F00,1B,_,_,_,_,_,_  );0;;
+Bndmov;X86Bndmov;O(660F00,1A,_,_,_,_,_,_  );O(660F00,1B,_,_,_,_,_,_  );;
+Bndstx;X86Mr;O(000F00,1B,_,_,_,_,_,_  );0;Mib;
+Bound;X86Rm;O(000000,62,_,_,_,_,_,_  );0;;
+Bsf;X86Rm;O(000F00,BC,_,_,x,_,_,_  );0;;
+Bsr;X86Rm;O(000F00,BD,_,_,x,_,_,_  );0;;
+Bswap;X86Bswap;O(000F00,C8,_,_,x,_,_,_  );0;;
+Bt;X86Bt;O(000F00,A3,_,_,x,_,_,_  );O(000F00,BA,4,_,x,_,_,_  );;
+Btc;X86Bt;O(000F00,BB,_,_,x,_,_,_  );O(000F00,BA,7,_,x,_,_,_  );Lock|XAcquire|XRelease;
+Btr;X86Bt;O(000F00,B3,_,_,x,_,_,_  );O(000F00,BA,6,_,x,_,_,_  );Lock|XAcquire|XRelease;
+Bts;X86Bt;O(000F00,AB,_,_,x,_,_,_  );O(000F00,BA,5,_,x,_,_,_  );Lock|XAcquire|XRelease;
+Bzhi;VexRmv_Wx;V(000F38,F5,_,0,x,_,_,_  );0;Vex;
+Call;X86Call;O(000000,FF,2,_,_,_,_,_  );0;Rep|RepIgnored;
+Cbw;X86Op_xAX;O(660000,98,_,_,_,_,_,_  );0;;
+Cdq;X86Op_xDX_xAX;O(000000,99,_,_,_,_,_,_  );0;;
+Cdqe;X86Op_xAX;O(000000,98,_,_,1,_,_,_  );0;;
+Clac;X86Op;O(000F01,CA,_,_,_,_,_,_  );0;;
+Clc;X86Op;O(000000,F8,_,_,_,_,_,_  );0;;
+Cld;X86Op;O(000000,FC,_,_,_,_,_,_  );0;;
+Cldemote;X86M_Only;O(000F00,1C,0,_,_,_,_,_  );0;;
+Clflush;X86M_Only;O(000F00,AE,7,_,_,_,_,_  );0;;
+Clflushopt;X86M_Only;O(660F00,AE,7,_,_,_,_,_  );0;;
+Clgi;X86Op;O(000F01,DD,_,_,_,_,_,_  );0;;
+Cli;X86Op;O(000000,FA,_,_,_,_,_,_  );0;;
+Clrssbsy;X86M_Only;O(F30F00,AE,6,_,_,_,_,_  );0;;
+Clts;X86Op;O(000F00,06,_,_,_,_,_,_  );0;;
+Clui;X86Op;O(F30F01,EE,_,_,_,_,_,_  );0;;
+Clwb;X86M_Only;O(660F00,AE,6,_,_,_,_,_  );0;;
+Clzero;X86Op_MemZAX;O(000F01,FC,_,_,_,_,_,_  );0;;
+Cmc;X86Op;O(000000,F5,_,_,_,_,_,_  );0;;
+Cmovb;X86Rm;O(000F00,42,_,_,x,_,_,_  );0;;
+Cmovbe;X86Rm;O(000F00,46,_,_,x,_,_,_  );0;;
+Cmovl;X86Rm;O(000F00,4C,_,_,x,_,_,_  );0;;
+Cmovle;X86Rm;O(000F00,4E,_,_,x,_,_,_  );0;;
+Cmovnb;X86Rm;O(000F00,43,_,_,x,_,_,_  );0;;
+Cmovnbe;X86Rm;O(000F00,47,_,_,x,_,_,_  );0;;
+Cmovnl;X86Rm;O(000F00,4D,_,_,x,_,_,_  );0;;
+Cmovnle;X86Rm;O(000F00,4F,_,_,x,_,_,_  );0;;
+Cmovno;X86Rm;O(000F00,41,_,_,x,_,_,_  );0;;
+Cmovnp;X86Rm;O(000F00,4B,_,_,x,_,_,_  );0;;
+Cmovns;X86Rm;O(000F00,49,_,_,x,_,_,_  );0;;
+Cmovnz;X86Rm;O(000F00,45,_,_,x,_,_,_  );0;;
+Cmovo;X86Rm;O(000F00,40,_,_,x,_,_,_  );0;;
+Cmovp;X86Rm;O(000F00,4A,_,_,x,_,_,_  );0;;
+Cmovs;X86Rm;O(000F00,48,_,_,x,_,_,_  );0;;
+Cmovz;X86Rm;O(000F00,44,_,_,x,_,_,_  );0;;
+Cmp;X86Arith;O(000000,38,7,_,x,_,_,_  );0;;
+Cmpbexadd;VexMvr_Wx;V(660F38,E6,_,0,x,_,_,_  );0;Vex;
+Cmpbxadd;VexMvr_Wx;V(660F38,E2,_,0,x,_,_,_  );0;Vex;
+Cmplexadd;VexMvr_Wx;V(660F38,EE,_,0,x,_,_,_  );0;Vex;
+Cmplxadd;VexMvr_Wx;V(660F38,EC,_,0,x,_,_,_  );0;Vex;
+Cmpnbexadd;VexMvr_Wx;V(660F38,E7,_,0,x,_,_,_  );0;Vex;
+Cmpnbxadd;VexMvr_Wx;V(660F38,E3,_,0,x,_,_,_  );0;Vex;
+Cmpnlexadd;VexMvr_Wx;V(660F38,EF,_,0,x,_,_,_  );0;Vex;
+Cmpnlxadd;VexMvr_Wx;V(660F38,ED,_,0,x,_,_,_  );0;Vex;
+Cmpnoxadd;VexMvr_Wx;V(660F38,E1,_,0,x,_,_,_  );0;Vex;
+Cmpnpxadd;VexMvr_Wx;V(660F38,EB,_,0,x,_,_,_  );0;Vex;
+Cmpnsxadd;VexMvr_Wx;V(660F38,E9,_,0,x,_,_,_  );0;Vex;
+Cmpnzxadd;VexMvr_Wx;V(660F38,E5,_,0,x,_,_,_  );0;Vex;
+Cmpoxadd;VexMvr_Wx;V(660F38,E0,_,0,x,_,_,_  );0;Vex;
+Cmppd;ExtRmi;O(660F00,C2,_,_,_,_,_,_  );0;Vec;
+Cmpps;ExtRmi;O(000F00,C2,_,_,_,_,_,_  );0;Vec;
+Cmppxadd;VexMvr_Wx;V(660F38,EA,_,0,x,_,_,_  );0;Vex;
+Cmps;X86StrMm;O(000000,A6,_,_,_,_,_,_  );0;Rep;
+Cmpsd;ExtRmi;O(F20F00,C2,_,_,_,_,_,_  );0;Vec;
+Cmpss;ExtRmi;O(F30F00,C2,_,_,_,_,_,_  );0;Vec;
+Cmpsxadd;VexMvr_Wx;V(660F38,E8,_,0,x,_,_,_  );0;Vex;
+Cmpxchg;X86Cmpxchg;O(000F00,B0,_,_,x,_,_,_  );0;Lock|XAcquire|XRelease;
+Cmpxchg16b;X86Cmpxchg8b_16b;O(000F00,C7,1,_,1,_,_,_  );0;Lock|XAcquire|XRelease;
+Cmpxchg8b;X86Cmpxchg8b_16b;O(000F00,C7,1,_,_,_,_,_  );0;Lock|XAcquire|XRelease;
+Cmpzxadd;VexMvr_Wx;V(660F38,E4,_,0,x,_,_,_  );0;Vex;
+Comisd;ExtRm;O(660F00,2F,_,_,_,_,_,_  );0;Vec;
+Comiss;ExtRm;O(000F00,2F,_,_,_,_,_,_  );0;Vec;
+Cpuid;X86Op;O(000F00,A2,_,_,_,_,_,_  );0;;
+Cqo;X86Op_xDX_xAX;O(000000,99,_,_,1,_,_,_  );0;;
+Crc32;X86Crc;O(F20F38,F0,_,_,x,_,_,_  );0;;
+Cvtdq2pd;ExtRm;O(F30F00,E6,_,_,_,_,_,_  );0;Vec;
+Cvtdq2ps;ExtRm;O(000F00,5B,_,_,_,_,_,_  );0;Vec;
+Cvtpd2dq;ExtRm;O(F20F00,E6,_,_,_,_,_,_  );0;Vec;
+Cvtpd2pi;ExtRm;O(660F00,2D,_,_,_,_,_,_  );0;Mmx|Vec;
+Cvtpd2ps;ExtRm;O(660F00,5A,_,_,_,_,_,_  );0;Vec;
+Cvtpi2pd;ExtRm;O(660F00,2A,_,_,_,_,_,_  );0;Mmx|Vec;
+Cvtpi2ps;ExtRm;O(000F00,2A,_,_,_,_,_,_  );0;Mmx|Vec;
+Cvtps2dq;ExtRm;O(660F00,5B,_,_,_,_,_,_  );0;Vec;
+Cvtps2pd;ExtRm;O(000F00,5A,_,_,_,_,_,_  );0;Vec;
+Cvtps2pi;ExtRm;O(000F00,2D,_,_,_,_,_,_  );0;Mmx|Vec;
+Cvtsd2si;ExtRm_Wx_GpqOnly;O(F20F00,2D,_,_,x,_,_,_  );0;Vec;
+Cvtsd2ss;ExtRm;O(F20F00,5A,_,_,_,_,_,_  );0;Vec;
+Cvtsi2sd;ExtRm_Wx;O(F20F00,2A,_,_,x,_,_,_  );0;Vec;
+Cvtsi2ss;ExtRm_Wx;O(F30F00,2A,_,_,x,_,_,_  );0;Vec;
+Cvtss2sd;ExtRm;O(F30F00,5A,_,_,_,_,_,_  );0;Vec;
+Cvtss2si;ExtRm_Wx_GpqOnly;O(F30F00,2D,_,_,x,_,_,_  );0;Vec;
+Cvttpd2dq;ExtRm;O(660F00,E6,_,_,_,_,_,_  );0;Vec;
+Cvttpd2pi;ExtRm;O(660F00,2C,_,_,_,_,_,_  );0;Mmx|Vec;
+Cvttps2dq;ExtRm;O(F30F00,5B,_,_,_,_,_,_  );0;Vec;
+Cvttps2pi;ExtRm;O(000F00,2C,_,_,_,_,_,_  );0;Mmx|Vec;
+Cvttsd2si;ExtRm_Wx_GpqOnly;O(F20F00,2C,_,_,x,_,_,_  );0;Vec;
+Cvttss2si;ExtRm_Wx_GpqOnly;O(F30F00,2C,_,_,x,_,_,_  );0;Vec;
+Cwd;X86Op_xDX_xAX;O(660000,99,_,_,_,_,_,_  );0;;
+Cwde;X86Op_xAX;O(000000,98,_,_,_,_,_,_  );0;;
+Daa;X86Op;O(000000,27,_,_,_,_,_,_  );0;;
+Das;X86Op;O(000000,2F,_,_,_,_,_,_  );0;;
+Dec;X86IncDec;O(000000,FE,1,_,x,_,_,_  );O(000000,48,_,_,x,_,_,_  );Lock|XAcquire|XRelease;
+Div;X86M_GPB_MulDiv;O(000000,F6,6,_,x,_,_,_  );0;;
+Divpd;ExtRm;O(660F00,5E,_,_,_,_,_,_  );0;Vec;
+Divps;ExtRm;O(000F00,5E,_,_,_,_,_,_  );0;Vec;
+Divsd;ExtRm;O(F20F00,5E,_,_,_,_,_,_  );0;Vec;
+Divss;ExtRm;O(F30F00,5E,_,_,_,_,_,_  );0;Vec;
+Dppd;ExtRmi;O(660F3A,41,_,_,_,_,_,_  );0;Vec;
+Dpps;ExtRmi;O(660F3A,40,_,_,_,_,_,_  );0;Vec;
+Emms;X86Op;O(000F00,77,_,_,_,_,_,_  );0;Mmx;
+Endbr32;X86Op_Mod11RM;O(F30F00,1E,7,_,_,_,_,3  );0;;
+Endbr64;X86Op_Mod11RM;O(F30F00,1E,7,_,_,_,_,2  );0;;
+Enqcmd;X86EnqcmdMovdir64b;O(F20F38,F8,_,_,_,_,_,_  );0;;
+Enqcmds;X86EnqcmdMovdir64b;O(F30F38,F8,_,_,_,_,_,_  );0;;
+Enter;X86Enter;O(000000,C8,_,_,_,_,_,_  );0;;
+Extractps;ExtExtract;O(660F3A,17,_,_,_,_,_,_  );0;Vec;
+Extrq;ExtExtrq;O(660F00,79,_,_,_,_,_,_  );O(660F00,78,0,_,_,_,_,_  );Vec;
+F2xm1;FpuOp;O_FPU(00,D9F0,_);0;;
+Fabs;FpuOp;O_FPU(00,D9E1,_);0;;
+Fadd;FpuArith;O_FPU(00,C0C0,0);0;FpuM32|FpuM64;
+Faddp;FpuRDef;O_FPU(00,DEC0,_);0;;
+Fbld;X86M_Only;O_FPU(00,00DF,4);0;FpuM80;
+Fbstp;X86M_Only;O_FPU(00,00DF,6);0;FpuM80;
+Fchs;FpuOp;O_FPU(00,D9E0,_);0;;
+Fclex;FpuOp;O_FPU(9B,DBE2,_);0;;
+Fcmovb;FpuR;O_FPU(00,DAC0,_);0;;
+Fcmovbe;FpuR;O_FPU(00,DAD0,_);0;;
+Fcmove;FpuR;O_FPU(00,DAC8,_);0;;
+Fcmovnb;FpuR;O_FPU(00,DBC0,_);0;;
+Fcmovnbe;FpuR;O_FPU(00,DBD0,_);0;;
+Fcmovne;FpuR;O_FPU(00,DBC8,_);0;;
+Fcmovnu;FpuR;O_FPU(00,DBD8,_);0;;
+Fcmovu;FpuR;O_FPU(00,DAD8,_);0;;
+Fcom;FpuCom;O_FPU(00,D0D0,2);0;FpuM32|FpuM64;
+Fcomi;FpuR;O_FPU(00,DBF0,_);0;;
+Fcomip;FpuR;O_FPU(00,DFF0,_);0;;
+Fcomp;FpuCom;O_FPU(00,D8D8,3);0;FpuM32|FpuM64;
+Fcompp;FpuOp;O_FPU(00,DED9,_);0;;
+Fcos;FpuOp;O_FPU(00,D9FF,_);0;;
+Fdecstp;FpuOp;O_FPU(00,D9F6,_);0;;
+Fdiv;FpuArith;O_FPU(00,F0F8,6);0;FpuM32|FpuM64;
+Fdivp;FpuRDef;O_FPU(00,DEF8,_);0;;
+Fdivr;FpuArith;O_FPU(00,F8F0,7);0;FpuM32|FpuM64;
+Fdivrp;FpuRDef;O_FPU(00,DEF0,_);0;;
+Femms;X86Op;O(000F00,0E,_,_,_,_,_,_  );0;;
+Ffree;FpuR;O_FPU(00,DDC0,_);0;;
+Fiadd;FpuM;O_FPU(00,00DA,0);0;FpuM16|FpuM32;
+Ficom;FpuM;O_FPU(00,00DA,2);0;FpuM16|FpuM32;
+Ficomp;FpuM;O_FPU(00,00DA,3);0;FpuM16|FpuM32;
+Fidiv;FpuM;O_FPU(00,00DA,6);0;FpuM16|FpuM32;
+Fidivr;FpuM;O_FPU(00,00DA,7);0;FpuM16|FpuM32;
+Fild;FpuM;O_FPU(00,00DB,0);O_FPU(00,00DF,5);FpuM16|FpuM32|FpuM64;
+Fimul;FpuM;O_FPU(00,00DA,1);0;FpuM16|FpuM32;
+Fincstp;FpuOp;O_FPU(00,D9F7,_);0;;
+Finit;FpuOp;O_FPU(9B,DBE3,_);0;;
+Fist;FpuM;O_FPU(00,00DB,2);0;FpuM16|FpuM32;
+Fistp;FpuM;O_FPU(00,00DB,3);O_FPU(00,00DF,7);FpuM16|FpuM32|FpuM64;
+Fisttp;FpuM;O_FPU(00,00DB,1);O_FPU(00,00DD,1);FpuM16|FpuM32|FpuM64;
+Fisub;FpuM;O_FPU(00,00DA,4);0;FpuM16|FpuM32;
+Fisubr;FpuM;O_FPU(00,00DA,5);0;FpuM16|FpuM32;
+Fld;FpuFldFst;O_FPU(00,00D9,0);O_FPU(00,00DB,5);FpuM32|FpuM64|FpuM80;
+Fld1;FpuOp;O_FPU(00,D9E8,_);0;;
+Fldcw;X86M_Only;O_FPU(00,00D9,5);0;FpuM16;
+Fldenv;X86M_Only;O_FPU(00,00D9,4);0;;
+Fldl2e;FpuOp;O_FPU(00,D9EA,_);0;;
+Fldl2t;FpuOp;O_FPU(00,D9E9,_);0;;
+Fldlg2;FpuOp;O_FPU(00,D9EC,_);0;;
+Fldln2;FpuOp;O_FPU(00,D9ED,_);0;;
+Fldpi;FpuOp;O_FPU(00,D9EB,_);0;;
+Fldz;FpuOp;O_FPU(00,D9EE,_);0;;
+Fmul;FpuArith;O_FPU(00,C8C8,1);0;FpuM32|FpuM64;
+Fmulp;FpuRDef;O_FPU(00,DEC8,_);0;;
+Fnclex;FpuOp;O_FPU(00,DBE2,_);0;;
+Fninit;FpuOp;O_FPU(00,DBE3,_);0;;
+Fnop;FpuOp;O_FPU(00,D9D0,_);0;;
+Fnsave;X86M_Only;O_FPU(00,00DD,6);0;;
+Fnstcw;X86M_Only;O_FPU(00,00D9,7);0;FpuM16;
+Fnstenv;X86M_Only;O_FPU(00,00D9,6);0;;
+Fnstsw;FpuStsw;O_FPU(00,00DD,7);O_FPU(00,DFE0,_);FpuM16;
+Fpatan;FpuOp;O_FPU(00,D9F3,_);0;;
+Fprem;FpuOp;O_FPU(00,D9F8,_);0;;
+Fprem1;FpuOp;O_FPU(00,D9F5,_);0;;
+Fptan;FpuOp;O_FPU(00,D9F2,_);0;;
+Frndint;FpuOp;O_FPU(00,D9FC,_);0;;
+Frstor;X86M_Only;O_FPU(00,00DD,4);0;;
+Fsave;X86M_Only;O_FPU(9B,00DD,6);0;;
+Fscale;FpuOp;O_FPU(00,D9FD,_);0;;
+Fsin;FpuOp;O_FPU(00,D9FE,_);0;;
+Fsincos;FpuOp;O_FPU(00,D9FB,_);0;;
+Fsqrt;FpuOp;O_FPU(00,D9FA,_);0;;
+Fst;FpuFldFst;O_FPU(00,00D9,2);0;FpuM32|FpuM64;
+Fstcw;X86M_Only;O_FPU(9B,00D9,7);0;FpuM16;
+Fstenv;X86M_Only;O_FPU(9B,00D9,6);0;;
+Fstp;FpuFldFst;O_FPU(00,00D9,3);O(000000,DB,7,_,_,_,_,_  );FpuM32|FpuM64|FpuM80;
+Fstsw;FpuStsw;O_FPU(9B,00DD,7);O_FPU(9B,DFE0,_);FpuM16;
+Fsub;FpuArith;O_FPU(00,E0E8,4);0;FpuM32|FpuM64;
+Fsubp;FpuRDef;O_FPU(00,DEE8,_);0;;
+Fsubr;FpuArith;O_FPU(00,E8E0,5);0;FpuM32|FpuM64;
+Fsubrp;FpuRDef;O_FPU(00,DEE0,_);0;;
+Ftst;FpuOp;O_FPU(00,D9E4,_);0;;
+Fucom;FpuRDef;O_FPU(00,DDE0,_);0;;
+Fucomi;FpuR;O_FPU(00,DBE8,_);0;;
+Fucomip;FpuR;O_FPU(00,DFE8,_);0;;
+Fucomp;FpuRDef;O_FPU(00,DDE8,_);0;;
+Fucompp;FpuOp;O_FPU(00,DAE9,_);0;;
+Fwait;X86Op;O_FPU(00,009B,_);0;;
+Fxam;FpuOp;O_FPU(00,D9E5,_);0;;
+Fxch;FpuR;O_FPU(00,D9C8,_);0;;
+Fxrstor;X86M_Only;O(000F00,AE,1,_,_,_,_,_  );0;;
+Fxrstor64;X86M_Only;O(000F00,AE,1,_,1,_,_,_  );0;;
+Fxsave;X86M_Only;O(000F00,AE,0,_,_,_,_,_  );0;;
+Fxsave64;X86M_Only;O(000F00,AE,0,_,1,_,_,_  );0;;
+Fxtract;FpuOp;O_FPU(00,D9F4,_);0;;
+Fyl2x;FpuOp;O_FPU(00,D9F1,_);0;;
+Fyl2xp1;FpuOp;O_FPU(00,D9F9,_);0;;
+Getsec;X86Op;O(000F00,37,_,_,_,_,_,_  );0;;
+Gf2p8affineinvqb;ExtRmi;O(660F3A,CF,_,_,_,_,_,_  );0;Vec;
+Gf2p8affineqb;ExtRmi;O(660F3A,CE,_,_,_,_,_,_  );0;Vec;
+Gf2p8mulb;ExtRm;O(660F38,CF,_,_,_,_,_,_  );0;Vec;
+Haddpd;ExtRm;O(660F00,7C,_,_,_,_,_,_  );0;Vec;
+Haddps;ExtRm;O(F20F00,7C,_,_,_,_,_,_  );0;Vec;
+Hlt;X86Op;O(000000,F4,_,_,_,_,_,_  );0;;
+Hreset;X86Op_Mod11RM_I8;O(F30F3A,F0,0,_,_,_,_,_  );0;;
+Hsubpd;ExtRm;O(660F00,7D,_,_,_,_,_,_  );0;Vec;
+Hsubps;ExtRm;O(F20F00,7D,_,_,_,_,_,_  );0;Vec;
+Idiv;X86M_GPB_MulDiv;O(000000,F6,7,_,x,_,_,_  );0;;
+Imul;X86Imul;O(000000,F6,5,_,x,_,_,_  );0;;
+In;X86In;O(000000,EC,_,_,_,_,_,_  );O(000000,E4,_,_,_,_,_,_  );;
+Inc;X86IncDec;O(000000,FE,0,_,x,_,_,_  );O(000000,40,_,_,x,_,_,_  );Lock;
+Incsspd;X86M;O(F30F00,AE,5,_,0,_,_,_  );0;;
+Incsspq;X86M;O(F30F00,AE,5,_,1,_,_,_  );0;;
+Ins;X86Ins;O(000000,6C,_,_,_,_,_,_  );0;Rep;
+Insertps;ExtRmi;O(660F3A,21,_,_,_,_,_,_  );0;Vec;
+Insertq;ExtInsertq;O(F20F00,79,_,_,_,_,_,_  );O(F20F00,78,_,_,_,_,_,_  );Vec;
+Int;X86Int;O(000000,CD,_,_,_,_,_,_  );0;;
+Int3;X86Op;O(000000,CC,_,_,_,_,_,_  );0;;
+Into;X86Op;O(000000,CE,_,_,_,_,_,_  );0;;
+Invd;X86Op;O(000F00,08,_,_,_,_,_,_  );0;;
+Invept;X86Rm_NoSize;O(660F38,80,_,_,_,_,_,_  );0;;
+Invlpg;X86M_Only;O(000F00,01,7,_,_,_,_,_  );0;;
+Invlpga;X86Op_xAddr;O(000F01,DF,_,_,_,_,_,_  );0;;
+Invlpgb;X86Op;O(000F01,FE,_,_,_,_,_,_  );0;;
+Invpcid;X86Rm_NoSize;O(660F38,82,_,_,_,_,_,_  );0;;
+Invvpid;X86Rm_NoSize;O(660F38,81,_,_,_,_,_,_  );0;;
+Iret;X86Op;O(660000,CF,_,_,_,_,_,_  );0;;
+Iretd;X86Op;O(000000,CF,_,_,_,_,_,_  );0;;
+Iretq;X86Op;O(000000,CF,_,_,1,_,_,_  );0;;
+Jb;X86Jcc;O(000F00,82,_,_,_,_,_,_  );O(000000,72,_,_,_,_,_,_  );Rep;
+Jbe;X86Jcc;O(000F00,86,_,_,_,_,_,_  );O(000000,76,_,_,_,_,_,_  );Rep;
+Jecxz;X86JecxzLoop;0;O(000000,E3,_,_,_,_,_,_  );Rep;
+Jl;X86Jcc;O(000F00,8C,_,_,_,_,_,_  );O(000000,7C,_,_,_,_,_,_  );Rep;
+Jle;X86Jcc;O(000F00,8E,_,_,_,_,_,_  );O(000000,7E,_,_,_,_,_,_  );Rep;
+Jmp;X86Jmp;O(000000,FF,4,_,_,_,_,_  );O(000000,EB,_,_,_,_,_,_  );Rep;
+Jnb;X86Jcc;O(000F00,83,_,_,_,_,_,_  );O(000000,73,_,_,_,_,_,_  );Rep;
+Jnbe;X86Jcc;O(000F00,87,_,_,_,_,_,_  );O(000000,77,_,_,_,_,_,_  );Rep;
+Jnl;X86Jcc;O(000F00,8D,_,_,_,_,_,_  );O(000000,7D,_,_,_,_,_,_  );Rep;
+Jnle;X86Jcc;O(000F00,8F,_,_,_,_,_,_  );O(000000,7F,_,_,_,_,_,_  );Rep;
+Jno;X86Jcc;O(000F00,81,_,_,_,_,_,_  );O(000000,71,_,_,_,_,_,_  );Rep;
+Jnp;X86Jcc;O(000F00,8B,_,_,_,_,_,_  );O(000000,7B,_,_,_,_,_,_  );Rep;
+Jns;X86Jcc;O(000F00,89,_,_,_,_,_,_  );O(000000,79,_,_,_,_,_,_  );Rep;
+Jnz;X86Jcc;O(000F00,85,_,_,_,_,_,_  );O(000000,75,_,_,_,_,_,_  );Rep;
+Jo;X86Jcc;O(000F00,80,_,_,_,_,_,_  );O(000000,70,_,_,_,_,_,_  );Rep;
+Jp;X86Jcc;O(000F00,8A,_,_,_,_,_,_  );O(000000,7A,_,_,_,_,_,_  );Rep;
+Js;X86Jcc;O(000F00,88,_,_,_,_,_,_  );O(000000,78,_,_,_,_,_,_  );Rep;
+Jz;X86Jcc;O(000F00,84,_,_,_,_,_,_  );O(000000,74,_,_,_,_,_,_  );Rep;
+Kaddb;VexRvm;V(660F00,4A,_,1,0,_,_,_  );0;Vex;
+Kaddd;VexRvm;V(660F00,4A,_,1,1,_,_,_  );0;Vex;
+Kaddq;VexRvm;V(000F00,4A,_,1,1,_,_,_  );0;Vex;
+Kaddw;VexRvm;V(000F00,4A,_,1,0,_,_,_  );0;Vex;
+Kandb;VexRvm;V(660F00,41,_,1,0,_,_,_  );0;Vex;
+Kandd;VexRvm;V(660F00,41,_,1,1,_,_,_  );0;Vex;
+Kandnb;VexRvm;V(660F00,42,_,1,0,_,_,_  );0;Vex;
+Kandnd;VexRvm;V(660F00,42,_,1,1,_,_,_  );0;Vex;
+Kandnq;VexRvm;V(000F00,42,_,1,1,_,_,_  );0;Vex;
+Kandnw;VexRvm;V(000F00,42,_,1,0,_,_,_  );0;Vex;
+Kandq;VexRvm;V(000F00,41,_,1,1,_,_,_  );0;Vex;
+Kandw;VexRvm;V(000F00,41,_,1,0,_,_,_  );0;Vex;
+Kmovb;VexKmov;V(660F00,90,_,0,0,_,_,_  );V(660F00,92,_,0,0,_,_,_  );Vex;
+Kmovd;VexKmov;V(660F00,90,_,0,1,_,_,_  );V(F20F00,92,_,0,0,_,_,_  );Vex;
+Kmovq;VexKmov;V(000F00,90,_,0,1,_,_,_  );V(F20F00,92,_,0,1,_,_,_  );Vex;
+Kmovw;VexKmov;V(000F00,90,_,0,0,_,_,_  );V(000F00,92,_,0,0,_,_,_  );Vex;
+Knotb;VexRm;V(660F00,44,_,0,0,_,_,_  );0;Vex;
+Knotd;VexRm;V(660F00,44,_,0,1,_,_,_  );0;Vex;
+Knotq;VexRm;V(000F00,44,_,0,1,_,_,_  );0;Vex;
+Knotw;VexRm;V(000F00,44,_,0,0,_,_,_  );0;Vex;
+Korb;VexRvm;V(660F00,45,_,1,0,_,_,_  );0;Vex;
+Kord;VexRvm;V(660F00,45,_,1,1,_,_,_  );0;Vex;
+Korq;VexRvm;V(000F00,45,_,1,1,_,_,_  );0;Vex;
+Kortestb;VexRm;V(660F00,98,_,0,0,_,_,_  );0;Vex;
+Kortestd;VexRm;V(660F00,98,_,0,1,_,_,_  );0;Vex;
+Kortestq;VexRm;V(000F00,98,_,0,1,_,_,_  );0;Vex;
+Kortestw;VexRm;V(000F00,98,_,0,0,_,_,_  );0;Vex;
+Korw;VexRvm;V(000F00,45,_,1,0,_,_,_  );0;Vex;
+Kshiftlb;VexRmi;V(660F3A,32,_,0,0,_,_,_  );0;Vex;
+Kshiftld;VexRmi;V(660F3A,33,_,0,0,_,_,_  );0;Vex;
+Kshiftlq;VexRmi;V(660F3A,33,_,0,1,_,_,_  );0;Vex;
+Kshiftlw;VexRmi;V(660F3A,32,_,0,1,_,_,_  );0;Vex;
+Kshiftrb;VexRmi;V(660F3A,30,_,0,0,_,_,_  );0;Vex;
+Kshiftrd;VexRmi;V(660F3A,31,_,0,0,_,_,_  );0;Vex;
+Kshiftrq;VexRmi;V(660F3A,31,_,0,1,_,_,_  );0;Vex;
+Kshiftrw;VexRmi;V(660F3A,30,_,0,1,_,_,_  );0;Vex;
+Ktestb;VexRm;V(660F00,99,_,0,0,_,_,_  );0;Vex;
+Ktestd;VexRm;V(660F00,99,_,0,1,_,_,_  );0;Vex;
+Ktestq;VexRm;V(000F00,99,_,0,1,_,_,_  );0;Vex;
+Ktestw;VexRm;V(000F00,99,_,0,0,_,_,_  );0;Vex;
+Kunpckbw;VexRvm;V(660F00,4B,_,1,0,_,_,_  );0;Vex;
+Kunpckdq;VexRvm;V(000F00,4B,_,1,1,_,_,_  );0;Vex;
+Kunpckwd;VexRvm;V(000F00,4B,_,1,0,_,_,_  );0;Vex;
+Kxnorb;VexRvm;V(660F00,46,_,1,0,_,_,_  );0;Vex;
+Kxnord;VexRvm;V(660F00,46,_,1,1,_,_,_  );0;Vex;
+Kxnorq;VexRvm;V(000F00,46,_,1,1,_,_,_  );0;Vex;
+Kxnorw;VexRvm;V(000F00,46,_,1,0,_,_,_  );0;Vex;
+Kxorb;VexRvm;V(660F00,47,_,1,0,_,_,_  );0;Vex;
+Kxord;VexRvm;V(660F00,47,_,1,1,_,_,_  );0;Vex;
+Kxorq;VexRvm;V(000F00,47,_,1,1,_,_,_  );0;Vex;
+Kxorw;VexRvm;V(000F00,47,_,1,0,_,_,_  );0;Vex;
+Lahf;X86Op;O(000000,9F,_,_,_,_,_,_  );0;;
+Lar;X86Rm;O(000F00,02,_,_,_,_,_,_  );0;;
+Lcall;X86LcallLjmp;O(000000,FF,3,_,_,_,_,_  );O(000000,9A,_,_,_,_,_,_  );;
+Lddqu;ExtRm;O(F20F00,F0,_,_,_,_,_,_  );0;Vec;
+Ldmxcsr;X86M_Only;O(000F00,AE,2,_,_,_,_,_  );0;;
+Lds;X86Rm;O(000000,C5,_,_,_,_,_,_  );0;;
+Ldtilecfg;AmxCfg;V(000F38,49,_,0,0,_,_,_  );0;Vex;
+Lea;X86Lea;O(000000,8D,_,_,x,_,_,_  );0;;
+Leave;X86Op;O(000000,C9,_,_,_,_,_,_  );0;;
+Les;X86Rm;O(000000,C4,_,_,_,_,_,_  );0;;
+Lfence;X86Fence;O(000F00,AE,5,_,_,_,_,_  );0;;
+Lfs;X86Rm;O(000F00,B4,_,_,_,_,_,_  );0;;
+Lgdt;X86M_Only;O(000F00,01,2,_,_,_,_,_  );0;;
+Lgs;X86Rm;O(000F00,B5,_,_,_,_,_,_  );0;;
+Lidt;X86M_Only;O(000F00,01,3,_,_,_,_,_  );0;;
+Ljmp;X86LcallLjmp;O(000000,FF,5,_,_,_,_,_  );O(000000,EA,_,_,_,_,_,_  );;
+Lldt;X86M_NoSize;O(000F00,00,2,_,_,_,_,_  );0;;
+Llwpcb;VexR_Wx;V(XOP_M9,12,0,0,x,_,_,_  );0;Vex;
+Lmsw;X86M_NoSize;O(000F00,01,6,_,_,_,_,_  );0;;
+Lods;X86StrRm;O(000000,AC,_,_,_,_,_,_  );0;Rep;
+Loop;X86JecxzLoop;0;O(000000,E2,_,_,_,_,_,_  );;
+Loope;X86JecxzLoop;0;O(000000,E1,_,_,_,_,_,_  );;
+Loopne;X86JecxzLoop;0;O(000000,E0,_,_,_,_,_,_  );;
+Lsl;X86Rm;O(000F00,03,_,_,_,_,_,_  );0;;
+Lss;X86Rm;O(000F00,B2,_,_,_,_,_,_  );0;;
+Ltr;X86M_NoSize;O(000F00,00,3,_,_,_,_,_  );0;;
+Lwpins;VexVmi4_Wx;V(XOP_MA,12,0,0,x,_,_,_  );0;Vex;
+Lwpval;VexVmi4_Wx;V(XOP_MA,12,1,0,x,_,_,_  );0;Vex;
+Lzcnt;X86Rm_Raw66H;O(F30F00,BD,_,_,x,_,_,_  );0;;
+Maskmovdqu;ExtRm_ZDI;O(660F00,F7,_,_,_,_,_,_  );0;Vec;
+Maskmovq;ExtRm_ZDI;O(000F00,F7,_,_,_,_,_,_  );0;Mmx;
+Maxpd;ExtRm;O(660F00,5F,_,_,_,_,_,_  );0;Vec;
+Maxps;ExtRm;O(000F00,5F,_,_,_,_,_,_  );0;Vec;
+Maxsd;ExtRm;O(F20F00,5F,_,_,_,_,_,_  );0;Vec;
+Maxss;ExtRm;O(F30F00,5F,_,_,_,_,_,_  );0;Vec;
+Mcommit;X86Op;O(F30F01,FA,_,_,_,_,_,_  );0;;
+Mfence;X86Fence;O(000F00,AE,6,_,_,_,_,_  );0;;
+Minpd;ExtRm;O(660F00,5D,_,_,_,_,_,_  );0;Vec;
+Minps;ExtRm;O(000F00,5D,_,_,_,_,_,_  );0;Vec;
+Minsd;ExtRm;O(F20F00,5D,_,_,_,_,_,_  );0;Vec;
+Minss;ExtRm;O(F30F00,5D,_,_,_,_,_,_  );0;Vec;
+Monitor;X86Op;O(000F01,C8,_,_,_,_,_,_  );0;;
+Monitorx;X86Op;O(000F01,FA,_,_,_,_,_,_  );0;;
+Mov;X86Mov;0;0;XRelease;
+Movabs;X86Movabs;0;0;;
+Movapd;ExtMov;O(660F00,28,_,_,_,_,_,_  );O(660F00,29,_,_,_,_,_,_  );Vec;
+Movaps;ExtMov;O(000F00,28,_,_,_,_,_,_  );O(000F00,29,_,_,_,_,_,_  );Vec;
+Movbe;ExtMovbe;O(000F38,F0,_,_,x,_,_,_  );O(000F38,F1,_,_,x,_,_,_  );;
+Movd;ExtMovd;O(000F00,6E,_,_,_,_,_,_  );O(000F00,7E,_,_,_,_,_,_  );Mmx|Vec;
+Movddup;ExtMov;O(F20F00,12,_,_,_,_,_,_  );0;Vec;
+Movdir64b;X86EnqcmdMovdir64b;O(660F38,F8,_,_,_,_,_,_  );0;;
+Movdiri;X86MovntiMovdiri;O(000F38,F9,_,_,_,_,_,_  );0;;
+Movdq2q;ExtMov;O(F20F00,D6,_,_,_,_,_,_  );0;Mmx|Vec;
+Movdqa;ExtMov;O(660F00,6F,_,_,_,_,_,_  );O(660F00,7F,_,_,_,_,_,_  );Vec;
+Movdqu;ExtMov;O(F30F00,6F,_,_,_,_,_,_  );O(F30F00,7F,_,_,_,_,_,_  );Vec;
+Movhlps;ExtMov;O(000F00,12,_,_,_,_,_,_  );0;Vec;
+Movhpd;ExtMov;O(660F00,16,_,_,_,_,_,_  );O(660F00,17,_,_,_,_,_,_  );Vec;
+Movhps;ExtMov;O(000F00,16,_,_,_,_,_,_  );O(000F00,17,_,_,_,_,_,_  );Vec;
+Movlhps;ExtMov;O(000F00,16,_,_,_,_,_,_  );0;Vec;
+Movlpd;ExtMov;O(660F00,12,_,_,_,_,_,_  );O(660F00,13,_,_,_,_,_,_  );Vec;
+Movlps;ExtMov;O(000F00,12,_,_,_,_,_,_  );O(000F00,13,_,_,_,_,_,_  );Vec;
+Movmskpd;ExtMov;O(660F00,50,_,_,_,_,_,_  );0;Vec;
+Movmskps;ExtMov;O(000F00,50,_,_,_,_,_,_  );0;Vec;
+Movntdq;ExtMov;0;O(660F00,E7,_,_,_,_,_,_  );Vec;
+Movntdqa;ExtMov;O(660F38,2A,_,_,_,_,_,_  );0;Vec;
+Movnti;X86MovntiMovdiri;O(000F00,C3,_,_,x,_,_,_  );0;;
+Movntpd;ExtMov;0;O(660F00,2B,_,_,_,_,_,_  );Vec;
+Movntps;ExtMov;0;O(000F00,2B,_,_,_,_,_,_  );Vec;
+Movntq;ExtMov;0;O(000F00,E7,_,_,_,_,_,_  );Mmx;
+Movntsd;ExtMov;0;O(F20F00,2B,_,_,_,_,_,_  );Vec;
+Movntss;ExtMov;0;O(F30F00,2B,_,_,_,_,_,_  );Vec;
+Movq;ExtMovq;O(000F00,6E,_,_,x,_,_,_  );O(000F00,7E,_,_,x,_,_,_  );Mmx|Vec;
+Movq2dq;ExtRm;O(F30F00,D6,_,_,_,_,_,_  );0;Mmx|Vec;
+Movs;X86StrMm;O(000000,A4,_,_,_,_,_,_  );0;Rep;
+Movsd;ExtMov;O(F20F00,10,_,_,_,_,_,_  );O(F20F00,11,_,_,_,_,_,_  );Vec;
+Movshdup;ExtRm;O(F30F00,16,_,_,_,_,_,_  );0;Vec;
+Movsldup;ExtRm;O(F30F00,12,_,_,_,_,_,_  );0;Vec;
+Movss;ExtMov;O(F30F00,10,_,_,_,_,_,_  );O(F30F00,11,_,_,_,_,_,_  );Vec;
+Movsx;X86MovsxMovzx;O(000F00,BE,_,_,x,_,_,_  );0;;
+Movsxd;X86Rm;O(000000,63,_,_,x,_,_,_  );0;;
+Movupd;ExtMov;O(660F00,10,_,_,_,_,_,_  );O(660F00,11,_,_,_,_,_,_  );Vec;
+Movups;ExtMov;O(000F00,10,_,_,_,_,_,_  );O(000F00,11,_,_,_,_,_,_  );Vec;
+Movzx;X86MovsxMovzx;O(000F00,B6,_,_,x,_,_,_  );0;;
+Mpsadbw;ExtRmi;O(660F3A,42,_,_,_,_,_,_  );0;Vec;
+Mul;X86M_GPB_MulDiv;O(000000,F6,4,_,x,_,_,_  );0;;
+Mulpd;ExtRm;O(660F00,59,_,_,_,_,_,_  );0;Vec;
+Mulps;ExtRm;O(000F00,59,_,_,_,_,_,_  );0;Vec;
+Mulsd;ExtRm;O(F20F00,59,_,_,_,_,_,_  );0;Vec;
+Mulss;ExtRm;O(F30F00,59,_,_,_,_,_,_  );0;Vec;
+Mulx;VexRvm_ZDX_Wx;V(F20F38,F6,_,0,x,_,_,_  );0;Vex;
+Mwait;X86Op;O(000F01,C9,_,_,_,_,_,_  );0;;
+Mwaitx;X86Op;O(000F01,FB,_,_,_,_,_,_  );0;;
+Neg;X86M_GPB;O(000000,F6,3,_,x,_,_,_  );0;Lock|XAcquire|XRelease;
+Nop;X86M_Nop;O(000000,90,_,_,_,_,_,_  );0;;
+Not;X86M_GPB;O(000000,F6,2,_,x,_,_,_  );0;Lock|XAcquire|XRelease;
+Or;X86Arith;O(000000,08,1,_,x,_,_,_  );0;Lock|XAcquire|XRelease;
+Orpd;ExtRm;O(660F00,56,_,_,_,_,_,_  );0;Vec;
+Orps;ExtRm;O(000F00,56,_,_,_,_,_,_  );0;Vec;
+Out;X86Out;O(000000,EE,_,_,_,_,_,_  );O(000000,E6,_,_,_,_,_,_  );;
+Outs;X86Outs;O(000000,6E,_,_,_,_,_,_  );0;Rep;
+Pabsb;ExtRm_P;O(000F38,1C,_,_,_,_,_,_  );0;Mmx|Vec;
+Pabsd;ExtRm_P;O(000F38,1E,_,_,_,_,_,_  );0;Mmx|Vec;
+Pabsw;ExtRm_P;O(000F38,1D,_,_,_,_,_,_  );0;Mmx|Vec;
+Packssdw;ExtRm_P;O(000F00,6B,_,_,_,_,_,_  );0;Mmx|Vec;
+Packsswb;ExtRm_P;O(000F00,63,_,_,_,_,_,_  );0;Mmx|Vec;
+Packusdw;ExtRm;O(660F38,2B,_,_,_,_,_,_  );0;Vec;
+Packuswb;ExtRm_P;O(000F00,67,_,_,_,_,_,_  );0;Mmx|Vec;
+Paddb;ExtRm_P;O(000F00,FC,_,_,_,_,_,_  );0;Mmx|Vec;
+Paddd;ExtRm_P;O(000F00,FE,_,_,_,_,_,_  );0;Mmx|Vec;
+Paddq;ExtRm_P;O(000F00,D4,_,_,_,_,_,_  );0;Mmx|Vec;
+Paddsb;ExtRm_P;O(000F00,EC,_,_,_,_,_,_  );0;Mmx|Vec;
+Paddsw;ExtRm_P;O(000F00,ED,_,_,_,_,_,_  );0;Mmx|Vec;
+Paddusb;ExtRm_P;O(000F00,DC,_,_,_,_,_,_  );0;Mmx|Vec;
+Paddusw;ExtRm_P;O(000F00,DD,_,_,_,_,_,_  );0;Mmx|Vec;
+Paddw;ExtRm_P;O(000F00,FD,_,_,_,_,_,_  );0;Mmx|Vec;
+Palignr;ExtRmi_P;O(000F3A,0F,_,_,_,_,_,_  );0;Mmx|Vec;
+Pand;ExtRm_P;O(000F00,DB,_,_,_,_,_,_  );0;Mmx|Vec;
+Pandn;ExtRm_P;O(000F00,DF,_,_,_,_,_,_  );0;Mmx|Vec;
+Pause;X86Op;O(F30000,90,_,_,_,_,_,_  );0;;
+Pavgb;ExtRm_P;O(000F00,E0,_,_,_,_,_,_  );0;Mmx|Vec;
+Pavgusb;Ext3dNow;O(000F0F,BF,_,_,_,_,_,_  );0;Mmx;
+Pavgw;ExtRm_P;O(000F00,E3,_,_,_,_,_,_  );0;Mmx|Vec;
+Pblendvb;ExtRm_XMM0;O(660F38,10,_,_,_,_,_,_  );0;Vec;
+Pblendw;ExtRmi;O(660F3A,0E,_,_,_,_,_,_  );0;Vec;
+Pclmulqdq;ExtRmi;O(660F3A,44,_,_,_,_,_,_  );0;Vec;
+Pcmpeqb;ExtRm_P;O(000F00,74,_,_,_,_,_,_  );0;Mmx|Vec;
+Pcmpeqd;ExtRm_P;O(000F00,76,_,_,_,_,_,_  );0;Mmx|Vec;
+Pcmpeqq;ExtRm;O(660F38,29,_,_,_,_,_,_  );0;Vec;
+Pcmpeqw;ExtRm_P;O(000F00,75,_,_,_,_,_,_  );0;Mmx|Vec;
+Pcmpestri;ExtRmi;O(660F3A,61,_,_,_,_,_,_  );0;Vec;
+Pcmpestrm;ExtRmi;O(660F3A,60,_,_,_,_,_,_  );0;Vec;
+Pcmpgtb;ExtRm_P;O(000F00,64,_,_,_,_,_,_  );0;Mmx|Vec;
+Pcmpgtd;ExtRm_P;O(000F00,66,_,_,_,_,_,_  );0;Mmx|Vec;
+Pcmpgtq;ExtRm;O(660F38,37,_,_,_,_,_,_  );0;Vec;
+Pcmpgtw;ExtRm_P;O(000F00,65,_,_,_,_,_,_  );0;Mmx|Vec;
+Pcmpistri;ExtRmi;O(660F3A,63,_,_,_,_,_,_  );0;Vec;
+Pcmpistrm;ExtRmi;O(660F3A,62,_,_,_,_,_,_  );0;Vec;
+Pconfig;X86Op;O(000F01,C5,_,_,_,_,_,_  );0;;
+Pdep;VexRvm_Wx;V(F20F38,F5,_,0,x,_,_,_  );0;Vex;
+Pext;VexRvm_Wx;V(F30F38,F5,_,0,x,_,_,_  );0;Vex;
+Pextrb;ExtExtract;O(000F3A,14,_,_,_,_,_,_  );0;Vec;
+Pextrd;ExtExtract;O(000F3A,16,_,_,_,_,_,_  );0;Vec;
+Pextrq;ExtExtract;O(000F3A,16,_,_,1,_,_,_  );0;Vec;
+Pextrw;ExtPextrw;O(000F00,C5,_,_,_,_,_,_  );O(000F3A,15,_,_,_,_,_,_  );Mmx|Vec;
+Pf2id;Ext3dNow;O(000F0F,1D,_,_,_,_,_,_  );0;Mmx;
+Pf2iw;Ext3dNow;O(000F0F,1C,_,_,_,_,_,_  );0;Mmx;
+Pfacc;Ext3dNow;O(000F0F,AE,_,_,_,_,_,_  );0;Mmx;
+Pfadd;Ext3dNow;O(000F0F,9E,_,_,_,_,_,_  );0;Mmx;
+Pfcmpeq;Ext3dNow;O(000F0F,B0,_,_,_,_,_,_  );0;Mmx;
+Pfcmpge;Ext3dNow;O(000F0F,90,_,_,_,_,_,_  );0;Mmx;
+Pfcmpgt;Ext3dNow;O(000F0F,A0,_,_,_,_,_,_  );0;Mmx;
+Pfmax;Ext3dNow;O(000F0F,A4,_,_,_,_,_,_  );0;Mmx;
+Pfmin;Ext3dNow;O(000F0F,94,_,_,_,_,_,_  );0;Mmx;
+Pfmul;Ext3dNow;O(000F0F,B4,_,_,_,_,_,_  );0;Mmx;
+Pfnacc;Ext3dNow;O(000F0F,8A,_,_,_,_,_,_  );0;Mmx;
+Pfpnacc;Ext3dNow;O(000F0F,8E,_,_,_,_,_,_  );0;Mmx;
+Pfrcp;Ext3dNow;O(000F0F,96,_,_,_,_,_,_  );0;Mmx;
+Pfrcpit1;Ext3dNow;O(000F0F,A6,_,_,_,_,_,_  );0;Mmx;
+Pfrcpit2;Ext3dNow;O(000F0F,B6,_,_,_,_,_,_  );0;Mmx;
+Pfrcpv;Ext3dNow;O(000F0F,86,_,_,_,_,_,_  );0;Mmx;
+Pfrsqit1;Ext3dNow;O(000F0F,A7,_,_,_,_,_,_  );0;Mmx;
+Pfrsqrt;Ext3dNow;O(000F0F,97,_,_,_,_,_,_  );0;Mmx;
+Pfrsqrtv;Ext3dNow;O(000F0F,87,_,_,_,_,_,_  );0;Mmx;
+Pfsub;Ext3dNow;O(000F0F,9A,_,_,_,_,_,_  );0;Mmx;
+Pfsubr;Ext3dNow;O(000F0F,AA,_,_,_,_,_,_  );0;Mmx;
+Phaddd;ExtRm_P;O(000F38,02,_,_,_,_,_,_  );0;Mmx|Vec;
+Phaddsw;ExtRm_P;O(000F38,03,_,_,_,_,_,_  );0;Mmx|Vec;
+Phaddw;ExtRm_P;O(000F38,01,_,_,_,_,_,_  );0;Mmx|Vec;
+Phminposuw;ExtRm;O(660F38,41,_,_,_,_,_,_  );0;Vec;
+Phsubd;ExtRm_P;O(000F38,06,_,_,_,_,_,_  );0;Mmx|Vec;
+Phsubsw;ExtRm_P;O(000F38,07,_,_,_,_,_,_  );0;Mmx|Vec;
+Phsubw;ExtRm_P;O(000F38,05,_,_,_,_,_,_  );0;Mmx|Vec;
+Pi2fd;Ext3dNow;O(000F0F,0D,_,_,_,_,_,_  );0;Mmx;
+Pi2fw;Ext3dNow;O(000F0F,0C,_,_,_,_,_,_  );0;Mmx;
+Pinsrb;ExtRmi;O(660F3A,20,_,_,_,_,_,_  );0;Vec;
+Pinsrd;ExtRmi;O(660F3A,22,_,_,_,_,_,_  );0;Vec;
+Pinsrq;ExtRmi;O(660F3A,22,_,_,1,_,_,_  );0;Vec;
+Pinsrw;ExtRmi_P;O(000F00,C4,_,_,_,_,_,_  );0;Mmx|Vec;
+Pmaddubsw;ExtRm_P;O(000F38,04,_,_,_,_,_,_  );0;Mmx|Vec;
+Pmaddwd;ExtRm_P;O(000F00,F5,_,_,_,_,_,_  );0;Mmx|Vec;
+Pmaxsb;ExtRm;O(660F38,3C,_,_,_,_,_,_  );0;Vec;
+Pmaxsd;ExtRm;O(660F38,3D,_,_,_,_,_,_  );0;Vec;
+Pmaxsw;ExtRm_P;O(000F00,EE,_,_,_,_,_,_  );0;Mmx|Vec;
+Pmaxub;ExtRm_P;O(000F00,DE,_,_,_,_,_,_  );0;Mmx|Vec;
+Pmaxud;ExtRm;O(660F38,3F,_,_,_,_,_,_  );0;Vec;
+Pmaxuw;ExtRm;O(660F38,3E,_,_,_,_,_,_  );0;Vec;
+Pminsb;ExtRm;O(660F38,38,_,_,_,_,_,_  );0;Vec;
+Pminsd;ExtRm;O(660F38,39,_,_,_,_,_,_  );0;Vec;
+Pminsw;ExtRm_P;O(000F00,EA,_,_,_,_,_,_  );0;Mmx|Vec;
+Pminub;ExtRm_P;O(000F00,DA,_,_,_,_,_,_  );0;Mmx|Vec;
+Pminud;ExtRm;O(660F38,3B,_,_,_,_,_,_  );0;Vec;
+Pminuw;ExtRm;O(660F38,3A,_,_,_,_,_,_  );0;Vec;
+Pmovmskb;ExtRm_P;O(000F00,D7,_,_,_,_,_,_  );0;Mmx|Vec;
+Pmovsxbd;ExtRm;O(660F38,21,_,_,_,_,_,_  );0;Vec;
+Pmovsxbq;ExtRm;O(660F38,22,_,_,_,_,_,_  );0;Vec;
+Pmovsxbw;ExtRm;O(660F38,20,_,_,_,_,_,_  );0;Vec;
+Pmovsxdq;ExtRm;O(660F38,25,_,_,_,_,_,_  );0;Vec;
+Pmovsxwd;ExtRm;O(660F38,23,_,_,_,_,_,_  );0;Vec;
+Pmovsxwq;ExtRm;O(660F38,24,_,_,_,_,_,_  );0;Vec;
+Pmovzxbd;ExtRm;O(660F38,31,_,_,_,_,_,_  );0;Vec;
+Pmovzxbq;ExtRm;O(660F38,32,_,_,_,_,_,_  );0;Vec;
+Pmovzxbw;ExtRm;O(660F38,30,_,_,_,_,_,_  );0;Vec;
+Pmovzxdq;ExtRm;O(660F38,35,_,_,_,_,_,_  );0;Vec;
+Pmovzxwd;ExtRm;O(660F38,33,_,_,_,_,_,_  );0;Vec;
+Pmovzxwq;ExtRm;O(660F38,34,_,_,_,_,_,_  );0;Vec;
+Pmuldq;ExtRm;O(660F38,28,_,_,_,_,_,_  );0;Vec;
+Pmulhrsw;ExtRm_P;O(000F38,0B,_,_,_,_,_,_  );0;Mmx|Vec;
+Pmulhrw;Ext3dNow;O(000F0F,B7,_,_,_,_,_,_  );0;Mmx;
+Pmulhuw;ExtRm_P;O(000F00,E4,_,_,_,_,_,_  );0;Mmx|Vec;
+Pmulhw;ExtRm_P;O(000F00,E5,_,_,_,_,_,_  );0;Mmx|Vec;
+Pmulld;ExtRm;O(660F38,40,_,_,_,_,_,_  );0;Vec;
+Pmullw;ExtRm_P;O(000F00,D5,_,_,_,_,_,_  );0;Mmx|Vec;
+Pmuludq;ExtRm_P;O(000F00,F4,_,_,_,_,_,_  );0;Mmx|Vec;
+Pop;X86Pop;O(000000,8F,0,_,_,_,_,_  );O(000000,58,_,_,_,_,_,_  );;
+Popa;X86Op;O(660000,61,_,_,_,_,_,_  );0;;
+Popad;X86Op;O(000000,61,_,_,_,_,_,_  );0;;
+Popcnt;X86Rm_Raw66H;O(F30F00,B8,_,_,x,_,_,_  );0;;
+Popf;X86Op;O(660000,9D,_,_,_,_,_,_  );0;;
+Popfd;X86Op;O(000000,9D,_,_,_,_,_,_  );0;;
+Popfq;X86Op;O(000000,9D,_,_,_,_,_,_  );0;;
+Por;ExtRm_P;O(000F00,EB,_,_,_,_,_,_  );0;Mmx|Vec;
+Prefetch;X86M_Only;O(000F00,0D,0,_,_,_,_,_  );0;;
+Prefetchit0;X86M_Only;O(000F00,18,7,_,_,_,_,_  );0;;
+Prefetchit1;X86M_Only;O(000F00,18,6,_,_,_,_,_  );0;;
+Prefetchnta;X86M_Only;O(000F00,18,0,_,_,_,_,_  );0;;
+Prefetcht0;X86M_Only;O(000F00,18,1,_,_,_,_,_  );0;;
+Prefetcht1;X86M_Only;O(000F00,18,2,_,_,_,_,_  );0;;
+Prefetcht2;X86M_Only;O(000F00,18,3,_,_,_,_,_  );0;;
+Prefetchw;X86M_Only;O(000F00,0D,1,_,_,_,_,_  );0;;
+Prefetchwt1;X86M_Only;O(000F00,0D,2,_,_,_,_,_  );0;;
+Psadbw;ExtRm_P;O(000F00,F6,_,_,_,_,_,_  );0;Mmx|Vec;
+Pshufb;ExtRm_P;O(000F38,00,_,_,_,_,_,_  );0;Mmx|Vec;
+Pshufd;ExtRmi;O(660F00,70,_,_,_,_,_,_  );0;Vec;
+Pshufhw;ExtRmi;O(F30F00,70,_,_,_,_,_,_  );0;Vec;
+Pshuflw;ExtRmi;O(F20F00,70,_,_,_,_,_,_  );0;Vec;
+Pshufw;ExtRmi_P;O(000F00,70,_,_,_,_,_,_  );0;Mmx;
+Psignb;ExtRm_P;O(000F38,08,_,_,_,_,_,_  );0;Mmx|Vec;
+Psignd;ExtRm_P;O(000F38,0A,_,_,_,_,_,_  );0;Mmx|Vec;
+Psignw;ExtRm_P;O(000F38,09,_,_,_,_,_,_  );0;Mmx|Vec;
+Pslld;ExtRmRi_P;O(000F00,F2,_,_,_,_,_,_  );O(000F00,72,6,_,_,_,_,_  );Mmx|Vec;
+Pslldq;ExtRmRi;0;O(660F00,73,7,_,_,_,_,_  );Vec;
+Psllq;ExtRmRi_P;O(000F00,F3,_,_,_,_,_,_  );O(000F00,73,6,_,_,_,_,_  );Mmx|Vec;
+Psllw;ExtRmRi_P;O(000F00,F1,_,_,_,_,_,_  );O(000F00,71,6,_,_,_,_,_  );Mmx|Vec;
+Psmash;X86Op;O(F30F01,FF,_,_,_,_,_,_  );0;;
+Psrad;ExtRmRi_P;O(000F00,E2,_,_,_,_,_,_  );O(000F00,72,4,_,_,_,_,_  );Mmx|Vec;
+Psraw;ExtRmRi_P;O(000F00,E1,_,_,_,_,_,_  );O(000F00,71,4,_,_,_,_,_  );Mmx|Vec;
+Psrld;ExtRmRi_P;O(000F00,D2,_,_,_,_,_,_  );O(000F00,72,2,_,_,_,_,_  );Mmx|Vec;
+Psrldq;ExtRmRi;0;O(660F00,73,3,_,_,_,_,_  );Vec;
+Psrlq;ExtRmRi_P;O(000F00,D3,_,_,_,_,_,_  );O(000F00,73,2,_,_,_,_,_  );Mmx|Vec;
+Psrlw;ExtRmRi_P;O(000F00,D1,_,_,_,_,_,_  );O(000F00,71,2,_,_,_,_,_  );Mmx|Vec;
+Psubb;ExtRm_P;O(000F00,F8,_,_,_,_,_,_  );0;Mmx|Vec;
+Psubd;ExtRm_P;O(000F00,FA,_,_,_,_,_,_  );0;Mmx|Vec;
+Psubq;ExtRm_P;O(000F00,FB,_,_,_,_,_,_  );0;Mmx|Vec;
+Psubsb;ExtRm_P;O(000F00,E8,_,_,_,_,_,_  );0;Mmx|Vec;
+Psubsw;ExtRm_P;O(000F00,E9,_,_,_,_,_,_  );0;Mmx|Vec;
+Psubusb;ExtRm_P;O(000F00,D8,_,_,_,_,_,_  );0;Mmx|Vec;
+Psubusw;ExtRm_P;O(000F00,D9,_,_,_,_,_,_  );0;Mmx|Vec;
+Psubw;ExtRm_P;O(000F00,F9,_,_,_,_,_,_  );0;Mmx|Vec;
+Pswapd;Ext3dNow;O(000F0F,BB,_,_,_,_,_,_  );0;Mmx;
+Ptest;ExtRm;O(660F38,17,_,_,_,_,_,_  );0;Vec;
+Ptwrite;X86M;O(F30F00,AE,4,_,_,_,_,_  );0;;
+Punpckhbw;ExtRm_P;O(000F00,68,_,_,_,_,_,_  );0;Mmx|Vec;
+Punpckhdq;ExtRm_P;O(000F00,6A,_,_,_,_,_,_  );0;Mmx|Vec;
+Punpckhqdq;ExtRm;O(660F00,6D,_,_,_,_,_,_  );0;Vec;
+Punpckhwd;ExtRm_P;O(000F00,69,_,_,_,_,_,_  );0;Mmx|Vec;
+Punpcklbw;ExtRm_P;O(000F00,60,_,_,_,_,_,_  );0;Mmx|Vec;
+Punpckldq;ExtRm_P;O(000F00,62,_,_,_,_,_,_  );0;Mmx|Vec;
+Punpcklqdq;ExtRm;O(660F00,6C,_,_,_,_,_,_  );0;Vec;
+Punpcklwd;ExtRm_P;O(000F00,61,_,_,_,_,_,_  );0;Mmx|Vec;
+Push;X86Push;O(000000,FF,6,_,_,_,_,_  );O(000000,50,_,_,_,_,_,_  );;
+Pusha;X86Op;O(660000,60,_,_,_,_,_,_  );0;;
+Pushad;X86Op;O(000000,60,_,_,_,_,_,_  );0;;
+Pushf;X86Op;O(660000,9C,_,_,_,_,_,_  );0;;
+Pushfd;X86Op;O(000000,9C,_,_,_,_,_,_  );0;;
+Pushfq;X86Op;O(000000,9C,_,_,_,_,_,_  );0;;
+Pushw;X86Pushw;O(000000,FF,6,_,_,_,_,_  );O(000000,50,_,_,_,_,_,_  );;
+Pvalidate;X86Op;O(F20F01,FF,_,_,_,_,_,_  );0;;
+Pxor;ExtRm_P;O(000F00,EF,_,_,_,_,_,_  );0;Mmx|Vec;
+Rcl;X86Rot;O(000000,D0,2,_,x,_,_,_  );0;;
+Rcpps;ExtRm;O(000F00,53,_,_,_,_,_,_  );0;Vec;
+Rcpss;ExtRm;O(F30F00,53,_,_,_,_,_,_  );0;Vec;
+Rcr;X86Rot;O(000000,D0,3,_,x,_,_,_  );0;;
+Rdfsbase;X86M;O(F30F00,AE,0,_,x,_,_,_  );0;;
+Rdgsbase;X86M;O(F30F00,AE,1,_,x,_,_,_  );0;;
+Rdmsr;X86Op;O(000F00,32,_,_,_,_,_,_  );0;Vex;
+Rdpid;X86R_Native;O(F30F00,C7,7,_,_,_,_,_  );0;;
+Rdpkru;X86Op;O(000F01,EE,_,_,_,_,_,_  );0;;
+Rdpmc;X86Op;O(000F00,33,_,_,_,_,_,_  );0;;
+Rdpru;X86Op;O(000F01,FD,_,_,_,_,_,_  );0;;
+Rdrand;X86M;O(000F00,C7,6,_,x,_,_,_  );0;;
+Rdseed;X86M;O(000F00,C7,7,_,x,_,_,_  );0;;
+Rdsspd;X86M;O(F30F00,1E,1,_,_,_,_,_  );0;;
+Rdsspq;X86M;O(F30F00,1E,1,_,_,_,_,_  );0;;
+Rdtsc;X86Op;O(000F00,31,_,_,_,_,_,_  );0;;
+Rdtscp;X86Op;O(000F01,F9,_,_,_,_,_,_  );0;;
+Ret;X86Ret;O(000000,C2,_,_,_,_,_,_  );0;Rep|RepIgnored;
+Retf;X86Ret;O(000000,CA,_,_,x,_,_,_  );0;;
+Rmpadjust;X86Op;O(F30F01,FE,_,_,_,_,_,_  );0;;
+Rmpupdate;X86Op;O(F20F01,FE,_,_,_,_,_,_  );0;;
+Rol;X86Rot;O(000000,D0,0,_,x,_,_,_  );0;;
+Ror;X86Rot;O(000000,D0,1,_,x,_,_,_  );0;;
+Rorx;VexRmi_Wx;V(F20F3A,F0,_,0,x,_,_,_  );0;Vex;
+Roundpd;ExtRmi;O(660F3A,09,_,_,_,_,_,_  );0;Vec;
+Roundps;ExtRmi;O(660F3A,08,_,_,_,_,_,_  );0;Vec;
+Roundsd;ExtRmi;O(660F3A,0B,_,_,_,_,_,_  );0;Vec;
+Roundss;ExtRmi;O(660F3A,0A,_,_,_,_,_,_  );0;Vec;
+Rsm;X86Op;O(000F00,AA,_,_,_,_,_,_  );0;;
+Rsqrtps;ExtRm;O(000F00,52,_,_,_,_,_,_  );0;Vec;
+Rsqrtss;ExtRm;O(F30F00,52,_,_,_,_,_,_  );0;Vec;
+Rstorssp;X86M_Only;O(F30F00,01,5,_,_,_,_,_  );0;;
+Sahf;X86Op;O(000000,9E,_,_,_,_,_,_  );0;;
+Sar;X86Rot;O(000000,D0,7,_,x,_,_,_  );0;;
+Sarx;VexRmv_Wx;V(F30F38,F7,_,0,x,_,_,_  );0;Vex;
+Saveprevssp;X86Op;O(F30F01,EA,_,_,_,_,_,_  );0;;
+Sbb;X86Arith;O(000000,18,3,_,x,_,_,_  );0;Lock|XAcquire|XRelease;
+Scas;X86StrRm;O(000000,AE,_,_,_,_,_,_  );0;Rep;
+Seamcall;X86Op;O(660F01,CF,_,_,_,_,_,_  );0;;
+Seamops;X86Op;O(660F01,CE,_,_,_,_,_,_  );0;;
+Seamret;X86Op;O(660F01,CD,_,_,_,_,_,_  );0;;
+Senduipi;X86M_NoSize;O(F30F00,C7,6,_,_,_,_,_  );0;;
+Serialize;X86Op;O(000F01,E8,_,_,_,_,_,_  );0;;
+Setb;X86Set;O(000F00,92,_,_,_,_,_,_  );0;;
+Setbe;X86Set;O(000F00,96,_,_,_,_,_,_  );0;;
+Setl;X86Set;O(000F00,9C,_,_,_,_,_,_  );0;;
+Setle;X86Set;O(000F00,9E,_,_,_,_,_,_  );0;;
+Setnb;X86Set;O(000F00,93,_,_,_,_,_,_  );0;;
+Setnbe;X86Set;O(000F00,97,_,_,_,_,_,_  );0;;
+Setnl;X86Set;O(000F00,9D,_,_,_,_,_,_  );0;;
+Setnle;X86Set;O(000F00,9F,_,_,_,_,_,_  );0;;
+Setno;X86Set;O(000F00,91,_,_,_,_,_,_  );0;;
+Setnp;X86Set;O(000F00,9B,_,_,_,_,_,_  );0;;
+Setns;X86Set;O(000F00,99,_,_,_,_,_,_  );0;;
+Setnz;X86Set;O(000F00,95,_,_,_,_,_,_  );0;;
+Seto;X86Set;O(000F00,90,_,_,_,_,_,_  );0;;
+Setp;X86Set;O(000F00,9A,_,_,_,_,_,_  );0;;
+Sets;X86Set;O(000F00,98,_,_,_,_,_,_  );0;;
+Setssbsy;X86Op;O(F30F01,E8,_,_,_,_,_,_  );0;;
+Setz;X86Set;O(000F00,94,_,_,_,_,_,_  );0;;
+Sfence;X86Fence;O(000F00,AE,7,_,_,_,_,_  );0;;
+Sgdt;X86M_Only;O(000F00,01,0,_,_,_,_,_  );0;;
+Sha1msg1;ExtRm;O(000F38,C9,_,_,_,_,_,_  );0;Vec;
+Sha1msg2;ExtRm;O(000F38,CA,_,_,_,_,_,_  );0;Vec;
+Sha1nexte;ExtRm;O(000F38,C8,_,_,_,_,_,_  );0;Vec;
+Sha1rnds4;ExtRmi;O(000F3A,CC,_,_,_,_,_,_  );0;Vec;
+Sha256msg1;ExtRm;O(000F38,CC,_,_,_,_,_,_  );0;Vec;
+Sha256msg2;ExtRm;O(000F38,CD,_,_,_,_,_,_  );0;Vec;
+Sha256rnds2;ExtRm_XMM0;O(000F38,CB,_,_,_,_,_,_  );0;Vec;
+Shl;X86Rot;O(000000,D0,4,_,x,_,_,_  );0;;
+Shld;X86ShldShrd;O(000F00,A4,_,_,x,_,_,_  );0;;
+Shlx;VexRmv_Wx;V(660F38,F7,_,0,x,_,_,_  );0;Vex;
+Shr;X86Rot;O(000000,D0,5,_,x,_,_,_  );0;;
+Shrd;X86ShldShrd;O(000F00,AC,_,_,x,_,_,_  );0;;
+Shrx;VexRmv_Wx;V(F20F38,F7,_,0,x,_,_,_  );0;Vex;
+Shufpd;ExtRmi;O(660F00,C6,_,_,_,_,_,_  );0;Vec;
+Shufps;ExtRmi;O(000F00,C6,_,_,_,_,_,_  );0;Vec;
+Sidt;X86M_Only;O(000F00,01,1,_,_,_,_,_  );0;;
+Skinit;X86Op_xAX;O(000F01,DE,_,_,_,_,_,_  );0;;
+Sldt;X86M_NoMemSize;O(000F00,00,0,_,_,_,_,_  );0;;
+Slwpcb;VexR_Wx;V(XOP_M9,12,1,0,x,_,_,_  );0;Vex;
+Smsw;X86M_NoMemSize;O(000F00,01,4,_,_,_,_,_  );0;;
+Sqrtpd;ExtRm;O(660F00,51,_,_,_,_,_,_  );0;Vec;
+Sqrtps;ExtRm;O(000F00,51,_,_,_,_,_,_  );0;Vec;
+Sqrtsd;ExtRm;O(F20F00,51,_,_,_,_,_,_  );0;Vec;
+Sqrtss;ExtRm;O(F30F00,51,_,_,_,_,_,_  );0;Vec;
+Stac;X86Op;O(000F01,CB,_,_,_,_,_,_  );0;;
+Stc;X86Op;O(000000,F9,_,_,_,_,_,_  );0;;
+Std;X86Op;O(000000,FD,_,_,_,_,_,_  );0;;
+Stgi;X86Op;O(000F01,DC,_,_,_,_,_,_  );0;;
+Sti;X86Op;O(000000,FB,_,_,_,_,_,_  );0;;
+Stmxcsr;X86M_Only;O(000F00,AE,3,_,_,_,_,_  );0;;
+Stos;X86StrMr;O(000000,AA,_,_,_,_,_,_  );0;Rep;
+Str;X86M_NoMemSize;O(000F00,00,1,_,_,_,_,_  );0;;
+Sttilecfg;AmxCfg;V(660F38,49,_,0,0,_,_,_  );0;Vex;
+Stui;X86Op;O(F30F01,EF,_,_,_,_,_,_  );0;;
+Sub;X86Arith;O(000000,28,5,_,x,_,_,_  );0;Lock|XAcquire|XRelease;
+Subpd;ExtRm;O(660F00,5C,_,_,_,_,_,_  );0;Vec;
+Subps;ExtRm;O(000F00,5C,_,_,_,_,_,_  );0;Vec;
+Subsd;ExtRm;O(F20F00,5C,_,_,_,_,_,_  );0;Vec;
+Subss;ExtRm;O(F30F00,5C,_,_,_,_,_,_  );0;Vec;
+Swapgs;X86Op;O(000F01,F8,_,_,_,_,_,_  );0;;
+Syscall;X86Op;O(000F00,05,_,_,_,_,_,_  );0;;
+Sysenter;X86Op;O(000F00,34,_,_,_,_,_,_  );0;;
+Sysexit;X86Op;O(000F00,35,_,_,_,_,_,_  );0;;
+Sysexitq;X86Op;O(000F00,35,_,_,1,_,_,_  );0;;
+Sysret;X86Op;O(000F00,07,_,_,_,_,_,_  );0;;
+Sysretq;X86Op;O(000F00,07,_,_,1,_,_,_  );0;;
+T1mskc;VexVm_Wx;V(XOP_M9,01,7,0,x,_,_,_  );0;Vex;
+Tcmmimfp16ps;AmxRmv;V(660F38,6C,_,0,0,_,_,_  );0;Vex;
+Tcmmrlfp16ps;AmxRmv;V(000F38,6C,_,0,0,_,_,_  );0;Vex;
+Tdcall;X86Op;O(660F01,CC,_,_,_,_,_,_  );0;;
+Tdpbf16ps;AmxRmv;V(F30F38,5C,_,0,0,_,_,_  );0;Vex;
+Tdpbssd;AmxRmv;V(F20F38,5E,_,0,0,_,_,_  );0;Vex;
+Tdpbsud;AmxRmv;V(F30F38,5E,_,0,0,_,_,_  );0;Vex;
+Tdpbusd;AmxRmv;V(660F38,5E,_,0,0,_,_,_  );0;Vex;
+Tdpbuud;AmxRmv;V(000F38,5E,_,0,0,_,_,_  );0;Vex;
+Tdpfp16ps;AmxRmv;V(F20F38,5C,_,0,0,_,_,_  );0;Vex;
+Test;X86Test;O(000000,84,_,_,x,_,_,_  );O(000000,F6,_,_,x,_,_,_  );;
+Testui;X86Op;O(F30F01,ED,_,_,_,_,_,_  );0;;
+Tileloadd;AmxRm;V(F20F38,4B,_,0,0,_,_,_  );0;Tsib|Vex;
+Tileloaddt1;AmxRm;V(660F38,4B,_,0,0,_,_,_  );0;Tsib|Vex;
+Tilerelease;VexOpMod;V(000F38,49,0,0,0,_,_,_  );0;Vex;
+Tilestored;AmxMr;V(F30F38,4B,_,0,0,_,_,_  );0;Tsib|Vex;
+Tilezero;AmxR;V(F20F38,49,_,0,0,_,_,_  );0;Vex;
+Tlbsync;X86Op;O(000F01,FF,_,_,_,_,_,_  );0;;
+Tpause;X86R32_EDX_EAX;O(660F00,AE,6,_,_,_,_,_  );0;;
+Tzcnt;X86Rm_Raw66H;O(F30F00,BC,_,_,x,_,_,_  );0;;
+Tzmsk;VexVm_Wx;V(XOP_M9,01,4,0,x,_,_,_  );0;Vex;
+Ucomisd;ExtRm;O(660F00,2E,_,_,_,_,_,_  );0;Vec;
+Ucomiss;ExtRm;O(000F00,2E,_,_,_,_,_,_  );0;Vec;
+Ud0;X86Rm;O(000F00,FF,_,_,_,_,_,_  );0;;
+Ud1;X86Rm;O(000F00,B9,_,_,_,_,_,_  );0;;
+Ud2;X86Op;O(000F00,0B,_,_,_,_,_,_  );0;;
+Uiret;X86Op;O(F30F01,EC,_,_,_,_,_,_  );0;;
+Umonitor;X86R_FromM;O(F30F00,AE,6,_,_,_,_,_  );0;;
+Umwait;X86R32_EDX_EAX;O(F20F00,AE,6,_,_,_,_,_  );0;;
+Unpckhpd;ExtRm;O(660F00,15,_,_,_,_,_,_  );0;Vec;
+Unpckhps;ExtRm;O(000F00,15,_,_,_,_,_,_  );0;Vec;
+Unpcklpd;ExtRm;O(660F00,14,_,_,_,_,_,_  );0;Vec;
+Unpcklps;ExtRm;O(000F00,14,_,_,_,_,_,_  );0;Vec;
+Vaddpd;VexRvm_Lx;V(660F00,58,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vaddph;VexRvm_Lx;E(00MAP5,58,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vaddps;VexRvm_Lx;V(000F00,58,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vaddsd;VexRvm;V(F20F00,58,_,I,I,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vaddsh;VexRvm;E(F3MAP5,58,_,_,_,0,1,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vaddss;VexRvm;V(F30F00,58,_,I,I,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vaddsubpd;VexRvm_Lx;V(660F00,D0,_,x,I,_,_,_  );0;Vec|Vex;
+Vaddsubps;VexRvm_Lx;V(F20F00,D0,_,x,I,_,_,_  );0;Vec|Vex;
+Vaesdec;VexRvm_Lx;V(660F38,DE,_,x,I,_,4,FVM);0;Evex|EvexCompat|Vec|Vex;
+Vaesdeclast;VexRvm_Lx;V(660F38,DF,_,x,I,_,4,FVM);0;Evex|EvexCompat|Vec|Vex;
+Vaesenc;VexRvm_Lx;V(660F38,DC,_,x,I,_,4,FVM);0;Evex|EvexCompat|Vec|Vex;
+Vaesenclast;VexRvm_Lx;V(660F38,DD,_,x,I,_,4,FVM);0;Evex|EvexCompat|Vec|Vex;
+Vaesimc;VexRm;V(660F38,DB,_,0,I,_,_,_  );0;Vec|Vex;
+Vaeskeygenassist;VexRmi;V(660F3A,DF,_,0,I,_,_,_  );0;Vec|Vex;
+Valignd;VexRvmi_Lx;E(660F3A,03,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Valignq;VexRvmi_Lx;E(660F3A,03,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vandnpd;VexRvm_Lx;V(660F00,55,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|K|Z
+Vandnps;VexRvm_Lx;V(000F00,55,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vandpd;VexRvm_Lx;V(660F00,54,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|K|Z
+Vandps;VexRvm_Lx;V(000F00,54,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vbcstnebf162ps;VexRm_Lx;V(F30F38,B1,_,x,0,_,_,_  );0;Vec|Vex;
+Vbcstnesh2ps;VexRm_Lx;V(660F38,B1,_,x,0,_,_,_  );0;Vec|Vex;
+Vblendmpd;VexRvm_Lx;E(660F38,65,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vblendmps;VexRvm_Lx;E(660F38,65,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vblendpd;VexRvmi_Lx;V(660F3A,0D,_,x,I,_,_,_  );0;Vec|Vex;
+Vblendps;VexRvmi_Lx;V(660F3A,0C,_,x,I,_,_,_  );0;Vec|Vex;
+Vblendvpd;VexRvmr_Lx;V(660F3A,4B,_,x,0,_,_,_  );0;Vec|Vex;
+Vblendvps;VexRvmr_Lx;V(660F3A,4A,_,x,0,_,_,_  );0;Vec|Vex;
+Vbroadcastf128;VexRm;V(660F38,1A,_,1,0,_,_,_  );0;EvexTransformable|Vec|Vex;
+Vbroadcastf32x2;VexRm_Lx;E(660F38,19,_,x,_,0,3,T2 );0;Evex|Vec;K|Z
+Vbroadcastf32x4;VexRm_Lx;E(660F38,1A,_,x,_,0,4,T4 );0;Evex|Vec;K|Z
+Vbroadcastf32x8;VexRm;E(660F38,1B,_,2,_,0,5,T8 );0;Evex|Vec;K|Z
+Vbroadcastf64x2;VexRm_Lx;E(660F38,1A,_,x,_,1,4,T2 );0;Evex|Vec;K|Z
+Vbroadcastf64x4;VexRm;E(660F38,1B,_,2,_,1,5,T4 );0;Evex|Vec;K|Z
+Vbroadcasti128;VexRm;V(660F38,5A,_,1,0,_,_,_  );0;EvexTransformable|Vec|Vex;
+Vbroadcasti32x2;VexRm_Lx;E(660F38,59,_,x,_,0,3,T2 );0;Evex|Vec;K|Z
+Vbroadcasti32x4;VexRm_Lx;E(660F38,5A,_,x,_,0,4,T4 );0;Evex|Vec;K|Z
+Vbroadcasti32x8;VexRm;E(660F38,5B,_,2,_,0,5,T8 );0;Evex|Vec;K|Z
+Vbroadcasti64x2;VexRm_Lx;E(660F38,5A,_,x,_,1,4,T2 );0;Evex|Vec;K|Z
+Vbroadcasti64x4;VexRm;E(660F38,5B,_,2,_,1,5,T4 );0;Evex|Vec;K|Z
+Vbroadcastsd;VexRm_Lx;V(660F38,19,_,x,0,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vbroadcastss;VexRm_Lx;V(660F38,18,_,x,0,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vcmppd;VexRvmi_Lx_KEvex;V(660F00,C2,_,x,I,1,4,FV );0;Evex|EvexKReg|Vec|Vex;B64|ImplicitZ|K|SAE
+Vcmpph;VexRvmi_Lx_KEvex;E(000F3A,C2,_,_,_,0,4,FV );0;Evex|Vec;B16|ImplicitZ|K|SAE
+Vcmpps;VexRvmi_Lx_KEvex;V(000F00,C2,_,x,I,0,4,FV );0;Evex|EvexKReg|Vec|Vex;B32|ImplicitZ|K|SAE
+Vcmpsd;VexRvmi_KEvex;V(F20F00,C2,_,I,I,1,3,T1S);0;Evex|EvexKReg|Vec|Vex;ImplicitZ|K|SAE
+Vcmpsh;VexRvmi_KEvex;E(F30F3A,C2,_,_,_,0,1,T1S);0;Evex|Vec;ImplicitZ|K|SAE
+Vcmpss;VexRvmi_KEvex;V(F30F00,C2,_,I,I,0,2,T1S);0;Evex|EvexKReg|Vec|Vex;ImplicitZ|K|SAE
+Vcomisd;VexRm;V(660F00,2F,_,I,I,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;SAE
+Vcomish;VexRm;E(00MAP5,2F,_,_,_,0,1,T1S);0;Evex|Vec;SAE
+Vcomiss;VexRm;V(000F00,2F,_,I,I,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;SAE
+Vcompresspd;VexMr_Lx;E(660F38,8A,_,x,_,1,3,T1S);0;Evex|Vec;K|Z
+Vcompressps;VexMr_Lx;E(660F38,8A,_,x,_,0,2,T1S);0;Evex|Vec;K|Z
+Vcvtdq2pd;VexRm_Lx;V(F30F00,E6,_,x,I,0,3,HV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vcvtdq2ph;VexRm_Lx_Narrow;E(00MAP5,5B,_,x,0,0,4,FV );0;Evex|Vec;B32|ER|K|SAE|Z
+Vcvtdq2ps;VexRm_Lx;V(000F00,5B,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vcvtne2ps2bf16;VexRvm_Lx;E(F20F38,72,_,_,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vcvtneebf162ps;VexRm_Lx;V(F30F38,B0,_,x,0,_,_,_  );0;Vec|Vex;
+Vcvtneeph2ps;VexRm_Lx;V(660F38,B0,_,x,0,_,_,_  );0;Vec|Vex;
+Vcvtneobf162ps;VexRm_Lx;V(F20F38,B0,_,x,0,_,_,_  );0;Vec|Vex;
+Vcvtneoph2ps;VexRm_Lx;V(000F38,B0,_,x,0,_,_,_  );0;Vec|Vex;
+Vcvtneps2bf16;VexRm_Lx_Narrow;V(F30F38,72,_,_,_,0,4,FV );0;Evex|EvexCompat|PreferEvex|Vec|Vex;B32|K|Z
+Vcvtpd2dq;VexRm_Lx_Narrow;V(F20F00,E6,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vcvtpd2ph;VexRm_Lx;E(66MAP5,5A,_,_,_,1,4,FV );0;Evex|Vec;B64|ER|K|SAE|Z
+Vcvtpd2ps;VexRm_Lx_Narrow;V(660F00,5A,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vcvtpd2qq;VexRm_Lx;E(660F00,7B,_,x,_,1,4,FV );0;Evex|Vec;B64|ER|K|SAE|Z
+Vcvtpd2udq;VexRm_Lx_Narrow;E(000F00,79,_,x,_,1,4,FV );0;Evex|Vec;B64|ER|K|SAE|Z
+Vcvtpd2uqq;VexRm_Lx;E(660F00,79,_,x,_,1,4,FV );0;Evex|Vec;B64|ER|K|SAE|Z
+Vcvtph2dq;VexRm_Lx;E(66MAP5,5B,_,_,_,0,3,HV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vcvtph2pd;VexRm_Lx;E(00MAP5,5A,_,_,_,0,2,QV );0;Evex|Vec;B16|K|SAE|Z
+Vcvtph2ps;VexRm_Lx;V(660F38,13,_,x,0,0,3,HVM);0;Evex|EvexCompat|Vec|Vex;K|SAE|Z
+Vcvtph2psx;VexRm_Lx;E(66MAP6,13,_,_,_,0,3,HV );0;Evex|Vec;B16|K|SAE|Z
+Vcvtph2qq;VexRm_Lx;E(66MAP5,7B,_,_,_,0,2,QV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vcvtph2udq;VexRm_Lx;E(00MAP5,79,_,_,_,0,3,HV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vcvtph2uqq;VexRm_Lx;E(66MAP5,79,_,_,_,0,2,QV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vcvtph2uw;VexRm_Lx;E(00MAP5,7D,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vcvtph2w;VexRm_Lx;E(66MAP5,7D,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vcvtps2dq;VexRm_Lx;V(660F00,5B,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vcvtps2pd;VexRm_Lx;V(000F00,5A,_,x,I,0,3,HV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vcvtps2ph;VexMri_Lx;V(660F3A,1D,_,x,0,0,3,HVM);0;Evex|EvexCompat|Vec|Vex;K|SAE|Z
+Vcvtps2phx;VexRm_Lx_Narrow;E(66MAP5,1D,_,_,_,0,4,FV );0;Evex|Vec;B32|ER|K|SAE|Z
+Vcvtps2qq;VexRm_Lx;E(660F00,7B,_,x,_,0,3,HV );0;Evex|Vec;B32|ER|K|SAE|Z
+Vcvtps2udq;VexRm_Lx;E(000F00,79,_,x,_,0,4,FV );0;Evex|Vec;B32|ER|K|SAE|Z
+Vcvtps2uqq;VexRm_Lx;E(660F00,79,_,x,_,0,3,HV );0;Evex|Vec;B32|ER|K|SAE|Z
+Vcvtqq2pd;VexRm_Lx;E(F30F00,E6,_,x,_,1,4,FV );0;Evex|Vec;B64|ER|K|SAE|Z
+Vcvtqq2ph;VexRm_Lx;E(00MAP5,5B,_,_,_,1,4,FV );0;Evex|Vec;B64|ER|K|SAE|Z
+Vcvtqq2ps;VexRm_Lx_Narrow;E(000F00,5B,_,x,_,1,4,FV );0;Evex|Vec;B64|ER|K|SAE|Z
+Vcvtsd2sh;VexRvm;E(F2MAP5,5A,_,_,_,1,3,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vcvtsd2si;VexRm_Wx;V(F20F00,2D,_,I,x,x,3,T1F);0;Evex|EvexCompat|Vec|Vex;ER|SAE
+Vcvtsd2ss;VexRvm;V(F20F00,5A,_,I,I,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vcvtsd2usi;VexRm_Wx;E(F20F00,79,_,I,_,x,3,T1F);0;Evex|Vec;ER|SAE
+Vcvtsh2sd;VexRvm;E(F3MAP5,5A,_,_,_,0,1,T1S);0;Evex|Vec;K|SAE|Z
+Vcvtsh2si;VexRm_Wx;E(F3MAP5,2D,_,_,_,x,1,T1S);0;Evex|Vec;ER|SAE
+Vcvtsh2ss;VexRvm;E(00MAP6,13,_,_,_,0,1,T1S);0;Evex|Vec;K|SAE|Z
+Vcvtsh2usi;VexRm_Wx;E(F3MAP5,79,_,_,_,x,1,T1S);0;Evex|Vec;ER|SAE
+Vcvtsi2sd;VexRvm_Wx;V(F20F00,2A,_,I,x,x,2,T1W);0;Evex|EvexCompat|Vec|Vex;ER|SAE
+Vcvtsi2sh;VexRvm_Wx;E(F3MAP5,2A,_,_,_,x,2,T1W);0;Evex|Vec;ER|SAE
+Vcvtsi2ss;VexRvm_Wx;V(F30F00,2A,_,I,x,x,2,T1W);0;Evex|EvexCompat|Vec|Vex;ER|SAE
+Vcvtss2sd;VexRvm;V(F30F00,5A,_,I,I,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;K|SAE|Z
+Vcvtss2sh;VexRvm;E(00MAP5,1D,_,_,_,0,2,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vcvtss2si;VexRm_Wx;V(F30F00,2D,_,I,x,x,2,T1F);0;Evex|EvexCompat|Vec|Vex;ER|SAE
+Vcvtss2usi;VexRm_Wx;E(F30F00,79,_,I,_,x,2,T1F);0;Evex|Vec;ER|SAE
+Vcvttpd2dq;VexRm_Lx_Narrow;V(660F00,E6,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|K|SAE|Z
+Vcvttpd2qq;VexRm_Lx;E(660F00,7A,_,x,_,1,4,FV );0;Evex|Vec;B64|K|SAE|Z
+Vcvttpd2udq;VexRm_Lx_Narrow;E(000F00,78,_,x,_,1,4,FV );0;Evex|Vec;B64|K|SAE|Z
+Vcvttpd2uqq;VexRm_Lx;E(660F00,78,_,x,_,1,4,FV );0;Evex|Vec;B64|K|SAE|Z
+Vcvttph2dq;VexRm_Lx;E(F3MAP5,5B,_,_,_,0,3,HV );0;Evex|Vec;B16|K|SAE|Z
+Vcvttph2qq;VexRm_Lx;E(66MAP5,7A,_,_,_,0,2,QV );0;Evex|Vec;B16|K|SAE|Z
+Vcvttph2udq;VexRm_Lx;E(00MAP5,78,_,_,_,0,3,HV );0;Evex|Vec;B16|K|SAE|Z
+Vcvttph2uqq;VexRm_Lx;E(66MAP5,78,_,_,_,0,2,QV );0;Evex|Vec;B16|K|SAE|Z
+Vcvttph2uw;VexRm_Lx;E(00MAP5,7C,_,_,_,0,4,FV );0;Evex|Vec;B16|K|SAE|Z
+Vcvttph2w;VexRm_Lx;E(66MAP5,7C,_,_,_,0,4,FV );0;Evex|Vec;B16|K|SAE|Z
+Vcvttps2dq;VexRm_Lx;V(F30F00,5B,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|SAE|Z
+Vcvttps2qq;VexRm_Lx;E(660F00,7A,_,x,_,0,3,HV );0;Evex|Vec;B32|K|SAE|Z
+Vcvttps2udq;VexRm_Lx;E(000F00,78,_,x,_,0,4,FV );0;Evex|Vec;B32|K|SAE|Z
+Vcvttps2uqq;VexRm_Lx;E(660F00,78,_,x,_,0,3,HV );0;Evex|Vec;B32|K|SAE|Z
+Vcvttsd2si;VexRm_Wx;V(F20F00,2C,_,I,x,x,3,T1F);0;Evex|EvexCompat|Vec|Vex;SAE
+Vcvttsd2usi;VexRm_Wx;E(F20F00,78,_,I,_,x,3,T1F);0;Evex|Vec;SAE
+Vcvttsh2si;VexRm_Wx;E(F3MAP5,2C,_,_,_,x,1,T1S);0;Evex|Vec;SAE
+Vcvttsh2usi;VexRm_Wx;E(F3MAP5,78,_,_,_,x,1,T1S);0;Evex|Vec;SAE
+Vcvttss2si;VexRm_Wx;V(F30F00,2C,_,I,x,x,2,T1F);0;Evex|EvexCompat|Vec|Vex;SAE
+Vcvttss2usi;VexRm_Wx;E(F30F00,78,_,I,_,x,2,T1F);0;Evex|Vec;SAE
+Vcvtudq2pd;VexRm_Lx;E(F30F00,7A,_,x,_,0,3,HV );0;Evex|Vec;B32|ER|K|SAE|Z
+Vcvtudq2ph;VexRm_Lx_Narrow;E(F2MAP5,7A,_,_,_,0,4,FV );0;Evex|Vec;B32|ER|K|SAE|Z
+Vcvtudq2ps;VexRm_Lx;E(F20F00,7A,_,x,_,0,4,FV );0;Evex|Vec;B32|ER|K|SAE|Z
+Vcvtuqq2pd;VexRm_Lx;E(F30F00,7A,_,x,_,1,4,FV );0;Evex|Vec;B64|ER|K|SAE|Z
+Vcvtuqq2ph;VexRm_Lx;E(F2MAP5,7A,_,_,_,1,4,FV );0;Evex|Vec;B64|ER|K|SAE|Z
+Vcvtuqq2ps;VexRm_Lx_Narrow;E(F20F00,7A,_,x,_,1,4,FV );0;Evex|Vec;B64|ER|K|SAE|Z
+Vcvtusi2sd;VexRvm_Wx;E(F20F00,7B,_,I,_,x,2,T1W);0;Evex|Vec;ER|SAE
+Vcvtusi2sh;VexRvm_Wx;E(F3MAP5,7B,_,_,_,x,2,T1W);0;Evex|Vec;ER|SAE
+Vcvtusi2ss;VexRvm_Wx;E(F30F00,7B,_,I,_,x,2,T1W);0;Evex|Vec;ER|SAE
+Vcvtuw2ph;VexRm_Lx;E(F2MAP5,7D,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vcvtw2ph;VexRm_Lx;E(F3MAP5,7D,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vdbpsadbw;VexRvmi_Lx;E(660F3A,42,_,x,_,0,4,FVM);0;Evex|Vec;K|Z
+Vdivpd;VexRvm_Lx;V(660F00,5E,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vdivph;VexRvm_Lx;E(00MAP5,5E,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vdivps;VexRvm_Lx;V(000F00,5E,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vdivsd;VexRvm;V(F20F00,5E,_,I,I,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vdivsh;VexRvm;E(F3MAP5,5E,_,_,_,0,1,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vdivss;VexRvm;V(F30F00,5E,_,I,I,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vdpbf16ps;VexRvm_Lx;E(F30F38,52,_,_,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vdppd;VexRvmi_Lx;V(660F3A,41,_,x,I,_,_,_  );0;Vec|Vex;
+Vdpps;VexRvmi_Lx;V(660F3A,40,_,x,I,_,_,_  );0;Vec|Vex;
+Verr;X86M_NoSize;O(000F00,00,4,_,_,_,_,_  );0;;
+Verw;X86M_NoSize;O(000F00,00,5,_,_,_,_,_  );0;;
+Vexpandpd;VexRm_Lx;E(660F38,88,_,x,_,1,3,T1S);0;Evex|Vec;K|Z
+Vexpandps;VexRm_Lx;E(660F38,88,_,x,_,0,2,T1S);0;Evex|Vec;K|Z
+Vextractf128;VexMri;V(660F3A,19,_,1,0,_,_,_  );0;EvexTransformable|Vec|Vex;
+Vextractf32x4;VexMri_Lx;E(660F3A,19,_,x,_,0,4,T4 );0;Evex|Vec;K|Z
+Vextractf32x8;VexMri;E(660F3A,1B,_,2,_,0,5,T8 );0;Evex|Vec;K|Z
+Vextractf64x2;VexMri_Lx;E(660F3A,19,_,x,_,1,4,T2 );0;Evex|Vec;K|Z
+Vextractf64x4;VexMri;E(660F3A,1B,_,2,_,1,5,T4 );0;Evex|Vec;K|Z
+Vextracti128;VexMri;V(660F3A,39,_,1,0,_,_,_  );0;EvexTransformable|Vec|Vex;
+Vextracti32x4;VexMri_Lx;E(660F3A,39,_,x,_,0,4,T4 );0;Evex|Vec;K|Z
+Vextracti32x8;VexMri;E(660F3A,3B,_,2,_,0,5,T8 );0;Evex|Vec;K|Z
+Vextracti64x2;VexMri_Lx;E(660F3A,39,_,x,_,1,4,T2 );0;Evex|Vec;K|Z
+Vextracti64x4;VexMri;E(660F3A,3B,_,2,_,1,5,T4 );0;Evex|Vec;K|Z
+Vextractps;VexMri;V(660F3A,17,_,0,I,I,2,T1S);0;Evex|EvexCompat|Vec|Vex;
+Vfcmaddcph;VexRvm_Lx;E(F2MAP6,56,_,_,_,0,4,FV );0;Evex|Vec;B32|ER|K|SAE|Z
+Vfcmaddcsh;VexRvm;E(F2MAP6,57,_,_,_,0,2,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vfcmulcph;VexRvm_Lx;E(F2MAP6,D6,_,_,_,0,4,FV );0;Evex|Vec;B32|ER|K|SAE|Z
+Vfcmulcsh;VexRvm;E(F2MAP6,D7,_,_,_,0,2,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vfixupimmpd;VexRvmi_Lx;E(660F3A,54,_,x,_,1,4,FV );0;Evex|Vec;B64|K|SAE|Z
+Vfixupimmps;VexRvmi_Lx;E(660F3A,54,_,x,_,0,4,FV );0;Evex|Vec;B32|K|SAE|Z
+Vfixupimmsd;VexRvmi;E(660F3A,55,_,I,_,1,3,T1S);0;Evex|Vec;K|SAE|Z
+Vfixupimmss;VexRvmi;E(660F3A,55,_,I,_,0,2,T1S);0;Evex|Vec;K|SAE|Z
+Vfmadd132pd;VexRvm_Lx;V(660F38,98,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vfmadd132ph;VexRvm_Lx;E(66MAP6,98,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vfmadd132ps;VexRvm_Lx;V(660F38,98,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vfmadd132sd;VexRvm;V(660F38,99,_,I,1,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfmadd132sh;VexRvm;E(66MAP6,99,_,_,_,0,1,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vfmadd132ss;VexRvm;V(660F38,99,_,I,0,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfmadd213pd;VexRvm_Lx;V(660F38,A8,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vfmadd213ph;VexRvm_Lx;E(66MAP6,A8,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vfmadd213ps;VexRvm_Lx;V(660F38,A8,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vfmadd213sd;VexRvm;V(660F38,A9,_,I,1,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfmadd213sh;VexRvm;E(66MAP6,A9,_,_,_,0,1,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vfmadd213ss;VexRvm;V(660F38,A9,_,I,0,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfmadd231pd;VexRvm_Lx;V(660F38,B8,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vfmadd231ph;VexRvm_Lx;E(66MAP6,B8,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vfmadd231ps;VexRvm_Lx;V(660F38,B8,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vfmadd231sd;VexRvm;V(660F38,B9,_,I,1,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfmadd231sh;VexRvm;E(66MAP6,B9,_,_,_,0,1,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vfmadd231ss;VexRvm;V(660F38,B9,_,I,0,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfmaddcph;VexRvm_Lx;E(F3MAP6,56,_,_,_,0,4,FV );0;Evex|Vec;B32|ER|K|SAE|Z
+Vfmaddcsh;VexRvm;E(F3MAP6,57,_,_,_,0,2,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vfmaddpd;Fma4_Lx;V(660F3A,69,_,x,x,_,_,_  );0;Vec|Vex;
+Vfmaddps;Fma4_Lx;V(660F3A,68,_,x,x,_,_,_  );0;Vec|Vex;
+Vfmaddsd;Fma4;V(660F3A,6B,_,0,x,_,_,_  );0;Vec|Vex;
+Vfmaddss;Fma4;V(660F3A,6A,_,0,x,_,_,_  );0;Vec|Vex;
+Vfmaddsub132pd;VexRvm_Lx;V(660F38,96,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vfmaddsub132ph;VexRvm_Lx;E(66MAP6,96,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vfmaddsub132ps;VexRvm_Lx;V(660F38,96,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vfmaddsub213pd;VexRvm_Lx;V(660F38,A6,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vfmaddsub213ph;VexRvm_Lx;E(66MAP6,A6,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vfmaddsub213ps;VexRvm_Lx;V(660F38,A6,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vfmaddsub231pd;VexRvm_Lx;V(660F38,B6,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vfmaddsub231ph;VexRvm_Lx;E(66MAP6,B6,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vfmaddsub231ps;VexRvm_Lx;V(660F38,B6,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vfmaddsubpd;Fma4_Lx;V(660F3A,5D,_,x,x,_,_,_  );0;Vec|Vex;
+Vfmaddsubps;Fma4_Lx;V(660F3A,5C,_,x,x,_,_,_  );0;Vec|Vex;
+Vfmsub132pd;VexRvm_Lx;V(660F38,9A,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vfmsub132ph;VexRvm_Lx;E(66MAP6,9A,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vfmsub132ps;VexRvm_Lx;V(660F38,9A,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vfmsub132sd;VexRvm;V(660F38,9B,_,I,1,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfmsub132sh;VexRvm;E(66MAP6,9B,_,_,_,0,1,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vfmsub132ss;VexRvm;V(660F38,9B,_,I,0,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfmsub213pd;VexRvm_Lx;V(660F38,AA,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vfmsub213ph;VexRvm_Lx;E(66MAP6,AA,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vfmsub213ps;VexRvm_Lx;V(660F38,AA,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vfmsub213sd;VexRvm;V(660F38,AB,_,I,1,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfmsub213sh;VexRvm;E(66MAP6,AB,_,_,_,0,1,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vfmsub213ss;VexRvm;V(660F38,AB,_,I,0,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfmsub231pd;VexRvm_Lx;V(660F38,BA,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vfmsub231ph;VexRvm_Lx;E(66MAP6,BA,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vfmsub231ps;VexRvm_Lx;V(660F38,BA,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vfmsub231sd;VexRvm;V(660F38,BB,_,I,1,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfmsub231sh;VexRvm;E(66MAP6,BB,_,_,_,0,1,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vfmsub231ss;VexRvm;V(660F38,BB,_,I,0,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfmsubadd132pd;VexRvm_Lx;V(660F38,97,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vfmsubadd132ph;VexRvm_Lx;E(66MAP6,97,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vfmsubadd132ps;VexRvm_Lx;V(660F38,97,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vfmsubadd213pd;VexRvm_Lx;V(660F38,A7,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vfmsubadd213ph;VexRvm_Lx;E(66MAP6,A7,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vfmsubadd213ps;VexRvm_Lx;V(660F38,A7,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vfmsubadd231pd;VexRvm_Lx;V(660F38,B7,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vfmsubadd231ph;VexRvm_Lx;E(66MAP6,B7,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vfmsubadd231ps;VexRvm_Lx;V(660F38,B7,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vfmsubaddpd;Fma4_Lx;V(660F3A,5F,_,x,x,_,_,_  );0;Vec|Vex;
+Vfmsubaddps;Fma4_Lx;V(660F3A,5E,_,x,x,_,_,_  );0;Vec|Vex;
+Vfmsubpd;Fma4_Lx;V(660F3A,6D,_,x,x,_,_,_  );0;Vec|Vex;
+Vfmsubps;Fma4_Lx;V(660F3A,6C,_,x,x,_,_,_  );0;Vec|Vex;
+Vfmsubsd;Fma4;V(660F3A,6F,_,0,x,_,_,_  );0;Vec|Vex;
+Vfmsubss;Fma4;V(660F3A,6E,_,0,x,_,_,_  );0;Vec|Vex;
+Vfmulcph;VexRvm_Lx;E(F3MAP6,D6,_,_,_,0,4,FV );0;Evex|Vec;B32|ER|K|SAE|Z
+Vfmulcsh;VexRvm;E(F3MAP6,D7,_,_,_,0,2,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vfnmadd132pd;VexRvm_Lx;V(660F38,9C,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vfnmadd132ph;VexRvm_Lx;E(66MAP6,9C,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vfnmadd132ps;VexRvm_Lx;V(660F38,9C,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vfnmadd132sd;VexRvm;V(660F38,9D,_,I,1,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfnmadd132sh;VexRvm;E(66MAP6,9D,_,_,_,0,1,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vfnmadd132ss;VexRvm;V(660F38,9D,_,I,0,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfnmadd213pd;VexRvm_Lx;V(660F38,AC,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vfnmadd213ph;VexRvm_Lx;E(66MAP6,AC,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vfnmadd213ps;VexRvm_Lx;V(660F38,AC,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vfnmadd213sd;VexRvm;V(660F38,AD,_,I,1,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfnmadd213sh;VexRvm;E(66MAP6,AD,_,_,_,0,1,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vfnmadd213ss;VexRvm;V(660F38,AD,_,I,0,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfnmadd231pd;VexRvm_Lx;V(660F38,BC,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vfnmadd231ph;VexRvm_Lx;E(66MAP6,BC,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vfnmadd231ps;VexRvm_Lx;V(660F38,BC,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vfnmadd231sd;VexRvm;V(660F38,BD,_,I,1,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfnmadd231sh;VexRvm;E(66MAP6,BD,_,_,_,0,1,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vfnmadd231ss;VexRvm;V(660F38,BD,_,I,0,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfnmaddpd;Fma4_Lx;V(660F3A,79,_,x,x,_,_,_  );0;Vec|Vex;
+Vfnmaddps;Fma4_Lx;V(660F3A,78,_,x,x,_,_,_  );0;Vec|Vex;
+Vfnmaddsd;Fma4;V(660F3A,7B,_,0,x,_,_,_  );0;Vec|Vex;
+Vfnmaddss;Fma4;V(660F3A,7A,_,0,x,_,_,_  );0;Vec|Vex;
+Vfnmsub132pd;VexRvm_Lx;V(660F38,9E,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vfnmsub132ph;VexRvm_Lx;E(66MAP6,9E,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vfnmsub132ps;VexRvm_Lx;V(660F38,9E,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vfnmsub132sd;VexRvm;V(660F38,9F,_,I,1,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfnmsub132sh;VexRvm;E(66MAP6,9F,_,_,_,0,1,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vfnmsub132ss;VexRvm;V(660F38,9F,_,I,0,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfnmsub213pd;VexRvm_Lx;V(660F38,AE,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vfnmsub213ph;VexRvm_Lx;E(66MAP6,AE,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vfnmsub213ps;VexRvm_Lx;V(660F38,AE,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vfnmsub213sd;VexRvm;V(660F38,AF,_,I,1,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfnmsub213sh;VexRvm;E(66MAP6,AF,_,_,_,0,1,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vfnmsub213ss;VexRvm;V(660F38,AF,_,I,0,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfnmsub231pd;VexRvm_Lx;V(660F38,BE,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vfnmsub231ph;VexRvm_Lx;E(66MAP6,BE,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vfnmsub231ps;VexRvm_Lx;V(660F38,BE,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vfnmsub231sd;VexRvm;V(660F38,BF,_,I,1,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfnmsub231sh;VexRvm;E(66MAP6,BF,_,_,_,0,1,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vfnmsub231ss;VexRvm;V(660F38,BF,_,I,0,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vfnmsubpd;Fma4_Lx;V(660F3A,7D,_,x,x,_,_,_  );0;Vec|Vex;
+Vfnmsubps;Fma4_Lx;V(660F3A,7C,_,x,x,_,_,_  );0;Vec|Vex;
+Vfnmsubsd;Fma4;V(660F3A,7F,_,0,x,_,_,_  );0;Vec|Vex;
+Vfnmsubss;Fma4;V(660F3A,7E,_,0,x,_,_,_  );0;Vec|Vex;
+Vfpclasspd;VexRmi_Lx;E(660F3A,66,_,x,_,1,4,FV );0;Evex|Vec;B64|ImplicitZ|K
+Vfpclassph;VexRmi_Lx;E(000F3A,66,_,_,_,0,4,FV );0;Evex|Vec;B16|ImplicitZ|K
+Vfpclassps;VexRmi_Lx;E(660F3A,66,_,x,_,0,4,FV );0;Evex|Vec;B32|ImplicitZ|K
+Vfpclasssd;VexRmi;E(660F3A,67,_,I,_,1,3,T1S);0;Evex|Vec;ImplicitZ|K
+Vfpclasssh;VexRmi;E(000F3A,67,_,_,_,0,1,T1S);0;Evex|Vec;ImplicitZ|K
+Vfpclassss;VexRmi;E(660F3A,67,_,I,_,0,2,T1S);0;Evex|Vec;ImplicitZ|K
+Vfrczpd;VexRm_Lx;V(XOP_M9,81,_,x,0,_,_,_  );0;Vec|Vex;
+Vfrczps;VexRm_Lx;V(XOP_M9,80,_,x,0,_,_,_  );0;Vec|Vex;
+Vfrczsd;VexRm;V(XOP_M9,83,_,0,0,_,_,_  );0;Vec|Vex;
+Vfrczss;VexRm;V(XOP_M9,82,_,0,0,_,_,_  );0;Vec|Vex;
+Vgatherdpd;VexRmvRm_VM;V(660F38,92,_,x,1,_,_,_  );E(660F38,92,_,x,_,1,3,T1S);Evex|EvexTwoOp|Vec|Vex|Vsib;K
+Vgatherdps;VexRmvRm_VM;V(660F38,92,_,x,0,_,_,_  );E(660F38,92,_,x,_,0,2,T1S);Evex|EvexTwoOp|Vec|Vex|Vsib;K
+Vgatherqpd;VexRmvRm_VM;V(660F38,93,_,x,1,_,_,_  );E(660F38,93,_,x,_,1,3,T1S);Evex|EvexTwoOp|Vec|Vex|Vsib;K
+Vgatherqps;VexRmvRm_VM;V(660F38,93,_,x,0,_,_,_  );E(660F38,93,_,x,_,0,2,T1S);Evex|EvexTwoOp|Vec|Vex|Vsib;K
+Vgetexppd;VexRm_Lx;E(660F38,42,_,x,_,1,4,FV );0;Evex|Vec;B64|K|SAE|Z
+Vgetexpph;VexRm_Lx;E(66MAP6,42,_,_,_,0,4,FV );0;Evex|Vec;B16|K|SAE|Z
+Vgetexpps;VexRm_Lx;E(660F38,42,_,x,_,0,4,FV );0;Evex|Vec;B32|K|SAE|Z
+Vgetexpsd;VexRvm;E(660F38,43,_,I,_,1,3,T1S);0;Evex|Vec;K|SAE|Z
+Vgetexpsh;VexRvm;E(66MAP6,43,_,_,_,0,1,T1S);0;Evex|Vec;K|SAE|Z
+Vgetexpss;VexRvm;E(660F38,43,_,I,_,0,2,T1S);0;Evex|Vec;K|SAE|Z
+Vgetmantpd;VexRmi_Lx;E(660F3A,26,_,x,_,1,4,FV );0;Evex|Vec;B64|K|SAE|Z
+Vgetmantph;VexRmi_Lx;E(000F3A,26,_,_,_,0,4,FV );0;Evex|Vec;B16|K|SAE|Z
+Vgetmantps;VexRmi_Lx;E(660F3A,26,_,x,_,0,4,FV );0;Evex|Vec;B32|K|SAE|Z
+Vgetmantsd;VexRvmi;E(660F3A,27,_,I,_,1,3,T1S);0;Evex|Vec;K|SAE|Z
+Vgetmantsh;VexRvmi;E(000F3A,27,_,_,_,0,1,T1S);0;Evex|Vec;K|SAE|Z
+Vgetmantss;VexRvmi;E(660F3A,27,_,I,_,0,2,T1S);0;Evex|Vec;K|SAE|Z
+Vgf2p8affineinvqb;VexRvmi_Lx;V(660F3A,CF,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;K|Z
+Vgf2p8affineqb;VexRvmi_Lx;V(660F3A,CE,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;K|Z
+Vgf2p8mulb;VexRvm_Lx;V(660F38,CF,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;K|Z
+Vhaddpd;VexRvm_Lx;V(660F00,7C,_,x,I,_,_,_  );0;Vec|Vex;
+Vhaddps;VexRvm_Lx;V(F20F00,7C,_,x,I,_,_,_  );0;Vec|Vex;
+Vhsubpd;VexRvm_Lx;V(660F00,7D,_,x,I,_,_,_  );0;Vec|Vex;
+Vhsubps;VexRvm_Lx;V(F20F00,7D,_,x,I,_,_,_  );0;Vec|Vex;
+Vinsertf128;VexRvmi;V(660F3A,18,_,1,0,_,_,_  );0;EvexTransformable|Vec|Vex;
+Vinsertf32x4;VexRvmi_Lx;E(660F3A,18,_,x,_,0,4,T4 );0;Evex|Vec;K|Z
+Vinsertf32x8;VexRvmi;E(660F3A,1A,_,2,_,0,5,T8 );0;Evex|Vec;K|Z
+Vinsertf64x2;VexRvmi_Lx;E(660F3A,18,_,x,_,1,4,T2 );0;Evex|Vec;K|Z
+Vinsertf64x4;VexRvmi;E(660F3A,1A,_,2,_,1,5,T4 );0;Evex|Vec;K|Z
+Vinserti128;VexRvmi;V(660F3A,38,_,1,0,_,_,_  );0;EvexTransformable|Vec|Vex;
+Vinserti32x4;VexRvmi_Lx;E(660F3A,38,_,x,_,0,4,T4 );0;Evex|Vec;K|Z
+Vinserti32x8;VexRvmi;E(660F3A,3A,_,2,_,0,5,T8 );0;Evex|Vec;K|Z
+Vinserti64x2;VexRvmi_Lx;E(660F3A,38,_,x,_,1,4,T2 );0;Evex|Vec;K|Z
+Vinserti64x4;VexRvmi;E(660F3A,3A,_,2,_,1,5,T4 );0;Evex|Vec;K|Z
+Vinsertps;VexRvmi;V(660F3A,21,_,0,I,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;
+Vlddqu;VexRm_Lx;V(F20F00,F0,_,x,I,_,_,_  );0;Vec|Vex;
+Vldmxcsr;VexM;V(000F00,AE,2,0,I,_,_,_  );0;Vex;
+Vmaskmovdqu;VexRm_ZDI;V(660F00,F7,_,0,I,_,_,_  );0;Vec|Vex;
+Vmaskmovpd;VexRvmMvr_Lx;V(660F38,2D,_,x,0,_,_,_  );V(660F38,2F,_,x,0,_,_,_  );Vec|Vex;
+Vmaskmovps;VexRvmMvr_Lx;V(660F38,2C,_,x,0,_,_,_  );V(660F38,2E,_,x,0,_,_,_  );Vec|Vex;
+Vmaxpd;VexRvm_Lx;V(660F00,5F,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|K|SAE|Z
+Vmaxph;VexRvm_Lx;E(00MAP5,5F,_,_,_,0,4,FV );0;Evex|Vec;B16|K|SAE|Z
+Vmaxps;VexRvm_Lx;V(000F00,5F,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|SAE|Z
+Vmaxsd;VexRvm;V(F20F00,5F,_,I,I,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;K|SAE|Z
+Vmaxsh;VexRvm;E(F3MAP5,5F,_,_,_,0,1,T1S);0;Evex|Vec;K|SAE|Z
+Vmaxss;VexRvm;V(F30F00,5F,_,I,I,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;K|SAE|Z
+Vmcall;X86Op;O(000F01,C1,_,_,_,_,_,_  );0;;
+Vmclear;X86M_Only;O(660F00,C7,6,_,_,_,_,_  );0;;
+Vmfunc;X86Op;O(000F01,D4,_,_,_,_,_,_  );0;;
+Vmgexit;X86Op;O(F20F01,D9,_,_,_,_,_,_  );0;;
+Vminpd;VexRvm_Lx;V(660F00,5D,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|K|SAE|Z
+Vminph;VexRvm_Lx;E(00MAP5,5D,_,_,_,0,4,FV );0;Evex|Vec;B16|K|SAE|Z
+Vminps;VexRvm_Lx;V(000F00,5D,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|SAE|Z
+Vminsd;VexRvm;V(F20F00,5D,_,I,I,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;K|SAE|Z
+Vminsh;VexRvm;E(F3MAP5,5D,_,_,_,0,1,T1S);0;Evex|Vec;K|SAE|Z
+Vminss;VexRvm;V(F30F00,5D,_,I,I,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;K|SAE|Z
+Vmlaunch;X86Op;O(000F01,C2,_,_,_,_,_,_  );0;;
+Vmload;X86Op_xAX;O(000F01,DA,_,_,_,_,_,_  );0;;
+Vmmcall;X86Op;O(000F01,D9,_,_,_,_,_,_  );0;;
+Vmovapd;VexRmMr_Lx;V(660F00,28,_,x,I,1,4,FVM);V(660F00,29,_,x,I,1,4,FVM);Evex|EvexCompat|Vec|Vex;K|Z
+Vmovaps;VexRmMr_Lx;V(000F00,28,_,x,I,0,4,FVM);V(000F00,29,_,x,I,0,4,FVM);Evex|EvexCompat|Vec|Vex;K|Z
+Vmovd;VexMovdMovq;V(660F00,6E,_,0,0,0,2,T1S);V(660F00,7E,_,0,0,0,2,T1S);Evex|EvexCompat|Vec|Vex;
+Vmovddup;VexRm_Lx;V(F20F00,12,_,x,I,1,3,DUP);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vmovdqa;VexRmMr_Lx;V(660F00,6F,_,x,I,_,_,_  );V(660F00,7F,_,x,I,_,_,_  );EvexTransformable|Vec|Vex;
+Vmovdqa32;VexRmMr_Lx;E(660F00,6F,_,x,_,0,4,FVM);E(660F00,7F,_,x,_,0,4,FVM);Evex|Vec;K|Z
+Vmovdqa64;VexRmMr_Lx;E(660F00,6F,_,x,_,1,4,FVM);E(660F00,7F,_,x,_,1,4,FVM);Evex|Vec;K|Z
+Vmovdqu;VexRmMr_Lx;V(F30F00,6F,_,x,I,_,_,_  );V(F30F00,7F,_,x,I,_,_,_  );EvexTransformable|Vec|Vex;
+Vmovdqu16;VexRmMr_Lx;E(F20F00,6F,_,x,_,1,4,FVM);E(F20F00,7F,_,x,_,1,4,FVM);Evex|Vec;K|Z
+Vmovdqu32;VexRmMr_Lx;E(F30F00,6F,_,x,_,0,4,FVM);E(F30F00,7F,_,x,_,0,4,FVM);Evex|Vec;K|Z
+Vmovdqu64;VexRmMr_Lx;E(F30F00,6F,_,x,_,1,4,FVM);E(F30F00,7F,_,x,_,1,4,FVM);Evex|Vec;K|Z
+Vmovdqu8;VexRmMr_Lx;E(F20F00,6F,_,x,_,0,4,FVM);E(F20F00,7F,_,x,_,0,4,FVM);Evex|Vec;K|Z
+Vmovhlps;VexRvm;V(000F00,12,_,0,I,0,_,_  );0;Evex|EvexCompat|Vec|Vex;
+Vmovhpd;VexRvmMr;V(660F00,16,_,0,I,1,3,T1S);V(660F00,17,_,0,I,1,3,T1S);Evex|EvexCompat|Vec|Vex;
+Vmovhps;VexRvmMr;V(000F00,16,_,0,I,0,3,T2 );V(000F00,17,_,0,I,0,3,T2 );Evex|EvexCompat|Vec|Vex;
+Vmovlhps;VexRvm;V(000F00,16,_,0,I,0,_,_  );0;Evex|EvexCompat|Vec|Vex;
+Vmovlpd;VexRvmMr;V(660F00,12,_,0,I,1,3,T1S);V(660F00,13,_,0,I,1,3,T1S);Evex|EvexCompat|Vec|Vex;
+Vmovlps;VexRvmMr;V(000F00,12,_,0,I,0,3,T2 );V(000F00,13,_,0,I,0,3,T2 );Evex|EvexCompat|Vec|Vex;
+Vmovmskpd;VexRm_Lx;V(660F00,50,_,x,I,_,_,_  );0;Vec|Vex;
+Vmovmskps;VexRm_Lx;V(000F00,50,_,x,I,_,_,_  );0;Vec|Vex;
+Vmovntdq;VexMr_Lx;V(660F00,E7,_,x,I,0,4,FVM);0;Evex|EvexCompat|Vec|Vex;
+Vmovntdqa;VexRm_Lx;V(660F38,2A,_,x,I,0,4,FVM);0;Evex|EvexCompat|Vec|Vex;
+Vmovntpd;VexMr_Lx;V(660F00,2B,_,x,I,1,4,FVM);0;Evex|EvexCompat|Vec|Vex;
+Vmovntps;VexMr_Lx;V(000F00,2B,_,x,I,0,4,FVM);0;Evex|EvexCompat|Vec|Vex;
+Vmovq;VexMovdMovq;V(660F00,6E,_,0,I,1,3,T1S);V(660F00,7E,_,0,I,1,3,T1S);Evex|EvexCompat|Vec|Vex;
+Vmovsd;VexMovssMovsd;V(F20F00,10,_,I,I,1,3,T1S);V(F20F00,11,_,I,I,1,3,T1S);Evex|EvexCompat|Vec|Vex;K|Z
+Vmovsh;VexMovssMovsd;E(F3MAP5,10,_,I,_,0,1,T1S);E(F3MAP5,11,_,I,_,0,1,T1S);Evex|Vec;K|Z
+Vmovshdup;VexRm_Lx;V(F30F00,16,_,x,I,0,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vmovsldup;VexRm_Lx;V(F30F00,12,_,x,I,0,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vmovss;VexMovssMovsd;V(F30F00,10,_,I,I,0,2,T1S);V(F30F00,11,_,I,I,0,2,T1S);Evex|EvexCompat|Vec|Vex;K|Z
+Vmovupd;VexRmMr_Lx;V(660F00,10,_,x,I,1,4,FVM);V(660F00,11,_,x,I,1,4,FVM);Evex|EvexCompat|Vec|Vex;K|Z
+Vmovups;VexRmMr_Lx;V(000F00,10,_,x,I,0,4,FVM);V(000F00,11,_,x,I,0,4,FVM);Evex|EvexCompat|Vec|Vex;K|Z
+Vmovw;VexMovdMovq;E(66MAP5,6E,_,0,_,I,1,T1S);E(66MAP5,7E,_,0,_,I,1,T1S);Evex|Vec;K|Z
+Vmpsadbw;VexRvmi_Lx;V(660F3A,42,_,x,I,_,_,_  );0;Vec|Vex;
+Vmptrld;X86M_Only;O(000F00,C7,6,_,_,_,_,_  );0;;
+Vmptrst;X86M_Only;O(000F00,C7,7,_,_,_,_,_  );0;;
+Vmread;X86Mr_NoSize;O(000F00,78,_,_,_,_,_,_  );0;;
+Vmresume;X86Op;O(000F01,C3,_,_,_,_,_,_  );0;;
+Vmrun;X86Op_xAX;O(000F01,D8,_,_,_,_,_,_  );0;;
+Vmsave;X86Op_xAX;O(000F01,DB,_,_,_,_,_,_  );0;;
+Vmulpd;VexRvm_Lx;V(660F00,59,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vmulph;VexRvm_Lx;E(00MAP5,59,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vmulps;VexRvm_Lx;V(000F00,59,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vmulsd;VexRvm;V(F20F00,59,_,I,I,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vmulsh;VexRvm;E(F3MAP5,59,_,_,_,0,1,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vmulss;VexRvm;V(F30F00,59,_,I,I,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vmwrite;X86Rm_NoSize;O(000F00,79,_,_,_,_,_,_  );0;;
+Vmxoff;X86Op;O(000F01,C4,_,_,_,_,_,_  );0;;
+Vmxon;X86M_Only;O(F30F00,C7,6,_,_,_,_,_  );0;;
+Vorpd;VexRvm_Lx;V(660F00,56,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|K|Z
+Vorps;VexRvm_Lx;V(000F00,56,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vp2intersectd;VexRvm_Lx_2xK;E(F20F38,68,_,_,_,0,4,FV );0;Evex|Vec;B32
+Vp2intersectq;VexRvm_Lx_2xK;E(F20F38,68,_,_,_,1,4,FV );0;Evex|Vec;B64
+Vpabsb;VexRm_Lx;V(660F38,1C,_,x,I,_,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpabsd;VexRm_Lx;V(660F38,1E,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpabsq;VexRm_Lx;E(660F38,1F,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpabsw;VexRm_Lx;V(660F38,1D,_,x,I,_,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpackssdw;VexRvm_Lx;V(660F00,6B,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpacksswb;VexRvm_Lx;V(660F00,63,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpackusdw;VexRvm_Lx;V(660F38,2B,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpackuswb;VexRvm_Lx;V(660F00,67,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpaddb;VexRvm_Lx;V(660F00,FC,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpaddd;VexRvm_Lx;V(660F00,FE,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpaddq;VexRvm_Lx;V(660F00,D4,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|K|Z
+Vpaddsb;VexRvm_Lx;V(660F00,EC,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpaddsw;VexRvm_Lx;V(660F00,ED,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpaddusb;VexRvm_Lx;V(660F00,DC,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpaddusw;VexRvm_Lx;V(660F00,DD,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpaddw;VexRvm_Lx;V(660F00,FD,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpalignr;VexRvmi_Lx;V(660F3A,0F,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpand;VexRvm_Lx;V(660F00,DB,_,x,I,_,_,_  );0;EvexTransformable|Vec|Vex;
+Vpandd;VexRvm_Lx;E(660F00,DB,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vpandn;VexRvm_Lx;V(660F00,DF,_,x,I,_,_,_  );0;EvexTransformable|Vec|Vex;
+Vpandnd;VexRvm_Lx;E(660F00,DF,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vpandnq;VexRvm_Lx;E(660F00,DF,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpandq;VexRvm_Lx;E(660F00,DB,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpavgb;VexRvm_Lx;V(660F00,E0,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpavgw;VexRvm_Lx;V(660F00,E3,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpblendd;VexRvmi_Lx;V(660F3A,02,_,x,0,_,_,_  );0;Vec|Vex;
+Vpblendmb;VexRvm_Lx;E(660F38,66,_,x,_,0,4,FVM);0;Evex|Vec;K|Z
+Vpblendmd;VexRvm_Lx;E(660F38,64,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vpblendmq;VexRvm_Lx;E(660F38,64,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpblendmw;VexRvm_Lx;E(660F38,66,_,x,_,1,4,FVM);0;Evex|Vec;K|Z
+Vpblendvb;VexRvmr_Lx;V(660F3A,4C,_,x,0,_,_,_  );0;Vec|Vex;
+Vpblendw;VexRvmi_Lx;V(660F3A,0E,_,x,I,_,_,_  );0;Vec|Vex;
+Vpbroadcastb;VexRm_Lx_Bcst;V(660F38,78,_,x,0,0,0,T1S);E(660F38,7A,_,x,0,0,0,T1S);Evex|EvexCompat|Vec|Vex;K|Z
+Vpbroadcastd;VexRm_Lx_Bcst;V(660F38,58,_,x,0,0,2,T1S);E(660F38,7C,_,x,0,0,0,T1S);Evex|EvexCompat|Vec|Vex;K|Z
+Vpbroadcastmb2q;VexRm_Lx;E(F30F38,2A,_,x,_,1,_,_  );0;Evex|Vec;
+Vpbroadcastmw2d;VexRm_Lx;E(F30F38,3A,_,x,_,0,_,_  );0;Evex|Vec;
+Vpbroadcastq;VexRm_Lx_Bcst;V(660F38,59,_,x,0,1,3,T1S);E(660F38,7C,_,x,0,1,0,T1S);Evex|EvexCompat|Vec|Vex;K|Z
+Vpbroadcastw;VexRm_Lx_Bcst;V(660F38,79,_,x,0,0,1,T1S);E(660F38,7B,_,x,0,0,0,T1S);Evex|EvexCompat|Vec|Vex;K|Z
+Vpclmulqdq;VexRvmi_Lx;V(660F3A,44,_,x,I,_,4,FVM);0;Evex|EvexCompat|Vec|Vex;
+Vpcmov;VexRvrmRvmr_Lx;V(XOP_M8,A2,_,x,x,_,_,_  );0;Vec|Vex;
+Vpcmpb;VexRvmi_Lx;E(660F3A,3F,_,x,_,0,4,FVM);0;Evex|Vec;ImplicitZ|K
+Vpcmpd;VexRvmi_Lx;E(660F3A,1F,_,x,_,0,4,FV );0;Evex|Vec;B32|ImplicitZ|K
+Vpcmpeqb;VexRvm_Lx_KEvex;V(660F00,74,_,x,I,I,4,FV );0;Evex|EvexKReg|Vec|Vex;ImplicitZ|K
+Vpcmpeqd;VexRvm_Lx_KEvex;V(660F00,76,_,x,I,0,4,FVM);0;Evex|EvexKReg|Vec|Vex;B32|ImplicitZ|K
+Vpcmpeqq;VexRvm_Lx_KEvex;V(660F38,29,_,x,I,1,4,FVM);0;Evex|EvexKReg|Vec|Vex;B64|ImplicitZ|K
+Vpcmpeqw;VexRvm_Lx_KEvex;V(660F00,75,_,x,I,I,4,FV );0;Evex|EvexKReg|Vec|Vex;ImplicitZ|K
+Vpcmpestri;VexRmi;V(660F3A,61,_,0,I,_,_,_  );0;Vec|Vex;
+Vpcmpestrm;VexRmi;V(660F3A,60,_,0,I,_,_,_  );0;Vec|Vex;
+Vpcmpgtb;VexRvm_Lx_KEvex;V(660F00,64,_,x,I,I,4,FV );0;Evex|EvexKReg|Vec|Vex;ImplicitZ|K
+Vpcmpgtd;VexRvm_Lx_KEvex;V(660F00,66,_,x,I,0,4,FVM);0;Evex|EvexKReg|Vec|Vex;B32|ImplicitZ|K
+Vpcmpgtq;VexRvm_Lx_KEvex;V(660F38,37,_,x,I,1,4,FVM);0;Evex|EvexKReg|Vec|Vex;B64|ImplicitZ|K
+Vpcmpgtw;VexRvm_Lx_KEvex;V(660F00,65,_,x,I,I,4,FV );0;Evex|EvexKReg|Vec|Vex;ImplicitZ|K
+Vpcmpistri;VexRmi;V(660F3A,63,_,0,I,_,_,_  );0;Vec|Vex;
+Vpcmpistrm;VexRmi;V(660F3A,62,_,0,I,_,_,_  );0;Vec|Vex;
+Vpcmpq;VexRvmi_Lx;E(660F3A,1F,_,x,_,1,4,FV );0;Evex|Vec;B64|ImplicitZ|K
+Vpcmpub;VexRvmi_Lx;E(660F3A,3E,_,x,_,0,4,FVM);0;Evex|Vec;ImplicitZ|K
+Vpcmpud;VexRvmi_Lx;E(660F3A,1E,_,x,_,0,4,FV );0;Evex|Vec;B32|ImplicitZ|K
+Vpcmpuq;VexRvmi_Lx;E(660F3A,1E,_,x,_,1,4,FV );0;Evex|Vec;B64|ImplicitZ|K
+Vpcmpuw;VexRvmi_Lx;E(660F3A,3E,_,x,_,1,4,FVM);0;Evex|Vec;ImplicitZ|K
+Vpcmpw;VexRvmi_Lx;E(660F3A,3F,_,x,_,1,4,FVM);0;Evex|Vec;ImplicitZ|K
+Vpcomb;VexRvmi;V(XOP_M8,CC,_,0,0,_,_,_  );0;Vec|Vex;
+Vpcomd;VexRvmi;V(XOP_M8,CE,_,0,0,_,_,_  );0;Vec|Vex;
+Vpcompressb;VexMr_Lx;E(660F38,63,_,x,_,0,0,T1S);0;Evex|Vec;K|Z
+Vpcompressd;VexMr_Lx;E(660F38,8B,_,x,_,0,2,T1S);0;Evex|Vec;K|Z
+Vpcompressq;VexMr_Lx;E(660F38,8B,_,x,_,1,3,T1S);0;Evex|Vec;K|Z
+Vpcompressw;VexMr_Lx;E(660F38,63,_,x,_,1,1,T1S);0;Evex|Vec;K|Z
+Vpcomq;VexRvmi;V(XOP_M8,CF,_,0,0,_,_,_  );0;Vec|Vex;
+Vpcomub;VexRvmi;V(XOP_M8,EC,_,0,0,_,_,_  );0;Vec|Vex;
+Vpcomud;VexRvmi;V(XOP_M8,EE,_,0,0,_,_,_  );0;Vec|Vex;
+Vpcomuq;VexRvmi;V(XOP_M8,EF,_,0,0,_,_,_  );0;Vec|Vex;
+Vpcomuw;VexRvmi;V(XOP_M8,ED,_,0,0,_,_,_  );0;Vec|Vex;
+Vpcomw;VexRvmi;V(XOP_M8,CD,_,0,0,_,_,_  );0;Vec|Vex;
+Vpconflictd;VexRm_Lx;E(660F38,C4,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vpconflictq;VexRm_Lx;E(660F38,C4,_,x,_,1,4,FV );0;Evex|Vec;B32|K|Z
+Vpdpbssd;VexRvm_Lx;V(F20F38,50,_,x,0,_,_,_  );0;Vec|Vex;
+Vpdpbssds;VexRvm_Lx;V(F20F38,51,_,x,0,_,_,_  );0;Vec|Vex;
+Vpdpbsud;VexRvm_Lx;V(F30F38,50,_,x,0,_,_,_  );0;Vec|Vex;
+Vpdpbsuds;VexRvm_Lx;V(F30F38,51,_,x,0,_,_,_  );0;Vec|Vex;
+Vpdpbusd;VexRvm_Lx;V(660F38,50,_,x,_,0,4,FV );0;Evex|EvexCompat|PreferEvex|Vec|Vex;B32|K|Z
+Vpdpbusds;VexRvm_Lx;V(660F38,51,_,x,_,0,4,FV );0;Evex|EvexCompat|PreferEvex|Vec|Vex;B32|K|Z
+Vpdpbuud;VexRvm_Lx;V(000F38,50,_,x,0,_,_,_  );0;Vec|Vex;
+Vpdpbuuds;VexRvm_Lx;V(000F38,51,_,x,0,_,_,_  );0;Vec|Vex;
+Vpdpwssd;VexRvm_Lx;V(660F38,52,_,x,_,0,4,FV );0;Evex|EvexCompat|PreferEvex|Vec|Vex;B32|K|Z
+Vpdpwssds;VexRvm_Lx;V(660F38,53,_,x,_,0,4,FV );0;Evex|EvexCompat|PreferEvex|Vec|Vex;B32|K|Z
+Vpdpwsud;VexRvm_Lx;V(F30F38,D2,_,x,0,_,_,_  );0;Vec|Vex;
+Vpdpwsuds;VexRvm_Lx;V(F30F38,D3,_,x,0,_,_,_  );0;Vec|Vex;
+Vpdpwusd;VexRvm_Lx;V(660F38,D2,_,x,0,_,_,_  );0;Vec|Vex;
+Vpdpwusds;VexRvm_Lx;V(660F38,D3,_,x,0,_,_,_  );0;Vec|Vex;
+Vpdpwuud;VexRvm_Lx;V(000F38,D2,_,x,0,_,_,_  );0;Vec|Vex;
+Vpdpwuuds;VexRvm_Lx;V(000F38,D3,_,x,0,_,_,_  );0;Vec|Vex;
+Vperm2f128;VexRvmi;V(660F3A,06,_,1,0,_,_,_  );0;Vec|Vex;
+Vperm2i128;VexRvmi;V(660F3A,46,_,1,0,_,_,_  );0;Vec|Vex;
+Vpermb;VexRvm_Lx;E(660F38,8D,_,x,_,0,4,FVM);0;Evex|Vec;K|Z
+Vpermd;VexRvm_Lx;V(660F38,36,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpermi2b;VexRvm_Lx;E(660F38,75,_,x,_,0,4,FVM);0;Evex|Vec;K|Z
+Vpermi2d;VexRvm_Lx;E(660F38,76,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vpermi2pd;VexRvm_Lx;E(660F38,77,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpermi2ps;VexRvm_Lx;E(660F38,77,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vpermi2q;VexRvm_Lx;E(660F38,76,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpermi2w;VexRvm_Lx;E(660F38,75,_,x,_,1,4,FVM);0;Evex|Vec;K|Z
+Vpermil2pd;VexRvrmiRvmri_Lx;V(660F3A,49,_,x,x,_,_,_  );0;Vec|Vex;
+Vpermil2ps;VexRvrmiRvmri_Lx;V(660F3A,48,_,x,x,_,_,_  );0;Vec|Vex;
+Vpermilpd;VexRvmRmi_Lx;V(660F38,0D,_,x,0,1,4,FV );V(660F3A,05,_,x,0,1,4,FV );Evex|EvexCompat|Vec|Vex;B64|K|Z
+Vpermilps;VexRvmRmi_Lx;V(660F38,0C,_,x,0,0,4,FV );V(660F3A,04,_,x,0,0,4,FV );Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpermpd;VexRvmRmi_Lx;E(660F38,16,_,x,1,1,4,FV );V(660F3A,01,_,x,1,1,4,FV );Evex|EvexCompat|Vec|Vex;B64|K|Z
+Vpermps;VexRvm_Lx;V(660F38,16,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpermq;VexRvmRmi_Lx;E(660F38,36,_,x,_,1,4,FV );V(660F3A,00,_,x,1,1,4,FV );Evex|EvexCompat|Vec|Vex;B64|K|Z
+Vpermt2b;VexRvm_Lx;E(660F38,7D,_,x,_,0,4,FVM);0;Evex|Vec;K|Z
+Vpermt2d;VexRvm_Lx;E(660F38,7E,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vpermt2pd;VexRvm_Lx;E(660F38,7F,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpermt2ps;VexRvm_Lx;E(660F38,7F,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vpermt2q;VexRvm_Lx;E(660F38,7E,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpermt2w;VexRvm_Lx;E(660F38,7D,_,x,_,1,4,FVM);0;Evex|Vec;K|Z
+Vpermw;VexRvm_Lx;E(660F38,8D,_,x,_,1,4,FVM);0;Evex|Vec;K|Z
+Vpexpandb;VexRm_Lx;E(660F38,62,_,x,_,0,0,T1S);0;Evex|Vec;K|Z
+Vpexpandd;VexRm_Lx;E(660F38,89,_,x,_,0,2,T1S);0;Evex|Vec;K|Z
+Vpexpandq;VexRm_Lx;E(660F38,89,_,x,_,1,3,T1S);0;Evex|Vec;K|Z
+Vpexpandw;VexRm_Lx;E(660F38,62,_,x,_,1,1,T1S);0;Evex|Vec;K|Z
+Vpextrb;VexMri;V(660F3A,14,_,0,0,I,0,T1S);0;Evex|EvexCompat|Vec|Vex;
+Vpextrd;VexMri;V(660F3A,16,_,0,0,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;
+Vpextrq;VexMri;V(660F3A,16,_,0,1,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;
+Vpextrw;VexMri_Vpextrw;V(660F3A,15,_,0,0,I,1,T1S);0;Evex|EvexCompat|Vec|Vex;
+Vpgatherdd;VexRmvRm_VM;V(660F38,90,_,x,0,_,_,_  );E(660F38,90,_,x,_,0,2,T1S);Evex|EvexTwoOp|Vec|Vex|Vsib;K
+Vpgatherdq;VexRmvRm_VM;V(660F38,90,_,x,1,_,_,_  );E(660F38,90,_,x,_,1,3,T1S);Evex|EvexTwoOp|Vec|Vex|Vsib;K
+Vpgatherqd;VexRmvRm_VM;V(660F38,91,_,x,0,_,_,_  );E(660F38,91,_,x,_,0,2,T1S);Evex|EvexTwoOp|Vec|Vex|Vsib;K
+Vpgatherqq;VexRmvRm_VM;V(660F38,91,_,x,1,_,_,_  );E(660F38,91,_,x,_,1,3,T1S);Evex|EvexTwoOp|Vec|Vex|Vsib;K
+Vphaddbd;VexRm;V(XOP_M9,C2,_,0,0,_,_,_  );0;Vec|Vex;
+Vphaddbq;VexRm;V(XOP_M9,C3,_,0,0,_,_,_  );0;Vec|Vex;
+Vphaddbw;VexRm;V(XOP_M9,C1,_,0,0,_,_,_  );0;Vec|Vex;
+Vphaddd;VexRvm_Lx;V(660F38,02,_,x,I,_,_,_  );0;Vec|Vex;
+Vphadddq;VexRm;V(XOP_M9,CB,_,0,0,_,_,_  );0;Vec|Vex;
+Vphaddsw;VexRvm_Lx;V(660F38,03,_,x,I,_,_,_  );0;Vec|Vex;
+Vphaddubd;VexRm;V(XOP_M9,D2,_,0,0,_,_,_  );0;Vec|Vex;
+Vphaddubq;VexRm;V(XOP_M9,D3,_,0,0,_,_,_  );0;Vec|Vex;
+Vphaddubw;VexRm;V(XOP_M9,D1,_,0,0,_,_,_  );0;Vec|Vex;
+Vphaddudq;VexRm;V(XOP_M9,DB,_,0,0,_,_,_  );0;Vec|Vex;
+Vphadduwd;VexRm;V(XOP_M9,D6,_,0,0,_,_,_  );0;Vec|Vex;
+Vphadduwq;VexRm;V(XOP_M9,D7,_,0,0,_,_,_  );0;Vec|Vex;
+Vphaddw;VexRvm_Lx;V(660F38,01,_,x,I,_,_,_  );0;Vec|Vex;
+Vphaddwd;VexRm;V(XOP_M9,C6,_,0,0,_,_,_  );0;Vec|Vex;
+Vphaddwq;VexRm;V(XOP_M9,C7,_,0,0,_,_,_  );0;Vec|Vex;
+Vphminposuw;VexRm;V(660F38,41,_,0,I,_,_,_  );0;Vec|Vex;
+Vphsubbw;VexRm;V(XOP_M9,E1,_,0,0,_,_,_  );0;Vec|Vex;
+Vphsubd;VexRvm_Lx;V(660F38,06,_,x,I,_,_,_  );0;Vec|Vex;
+Vphsubdq;VexRm;V(XOP_M9,E3,_,0,0,_,_,_  );0;Vec|Vex;
+Vphsubsw;VexRvm_Lx;V(660F38,07,_,x,I,_,_,_  );0;Vec|Vex;
+Vphsubw;VexRvm_Lx;V(660F38,05,_,x,I,_,_,_  );0;Vec|Vex;
+Vphsubwd;VexRm;V(XOP_M9,E2,_,0,0,_,_,_  );0;Vec|Vex;
+Vpinsrb;VexRvmi;V(660F3A,20,_,0,0,I,0,T1S);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpinsrd;VexRvmi;V(660F3A,22,_,0,0,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpinsrq;VexRvmi;V(660F3A,22,_,0,1,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpinsrw;VexRvmi;V(660F00,C4,_,0,0,I,1,T1S);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vplzcntd;VexRm_Lx;E(660F38,44,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vplzcntq;VexRm_Lx;E(660F38,44,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpmacsdd;VexRvmr;V(XOP_M8,9E,_,0,0,_,_,_  );0;Vec|Vex;
+Vpmacsdqh;VexRvmr;V(XOP_M8,9F,_,0,0,_,_,_  );0;Vec|Vex;
+Vpmacsdql;VexRvmr;V(XOP_M8,97,_,0,0,_,_,_  );0;Vec|Vex;
+Vpmacssdd;VexRvmr;V(XOP_M8,8E,_,0,0,_,_,_  );0;Vec|Vex;
+Vpmacssdqh;VexRvmr;V(XOP_M8,8F,_,0,0,_,_,_  );0;Vec|Vex;
+Vpmacssdql;VexRvmr;V(XOP_M8,87,_,0,0,_,_,_  );0;Vec|Vex;
+Vpmacsswd;VexRvmr;V(XOP_M8,86,_,0,0,_,_,_  );0;Vec|Vex;
+Vpmacssww;VexRvmr;V(XOP_M8,85,_,0,0,_,_,_  );0;Vec|Vex;
+Vpmacswd;VexRvmr;V(XOP_M8,96,_,0,0,_,_,_  );0;Vec|Vex;
+Vpmacsww;VexRvmr;V(XOP_M8,95,_,0,0,_,_,_  );0;Vec|Vex;
+Vpmadcsswd;VexRvmr;V(XOP_M8,A6,_,0,0,_,_,_  );0;Vec|Vex;
+Vpmadcswd;VexRvmr;V(XOP_M8,B6,_,0,0,_,_,_  );0;Vec|Vex;
+Vpmadd52huq;VexRvm_Lx;V(660F38,B5,_,x,1,1,4,FV );0;Evex|EvexCompat|PreferEvex|Vec|Vex;B64|K|Z
+Vpmadd52luq;VexRvm_Lx;V(660F38,B4,_,x,1,1,4,FV );0;Evex|EvexCompat|PreferEvex|Vec|Vex;B64|K|Z
+Vpmaddubsw;VexRvm_Lx;V(660F38,04,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmaddwd;VexRvm_Lx;V(660F00,F5,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmaskmovd;VexRvmMvr_Lx;V(660F38,8C,_,x,0,_,_,_  );V(660F38,8E,_,x,0,_,_,_  );Vec|Vex;
+Vpmaskmovq;VexRvmMvr_Lx;V(660F38,8C,_,x,1,_,_,_  );V(660F38,8E,_,x,1,_,_,_  );Vec|Vex;
+Vpmaxsb;VexRvm_Lx;V(660F38,3C,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmaxsd;VexRvm_Lx;V(660F38,3D,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpmaxsq;VexRvm_Lx;E(660F38,3D,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpmaxsw;VexRvm_Lx;V(660F00,EE,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmaxub;VexRvm_Lx;V(660F00,DE,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmaxud;VexRvm_Lx;V(660F38,3F,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpmaxuq;VexRvm_Lx;E(660F38,3F,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpmaxuw;VexRvm_Lx;V(660F38,3E,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpminsb;VexRvm_Lx;V(660F38,38,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpminsd;VexRvm_Lx;V(660F38,39,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpminsq;VexRvm_Lx;E(660F38,39,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpminsw;VexRvm_Lx;V(660F00,EA,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpminub;VexRvm_Lx;V(660F00,DA,_,x,I,_,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpminud;VexRvm_Lx;V(660F38,3B,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpminuq;VexRvm_Lx;E(660F38,3B,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpminuw;VexRvm_Lx;V(660F38,3A,_,x,I,_,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmovb2m;VexRm_Lx;E(F30F38,29,_,x,_,0,_,_  );0;Evex|Vec;
+Vpmovd2m;VexRm_Lx;E(F30F38,39,_,x,_,0,_,_  );0;Evex|Vec;
+Vpmovdb;VexMr_Lx;E(F30F38,31,_,x,_,0,2,QVM);0;Evex|Vec;K|Z
+Vpmovdw;VexMr_Lx;E(F30F38,33,_,x,_,0,3,HVM);0;Evex|Vec;K|Z
+Vpmovm2b;VexRm_Lx;E(F30F38,28,_,x,_,0,_,_  );0;Evex|Vec;
+Vpmovm2d;VexRm_Lx;E(F30F38,38,_,x,_,0,_,_  );0;Evex|Vec;
+Vpmovm2q;VexRm_Lx;E(F30F38,38,_,x,_,1,_,_  );0;Evex|Vec;
+Vpmovm2w;VexRm_Lx;E(F30F38,28,_,x,_,1,_,_  );0;Evex|Vec;
+Vpmovmskb;VexRm_Lx;V(660F00,D7,_,x,I,_,_,_  );0;Vec|Vex;
+Vpmovq2m;VexRm_Lx;E(F30F38,39,_,x,_,1,_,_  );0;Evex|Vec;
+Vpmovqb;VexMr_Lx;E(F30F38,32,_,x,_,0,1,OVM);0;Evex|Vec;K|Z
+Vpmovqd;VexMr_Lx;E(F30F38,35,_,x,_,0,3,HVM);0;Evex|Vec;K|Z
+Vpmovqw;VexMr_Lx;E(F30F38,34,_,x,_,0,2,QVM);0;Evex|Vec;K|Z
+Vpmovsdb;VexMr_Lx;E(F30F38,21,_,x,_,0,2,QVM);0;Evex|Vec;K|Z
+Vpmovsdw;VexMr_Lx;E(F30F38,23,_,x,_,0,3,HVM);0;Evex|Vec;K|Z
+Vpmovsqb;VexMr_Lx;E(F30F38,22,_,x,_,0,1,OVM);0;Evex|Vec;K|Z
+Vpmovsqd;VexMr_Lx;E(F30F38,25,_,x,_,0,3,HVM);0;Evex|Vec;K|Z
+Vpmovsqw;VexMr_Lx;E(F30F38,24,_,x,_,0,2,QVM);0;Evex|Vec;K|Z
+Vpmovswb;VexMr_Lx;E(F30F38,20,_,x,_,0,3,HVM);0;Evex|Vec;K|Z
+Vpmovsxbd;VexRm_Lx;V(660F38,21,_,x,I,I,2,QVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmovsxbq;VexRm_Lx;V(660F38,22,_,x,I,I,1,OVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmovsxbw;VexRm_Lx;V(660F38,20,_,x,I,I,3,HVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmovsxdq;VexRm_Lx;V(660F38,25,_,x,I,0,3,HVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmovsxwd;VexRm_Lx;V(660F38,23,_,x,I,I,3,HVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmovsxwq;VexRm_Lx;V(660F38,24,_,x,I,I,2,QVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmovusdb;VexMr_Lx;E(F30F38,11,_,x,_,0,2,QVM);0;Evex|Vec;K|Z
+Vpmovusdw;VexMr_Lx;E(F30F38,13,_,x,_,0,3,HVM);0;Evex|Vec;K|Z
+Vpmovusqb;VexMr_Lx;E(F30F38,12,_,x,_,0,1,OVM);0;Evex|Vec;K|Z
+Vpmovusqd;VexMr_Lx;E(F30F38,15,_,x,_,0,3,HVM);0;Evex|Vec;K|Z
+Vpmovusqw;VexMr_Lx;E(F30F38,14,_,x,_,0,2,QVM);0;Evex|Vec;K|Z
+Vpmovuswb;VexMr_Lx;E(F30F38,10,_,x,_,0,3,HVM);0;Evex|Vec;K|Z
+Vpmovw2m;VexRm_Lx;E(F30F38,29,_,x,_,1,_,_  );0;Evex|Vec;
+Vpmovwb;VexMr_Lx;E(F30F38,30,_,x,_,0,3,HVM);0;Evex|Vec;K|Z
+Vpmovzxbd;VexRm_Lx;V(660F38,31,_,x,I,I,2,QVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmovzxbq;VexRm_Lx;V(660F38,32,_,x,I,I,1,OVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmovzxbw;VexRm_Lx;V(660F38,30,_,x,I,I,3,HVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmovzxdq;VexRm_Lx;V(660F38,35,_,x,I,0,3,HVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmovzxwd;VexRm_Lx;V(660F38,33,_,x,I,I,3,HVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmovzxwq;VexRm_Lx;V(660F38,34,_,x,I,I,2,QVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmuldq;VexRvm_Lx;V(660F38,28,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|K|Z
+Vpmulhrsw;VexRvm_Lx;V(660F38,0B,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmulhuw;VexRvm_Lx;V(660F00,E4,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmulhw;VexRvm_Lx;V(660F00,E5,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmulld;VexRvm_Lx;V(660F38,40,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpmullq;VexRvm_Lx;E(660F38,40,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpmullw;VexRvm_Lx;V(660F00,D5,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpmultishiftqb;VexRvm_Lx;E(660F38,83,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpmuludq;VexRvm_Lx;V(660F00,F4,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|K|Z
+Vpopcntb;VexRm_Lx;E(660F38,54,_,x,_,0,4,FV );0;Evex|Vec;K|Z
+Vpopcntd;VexRm_Lx;E(660F38,55,_,x,_,0,4,FVM);0;Evex|Vec;B32|K|Z
+Vpopcntq;VexRm_Lx;E(660F38,55,_,x,_,1,4,FVM);0;Evex|Vec;B64|K|Z
+Vpopcntw;VexRm_Lx;E(660F38,54,_,x,_,1,4,FV );0;Evex|Vec;K|Z
+Vpor;VexRvm_Lx;V(660F00,EB,_,x,I,_,_,_  );0;EvexTransformable|Vec|Vex;
+Vpord;VexRvm_Lx;E(660F00,EB,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vporq;VexRvm_Lx;E(660F00,EB,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpperm;VexRvrmRvmr;V(XOP_M8,A3,_,0,x,_,_,_  );0;Vec|Vex;
+Vprold;VexVmi_Lx;E(660F00,72,1,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vprolq;VexVmi_Lx;E(660F00,72,1,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vprolvd;VexRvm_Lx;E(660F38,15,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vprolvq;VexRvm_Lx;E(660F38,15,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vprord;VexVmi_Lx;E(660F00,72,0,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vprorq;VexVmi_Lx;E(660F00,72,0,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vprorvd;VexRvm_Lx;E(660F38,14,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vprorvq;VexRvm_Lx;E(660F38,14,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vprotb;VexRvmRmvRmi;V(XOP_M9,90,_,0,x,_,_,_  );V(XOP_M8,C0,_,0,x,_,_,_  );Vec|Vex;
+Vprotd;VexRvmRmvRmi;V(XOP_M9,92,_,0,x,_,_,_  );V(XOP_M8,C2,_,0,x,_,_,_  );Vec|Vex;
+Vprotq;VexRvmRmvRmi;V(XOP_M9,93,_,0,x,_,_,_  );V(XOP_M8,C3,_,0,x,_,_,_  );Vec|Vex;
+Vprotw;VexRvmRmvRmi;V(XOP_M9,91,_,0,x,_,_,_  );V(XOP_M8,C1,_,0,x,_,_,_  );Vec|Vex;
+Vpsadbw;VexRvm_Lx;V(660F00,F6,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;
+Vpscatterdd;VexMr_VM;E(660F38,A0,_,x,_,0,2,T1S);0;Evex|Vec|Vsib;K
+Vpscatterdq;VexMr_VM;E(660F38,A0,_,x,_,1,3,T1S);0;Evex|Vec|Vsib;K
+Vpscatterqd;VexMr_VM;E(660F38,A1,_,x,_,0,2,T1S);0;Evex|Vec|Vsib;K
+Vpscatterqq;VexMr_VM;E(660F38,A1,_,x,_,1,3,T1S);0;Evex|Vec|Vsib;K
+Vpshab;VexRvmRmv;V(XOP_M9,98,_,0,x,_,_,_  );0;Vec|Vex;
+Vpshad;VexRvmRmv;V(XOP_M9,9A,_,0,x,_,_,_  );0;Vec|Vex;
+Vpshaq;VexRvmRmv;V(XOP_M9,9B,_,0,x,_,_,_  );0;Vec|Vex;
+Vpshaw;VexRvmRmv;V(XOP_M9,99,_,0,x,_,_,_  );0;Vec|Vex;
+Vpshlb;VexRvmRmv;V(XOP_M9,94,_,0,x,_,_,_  );0;Vec|Vex;
+Vpshld;VexRvmRmv;V(XOP_M9,96,_,0,x,_,_,_  );0;Vec|Vex;
+Vpshldd;VexRvmi_Lx;E(660F3A,71,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vpshldq;VexRvmi_Lx;E(660F3A,71,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpshldvd;VexRvm_Lx;E(660F38,71,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vpshldvq;VexRvm_Lx;E(660F38,71,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpshldvw;VexRvm_Lx;E(660F38,70,_,x,_,1,4,FVM);0;Evex|Vec;K|Z
+Vpshldw;VexRvmi_Lx;E(660F3A,70,_,x,_,1,4,FVM);0;Evex|Vec;K|Z
+Vpshlq;VexRvmRmv;V(XOP_M9,97,_,0,x,_,_,_  );0;Vec|Vex;
+Vpshlw;VexRvmRmv;V(XOP_M9,95,_,0,x,_,_,_  );0;Vec|Vex;
+Vpshrdd;VexRvmi_Lx;E(660F3A,73,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vpshrdq;VexRvmi_Lx;E(660F3A,73,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpshrdvd;VexRvm_Lx;E(660F38,73,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vpshrdvq;VexRvm_Lx;E(660F38,73,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpshrdvw;VexRvm_Lx;E(660F38,72,_,x,_,1,4,FVM);0;Evex|Vec;K|Z
+Vpshrdw;VexRvmi_Lx;E(660F3A,72,_,x,_,1,4,FVM);0;Evex|Vec;K|Z
+Vpshufb;VexRvm_Lx;V(660F38,00,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpshufbitqmb;VexRvm_Lx;E(660F38,8F,_,x,0,0,4,FVM);0;Evex|Vec;ImplicitZ|K
+Vpshufd;VexRmi_Lx;V(660F00,70,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpshufhw;VexRmi_Lx;V(F30F00,70,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpshuflw;VexRmi_Lx;V(F20F00,70,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpsignb;VexRvm_Lx;V(660F38,08,_,x,I,_,_,_  );0;Vec|Vex;
+Vpsignd;VexRvm_Lx;V(660F38,0A,_,x,I,_,_,_  );0;Vec|Vex;
+Vpsignw;VexRvm_Lx;V(660F38,09,_,x,I,_,_,_  );0;Vec|Vex;
+Vpslld;VexRvmVmi_Lx_MEvex;V(660F00,F2,_,x,I,0,4,128);V(660F00,72,6,x,I,0,4,FV );Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpslldq;VexVmi_Lx_MEvex;V(660F00,73,7,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;
+Vpsllq;VexRvmVmi_Lx_MEvex;V(660F00,F3,_,x,I,1,4,128);V(660F00,73,6,x,I,1,4,FV );Evex|EvexCompat|Vec|Vex;B64|K|Z
+Vpsllvd;VexRvm_Lx;V(660F38,47,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpsllvq;VexRvm_Lx;V(660F38,47,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|K|Z
+Vpsllvw;VexRvm_Lx;E(660F38,12,_,x,_,1,4,FVM);0;Evex|Vec;K|Z
+Vpsllw;VexRvmVmi_Lx_MEvex;V(660F00,F1,_,x,I,I,4,128);V(660F00,71,6,x,I,I,4,FVM);Evex|EvexCompat|Vec|Vex;K|Z
+Vpsrad;VexRvmVmi_Lx_MEvex;V(660F00,E2,_,x,I,0,4,128);V(660F00,72,4,x,I,0,4,FV );Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpsraq;VexRvmVmi_Lx_MEvex;E(660F00,E2,_,x,_,1,4,128);E(660F00,72,4,x,_,1,4,FV );Evex|Vec;B64|K|Z
+Vpsravd;VexRvm_Lx;V(660F38,46,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpsravq;VexRvm_Lx;E(660F38,46,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vpsravw;VexRvm_Lx;E(660F38,11,_,x,_,1,4,FVM);0;Evex|Vec;K|Z
+Vpsraw;VexRvmVmi_Lx_MEvex;V(660F00,E1,_,x,I,I,4,128);V(660F00,71,4,x,I,I,4,FVM);Evex|EvexCompat|Vec|Vex;K|Z
+Vpsrld;VexRvmVmi_Lx_MEvex;V(660F00,D2,_,x,I,0,4,128);V(660F00,72,2,x,I,0,4,FV );Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpsrldq;VexVmi_Lx_MEvex;V(660F00,73,3,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;
+Vpsrlq;VexRvmVmi_Lx_MEvex;V(660F00,D3,_,x,I,1,4,128);V(660F00,73,2,x,I,1,4,FV );Evex|EvexCompat|Vec|Vex;B64|K|Z
+Vpsrlvd;VexRvm_Lx;V(660F38,45,_,x,0,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpsrlvq;VexRvm_Lx;V(660F38,45,_,x,1,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|K|Z
+Vpsrlvw;VexRvm_Lx;E(660F38,10,_,x,_,1,4,FVM);0;Evex|Vec;K|Z
+Vpsrlw;VexRvmVmi_Lx_MEvex;V(660F00,D1,_,x,I,I,4,128);V(660F00,71,2,x,I,I,4,FVM);Evex|EvexCompat|Vec|Vex;K|Z
+Vpsubb;VexRvm_Lx;V(660F00,F8,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpsubd;VexRvm_Lx;V(660F00,FA,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpsubq;VexRvm_Lx;V(660F00,FB,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|K|Z
+Vpsubsb;VexRvm_Lx;V(660F00,E8,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpsubsw;VexRvm_Lx;V(660F00,E9,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpsubusb;VexRvm_Lx;V(660F00,D8,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpsubusw;VexRvm_Lx;V(660F00,D9,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpsubw;VexRvm_Lx;V(660F00,F9,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpternlogd;VexRvmi_Lx;E(660F3A,25,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vpternlogq;VexRvmi_Lx;E(660F3A,25,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vptest;VexRm_Lx;V(660F38,17,_,x,I,_,_,_  );0;Vec|Vex;
+Vptestmb;VexRvm_Lx;E(660F38,26,_,x,_,0,4,FVM);0;Evex|Vec;ImplicitZ|K
+Vptestmd;VexRvm_Lx;E(660F38,27,_,x,_,0,4,FV );0;Evex|Vec;B32|ImplicitZ|K
+Vptestmq;VexRvm_Lx;E(660F38,27,_,x,_,1,4,FV );0;Evex|Vec;B64|ImplicitZ|K
+Vptestmw;VexRvm_Lx;E(660F38,26,_,x,_,1,4,FVM);0;Evex|Vec;ImplicitZ|K
+Vptestnmb;VexRvm_Lx;E(F30F38,26,_,x,_,0,4,FVM);0;Evex|Vec;ImplicitZ|K
+Vptestnmd;VexRvm_Lx;E(F30F38,27,_,x,_,0,4,FV );0;Evex|Vec;B32|ImplicitZ|K
+Vptestnmq;VexRvm_Lx;E(F30F38,27,_,x,_,1,4,FV );0;Evex|Vec;B64|ImplicitZ|K
+Vptestnmw;VexRvm_Lx;E(F30F38,26,_,x,_,1,4,FVM);0;Evex|Vec;ImplicitZ|K
+Vpunpckhbw;VexRvm_Lx;V(660F00,68,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpunpckhdq;VexRvm_Lx;V(660F00,6A,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpunpckhqdq;VexRvm_Lx;V(660F00,6D,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|K|Z
+Vpunpckhwd;VexRvm_Lx;V(660F00,69,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpunpcklbw;VexRvm_Lx;V(660F00,60,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpunpckldq;VexRvm_Lx;V(660F00,62,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vpunpcklqdq;VexRvm_Lx;V(660F00,6C,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|K|Z
+Vpunpcklwd;VexRvm_Lx;V(660F00,61,_,x,I,I,4,FVM);0;Evex|EvexCompat|Vec|Vex;K|Z
+Vpxor;VexRvm_Lx;V(660F00,EF,_,x,I,_,_,_  );0;EvexTransformable|Vec|Vex;
+Vpxord;VexRvm_Lx;E(660F00,EF,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vpxorq;VexRvm_Lx;E(660F00,EF,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vrangepd;VexRvmi_Lx;E(660F3A,50,_,x,_,1,4,FV );0;Evex|Vec;B64|K|SAE|Z
+Vrangeps;VexRvmi_Lx;E(660F3A,50,_,x,_,0,4,FV );0;Evex|Vec;B32|K|SAE|Z
+Vrangesd;VexRvmi;E(660F3A,51,_,I,_,1,3,T1S);0;Evex|Vec;K|SAE|Z
+Vrangess;VexRvmi;E(660F3A,51,_,I,_,0,2,T1S);0;Evex|Vec;K|SAE|Z
+Vrcp14pd;VexRm_Lx;E(660F38,4C,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vrcp14ps;VexRm_Lx;E(660F38,4C,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vrcp14sd;VexRvm;E(660F38,4D,_,I,_,1,3,T1S);0;Evex|Vec;K|Z
+Vrcp14ss;VexRvm;E(660F38,4D,_,I,_,0,2,T1S);0;Evex|Vec;K|Z
+Vrcpph;VexRm_Lx;E(66MAP6,4C,_,_,_,0,4,FV );0;Evex|Vec;B16|K|Z
+Vrcpps;VexRm_Lx;V(000F00,53,_,x,I,_,_,_  );0;Vec|Vex;
+Vrcpsh;VexRvm;E(66MAP6,4D,_,_,_,0,1,T1S);0;Evex|Vec;K|Z
+Vrcpss;VexRvm;V(F30F00,53,_,I,I,_,_,_  );0;Vec|Vex;
+Vreducepd;VexRmi_Lx;E(660F3A,56,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vreduceph;VexRmi_Lx;E(000F3A,56,_,_,_,0,4,FV );0;Evex|Vec;B16|K|SAE|Z
+Vreduceps;VexRmi_Lx;E(660F3A,56,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vreducesd;VexRvmi;E(660F3A,57,_,I,_,1,3,T1S);0;Evex|Vec;K|Z
+Vreducesh;VexRvmi;E(000F3A,57,_,_,_,0,1,T1S);0;Evex|Vec;K|SAE|Z
+Vreducess;VexRvmi;E(660F3A,57,_,I,_,0,2,T1S);0;Evex|Vec;K|Z
+Vrndscalepd;VexRmi_Lx;E(660F3A,09,_,x,_,1,4,FV );0;Evex|Vec;B64|K|SAE|Z
+Vrndscaleph;VexRmi_Lx;E(000F3A,08,_,_,_,0,4,FV );0;Evex|Vec;B16|K|SAE|Z
+Vrndscaleps;VexRmi_Lx;E(660F3A,08,_,x,_,0,4,FV );0;Evex|Vec;B32|K|SAE|Z
+Vrndscalesd;VexRvmi;E(660F3A,0B,_,I,_,1,3,T1S);0;Evex|Vec;K|SAE|Z
+Vrndscalesh;VexRvmi;E(000F3A,0A,_,_,_,0,1,T1S);0;Evex|Vec;K|SAE|Z
+Vrndscaless;VexRvmi;E(660F3A,0A,_,I,_,0,2,T1S);0;Evex|Vec;K|SAE|Z
+Vroundpd;VexRmi_Lx;V(660F3A,09,_,x,I,_,_,_  );0;EvexTransformable|Vec|Vex;
+Vroundps;VexRmi_Lx;V(660F3A,08,_,x,I,_,_,_  );0;EvexTransformable|Vec|Vex;
+Vroundsd;VexRvmi;V(660F3A,0B,_,I,I,_,_,_  );0;EvexTransformable|Vec|Vex;
+Vroundss;VexRvmi;V(660F3A,0A,_,I,I,_,_,_  );0;EvexTransformable|Vec|Vex;
+Vrsqrt14pd;VexRm_Lx;E(660F38,4E,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vrsqrt14ps;VexRm_Lx;E(660F38,4E,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vrsqrt14sd;VexRvm;E(660F38,4F,_,I,_,1,3,T1S);0;Evex|Vec;K|Z
+Vrsqrt14ss;VexRvm;E(660F38,4F,_,I,_,0,2,T1S);0;Evex|Vec;K|Z
+Vrsqrtph;VexRm_Lx;E(66MAP6,4E,_,_,_,0,4,FV );0;Evex|Vec;B16|K|Z
+Vrsqrtps;VexRm_Lx;V(000F00,52,_,x,I,_,_,_  );0;Vec|Vex;
+Vrsqrtsh;VexRvm;E(66MAP6,4F,_,_,_,0,1,T1S);0;Evex|Vec;K|Z
+Vrsqrtss;VexRvm;V(F30F00,52,_,I,I,_,_,_  );0;Vec|Vex;
+Vscalefpd;VexRvm_Lx;E(660F38,2C,_,x,_,1,4,FV );0;Evex|Vec;B64|ER|K|SAE|Z
+Vscalefph;VexRvm_Lx;E(66MAP6,2C,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vscalefps;VexRvm_Lx;E(660F38,2C,_,x,_,0,4,FV );0;Evex|Vec;B32|ER|K|SAE|Z
+Vscalefsd;VexRvm;E(660F38,2D,_,I,_,1,3,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vscalefsh;VexRvm;E(66MAP6,2D,_,_,_,0,1,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vscalefss;VexRvm;E(660F38,2D,_,I,_,0,2,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vscatterdpd;VexMr_VM;E(660F38,A2,_,x,_,1,3,T1S);0;Evex|Vec|Vsib;K
+Vscatterdps;VexMr_VM;E(660F38,A2,_,x,_,0,2,T1S);0;Evex|Vec|Vsib;K
+Vscatterqpd;VexMr_VM;E(660F38,A3,_,x,_,1,3,T1S);0;Evex|Vec|Vsib;K
+Vscatterqps;VexMr_VM;E(660F38,A3,_,x,_,0,2,T1S);0;Evex|Vec|Vsib;K
+Vsha512msg1;VexRm;V(F20F38,CC,_,1,0,_,_,_  );0;Vec|Vex;
+Vsha512msg2;VexRm;V(F20F38,CD,_,1,0,_,_,_  );0;Vec|Vex;
+Vsha512rnds2;VexRvm;V(F20F38,CB,_,1,0,_,_,_  );0;Vec|Vex;
+Vshuff32x4;VexRvmi_Lx;E(660F3A,23,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vshuff64x2;VexRvmi_Lx;E(660F3A,23,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vshufi32x4;VexRvmi_Lx;E(660F3A,43,_,x,_,0,4,FV );0;Evex|Vec;B32|K|Z
+Vshufi64x2;VexRvmi_Lx;E(660F3A,43,_,x,_,1,4,FV );0;Evex|Vec;B64|K|Z
+Vshufpd;VexRvmi_Lx;V(660F00,C6,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|K|Z
+Vshufps;VexRvmi_Lx;V(000F00,C6,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vsm3msg1;VexRvm;V(000F38,DA,_,0,0,_,_,_  );0;Vec|Vex;
+Vsm3msg2;VexRvm;V(660F38,DA,_,0,0,_,_,_  );0;Vec|Vex;
+Vsm3rnds2;VexRvmi;V(660F3A,DE,_,0,0,_,_,_  );0;Vec|Vex;
+Vsm4key4;VexRvm_Lx;V(F30F38,DA,_,x,0,_,_,_  );0;Vec|Vex;
+Vsm4rnds4;VexRvm_Lx;V(F20F38,DA,_,x,0,_,_,_  );0;Vec|Vex;
+Vsqrtpd;VexRm_Lx;V(660F00,51,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vsqrtph;VexRm_Lx;E(00MAP5,51,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vsqrtps;VexRm_Lx;V(000F00,51,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vsqrtsd;VexRvm;V(F20F00,51,_,I,I,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vsqrtsh;VexRvm;E(F3MAP5,51,_,_,_,0,1,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vsqrtss;VexRvm;V(F30F00,51,_,I,I,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vstmxcsr;VexM;V(000F00,AE,3,0,I,_,_,_  );0;Vex;
+Vsubpd;VexRvm_Lx;V(660F00,5C,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|ER|K|SAE|Z
+Vsubph;VexRvm_Lx;E(00MAP5,5C,_,_,_,0,4,FV );0;Evex|Vec;B16|ER|K|SAE|Z
+Vsubps;VexRvm_Lx;V(000F00,5C,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|ER|K|SAE|Z
+Vsubsd;VexRvm;V(F20F00,5C,_,I,I,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vsubsh;VexRvm;E(F3MAP5,5C,_,_,_,0,1,T1S);0;Evex|Vec;ER|K|SAE|Z
+Vsubss;VexRvm;V(F30F00,5C,_,I,I,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;ER|K|SAE|Z
+Vtestpd;VexRm_Lx;V(660F38,0F,_,x,0,_,_,_  );0;Vec|Vex;
+Vtestps;VexRm_Lx;V(660F38,0E,_,x,0,_,_,_  );0;Vec|Vex;
+Vucomisd;VexRm;V(660F00,2E,_,I,I,1,3,T1S);0;Evex|EvexCompat|Vec|Vex;SAE
+Vucomish;VexRm;E(00MAP5,2E,_,_,_,0,1,T1S);0;Evex|Vec;SAE
+Vucomiss;VexRm;V(000F00,2E,_,I,I,0,2,T1S);0;Evex|EvexCompat|Vec|Vex;SAE
+Vunpckhpd;VexRvm_Lx;V(660F00,15,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|K|Z
+Vunpckhps;VexRvm_Lx;V(000F00,15,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vunpcklpd;VexRvm_Lx;V(660F00,14,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|K|Z
+Vunpcklps;VexRvm_Lx;V(000F00,14,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vxorpd;VexRvm_Lx;V(660F00,57,_,x,I,1,4,FV );0;Evex|EvexCompat|Vec|Vex;B64|K|Z
+Vxorps;VexRvm_Lx;V(000F00,57,_,x,I,0,4,FV );0;Evex|EvexCompat|Vec|Vex;B32|K|Z
+Vzeroall;VexOp;V(000F00,77,_,1,I,_,_,_  );0;Vec|Vex;
+Vzeroupper;VexOp;V(000F00,77,_,0,I,_,_,_  );0;Vec|Vex;
+Wbinvd;X86Op;O(000F00,09,_,_,_,_,_,_  );0;;
+Wbnoinvd;X86Op;O(F30F00,09,_,_,_,_,_,_  );0;;
+Wrfsbase;X86M;O(F30F00,AE,2,_,x,_,_,_  );0;;
+Wrgsbase;X86M;O(F30F00,AE,3,_,x,_,_,_  );0;;
+Wrmsr;X86Op;O(000F00,30,_,_,_,_,_,_  );0;;
+Wrssd;X86Mr;O(000F38,F6,_,_,_,_,_,_  );0;;
+Wrssq;X86Mr;O(000F38,F6,_,_,1,_,_,_  );0;;
+Wrussd;X86Mr;O(660F38,F5,_,_,_,_,_,_  );0;;
+Wrussq;X86Mr;O(660F38,F5,_,_,1,_,_,_  );0;;
+Xabort;X86Op_Mod11RM_I8;O(000000,C6,7,_,_,_,_,_  );0;;
+Xadd;X86Xadd;O(000F00,C0,_,_,x,_,_,_  );0;Lock|XAcquire|XRelease;
+Xbegin;X86JmpRel;O(000000,C7,7,_,_,_,_,_  );0;;
+Xchg;X86Xchg;O(000000,86,_,_,x,_,_,_  );0;XAcquire;
+Xend;X86Op;O(000F01,D5,_,_,_,_,_,_  );0;;
+Xgetbv;X86Op;O(000F01,D0,_,_,_,_,_,_  );0;;
+Xlatb;X86Op;O(000000,D7,_,_,_,_,_,_  );0;;
+Xor;X86Arith;O(000000,30,6,_,x,_,_,_  );0;Lock|XAcquire|XRelease;
+Xorpd;ExtRm;O(660F00,57,_,_,_,_,_,_  );0;Vec;
+Xorps;ExtRm;O(000F00,57,_,_,_,_,_,_  );0;Vec;
+Xresldtrk;X86Op;O(F20F01,E9,_,_,_,_,_,_  );0;;
+Xrstor;X86M_Only_EDX_EAX;O(000F00,AE,5,_,_,_,_,_  );0;;
+Xrstor64;X86M_Only_EDX_EAX;O(000F00,AE,5,_,1,_,_,_  );0;;
+Xrstors;X86M_Only_EDX_EAX;O(000F00,C7,3,_,_,_,_,_  );0;;
+Xrstors64;X86M_Only_EDX_EAX;O(000F00,C7,3,_,1,_,_,_  );0;;
+Xsave;X86M_Only_EDX_EAX;O(000F00,AE,4,_,_,_,_,_  );0;;
+Xsave64;X86M_Only_EDX_EAX;O(000F00,AE,4,_,1,_,_,_  );0;;
+Xsavec;X86M_Only_EDX_EAX;O(000F00,C7,4,_,_,_,_,_  );0;;
+Xsavec64;X86M_Only_EDX_EAX;O(000F00,C7,4,_,1,_,_,_  );0;;
+Xsaveopt;X86M_Only_EDX_EAX;O(000F00,AE,6,_,_,_,_,_  );0;;
+Xsaveopt64;X86M_Only_EDX_EAX;O(000F00,AE,6,_,1,_,_,_  );0;;
+Xsaves;X86M_Only_EDX_EAX;O(000F00,C7,5,_,_,_,_,_  );0;;
+Xsaves64;X86M_Only_EDX_EAX;O(000F00,C7,5,_,1,_,_,_  );0;;
+Xsetbv;X86Op;O(000F01,D1,_,_,_,_,_,_  );0;;
+Xsusldtrk;X86Op;O(F20F01,E8,_,_,_,_,_,_  );0;;
+Xtest;X86Op;O(000F01,D6,_,_,_,_,_,_  );0;;

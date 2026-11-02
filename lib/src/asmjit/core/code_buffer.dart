@@ -231,6 +231,28 @@ class CodeBuffer {
     return startOffset;
   }
 
+  /// Inserts [value] at [offset], moving the following bytes up.
+  void insertAt(int offset, int value) {
+    RangeError.checkValueInInterval(offset, 0, _length, 'offset');
+    _ensure(1);
+    _data.setRange(offset + 1, _length + 1, _data, offset);
+    _data[offset] = value & 0xFF;
+    _length++;
+  }
+
+  /// Removes the byte at [offset], moving the following bytes down.
+  void removeAt(int offset) {
+    RangeError.checkValueInInterval(offset, 0, _length - 1, 'offset');
+    _data.setRange(offset, _length - 1, _data, offset + 1);
+    _length--;
+  }
+
+  /// Drops every byte at or after [length].
+  void truncate(int length) {
+    RangeError.checkValueInInterval(length, 0, _length, 'length');
+    _length = length;
+  }
+
   /// Gets a byte at [offset].
   int operator [](int offset) {
     if (offset < 0 || offset >= _length) {

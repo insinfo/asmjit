@@ -1316,20 +1316,22 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
     _commonTableLabel = null;
   }
 
+  /// `_get_mem_const()`: like upstream (`x86::ptr(_common_table_ptr, disp)`)
+  /// the memory operand is unsized, so the instruction size comes from the
+  /// register operands (a 32-byte size would make VEX `_Lx` encodings 256-bit).
   BaseMem _getMemConst(VecConst c) {
     _initVecConstTablePtr();
     try {
       int offset = VecConstTable.getOffset(c);
       if (_commonTablePtr != null) {
         if (isX86Family) {
-          return X86Mem.base(_commonTablePtr! as X86Gp,
-              disp: offset, size: c.width);
+          return X86Mem.base(_commonTablePtr! as X86Gp, disp: offset);
         } else if (isArm64) {
           return A64Mem.baseOffset(_commonTablePtr! as A64Gp, offset);
         }
       }
       // Fallback or error
-      if (isX86Family) return X86Mem.abs(offset, size: c.width);
+      if (isX86Family) return X86Mem.abs(offset);
       if (isArm64) return A64Mem.baseOffset(A64Gp(0, 64), offset);
     } catch (_) {
       // Try local table
@@ -1343,8 +1345,7 @@ class UniCompiler extends UniCompilerBase with UniCompilerX86, UniCompilerA64 {
 
           final offset = VecConstTable.kSize + vc.offset;
           if (isX86Family) {
-            return X86Mem.base(_commonTablePtr! as X86Gp,
-                disp: offset, size: c.width);
+            return X86Mem.base(_commonTablePtr! as X86Gp, disp: offset);
           }
           if (isArm64) {
             return A64Mem.baseOffset(_commonTablePtr! as A64Gp, offset);

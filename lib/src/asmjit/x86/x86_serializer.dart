@@ -2,7 +2,6 @@
 import '../core/builder.dart' as ir;
 import '../core/labels.dart';
 import 'x86_assembler.dart';
-import 'x86_dispatcher.dart';
 
 /// Serializer that converts Builder IR to X86Assembler calls.
 class X86Serializer implements ir.SerializerContext {
@@ -61,7 +60,7 @@ class X86Serializer implements ir.SerializerContext {
   /// Emits the instruction with pre-processed operands.
   void emitInst(int instId, List<Object> ops, int options) {
     final start = asm.offset;
-    x86Dispatch(asm, instId, ops);
+    asm.emit(instId, ops);
     asm.fixupRipRelocs(start);
   }
 }

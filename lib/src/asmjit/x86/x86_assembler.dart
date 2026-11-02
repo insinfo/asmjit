@@ -18,7 +18,7 @@ import 'x86_operands.dart';
 import 'x86_encoder.dart';
 import 'x86_simd.dart';
 import 'x86_inst_db.g.dart';
-import 'x86_dispatcher.dart';
+import 'x86_emit.dart';
 import 'x86_simd_ops.dart';
 import 'x86_emit_helper.dart';
 
@@ -74,10 +74,26 @@ class X86Assembler extends BaseEmitter {
     _enc = X86Encoder(_buf, this);
   }
 
-  /// Emits a raw instruction by ID with generic operands.
+  /// Port of upstream `x86::Assembler::_emit()` (x86_emit.dart).
+  late final X86Emitter _emitter = X86Emitter(code, _buf);
+
+  /// Options of the next instruction ([X86EmitOptions]: prefixes such as
+  /// LOCK/REP, `{sae}`/`{er}`, `{z}`, forced VEX3/EVEX, short/long forms);
+  /// reset after every instruction, as upstream `inst_options()`.
+  int get instOptions => _emitter.instOptions;
+  set instOptions(int options) => _emitter.instOptions = options;
+
+  /// Extra register of the next instruction (AVX-512 `{k}` selector or the
+  /// REP counter), as upstream `extra_reg()`; reset after every instruction.
+  set extraReg(BaseReg? reg) => _emitter.extraReg = reg;
+
+  /// Emits a raw instruction by ID with generic operands (registers,
+  /// [X86Mem], integers or [Imm] immediates and [Label]s), encoded as
+  /// upstream `x86::Assembler::_emit()`.
   void emit(int instId, List<Object> ops) {
     instructionCount++;
-    x86Dispatch(this, instId, ops);
+    _emitter.encodingOptions = encodingOptions;
+    _emitter.emit(instId, ops);
   }
 
   /// Emits moves required to assign arguments if any remapping is needed.

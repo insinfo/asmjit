@@ -3,7 +3,6 @@
 // every table entry in legacy and VEX form, including extended registers,
 // YMM and base+index*scale memory operands.
 import 'package:asmjit/asmjit.dart';
-import 'package:asmjit/src/asmjit/x86/x86_dispatcher.dart';
 import 'package:asmjit/src/asmjit/x86/x86_simd_ops.dart';
 import 'package:test/test.dart';
 
@@ -23,7 +22,7 @@ Map<String, String> _encodeAll() {
     final code = CodeHolder(env: Environment.x64SysV());
     final asm = X86Assembler(code);
     try {
-      x86Dispatch(asm, id, ops);
+      asm.emit(id, ops);
     } catch (e) {
       out[text] = 'ERR';
       return;

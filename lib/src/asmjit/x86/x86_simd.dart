@@ -171,6 +171,220 @@ class X86KReg extends BaseReg {
 }
 
 // =============================================================================
+// Other x86 registers (`x86::Mm`, `St`, `Bnd`, `SReg`, `CReg`, `DReg`, `Tmm`)
+// =============================================================================
+
+/// MMX register (`x86::Mm`).
+class X86Mm extends BaseReg {
+  @override
+  final int id;
+
+  const X86Mm(this.id);
+
+  @override
+  RegType get type => RegType.x86Mm;
+
+  @override
+  int get size => 8;
+
+  @override
+  RegGroup get group => RegGroup.x86Mm;
+
+  @override
+  BaseReg toPhys(int physId) => X86Mm(physId);
+
+  @override
+  String toString() => 'mm$id';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || other is X86Mm && other.id == id;
+
+  @override
+  int get hashCode => Object.hash(X86Mm, id);
+}
+
+/// x87 FPU register (`x86::St`).
+class X86St extends BaseReg {
+  @override
+  final int id;
+
+  const X86St(this.id);
+
+  @override
+  RegType get type => RegType.x86St;
+
+  @override
+  int get size => 10;
+
+  @override
+  RegGroup get group => RegGroup.extra;
+
+  @override
+  BaseReg toPhys(int physId) => X86St(physId);
+
+  @override
+  String toString() => 'st$id';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || other is X86St && other.id == id;
+
+  @override
+  int get hashCode => Object.hash(X86St, id);
+}
+
+/// MPX bound register (`x86::Bnd`).
+class X86Bnd extends BaseReg {
+  @override
+  final int id;
+
+  const X86Bnd(this.id);
+
+  @override
+  RegType get type => RegType.x86Bnd;
+
+  @override
+  int get size => 16;
+
+  @override
+  RegGroup get group => RegGroup.extra;
+
+  @override
+  BaseReg toPhys(int physId) => X86Bnd(physId);
+
+  @override
+  String toString() => 'bnd$id';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || other is X86Bnd && other.id == id;
+
+  @override
+  int get hashCode => Object.hash(X86Bnd, id);
+}
+
+/// Segment register (`x86::SReg`); ids as upstream: es=1, cs=2, ss=3, ds=4, fs=5, gs=6.
+class X86SReg extends BaseReg {
+  @override
+  final int id;
+
+  const X86SReg(this.id);
+
+  @override
+  RegType get type => RegType.segment;
+
+  @override
+  int get size => 2;
+
+  @override
+  RegGroup get group => RegGroup.extra;
+
+  @override
+  BaseReg toPhys(int physId) => X86SReg(physId);
+
+  @override
+  String toString() => const ['', 'es', 'cs', 'ss', 'ds', 'fs', 'gs'][id];
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || other is X86SReg && other.id == id;
+
+  @override
+  int get hashCode => Object.hash(X86SReg, id);
+}
+
+/// Control register (`x86::CReg`).
+class X86CReg extends BaseReg {
+  @override
+  final int id;
+
+  const X86CReg(this.id);
+
+  @override
+  RegType get type => RegType.control;
+
+  @override
+  int get size => 8;
+
+  @override
+  RegGroup get group => RegGroup.extra;
+
+  @override
+  BaseReg toPhys(int physId) => X86CReg(physId);
+
+  @override
+  String toString() => 'cr$id';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || other is X86CReg && other.id == id;
+
+  @override
+  int get hashCode => Object.hash(X86CReg, id);
+}
+
+/// Debug register (`x86::DReg`).
+class X86DReg extends BaseReg {
+  @override
+  final int id;
+
+  const X86DReg(this.id);
+
+  @override
+  RegType get type => RegType.debug;
+
+  @override
+  int get size => 8;
+
+  @override
+  RegGroup get group => RegGroup.extra;
+
+  @override
+  BaseReg toPhys(int physId) => X86DReg(physId);
+
+  @override
+  String toString() => 'dr$id';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || other is X86DReg && other.id == id;
+
+  @override
+  int get hashCode => Object.hash(X86DReg, id);
+}
+
+/// AMX tile register (`x86::Tmm`).
+class X86Tmm extends BaseReg {
+  @override
+  final int id;
+
+  const X86Tmm(this.id);
+
+  @override
+  RegType get type => RegType.tile;
+
+  @override
+  int get size => 0;
+
+  @override
+  RegGroup get group => RegGroup.extra;
+
+  @override
+  BaseReg toPhys(int physId) => X86Tmm(physId);
+
+  @override
+  String toString() => 'tmm$id';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || other is X86Tmm && other.id == id;
+
+  @override
+  int get hashCode => Object.hash(X86Tmm, id);
+}
+
+// =============================================================================
 // Predefined XMM registers (SSE/AVX 128-bit)
 // =============================================================================
 

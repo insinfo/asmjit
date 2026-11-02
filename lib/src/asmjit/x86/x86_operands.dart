@@ -34,6 +34,9 @@ class X86Mem extends BaseMem {
   /// The label target (for RIP-relative or absolute addressing).
   final Label? label;
 
+  /// AVX-512 embedded broadcast ([X86Broadcast], `Mem::Broadcast`).
+  final int broadcast;
+
   const X86Mem({
     this.base,
     this.index,
@@ -42,6 +45,7 @@ class X86Mem extends BaseMem {
     this.size = 0,
     this.segment,
     this.label,
+    this.broadcast = X86Broadcast.kNone,
   });
 
   /// Creates a memory operand from a pointer (base register + displacement).
@@ -109,6 +113,8 @@ class X86Mem extends BaseMem {
         displacement: displacement,
         size: newSize,
         segment: segment,
+        label: label,
+        broadcast: broadcast,
       );
 
   /// Creates a copy with a different displacement.
@@ -119,6 +125,21 @@ class X86Mem extends BaseMem {
         displacement: newDisp,
         size: size,
         segment: segment,
+        label: label,
+        broadcast: broadcast,
+      );
+
+  /// Creates a copy with an embedded broadcast (`Mem::clone_broadcasted()`,
+  /// `_1to2()` ... `_1to32()` in upstream).
+  X86Mem withBroadcast(int bcst) => X86Mem(
+        base: base,
+        index: index,
+        scale: scale,
+        displacement: displacement,
+        size: size,
+        segment: segment,
+        label: label,
+        broadcast: bcst,
       );
 
   /// Adds an offset to the displacement.
@@ -198,11 +219,24 @@ class X86Mem extends BaseMem {
           other.scale == scale &&
           other.displacement == displacement &&
           other.size == size &&
-          other.segment == segment;
+          other.segment == segment &&
+          other.label == label &&
+          other.broadcast == broadcast;
 
   @override
-  int get hashCode =>
-      Object.hash(base, index, scale, displacement, size, segment);
+  int get hashCode => Object.hash(
+      base, index, scale, displacement, size, segment, label, broadcast);
+}
+
+/// `x86::Mem::Broadcast`: AVX-512 embedded broadcast of a memory operand.
+abstract final class X86Broadcast {
+  static const int kNone = 0;
+  static const int k1To2 = 1;
+  static const int k1To4 = 2;
+  static const int k1To8 = 3;
+  static const int k1To16 = 4;
+  static const int k1To32 = 5;
+  static const int k1To64 = 6;
 }
 
 /// x86 segment registers.
