@@ -18,7 +18,8 @@ void main(List<String> args) {
     final out = File('test/data/asmjit_assembler_$arch.txt');
     out.parent.createSync(recursive: true);
 
-    final testCase = RegExp(r'^\s*TEST_INSTRUCTION\("([0-9A-Fa-f]*)"\s*,\s*(.*)\);');
+    final testCase =
+        RegExp(r'^\s*TEST_INSTRUCTION\("([0-9A-Fa-f]*)"\s*,\s*(.*)\);');
     final function = RegExp(r'^static void ASMJIT_NOINLINE (\w+)\(');
     final sb = StringBuffer()
       ..writeln('# Extracted from asmjit-testing/tests/'
