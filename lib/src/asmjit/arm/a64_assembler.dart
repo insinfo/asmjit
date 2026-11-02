@@ -597,6 +597,16 @@ class A64Assembler extends BaseEmitter {
     _enc.stp(rt, rt2, rn, offset);
   }
 
+  /// LDP (post-index) - `ldp rt, rt2, [rn], #offset`.
+  void ldpPost(A64Gp rt, A64Gp rt2, A64Gp rn, int offset) {
+    _enc.ldpPost(rt, rt2, rn, offset);
+  }
+
+  /// STP (pre-index) - `stp rt, rt2, [rn, #offset]!`.
+  void stpPre(A64Gp rt, A64Gp rt2, A64Gp rn, int offset) {
+    _enc.stpPre(rt, rt2, rn, offset);
+  }
+
   // ===========================================================================
   // Multiply/Divide Instructions
   // ===========================================================================

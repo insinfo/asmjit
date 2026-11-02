@@ -451,7 +451,24 @@ void _add(A64Assembler asm, List<Object> ops) {
       ops[0] is A64Gp &&
       ops[1] is A64Gp &&
       ops[2] is int) {
-    asm.addImm(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int);
+    _addSubImm(asm, ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int);
+  }
+}
+
+/// ADD/SUB with an arbitrary immediate: negative values flip the operation
+/// and multiples of 4096 use the `lsl #12` form.
+void _addSubImm(A64Assembler asm, A64Gp rd, A64Gp rn, int imm,
+    {bool sub = false}) {
+  if (imm < 0) {
+    imm = -imm;
+    sub = !sub;
+  }
+  if (imm <= 0xFFF) {
+    sub ? asm.subImm(rd, rn, imm) : asm.addImm(rd, rn, imm);
+  } else if ((imm & 0xFFF) == 0 && (imm >> 12) <= 0xFFF) {
+    sub
+        ? asm.subImm(rd, rn, imm >> 12, shift: 12)
+        : asm.addImm(rd, rn, imm >> 12, shift: 12);
   }
 }
 
@@ -476,7 +493,7 @@ void _sub(A64Assembler asm, List<Object> ops) {
       ops[0] is A64Gp &&
       ops[1] is A64Gp &&
       ops[2] is int) {
-    asm.subImm(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int);
+    _addSubImm(asm, ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as int, sub: true);
   }
 }
 
@@ -557,8 +574,17 @@ void _cmn(A64Assembler asm, List<Object> ops) {
 }
 
 void _mov(A64Assembler asm, List<Object> ops) {
-  if (ops.length == 2 && ops[0] is A64Gp && ops[1] is int) {
-    asm.movImm64(ops[0] as A64Gp, ops[1] as int);
+  if (ops.length != 2) return;
+  final dst = ops[0], src = ops[1];
+  if (dst is A64Gp && src is int) {
+    asm.movImm64(dst, src);
+  } else if (dst is A64Gp && src is A64Gp) {
+    asm.mov(dst, src);
+  } else if (dst is A64Vec && src is A64Vec) {
+    // MOV Vd.16B, Vn.16B (alias of ORR); copies the whole register.
+    final d = A64Vec(dst.id, 128, A64Layout.b16);
+    final n = A64Vec(src.id, 128, A64Layout.b16);
+    asm.orrVec(d, n, n);
   }
 }
 
@@ -646,6 +672,8 @@ void _ldr(A64Assembler asm, List<Object> ops) {
     } else if (ops[0] is A64Vec) {
       asm.ldrVec(ops[0] as A64Vec, base, off);
     }
+  } else if (ops.length == 2 && ops[1] is A64Mem) {
+    _ldStMem(asm, ops[0], ops[1] as A64Mem, load: true);
   }
 }
 
@@ -657,6 +685,35 @@ void _str(A64Assembler asm, List<Object> ops) {
       asm.str(ops[0] as A64Gp, base, off);
     } else if (ops[0] is A64Vec) {
       asm.strVec(ops[0] as A64Vec, base, off);
+    }
+  } else if (ops.length == 2 && ops[1] is A64Mem) {
+    _ldStMem(asm, ops[0], ops[1] as A64Mem, load: false);
+  }
+}
+
+/// LDR/STR of a GP or SIMD&FP register through a `[base, #offset]` operand.
+/// Uses the scaled unsigned-offset form when possible, otherwise LDUR/STUR.
+void _ldStMem(A64Assembler asm, Object reg, A64Mem mem, {required bool load}) {
+  final base = mem.base;
+  if (base == null || mem.index != null || mem.addrMode != A64AddrMode.offset) {
+    return;
+  }
+  final off = mem.displacement;
+  if (reg is A64Gp) {
+    final bytes = reg.size;
+    if (off >= 0 && off % bytes == 0 && off ~/ bytes <= 0xFFF) {
+      load ? asm.ldr(reg, base, off) : asm.str(reg, base, off);
+    } else if (off >= -256 && off <= 255) {
+      load ? asm.ldur(reg, base, off) : asm.stur(reg, base, off);
+    }
+  } else if (reg is A64Vec) {
+    final bytes = reg.sizeBits ~/ 8;
+    if (off >= 0 && off % bytes == 0 && off ~/ bytes <= 0xFFF) {
+      load ? asm.ldrVec(reg, base, off) : asm.strVec(reg, base, off);
+    } else if (off >= -256 && off <= 255) {
+      load
+          ? asm.ldrVecUnscaled(reg, base, off)
+          : asm.strVecUnscaled(reg, base, off);
     }
   }
 }
@@ -734,6 +791,21 @@ void _ldp(A64Assembler asm, List<Object> ops) {
       ops[2] is A64Gp &&
       ops[3] is int) {
     asm.ldp(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp, ops[3] as int);
+  } else if (ops.length == 3 &&
+      ops[0] is A64Gp &&
+      ops[1] is A64Gp &&
+      ops[2] is A64Mem) {
+    final m = ops[2] as A64Mem;
+    final rt = ops[0] as A64Gp, rt2 = ops[1] as A64Gp;
+    if (m.base == null || m.index != null) return;
+    switch (m.addrMode) {
+      case A64AddrMode.offset:
+        asm.ldp(rt, rt2, m.base!, m.displacement);
+      case A64AddrMode.postIndex:
+        asm.ldpPost(rt, rt2, m.base!, m.displacement);
+      case A64AddrMode.preIndex:
+        break; // Not needed yet; reported as unsupported.
+    }
   }
 }
 
@@ -744,6 +816,21 @@ void _stp(A64Assembler asm, List<Object> ops) {
       ops[2] is A64Gp &&
       ops[3] is int) {
     asm.stp(ops[0] as A64Gp, ops[1] as A64Gp, ops[2] as A64Gp, ops[3] as int);
+  } else if (ops.length == 3 &&
+      ops[0] is A64Gp &&
+      ops[1] is A64Gp &&
+      ops[2] is A64Mem) {
+    final m = ops[2] as A64Mem;
+    final rt = ops[0] as A64Gp, rt2 = ops[1] as A64Gp;
+    if (m.base == null || m.index != null) return;
+    switch (m.addrMode) {
+      case A64AddrMode.offset:
+        asm.stp(rt, rt2, m.base!, m.displacement);
+      case A64AddrMode.preIndex:
+        asm.stpPre(rt, rt2, m.base!, m.displacement);
+      case A64AddrMode.postIndex:
+        break; // Not needed yet; reported as unsupported.
+    }
   }
 }
 

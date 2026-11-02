@@ -86,10 +86,18 @@ class A64Encoder {
   // Data Processing - Immediate
   // ===========================================================================
 
+  static void _checkImm12(int imm12, int shift) {
+    if (imm12 < 0 || imm12 > 0xFFF || (shift != 0 && shift != 12)) {
+      throw ArgumentError(
+          'ADD/SUB immediate out of range: #$imm12, lsl #$shift');
+    }
+  }
+
   /// ADD (immediate) - Add with immediate.
   /// Encoding: sf|0|0|10001|shift|imm12|Rn|Rd
   void addImm(A64Gp rd, A64Gp rn, int imm12, {int shift = 0}) {
     final sf = _encSf(rd);
+    _checkImm12(imm12, shift);
     final sh = (shift == 12) ? 1 : 0;
     final inst = (sf << 31) |
         (0 << 30) |
@@ -106,6 +114,7 @@ class A64Encoder {
   /// Encoding: sf|1|0|10001|shift|imm12|Rn|Rd
   void subImm(A64Gp rd, A64Gp rn, int imm12, {int shift = 0}) {
     final sf = _encSf(rd);
+    _checkImm12(imm12, shift);
     final sh = (shift == 12) ? 1 : 0;
     final inst = (sf << 31) |
         (1 << 30) |
@@ -121,6 +130,7 @@ class A64Encoder {
   /// ADDS (immediate) - Add with immediate, setting flags.
   void addsImm(A64Gp rd, A64Gp rn, int imm12, {int shift = 0}) {
     final sf = _encSf(rd);
+    _checkImm12(imm12, shift);
     final sh = (shift == 12) ? 1 : 0;
     final inst = (sf << 31) |
         (0 << 30) |
@@ -136,6 +146,7 @@ class A64Encoder {
   /// SUBS (immediate) - Subtract with immediate, setting flags.
   void subsImm(A64Gp rd, A64Gp rn, int imm12, {int shift = 0}) {
     final sf = _encSf(rd);
+    _checkImm12(imm12, shift);
     final sh = (shift == 12) ? 1 : 0;
     final inst = (sf << 31) |
         (1 << 30) |
@@ -572,6 +583,12 @@ class A64Encoder {
 
   /// MOV (register) - Move register (alias for ORR with ZR).
   void movReg(A64Gp rd, A64Gp rm) {
+    // Register 31 is SP for ADD (immediate) but ZR for ORR, so moves to/from
+    // SP must use `add rd, rm, #0`.
+    if (rd.id == 31 || rm.id == 31) {
+      addImm(rd, rm, 0);
+      return;
+    }
     final zr = rd.is64Bit ? xzr : wzr;
     orrReg(rd, zr, rm);
   }
@@ -766,86 +783,85 @@ class A64Encoder {
     _emitLoadStore(load: false, size: size, rt: rt, rn: rn, offset: offset);
   }
 
-  int _vecSizeBits(A64Vec vt) {
+  /// `size`/`opc` fields and access size (log2 bytes) of a SIMD&FP register
+  /// load/store (B/H/S/D use size=0..3 with opc=x1/x0, Q uses size=0, opc=1x).
+  ({int size, int opcHi, int log2}) _vecLdSt(A64Vec vt) {
     switch (vt.sizeBits) {
+      case 8:
+        return (size: 0, opcHi: 0, log2: 0);
+      case 16:
+        return (size: 1, opcHi: 0, log2: 1);
       case 32:
-        return 0;
+        return (size: 2, opcHi: 0, log2: 2);
       case 64:
-        return 1;
+        return (size: 3, opcHi: 0, log2: 3);
       case 128:
-        return 2;
+        return (size: 0, opcHi: 1, log2: 4);
       default:
         throw ArgumentError('Unsupported vector size: ${vt.sizeBits}');
     }
   }
 
-  /// LDR (SIMD&FP, immediate, unsigned offset) - Load vector register.
-  /// Encoding: size|111100|1|imm12|Rn|Rt
-  void ldrVec(A64Vec vt, A64Gp rn, int offset) {
-    final size = _vecSizeBits(vt);
-    final scale = size + 2; // bytes = 4,8,16
-    final imm12 = (offset >> scale) & 0xFFF;
-    final inst = (size << 30) |
-        (0x3C << 24) |
-        (1 << 22) |
-        (imm12 << 10) |
+  void _vecLdStImm(A64Vec vt, A64Gp rn, int offset, {required bool load}) {
+    final f = _vecLdSt(vt);
+    final scaled = offset >> f.log2;
+    if (offset < 0 || (scaled << f.log2) != offset || scaled > 0xFFF) {
+      throw ArgumentError(
+          'LDR/STR (SIMD&FP) offset $offset not encodable for ${vt.sizeBits}-bit access');
+    }
+    final opc = (f.opcHi << 1) | (load ? 1 : 0);
+    emit32((f.size << 30) |
+        (0x3D << 24) |
+        (opc << 22) |
+        (scaled << 10) |
         (_encReg(rn) << 5) |
-        _encVec(vt);
-    emit32(inst);
+        _encVec(vt));
   }
 
-  /// LDR (SIMD&FP, literal) - PC-relative load vector register.
-  /// Encoding: size|011000|1|imm19|Rt
+  void _vecLdStUnscaled(A64Vec vt, A64Gp rn, int offset, {required bool load}) {
+    if (offset < -256 || offset > 255) {
+      throw ArgumentError('LDUR/STUR (SIMD&FP) offset $offset out of range');
+    }
+    final f = _vecLdSt(vt);
+    final opc = (f.opcHi << 1) | (load ? 1 : 0);
+    emit32((f.size << 30) |
+        (0x3C << 24) |
+        (opc << 22) |
+        ((offset & 0x1FF) << 12) |
+        (_encReg(rn) << 5) |
+        _encVec(vt));
+  }
+
+  /// LDR (SIMD&FP, immediate, unsigned offset).
+  /// Encoding: size|111|1|01|opc|imm12|Rn|Rt
+  void ldrVec(A64Vec vt, A64Gp rn, int offset) =>
+      _vecLdStImm(vt, rn, offset, load: true);
+
+  /// LDR (SIMD&FP, literal) - PC-relative load of an S/D/Q register.
+  /// Encoding: opc|011|1|00|imm19|Rt
   void ldrVecLiteral(A64Vec vt, int offset) {
-    final size = _vecSizeBits(vt);
+    final opc = switch (vt.sizeBits) {
+      32 => 0,
+      64 => 1,
+      128 => 2,
+      _ => throw ArgumentError('Unsupported vector size: ${vt.sizeBits}'),
+    };
     final imm19 = (offset >> 2) & 0x7FFFF;
-    final inst =
-        (size << 30) | (0x18 << 24) | (1 << 22) | (imm19 << 5) | _encVec(vt);
-    emit32(inst);
+    emit32((opc << 30) | (0x1C << 24) | (imm19 << 5) | _encVec(vt));
   }
 
-  /// STR (SIMD&FP, immediate, unsigned offset) - Store vector register.
-  void strVec(A64Vec vt, A64Gp rn, int offset) {
-    final size = _vecSizeBits(vt);
-    final scale = size + 2; // bytes = 4,8,16
-    final imm12 = (offset >> scale) & 0xFFF;
-    final inst = (size << 30) |
-        (0x3C << 24) |
-        (0 << 22) |
-        (imm12 << 10) |
-        (_encReg(rn) << 5) |
-        _encVec(vt);
-    emit32(inst);
-  }
+  /// STR (SIMD&FP, immediate, unsigned offset).
+  void strVec(A64Vec vt, A64Gp rn, int offset) =>
+      _vecLdStImm(vt, rn, offset, load: false);
 
-  /// LDR (SIMD&FP, unscaled) - Load vector register with signed 9-bit offset.
-  /// Encoding: size|111000|1|imm9|10|Rn|Rt
-  void ldrVecUnscaled(A64Vec vt, A64Gp rn, int offset) {
-    final size = _vecSizeBits(vt);
-    final imm9 = offset & 0x1FF; // signed, lower 9 bits
-    final inst = (size << 30) |
-        (0x38 << 24) |
-        (1 << 22) |
-        (imm9 << 12) |
-        (2 << 10) | // unscaled addressing mode
-        (_encReg(rn) << 5) |
-        _encVec(vt);
-    emit32(inst);
-  }
+  /// LDUR (SIMD&FP) - Load vector register with a signed 9-bit offset.
+  /// Encoding: size|111|1|00|opc|0|imm9|00|Rn|Rt
+  void ldrVecUnscaled(A64Vec vt, A64Gp rn, int offset) =>
+      _vecLdStUnscaled(vt, rn, offset, load: true);
 
-  /// STR (SIMD&FP, unscaled) - Store vector register with signed 9-bit offset.
-  void strVecUnscaled(A64Vec vt, A64Gp rn, int offset) {
-    final size = _vecSizeBits(vt);
-    final imm9 = offset & 0x1FF;
-    final inst = (size << 30) |
-        (0x38 << 24) |
-        (0 << 22) |
-        (imm9 << 12) |
-        (2 << 10) |
-        (_encReg(rn) << 5) |
-        _encVec(vt);
-    emit32(inst);
-  }
+  /// STUR (SIMD&FP) - Store vector register with a signed 9-bit offset.
+  void strVecUnscaled(A64Vec vt, A64Gp rn, int offset) =>
+      _vecLdStUnscaled(vt, rn, offset, load: false);
 
   /// LDRB (immediate, unsigned offset) - Load byte.
   void ldrb(A64Gp rt, A64Gp rn, int offset) {
@@ -879,33 +895,27 @@ class A64Encoder {
     emit32(inst);
   }
 
-  /// LDUR (unscaled) - Load GP register with signed 9-bit offset.
-  void ldur(A64Gp rt, A64Gp rn, int offset) {
+  /// LDUR/STUR (GP). Encoding: size|111|0|00|opc|0|imm9|00|Rn|Rt
+  void _ldStUnscaled(A64Gp rt, A64Gp rn, int offset, {required bool load}) {
+    if (offset < -256 || offset > 255) {
+      throw ArgumentError('LDUR/STUR offset $offset out of range');
+    }
     final size = _encSf(rt) == 1 ? 3 : 2;
-    final imm9 = offset & 0x1FF;
-    final inst = (size << 30) |
-        (0x18 << 24) | // 011000 load/store (unscaled)
-        (1 << 22) | // load
-        (imm9 << 12) |
-        (0 << 10) |
+    emit32((size << 30) |
+        (0x38 << 24) |
+        ((load ? 1 : 0) << 22) |
+        ((offset & 0x1FF) << 12) |
         (_encReg(rn) << 5) |
-        _encReg(rt);
-    emit32(inst);
+        _encReg(rt));
   }
 
+  /// LDUR (unscaled) - Load GP register with signed 9-bit offset.
+  void ldur(A64Gp rt, A64Gp rn, int offset) =>
+      _ldStUnscaled(rt, rn, offset, load: true);
+
   /// STUR (unscaled) - Store GP register with signed 9-bit offset.
-  void stur(A64Gp rt, A64Gp rn, int offset) {
-    final size = _encSf(rt) == 1 ? 3 : 2;
-    final imm9 = offset & 0x1FF;
-    final inst = (size << 30) |
-        (0x18 << 24) |
-        (0 << 22) | // store
-        (imm9 << 12) |
-        (0 << 10) |
-        (_encReg(rn) << 5) |
-        _encReg(rt);
-    emit32(inst);
-  }
+  void stur(A64Gp rt, A64Gp rn, int offset) =>
+      _ldStUnscaled(rt, rn, offset, load: false);
 
   /// LDRSH (immediate, unsigned offset) - Load halfword and sign-extend to 64-bit.
   void ldrsh(A64Gp rt, A64Gp rn, int offset) {
@@ -932,37 +942,41 @@ class A64Encoder {
   }
 
   /// LDP (load pair) - Load pair of registers.
-  /// Encoding: x|0|101|0|0|1|1|imm7|Rt2|Rn|Rt
-  void ldp(A64Gp rt, A64Gp rt2, A64Gp rn, int offset) {
+  /// LDP/STP (GP registers). [mode]: 1 = post-index, 2 = signed offset,
+  /// 3 = pre-index. Encoding: opc|101|0|mode|L|imm7|Rt2|Rn|Rt
+  void _ldStPair(A64Gp rt, A64Gp rt2, A64Gp rn, int offset,
+      {required bool load, required int mode}) {
     final sf = _encSf(rt);
-    final opc = sf == 1 ? 2 : 0;
     final scale = sf == 1 ? 3 : 2;
-    final imm7 = (offset >> scale) & 0x7F;
-    final inst = (opc << 30) |
-        (0x29 << 24) |
-        (1 << 22) |
-        (imm7 << 15) |
+    final scaled = offset >> scale;
+    if ((scaled << scale) != offset || scaled < -64 || scaled > 63) {
+      throw ArgumentError('LDP/STP offset $offset not encodable');
+    }
+    emit32(((sf == 1 ? 2 : 0) << 30) |
+        (0x5 << 27) |
+        (mode << 23) |
+        ((load ? 1 : 0) << 22) |
+        ((scaled & 0x7F) << 15) |
         (_encReg(rt2) << 10) |
         (_encReg(rn) << 5) |
-        _encReg(rt);
-    emit32(inst);
+        _encReg(rt));
   }
 
-  /// STP (store pair) - Store pair of registers.
-  void stp(A64Gp rt, A64Gp rt2, A64Gp rn, int offset) {
-    final sf = _encSf(rt);
-    final opc = sf == 1 ? 2 : 0;
-    final scale = sf == 1 ? 3 : 2;
-    final imm7 = (offset >> scale) & 0x7F;
-    final inst = (opc << 30) |
-        (0x29 << 24) |
-        (0 << 22) |
-        (imm7 << 15) |
-        (_encReg(rt2) << 10) |
-        (_encReg(rn) << 5) |
-        _encReg(rt);
-    emit32(inst);
-  }
+  /// LDP (signed offset) - Load pair of registers.
+  void ldp(A64Gp rt, A64Gp rt2, A64Gp rn, int offset) =>
+      _ldStPair(rt, rt2, rn, offset, load: true, mode: 2);
+
+  /// STP (signed offset) - Store pair of registers.
+  void stp(A64Gp rt, A64Gp rt2, A64Gp rn, int offset) =>
+      _ldStPair(rt, rt2, rn, offset, load: false, mode: 2);
+
+  /// LDP (post-index): `ldp rt, rt2, [rn], #offset`.
+  void ldpPost(A64Gp rt, A64Gp rt2, A64Gp rn, int offset) =>
+      _ldStPair(rt, rt2, rn, offset, load: true, mode: 1);
+
+  /// STP (pre-index): `stp rt, rt2, [rn, #offset]!`.
+  void stpPre(A64Gp rt, A64Gp rt2, A64Gp rn, int offset) =>
+      _ldStPair(rt, rt2, rn, offset, load: false, mode: 3);
 
   // ===========================================================================
   // Multiply Instructions
