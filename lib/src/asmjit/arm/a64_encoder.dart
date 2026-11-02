@@ -1379,6 +1379,31 @@ class A64Encoder {
     emit32(inst);
   }
 
+  /// Advanced SIMD scalar three same (FP):
+  /// `01|U|11110|a|sz|1|Rm|opcode|1|Rn|Rd`.
+  void _scalar3SameFp(
+          int u, int a, int opcode, A64Vec rd, A64Vec rn, A64Vec rm) =>
+      emit32(0x5E200400 |
+          (u << 29) |
+          (a << 23) |
+          ((rd.sizeBits == 64 ? 1 : 0) << 22) |
+          (_encVec(rm) << 16) |
+          (opcode << 11) |
+          (_encVec(rn) << 5) |
+          _encVec(rd));
+
+  /// FCMEQ (scalar, register).
+  void fcmeq(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _scalar3SameFp(0, 0, 0x1C, rd, rn, rm);
+
+  /// FCMGE (scalar, register).
+  void fcmge(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _scalar3SameFp(1, 0, 0x1C, rd, rn, rm);
+
+  /// FCMGT (scalar, register).
+  void fcmgt(A64Vec rd, A64Vec rn, A64Vec rm) =>
+      _scalar3SameFp(1, 1, 0x1C, rd, rn, rm);
+
   /// FNEG (scalar).
   void fneg(A64Vec rd, A64Vec rn) => _fp1Src(0x02, rd, rn);
 
@@ -1556,6 +1581,10 @@ class A64Encoder {
 
   /// REV64 (vector).
   void rev64(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 0, 0);
+
+  /// UADDLP Vd.<Ta>, Vn.<Tb>: the element size comes from the source.
+  void uaddlp(A64Vec rd, A64Vec rn) =>
+      _vec2Misc(rd, rn, 1, 2, sizeOverride: _vecElemSizeBits(rn));
 
   /// REV32 (vector).
   void rev32(A64Vec rd, A64Vec rn) => _vec2Misc(rd, rn, 0, 1);

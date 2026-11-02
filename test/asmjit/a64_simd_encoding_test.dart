@@ -24,6 +24,49 @@ int _word(void Function(A64Assembler a) emit) {
 
 void main() {
   final cases = <String, (void Function(A64Assembler), int)>{
+    'fcmeq s0, s1, s2': (
+      (a) => a.fcmeq(A64Vec(0, 32), A64Vec(1, 32), A64Vec(2, 32)),
+      0x5E22E420
+    ),
+    'fcmeq d3, d4, d5': (
+      (a) => a.fcmeq(A64Vec(3, 64), A64Vec(4, 64), A64Vec(5, 64)),
+      0x5E65E483
+    ),
+    'fcmge s0, s1, s2': (
+      (a) => a.fcmge(A64Vec(0, 32), A64Vec(1, 32), A64Vec(2, 32)),
+      0x7E22E420
+    ),
+    'fcmge d3, d4, d5': (
+      (a) => a.fcmge(A64Vec(3, 64), A64Vec(4, 64), A64Vec(5, 64)),
+      0x7E65E483
+    ),
+    'fcmgt s0, s1, s2': (
+      (a) => a.fcmgt(A64Vec(0, 32), A64Vec(1, 32), A64Vec(2, 32)),
+      0x7EA2E420
+    ),
+    'fcmgt d3, d4, d5': (
+      (a) => a.fcmgt(A64Vec(3, 64), A64Vec(4, 64), A64Vec(5, 64)),
+      0x7EE5E483
+    ),
+    'fmax d1, d2, d3': (
+      (a) => a.fmax(A64Vec(1, 64), A64Vec(2, 64), A64Vec(3, 64)),
+      0x1E634841
+    ),
+    'fmin s1, s2, s3': (
+      (a) => a.fmin(A64Vec(1, 32), A64Vec(2, 32), A64Vec(3, 32)),
+      0x1E235841
+    ),
+    'fmaxnm d1, d2, d3': (
+      (a) => a.fmaxnm(A64Vec(1, 64), A64Vec(2, 64), A64Vec(3, 64)),
+      0x1E636841
+    ),
+    'fminnm s1, s2, s3': (
+      (a) => a.fminnm(A64Vec(1, 32), A64Vec(2, 32), A64Vec(3, 32)),
+      0x1E237841
+    ),
+    'uaddlp v1.2d, v2.4s': ((a) => a.uaddlp(v(1, d2), v(2, s4)), 0x6EA02841),
+    'uaddlp v1.4s, v2.8h': ((a) => a.uaddlp(v(1, s4), v(2, h8)), 0x6E602841),
+    'uaddlp v1.8h, v2.16b': ((a) => a.uaddlp(v(1, h8), v(2, b16)), 0x6E202841),
     'fadd v0.4s, v1.4s, v2.4s': (
       (a) => a.faddVec(v(0, s4), v(1, s4), v(2, s4)),
       0x4E22D420

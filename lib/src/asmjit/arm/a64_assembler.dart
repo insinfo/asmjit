@@ -731,6 +731,10 @@ class A64Assembler extends BaseEmitter {
   void clzVec(A64Vec rd, A64Vec rn) => _enc.clzVec(rd, rn);
   void cntVec(A64Vec rd, A64Vec rn) => _enc.cntVec(rd, rn);
   void rev64(A64Vec rd, A64Vec rn) => _enc.rev64(rd, rn);
+  void uaddlp(A64Vec rd, A64Vec rn) => _enc.uaddlp(rd, rn);
+  void fcmeq(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.fcmeq(rd, rn, rm);
+  void fcmge(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.fcmge(rd, rn, rm);
+  void fcmgt(A64Vec rd, A64Vec rn, A64Vec rm) => _enc.fcmgt(rd, rn, rm);
   void rev32(A64Vec rd, A64Vec rn) => _enc.rev32(rd, rn);
   void rev16(A64Vec rd, A64Vec rn) => _enc.rev16(rd, rn);
 

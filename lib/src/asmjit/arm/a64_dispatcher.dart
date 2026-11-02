@@ -226,16 +226,16 @@ void _dispatch(A64Assembler asm, int instId, List<Object> ops) {
       _fp3(asm, ops, asm.fdiv, asm.fdivVec);
       break;
     case A64InstId.kFmax:
-      _fp3(asm, ops, null, asm.fmaxVec);
+      _fp3(asm, ops, asm.fmax, asm.fmaxVec);
       break;
     case A64InstId.kFmaxnm:
-      _fp3(asm, ops, null, asm.fmaxnmVec);
+      _fp3(asm, ops, asm.fmaxnm, asm.fmaxnmVec);
       break;
     case A64InstId.kFmin:
-      _fp3(asm, ops, null, asm.fminVec);
+      _fp3(asm, ops, asm.fmin, asm.fminVec);
       break;
     case A64InstId.kFminnm:
-      _fp3(asm, ops, null, asm.fminnmVec);
+      _fp3(asm, ops, asm.fminnm, asm.fminnmVec);
       break;
     case A64InstId.kFmul:
       _fp3(asm, ops, asm.fmul, asm.fmulVec);
@@ -341,6 +341,9 @@ void _dispatch(A64Assembler asm, int instId, List<Object> ops) {
       break;
     case A64InstId.kRev64:
       _vec2(asm, ops, (rd, rn) => asm.rev64(rd, rn));
+      break;
+    case A64InstId.kUaddlp:
+      _vec2(asm, ops, (rd, rn) => asm.uaddlp(rd, rn));
       break;
     case A64InstId.kSbfiz:
       if (ops.length == 4 &&
@@ -477,13 +480,16 @@ void _dispatch(A64Assembler asm, int instId, List<Object> ops) {
       _v3(asm, ops, asm.cmtstVec);
       break;
     case A64InstId.kFcmeq:
-      _v3(asm, ops, asm.fcmeqVec);
+      _fp3(asm, ops, asm.fcmeq,
+          (rd, rn, rm, {bool wide = true}) => asm.fcmeqVec(rd, rn, rm));
       break;
     case A64InstId.kFcmge:
-      _v3(asm, ops, asm.fcmgeVec);
+      _fp3(asm, ops, asm.fcmge,
+          (rd, rn, rm, {bool wide = true}) => asm.fcmgeVec(rd, rn, rm));
       break;
     case A64InstId.kFcmgt:
-      _v3(asm, ops, asm.fcmgtVec);
+      _fp3(asm, ops, asm.fcmgt,
+          (rd, rn, rm, {bool wide = true}) => asm.fcmgtVec(rd, rn, rm));
       break;
     case A64InstId.kZip1:
       _v3(asm, ops, asm.zip1);
