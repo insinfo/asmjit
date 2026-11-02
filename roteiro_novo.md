@@ -17,23 +17,32 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 
 | Componente | Status | Testes |
 |------------|--------|--------|
-| Core (CodeHolder, Buffer, Runtime) | ✅ Funcional | x64: **809 passando** (Windows, macOS x64/Rosetta) |
-| Runtime JIT AArch64 (macOS/Linux) | ✅ Funcional (MAP_JIT + flush de icache) | `a64_jit_execution_test` |
-| x86 Assembler | ✅ ~95% | +100 instrucoes (SSE/AVX/AVX-512, Rounding) |
-| x86 Encoder | ✅ ~96% | Byte-to-byte pass (Fixed 32-bit Shifts) |
-| A64 Assembler | ✅ ~62% | branches/labels agora relocados via CodeHolder |
-| A64 Encoder | ✅ ~58% | logic/shifts/bitmasks/adc/sbc added |
-| Compiler Base | ✅ ~85% | Fixed Ret/Jump Serialization |
-| RALocal / RAGlobal (x86) | ✅ Funcional | Win64 e SysV verificados |
-| RAPass para **A64** | ❌ Não funcional | prólogo/epílogo/arg moves/ret emitidos com `X86InstId` |
-| **UJIT x86** | ✅ ~92% | |
-| **UJIT A64** | ⚠️ ~25% (985 de 4391 linhas do C++) | faltam `addU32`, `minI32`, `broadcast*`, ... |
-| **CI GitHub** | ✅ `.github/workflows/ci.yml` | linux x64/arm64, windows x64, macos arm64/x64 |
-| **Lint / formato** | ✅ `dart analyze --fatal-infos` limpo, `dart format` verificado no CI | |
-
-> Host arm64 (macOS Apple Silicon): 132 passando, 64 pulados (testes que executam código x86 são pulados via `test/support/host.dart`).
+| Core (CodeHolder, Buffer, Runtime) | ✅ Funcional | x64: **1000 passando** (Win64 AVX2, SysV/Rosetta); arm64: 288 |
+| Runtime JIT AArch64 (macOS/Linux) | ✅ MAP_JIT + flush de icache | `a64_jit_execution_test` |
+| RAPass | ✅ Neutro de arquitetura (`RAArch`: `X86RAArch`, `A64RAArch`) | spills, callee-saved, laços (A64 e x64) |
+| x86 Encoder SIMD | ✅ Tabela `x86_simd_ops.dart` (legado + VEX) | 655 formas idênticas ao LLVM |
+| A64 Encoder | ✅ load/store, SIMD three-same/different, permute, narrow corrigidos | goldens LLVM (ldst + SIMD) |
+| Dispatchers x86/A64 | ✅ Escritos à mão, **fail-loud** (instrução sem bytes = erro) | |
+| Bancos de instruções | ✅ Gerados e indexados por id | `inst_db_consistency_test` |
+| **UJIT emit_3v** | ✅ 58 ops validadas em runtime contra referência Dart | SSE2, SSE4.2, AVX2 e AArch64 |
+| UJIT A64 demais grupos | ⚠️ Parcial (2v/vi/3vi/4v, intrínsecas) | ChaCha20 ainda não compila no ARM |
+| UJIT x86 demais grupos | ⚠️ Parcial; ops sem fallback lançam erro em vez de sumir | |
+| **CI GitHub** | ✅ linux x64/arm64, windows x64, macos arm64/x64 | |
 
 ---
+
+## ✅ Progresso Recente (02/11/2026 - RA multiarquitetura, UJIT A64, x86 SIMD)
+
+- **RAPass neutro**: hooks `RAArch` (máscaras, RW de operandos, move/load/save/swap, spill slots, reescrita de memória, prólogo/epílogo). `A64RAArch` segue a AAPCS64 (x18 reservado, x19–x28/d8–d15 preservados, frame `stp x29,x30`). `ArchTraits.aarch64` não tinha `movId` (adc era tratado como mov).
+- **Encoder A64** (validado com LLVM): LDR/STR SIMD, LDUR/STUR, LDR literal, mov com SP, imediatos de ADD/SUB truncados, FSUB/FMAX/FMIN/FMAXNM/FMINNM vetoriais, bit Q pelo arranjo, SQXTN/UQXTN/XTN; novas instruções (saturação, min/max, comparações, SMULL/UMLAL, URHADD, EXT, SQXTUN, MOVI).
+- **UJIT A64**: `emit_m/rm/mr/vm/mv` portados (acessos com tamanho exato — stores estreitos gravavam 128 bits), `emit_3v` dirigido por tabela (`unicompiler_a64_tables.dart`, port de `opcode_info_3v`), CFG habilitado, `b.cond`, `newVec`/`emitJ` corrigidos.
+- **x86**: dispatcher escrito à mão + serializer fail-loud (addps/psubq sumiam), tabela SIMD genérica (~150 instruções que o UJIT emitia e não podiam ser montadas), `andn` com semântica diferente entre AVX e SSE, `pblendvb` sem máscara em XMM0, fallbacks SSE2 portados (comparações sem sinal/64 bits, min/max, mulU32...).
+- **Bancos de instruções** não eram indexados por id (`kX86InstDb[kMov]` era `bound`), o que afetava a detecção de VEX no RA do Win64.
+
+### Próximos passos
+1. UJIT A64: grupos 2v/vi (shifts/rotates, swizzle, conversões), 3vi/4v e as intrínsecas restantes — meta: ChaCha20 e o pipeline do Blend2D no ARM.
+2. UJIT x86: demais grupos com o mesmo teste de semântica (2v, vi, vm/mv com conversões).
+3. Estender `ujit_vvv_semantics_test` para os outros grupos de operações.
 
 ## ✅ Progresso Recente (02/11/2026 - Produção / multiplataforma)
 
