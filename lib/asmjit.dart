@@ -38,6 +38,16 @@ export 'src/asmjit/core/compiler.dart';
 // Runtime
 export 'src/asmjit/runtime/libc.dart';
 export 'src/asmjit/runtime/virtmem.dart';
+export 'src/asmjit/runtime/jit_allocator.dart'
+    show
+        JitAllocator,
+        JitAllocatorCreateParams,
+        JitAllocatorOptions,
+        JitAllocatorSpan,
+        JitAllocatorSpanFlags,
+        JitAllocatorStatistics,
+        JitAllocatorWriteScope,
+        JitAllocatorWriteScopeData;
 export 'src/asmjit/runtime/jit_runtime.dart';
 export 'src/asmjit/runtime/cpuinfo.dart' show CpuInfo, CpuFeatures;
 

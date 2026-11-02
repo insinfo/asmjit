@@ -7,6 +7,7 @@ import 'dart:ffi';
 import 'dart:io' show Platform;
 import 'dart:typed_data';
 
+import '../core/error.dart';
 import 'virtmem.dart';
 
 /// CPU feature flags.
@@ -333,20 +334,26 @@ class CpuInfo {
       ]);
     }
 
-    // Allocate executable memory
+    // Allocate RW memory, copy the code and make it executable (W^X).
     final info = VirtMem.info();
     final alignedSize = info.alignToPage(cpuidCode.length);
-    final mem = VirtMem.allocRW(alignedSize);
+    final (allocErr, mem) = VirtMem.alloc(alignedSize, MemoryFlags.kAccessRW);
+    if (allocErr != AsmJitError.ok) {
+      throw AsmJitException(allocErr, 'VirtMem.alloc() failed for CPUID');
+    }
 
     try {
-      // Copy code
-      VirtMem.writeBytes(mem, cpuidCode);
+      mem.cast<Uint8>().asTypedList(cpuidCode.length).setAll(0, cpuidCode);
 
-      // Make executable
-      final execMem = VirtMem.protectRX(mem);
+      final protectErr =
+          VirtMem.protect(mem, alignedSize, MemoryFlags.kAccessRX);
+      if (protectErr != AsmJitError.ok) {
+        throw AsmJitException(protectErr, 'VirtMem.protect() failed for CPUID');
+      }
+      VirtMem.flushInstructionCache(mem, alignedSize);
 
       // Create callable
-      final cpuidFn = execMem.ptr
+      final cpuidFn = mem
           .cast<NativeFunction<Void Function(Pointer<Uint32>, Int32, Int32)>>()
           .asFunction<void Function(Pointer<Uint32>, int, int)>();
 
@@ -465,7 +472,7 @@ class CpuInfo {
         _freeUint32(result);
       }
     } finally {
-      VirtMem.release(mem);
+      VirtMem.release(mem, alignedSize);
     }
   }
 

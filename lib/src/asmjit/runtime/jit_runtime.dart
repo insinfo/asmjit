@@ -2,37 +2,47 @@
 ///
 /// Manages JIT code generation and execution.
 /// Ported from asmjit/core/jitruntime.h and jitruntime.cpp
+library;
 
 import 'dart:ffi';
 import 'dart:typed_data';
 
-import '../core/error.dart';
-import '../core/environment.dart';
 import '../core/code_holder.dart';
+import '../core/environment.dart';
+import '../core/error.dart';
+import '../core/globals.dart' show ResetPolicy;
+import 'jit_allocator.dart';
 import 'virtmem.dart';
 
 /// A handle to a JIT-compiled function.
 ///
-/// This holds the executable memory and provides a way to call the
-/// generated code as a Dart function.
+/// References a [JitAllocatorSpan] allocated by the [JitRuntime]'s
+/// [JitAllocator] and provides a way to call the generated code as a Dart
+/// function.
 class JitFunction {
   final JitRuntime _runtime;
-  final VirtMemBlock _block;
+  final Pointer<Void> _rx;
+  final int _size;
   bool _disposed = false;
 
   JitFunction._({
     required JitRuntime runtime,
-    required VirtMemBlock block,
+    required Pointer<Void> rx,
+    required int size,
   })  : _runtime = runtime,
-        _block = block;
+        _rx = rx,
+        _size = size;
 
   /// The address of the generated code.
-  int get address => _block.address;
+  int get address => _rx.address;
 
-  /// The size of the generated code in bytes.
-  int get size => _block.size;
+  /// The size of the memory used by the generated code in bytes (aligned to
+  /// the allocator granularity).
+  int get size => _size;
 
-  /// Gets a pointer to the function for FFI.
+  /// Whether the function has been released.
+  bool get isDisposed => _disposed;
+
   /// Gets a pointer to the function.
   ///
   /// Use this to create a callable Dart function:
@@ -44,24 +54,22 @@ class JitFunction {
   /// final add = ptr.asFunction<DartSig>();
   /// print(add(5, 3)); // 8
   /// ```
-  Pointer<Void> get pointer => Pointer<Void>.fromAddress(address);
+  Pointer<Void> get pointer => _rx;
 
-  /// Disposes the JIT function, freeing the executable memory.
+  /// Disposes the JIT function, releasing its executable memory.
   void dispose() {
     if (_disposed) return;
-    _disposed = true;
     _runtime._releaseFunction(this);
   }
 }
 
 /// JIT Runtime - manages executable memory for generated code.
 ///
-/// This is the main entry point for JIT code compilation.
-/// It follows the W^X (Write XOR Execute) pattern:
-/// 1. Allocate RW memory
-/// 2. Write generated code
-/// 3. Change protection to RX
-/// 4. Execute
+/// This is the main entry point for JIT code compilation. As upstream, the
+/// code is placed into memory allocated by a [JitAllocator] (many functions
+/// share one block of virtual memory); the allocator takes care of the W^X
+/// policy of the host (RWX pages, `MAP_JIT` with per-thread write protection
+/// on Apple Silicon, or dual mapping).
 class JitRuntime {
   /// The target environment.
   final Environment environment;
@@ -72,28 +80,62 @@ class JitRuntime {
   /// Whether to cache compiled pipelines by key.
   final bool enablePipelineCache;
 
-  /// Virtual memory info (cached).
-  late final VirtMemInfo _vmInfo;
+  /// Virtual memory allocator (`JitRuntime::_allocator`).
+  final JitAllocator _allocator;
 
-  /// Track allocated blocks for cleanup.
-  final List<VirtMemBlock> _allocatedBlocks = [];
+  /// Functions that have not been released yet.
+  final Set<JitFunction> _functions = Set<JitFunction>.identity();
 
   /// Cache of compiled pipelines.
   final Map<String, JitFunction> _pipelineCache = {};
 
   /// Creates a new JIT runtime.
+  ///
+  /// [allocatorParams] are passed to the [JitAllocator] (upstream
+  /// `JitRuntime(const JitAllocator::CreateParams* params)`).
   JitRuntime({
     Environment? environment,
     this.enableExecutableMemory = true,
     this.enablePipelineCache = true,
-  }) : environment = environment ?? Environment.host() {
-    _vmInfo = VirtMem.info();
-  }
+    JitAllocatorCreateParams? allocatorParams,
+  })  : environment = environment ?? Environment.host(),
+        _allocator = JitAllocator(allocatorParams);
 
   /// Returns virtual memory information.
-  VirtMemInfo get virtMemInfo => _vmInfo;
+  VirtMemInfo get virtMemInfo => VirtMem.info();
 
-  /// Adds code from a [CodeHolder] and returns a callable function.
+  /// Returns the associated [JitAllocator].
+  JitAllocator get allocator => _allocator;
+
+  /// Resets the JitRuntime, freeing everything that was allocated by it.
+  ///
+  /// Depending on `resetPolicy` the currently held memory can be either freed
+  /// entirely when [ResetPolicy.hard] is used, or the allocator can keep some
+  /// of it for next allocations when [ResetPolicy.soft] is used, which is the
+  /// default behavior. Every [JitFunction] of this runtime becomes invalid.
+  void reset([ResetPolicy resetPolicy = ResetPolicy.soft]) {
+    _pipelineCache.clear();
+    for (final fn in _functions) {
+      fn._disposed = true;
+    }
+    _functions.clear();
+    _allocator.reset(resetPolicy);
+  }
+
+  static void _check(AsmJitError err, String what) {
+    if (err != AsmJitError.ok) {
+      throw AsmJitException(err, 'JitAllocator: $what failed (${err.name})');
+    }
+  }
+
+  JitFunction _newFunction(JitAllocatorSpan span) {
+    final fn = JitFunction._(runtime: this, rx: span.rx, size: span.size);
+    _functions.add(fn);
+    return fn;
+  }
+
+  /// Adds code from a [CodeHolder] and returns a callable function
+  /// (`JitRuntime::_add()`).
   ///
   /// This is the main method to compile and get executable code:
   /// ```dart
@@ -114,8 +156,7 @@ class JitRuntime {
       );
     }
 
-    // As `JitRuntime::_add()`: flatten, allocate, relocate to the address of
-    // the allocation and copy the flattened image.
+    // `code->flatten()` + `code->resolve_cross_section_fixups()`.
     code.resolveLabelFixups();
 
     final estimatedCodeSize = code.codeSize;
@@ -126,38 +167,55 @@ class JitRuntime {
       );
     }
 
-    // Align size to page boundary
-    final alignedSize = _vmInfo.alignToPage(estimatedCodeSize);
+    final span = JitAllocatorSpan();
+    _check(_allocator.alloc(span, estimatedCodeSize), 'alloc');
 
-    // 1. Allocate RW memory
-    final rwBlock = VirtMem.allocRW(alignedSize);
-
+    // Relocate the code.
+    final RelocationSummary relocationSummary;
     try {
-      // 2. Relocate the code to its address and write it. The address table
-      // may shrink when the targets turn out to be close enough.
-      code.relocateToBase(rwBlock.ptr.address);
-      final bytes = Uint8List(code.codeSize);
-      code.copyFlattenedData(bytes);
-      VirtMem.writeBytes(rwBlock, bytes);
-
-      // 3. Change protection to RX (W^X)
-      final rxBlock = VirtMem.protectRX(rwBlock);
-
-      // 4. Flush instruction cache
-      VirtMem.flushInstructionCache(rxBlock.ptr.cast<Void>(), rxBlock.size);
-
-      // Track the block
-      _allocatedBlocks.add(rxBlock);
-
-      return JitFunction._(
-        runtime: this,
-        block: rxBlock,
-      );
-    } catch (e) {
-      // If anything fails, release the memory
-      VirtMem.release(rwBlock);
+      relocationSummary = code.relocateToBase(span.rx.address);
+    } catch (_) {
+      _allocator.release(span.rx);
       rethrow;
     }
+
+    // Recalculate the final code size and shrink the memory we allocated for
+    // it in case that some relocations didn't require records in an address
+    // table.
+    final codeSize = estimatedCodeSize - relocationSummary.codeSizeReduction;
+
+    // If not true it means that `relocateToBase()` filled wrong information
+    // in `relocationSummary`.
+    assert(codeSize == code.codeSize);
+
+    try {
+      _allocator.writeWith(span, (span) {
+        final rw = span.rw.cast<Uint8>().asTypedList(span.size);
+
+        // memcpy() of every section buffer.
+        code.copyFlattenedData(rw);
+
+        // memset() of the virtual part of every section.
+        for (final section in code.sectionsByOrder) {
+          final offset = section.offset;
+          final bufferSize = section.buffer.length;
+          final virtualSize = section.virtualSize;
+
+          if (virtualSize > bufferSize) {
+            assert(offset + virtualSize <= span.size);
+            rw.fillRange(offset + bufferSize, offset + virtualSize, 0);
+          }
+        }
+
+        span.shrink(codeSize);
+        return AsmJitError.ok;
+      });
+    } catch (_) {
+      _allocator.release(span.rx);
+      rethrow;
+    }
+
+    return _newFunction(span);
   }
 
   /// Adds code from a [CodeHolder] using the pipeline cache.
@@ -204,34 +262,16 @@ class JitRuntime {
       );
     }
 
-    // Align size to page boundary
-    final alignedSize = _vmInfo.alignToPage(bytes.length);
+    final span = JitAllocatorSpan();
+    _check(_allocator.alloc(span, bytes.length), 'alloc');
 
-    // 1. Allocate RW memory
-    final rwBlock = VirtMem.allocRW(alignedSize);
-
-    try {
-      // 2. Write the code
-      VirtMem.writeBytes(rwBlock, bytes);
-
-      // 3. Change protection to RX (W^X)
-      final rxBlock = VirtMem.protectRX(rwBlock);
-
-      // 4. Flush instruction cache
-      VirtMem.flushInstructionCache(rxBlock.ptr.cast<Void>(), rxBlock.size);
-
-      // Track the block
-      _allocatedBlocks.add(rxBlock);
-
-      return JitFunction._(
-        runtime: this,
-        block: rxBlock,
-      );
-    } catch (e) {
-      // If anything fails, release the memory
-      VirtMem.release(rwBlock);
-      rethrow;
+    final err = _allocator.write(span, 0, bytes);
+    if (err != AsmJitError.ok) {
+      _allocator.release(span.rx);
+      _check(err, 'write');
     }
+
+    return _newFunction(span);
   }
 
   /// Retrieves a cached function by key, if present.
@@ -289,32 +329,20 @@ class JitRuntime {
     return hash;
   }
 
-  /// Releases a memory block.
-  void _release(VirtMemBlock block) {
-    _allocatedBlocks.remove(block);
-    VirtMem.release(block);
-  }
-
+  /// `JitRuntime::_release()`.
   void _releaseFunction(JitFunction fn) {
+    if (fn._disposed) return;
+    fn._disposed = true;
+    _functions.remove(fn);
     _pipelineCache.removeWhere((_, value) => identical(value, fn));
-    _release(fn._block);
+    _check(_allocator.release(fn._rx), 'release');
   }
 
   /// Releases a JIT function.
-  void release(JitFunction fn) {
-    _release(fn._block);
-  }
+  void release(JitFunction fn) => _releaseFunction(fn);
 
-  /// Disposes all allocated memory.
-  void dispose() {
-    clearCache();
-    for (final block in _allocatedBlocks) {
-      try {
-        VirtMem.release(block);
-      } catch (_) {
-        // Ignore errors during cleanup
-      }
-    }
-    _allocatedBlocks.clear();
-  }
+  /// Disposes all allocated memory (the upstream destructor, which releases
+  /// all blocks held by the allocator). Every [JitFunction] of this runtime
+  /// becomes invalid; the runtime itself can still be used afterwards.
+  void dispose() => reset(ResetPolicy.hard);
 }

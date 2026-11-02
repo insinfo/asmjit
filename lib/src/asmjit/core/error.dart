@@ -214,6 +214,10 @@ enum AsmJitError {
   /// Failed to map virtual memory.
   failedToMapVirtMem,
 
+  /// Protection failure can be returned from a virtual memory allocator or
+  /// when trying to change memory access permissions.
+  protectionFailure,
+
   /// Unknown/generic error.
   unknown,
 }
