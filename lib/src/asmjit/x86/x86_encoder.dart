@@ -13,6 +13,7 @@ import '../core/labels.dart';
 import 'x86.dart';
 import 'x86_operands.dart';
 import 'x86_simd.dart';
+import 'x86_simd_ops.dart';
 
 bool _isVecReg(BaseReg? reg) {
   if (reg == null) return false;
@@ -276,6 +277,59 @@ class X86Encoder {
   void emitModRmReg(int regOp, BaseReg rm) {
     final rmEnc = (rm is X86Gp) ? rm.encoding : (rm.id & 0x7);
     emitModRm(3, regOp & 0x7, rmEnc);
+  }
+
+  // ===========================================================================
+  // Table-driven SSE/AVX encoding (see x86_simd_ops.dart)
+  // ===========================================================================
+
+  /// ModRM.r/m + SIB/displacement for a register or memory [rm] operand.
+  void _simdModRm(int regField, Object rm) {
+    if (rm is X86Mem) {
+      emitModRmMem(regField & 7, rm);
+    } else {
+      emitModRm(3, regField & 7, (rm as BaseReg).id & 7);
+    }
+  }
+
+  (bool, bool) _simdRmExt(Object rm) {
+    if (rm is X86Mem) {
+      return (_isExt(_memIndex(rm)), _memBase(rm)?.isExtended ?? false);
+    }
+    return (false, (rm as BaseReg).id >= 8);
+  }
+
+  /// Legacy SSE form: `[prefix] [REX] 0F [38|3A] opcode ModRM [imm8]`.
+  ///
+  /// [regField] is the ModRM.reg value: a register id, or the opcode
+  /// extension for shift-by-immediate forms.
+  void simdLegacy(X86SimdOp op, int regField, Object rm, {int? imm8}) {
+    if (op.prefix != 0) buffer.emit8(op.prefix);
+    final (x, b) = _simdRmExt(rm);
+    final r = regField >= 8;
+    if (op.w || r || x || b) emitRex(op.w, r, x, b);
+    buffer.emit8(0x0F);
+    if (op.map == 2) buffer.emit8(0x38);
+    if (op.map == 3) buffer.emit8(0x3A);
+    buffer.emit8(op.opcode);
+    _simdModRm(regField, rm);
+    if (imm8 != null) buffer.emit8(imm8 & 0xFF);
+  }
+
+  /// VEX form: `VEX.L.pp.mmmmm.W opcode ModRM [imm8]`; [vvvv] is the
+  /// non-destructive source register id (0 when unused, encoded as 1111b).
+  void simdVex(X86SimdOp op, int regField, int vvvv, Object rm,
+      {required bool l, int? imm8}) {
+    final (x, b) = _simdRmExt(rm);
+    final r = regField >= 8;
+    if (op.map == 1 && !x && !b && !op.w) {
+      _emitVex2(r, vvvv, l, op.pp);
+    } else {
+      _emitVex3(r, x, b, op.map, op.w, vvvv, l, op.pp);
+    }
+    buffer.emit8(op.opcode);
+    _simdModRm(regField, rm);
+    if (imm8 != null) buffer.emit8(imm8 & 0xFF);
   }
 
   /// Emits ModR/M and optional SIB/displacement for memory operand.

@@ -18,7 +18,8 @@ import 'x86_operands.dart';
 import 'x86_encoder.dart';
 import 'x86_simd.dart';
 import 'x86_inst_db.g.dart';
-import 'x86_dispatcher.g.dart';
+import 'x86_dispatcher.dart';
+import 'x86_simd_ops.dart';
 import 'x86_emit_helper.dart';
 
 /// x86/x64 Assembler.
@@ -30,6 +31,15 @@ class X86Assembler extends BaseEmitter {
   late final CodeBuffer _buf;
 
   /// The instruction encoder.
+  /// Table-driven SSE encoding (see [kX86SimdOps]).
+  void simdLegacy(X86SimdOp op, int regField, Object rm, {int? imm8}) =>
+      _enc.simdLegacy(op, regField, rm, imm8: imm8);
+
+  /// Table-driven AVX (VEX) encoding (see [kX86SimdOps]).
+  void simdVex(X86SimdOp op, int regField, int vvvv, Object rm,
+          {required bool l, int? imm8}) =>
+      _enc.simdVex(op, regField, vvvv, rm, l: l, imm8: imm8);
+
   late final X86Encoder _enc;
 
   /// Encoding options (used by higher-level pipelines).

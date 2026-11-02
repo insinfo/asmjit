@@ -2,7 +2,8 @@
 import '../core/builder.dart' as ir;
 import '../core/labels.dart';
 import 'x86_assembler.dart';
-import 'x86_dispatcher.g.dart'; // Generated dispatcher
+import 'x86_dispatcher.dart';
+import 'x86_inst_db.g.dart'; // Generated dispatcher
 
 /// Serializer that converts Builder IR to X86Assembler calls.
 class X86Serializer implements ir.SerializerContext {
@@ -60,7 +61,17 @@ class X86Serializer implements ir.SerializerContext {
 
   /// Emits the instruction with pre-processed operands.
   void emitInst(int instId, List<Object> ops, int options) {
-    // Switch-based dispatcher is the single path now (Map fallback removed).
+    // Every x86 instruction encodes to at least one byte: if the dispatcher
+    // emitted nothing, the operand combination is unsupported and silently
+    // dropping it would produce wrong machine code.
+    final start = asm.offset;
     x86Dispatch(asm, instId, ops);
+    if (asm.offset == start) {
+      final name = instId >= 0 && instId < kX86InstDb.length
+          ? kX86InstDb[instId].name
+          : '#$instId';
+      throw UnsupportedError(
+          'x86 dispatcher: unsupported operands for "$name": $ops');
+    }
   }
 }
