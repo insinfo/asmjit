@@ -1610,9 +1610,19 @@ bool _dispatchSimd(X86Assembler asm, int instId, List<Object> ops) {
         if (n != 2 || ops[1] is! int) return false;
         asm.simdLegacy(op, op.regExt, dst, imm8: ops[1] as int);
       case X86SimdKind.is4:
+        // `pblendvb xmm, xmm/m128, <xmm0>`: the register allocator assigns
+        // the mask to XMM0 (X86RAArch.fixedUseId).
+        final legacy = kX86SimdOps['${name}_l']!;
+        if (n != 3 || !_rmOk(legacy, ops[1])) return false;
+        final mask = ops[2];
+        if (mask is! X86Xmm || mask.id != 0) {
+          throw UnsupportedError(
+              'x86Dispatch: $name takes its mask in xmm0, got $mask');
+        }
+        asm.simdLegacy(legacy, dst.id, ops[1]);
       case X86SimdKind.mr:
       case X86SimdKind.mri:
-        return false; // Implicit XMM0 mask / store forms handled above.
+        return false; // Store forms handled above.
     }
     return true;
   }
