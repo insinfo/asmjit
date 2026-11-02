@@ -14,6 +14,11 @@
 /// unsigned-offset LDR/STR forms can be used.
 
 import '../core/compiler.dart';
+import '../core/func.dart';
+import '../core/reg_utils.dart';
+import '../core/reg_type.dart';
+import '../core/globals.dart';
+import '../core/error.dart';
 import '../core/labels.dart';
 import '../core/raarch.dart';
 import '../core/radefs.dart';
@@ -199,7 +204,8 @@ class A64RAArch extends RAArch {
 
   @override
   BaseMem spillSlot(BaseCompiler cc, int offset, int size) =>
-      A64Mem.baseOffset(_sp, offset, size: size);
+      // Above the outgoing argument area of the calls (at [sp]).
+      A64Mem.baseOffset(_sp, callStackSize + offset, size: size);
 
   @override
   BaseMem rebuildMem(BaseMem mem,
@@ -231,8 +237,9 @@ class A64RAArch extends RAArch {
     final gpToSave = ctx.clobbered[RegGroup.gp] & ctx.preserved[RegGroup.gp];
     final vecToSave = ctx.clobbered[RegGroup.vec] & ctx.preserved[RegGroup.vec];
 
-    // Callee-saved registers go right above the spill area.
-    int offset = _alignUp(ctx.spillSize, 8);
+    // Callee-saved registers go right above the spill area, which is above
+    // the outgoing argument area of the calls.
+    int offset = callStackSize + _alignUp(ctx.spillSize, 8);
     final saves = <(BaseReg, int)>[];
     for (int i = 0; i < 32; i++) {
       if ((gpToSave & (1 << i)) != 0) {
@@ -276,6 +283,111 @@ class A64RAArch extends RAArch {
       ctx.insertBefore(ret, InstNode(A64InstId.kRet, []));
       compiler.nodes.remove(ret);
     }
+  }
+
+  // ===========================================================================
+  // a64::RACFGBuilder::on_before_invoke()
+  // ===========================================================================
+
+  /// Port of `a64::RACFGBuilder::on_before_invoke()`: moves the immediate
+  /// arguments of [node] to registers and stores the arguments passed on the
+  /// stack, with instructions inserted before the call.
+  @override
+  void onBeforeInvoke(BaseCompiler cc, FuncNode func, InvokeNode node) {
+    final fd = node.detail;
+    final argCount = node.argCount;
+    final prevCursor = cc.cursor;
+
+    cc.setCursor(node.prev);
+
+    for (var argIndex = 0; argIndex < argCount; argIndex++) {
+      final argPack = fd.args[argIndex];
+      for (var valueIndex = 0;
+          valueIndex < Globals.kMaxValuePack;
+          valueIndex++) {
+        final arg = argPack[valueIndex];
+        if (!arg.isInitialized) break;
+
+        final op = node.arg(argIndex, valueIndex);
+        if (op.isNone) continue;
+
+        if (op is BaseReg) {
+          if (arg.isReg) {
+            if (op.group != RegUtils.groupOf(arg.fullRegType)) {
+              // TODO: [ARM] Conversion is not supported (as upstream).
+              throw AsmJitException(AsmJitError.invalidAssignment,
+                  'invalid assignment of a function call argument');
+            }
+          } else {
+            _moveRegToStackArg(cc, arg, op);
+          }
+        } else if (op is Imm) {
+          if (arg.isReg) {
+            final reg = _moveImmToRegArg(cc, arg, op);
+            node.setArgValue(argIndex, valueIndex, reg);
+          } else {
+            _moveImmToStackArg(cc, arg, op);
+          }
+        }
+      }
+    }
+
+    cc.setCursor(node);
+
+    if (fd.hasRet()) {
+      for (var valueIndex = 0;
+          valueIndex < Globals.kMaxValuePack;
+          valueIndex++) {
+        final ret = fd.rets[valueIndex];
+        if (!ret.isInitialized) break;
+
+        final op = node.ret(valueIndex);
+        if (op is BaseReg && ret.isReg) {
+          if (op.group != RegUtils.groupOf(ret.fullRegType)) {
+            // TODO: [ARM] Conversion is not supported (as upstream).
+            throw AsmJitException(AsmJitError.invalidAssignment,
+                'invalid assignment of a function call argument');
+          }
+        }
+      }
+    }
+
+    cc.setCursor(prevCursor);
+  }
+
+  /// `a64::RACFGBuilder::move_imm_to_reg_arg()`.
+  A64Gp _moveImmToRegArg(BaseCompiler cc, FuncValue arg, Imm imm) {
+    final value = switch (arg.typeId) {
+      TypeId.int8 => imm.value.toSigned(8),
+      TypeId.uint8 => imm.value & 0xFF,
+      TypeId.int16 => imm.value.toSigned(16),
+      TypeId.uint16 => imm.value & 0xFFFF,
+      TypeId.int32 => imm.value.toSigned(32),
+      TypeId.uint32 => imm.value & 0xFFFFFFFF,
+      TypeId.int64 || TypeId.uint64 => imm.value,
+      _ => throw AsmJitException(AsmJitError.invalidAssignment,
+          'invalid assignment of a function call argument'),
+    };
+    final vr = cc.newVirtReg(TypeId.uint64,
+        OperandSignature.fromRegTypeAndGroup(RegType.gp64, RegGroup.gp));
+    final out = A64Gp(vr.id, 64);
+    cc.inst(A64InstId.kMov, [out, Imm(value)]);
+    return out;
+  }
+
+  /// `a64::RACFGBuilder::move_imm_to_stack_arg()`.
+  void _moveImmToStackArg(BaseCompiler cc, FuncValue arg, Imm imm) {
+    _moveRegToStackArg(cc, arg, _moveImmToRegArg(cc, arg, imm));
+  }
+
+  /// `a64::RACFGBuilder::move_reg_to_stack_arg()`.
+  void _moveRegToStackArg(BaseCompiler cc, FuncValue arg, BaseReg reg) {
+    final stackPtr = A64Mem.baseOffset(_sp, arg.stackOffset);
+    if (reg.isGp || reg.group == RegGroup.vec) {
+      cc.inst(A64InstId.kStr, [reg, stackPtr]);
+      return;
+    }
+    throw AsmJitException(AsmJitError.invalidState, 'invalid stack argument');
   }
 
   /// `sub/add sp, sp, #size` split into 12-bit chunks (shifted and not).

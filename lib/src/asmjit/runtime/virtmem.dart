@@ -90,7 +90,9 @@ const int _kMapJit = 0x800;
 const int _kMapHugeTlb = 0x40000;
 const int _kMapHugeShift = 26;
 const int _kMadvHugePage = 14;
-const int _kMapFailed = -1;
+/// `MAP_FAILED` (`(void*)-1`) as a [Pointer.address]: on a 32-bit process
+/// the address is the unsigned 0xFFFFFFFF, not -1.
+final int _kMapFailed = Pointer<Void>.fromAddress(-1).address;
 
 // Linux - memfd_create().
 const int _kMfdCloexec = 0x0001;

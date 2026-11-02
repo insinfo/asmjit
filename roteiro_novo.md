@@ -247,8 +247,13 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
   - Constant pools (`newConst`...), `unfollow()`, K1–K7 alocáveis.
 - Não portado: 32 registradores vetoriais com AVX-512, escolha do move de máscara por tipo (sempre `kmovq`), layout interno do constant pool, retorno x87, consecutive-register ties.
 
+### Invoke no A64
+- `A64Compiler.invoke(target, signature)` (sempre BLR, como o upstream) e port de `a64::RACFGBuilder::on_before_invoke()` (`move_imm_to_reg_arg`, `move_imm_to_stack_arg`, `move_reg_to_stack_arg`); a área de argumentos de saída fica em `[sp]` e os spills/callee-saved acima dela. Invoke1-3 de `upstream_compiler_a64_test.dart` passam (104/104).
+- Bugs do port encontrados: `RegUtils.groupOf` mapeava `vec8..vec64` (registradores escalares do A64) para `extra` em vez de `vec` (o upstream os define com `RegGroup::kVec`), o que rejeitava argumentos `double`; e o alvo da chamada não era um uso do RA quando a arquitetura não tem `analyzeInst` (o `blr` saía com o registrador virtual).
+- `virtmem.dart`: `MAP_FAILED` comparado como -1 não detectava a falha num processo de 32 bits (o endereço é 0xFFFFFFFF); era a falha do job linux-ia32 do CI com páginas grandes.
+
 ### Próximos passos
-1. Invoke no A64 (hooks do RA A64) e reativar Invoke1-3 de `upstream_compiler_a64_test.dart`.
+1. Pendências listadas pelo agente x86: 32 registradores vetoriais com AVX-512, move de máscara pelo tipo, layout do constant pool, consecutive-register ties.
 3. Portar `asmjit_test_unicompiler*.cpp` e os testes do compiler.
 4. Acesso de outros operandos além do 0 (xadd/cmpxchg) a partir do banco.
 5. AVX-512/EVEX no UJIT, validado no runner linux-x64 do CI (tem AVX-512F).

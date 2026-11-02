@@ -73,9 +73,28 @@ class RAPass extends CompilerPass {
       _instOpsCache.putIfAbsent(node, () {
         if (node is FuncRetNode) return null;
         final ops = _arch.analyzeInst(compiler, node);
-        if (node is InvokeNode) return [...?ops, ..._invokeOps(node)];
+        if (node is InvokeNode) {
+          return [...ops ?? _callTargetOps(node), ..._invokeOps(node)];
+        }
         return ops;
       });
+
+  /// The call target of [node] read by the call (`on_instruction()` of the
+  /// call instruction), for architectures without [RAArch.analyzeInst].
+  List<RAInstOp> _callTargetOps(InvokeNode node) {
+    const use = RATiedFlags.kUse | RATiedFlags.kRead;
+    bool isVirt(BaseReg? r) => r != null && !r.isPhysical && !r.isNone;
+    return [
+      for (var i = 0; i < node.opCount; i++)
+        if (node.operands[i] case final BaseReg r when isVirt(r))
+          RAInstOp(r, RAInstOp.kSlotReg, i, use)
+        else if (node.operands[i] case final BaseMem m) ...[
+          if (isVirt(m.base)) RAInstOp(m.base!, RAInstOp.kSlotMemBase, i, use),
+          if (isVirt(m.index))
+            RAInstOp(m.index!, RAInstOp.kSlotMemIndex, i, use),
+        ],
+    ];
+  }
 
   /// `RACFGBuilder::on_invoke()`: the arguments passed in registers and the
   /// return values of the call [node] (stack arguments were already stored

@@ -6,6 +6,7 @@ import '../core/environment.dart';
 import 'a64_inst_db.g.dart';
 import 'a64.dart';
 import '../core/reg_type.dart';
+import '../core/func.dart';
 import '../core/type.dart';
 import '../core/reg_utils.dart';
 import '../core/builder.dart' as ir;
@@ -177,6 +178,12 @@ class A64Compiler extends BaseCompiler {
 
   void subs(Operand rd, Operand rn, Operand rm) =>
       inst(A64InstId.kSubs, [rd, rn, rm]);
+
+  /// Calls [target] (a register, memory, label or [Imm] address) with
+  /// [signature] (`invoke()`, always emitted as BLR as upstream); the
+  /// arguments and return values are set on the returned [InvokeNode].
+  InvokeNode invoke(Operand target, FuncSignature signature) =>
+      addInvokeNode(A64InstId.kBlr, target, signature);
 
   /// Branch to a register [target] (a jump table) whose possible targets
   /// are [annotation] (`br(target, annotation)`); without one the register

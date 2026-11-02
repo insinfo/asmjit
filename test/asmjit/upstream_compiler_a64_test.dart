@@ -84,6 +84,17 @@ typedef _BranchDart = void Function(Pointer<Uint8>, int);
 typedef _FloatOpNative = Float Function(Float, Float, Uint32);
 typedef _FloatOpDart = double Function(double, double, int);
 
+typedef _U32x2Native = Uint32 Function(Uint32, Uint32);
+typedef _U32x2Dart = int Function(int, int);
+typedef _F64x2Native = Double Function(Double, Double);
+typedef _F64x2Dart = double Function(double, double);
+
+/// `called_fn` of A64Test_Invoke1.
+int _subU32(int x, int y) => (x - y) & 0xFFFFFFFF;
+
+/// `called_fn` of A64Test_Invoke2/3.
+double _subF64(double x, double y) => x - y;
+
 /// Calls the `uint32_t f(uint32_t...)` at [p] with the arguments 1..[n].
 int _callGpArgs(Pointer<Void> p, int n) => switch (n) {
       0 => p.cast<NativeFunction<_N0>>().asFunction<_D0>()(),
@@ -281,10 +292,62 @@ void main() {
       });
     });
 
-    for (final name in ['Invoke1', 'Invoke2', 'Invoke3']) {
-      test(name, () {},
-          skip: 'InvokeNode (calls through the compiler) is not handled by '
-              'the register allocator yet');
+    test('Invoke1', () {
+      final fn = compile((cc) {
+        cc.addFunc(FuncSignature.build(
+            [TypeId.uint32, TypeId.uint32], TypeId.uint32, CallConvId.cdecl));
+        final x = cc.newGp32('x');
+        final y = cc.newGp32('y');
+        final r = cc.newGp32('r');
+        final f = cc.newGpPtr('fn');
+        cc
+          ..setArg(0, x)
+          ..setArg(1, y)
+          ..mov(f, Imm(Pointer.fromFunction<_U32x2Native>(_subU32, 0).address));
+        cc.invoke(
+            f,
+            FuncSignature.build([TypeId.uint32, TypeId.uint32], TypeId.uint32,
+                CallConvId.cdecl))
+          ..setArg(0, x)
+          ..setArg(1, y)
+          ..setRet(0, r);
+        cc
+          ..ret([r])
+          ..endFunc();
+      });
+      expect(
+          fn.cast<NativeFunction<_U32x2Native>>().asFunction<_U32x2Dart>()(
+              49, 7),
+          42);
+    });
+
+    for (final (name, swap) in [('Invoke2', false), ('Invoke3', true)]) {
+      test(name, () {
+        final fn = compile((cc) {
+          final sig = FuncSignature.build([TypeId.float64, TypeId.float64],
+              TypeId.float64, CallConvId.cdecl);
+          cc.addFunc(sig);
+          final x = cc.newVecD('x');
+          final y = cc.newVecD('y');
+          final r = cc.newVecD('r');
+          final f = cc.newGpPtr('fn');
+          cc
+            ..setArg(0, x)
+            ..setArg(1, y)
+            ..mov(f,
+                Imm(Pointer.fromFunction<_F64x2Native>(_subF64, 0.0).address));
+          cc.invoke(f, sig)
+            ..setArg(0, swap ? y : x)
+            ..setArg(1, swap ? x : y)
+            ..setRet(0, r);
+          cc
+            ..ret([r])
+            ..endFunc();
+        });
+        final f =
+            fn.cast<NativeFunction<_F64x2Native>>().asFunction<_F64x2Dart>();
+        expect(f(49, 7), swap ? _subF64(7, 49) : _subF64(49, 7));
+      });
     }
 
     for (final annotated in [false, true]) {

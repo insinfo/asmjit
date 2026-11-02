@@ -159,6 +159,10 @@ class RegUtils {
       case RegType.gp32:
       case RegType.gp64:
         return RegGroup.gp;
+      case RegType.vec8:
+      case RegType.vec16:
+      case RegType.vec32:
+      case RegType.vec64:
       case RegType.vec128:
       case RegType.vec256:
       case RegType.vec512:
