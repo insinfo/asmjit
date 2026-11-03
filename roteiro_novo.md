@@ -34,7 +34,7 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 | **UJIT emit_vm / emit_mv (x86)** | ✅ Port fiel (`opcode_info_2vm`/`opcode_info_2mv`); `storeCvt*` não são implementados no upstream | `ujit_vm_mv_ops_test`: cargas/stores de 128 bits, endereços alinhados e desalinhados |
 | **Constantes vetoriais (tabela local)** | ✅ Corrigidas (antes eram lidas do próprio código) | `ujit_const_runtime_test` |
 | **ChaCha20 otimizado** | ✅ x64 e AArch64 | `chacha20_verify_test` |
-| AVX-512 no UJIT | 🔶 Caminhos `has_avx512()` portados e habilitados (F+CD+BW+DQ+VL e XCR0); validação só no CI (runners linux-x64/windows-x64 com AVX-512) | |
+| AVX-512 no UJIT | ✅ Caminhos `has_avx512()` portados e habilitados (F+CD+BW+DQ+VL e XCR0); 16 registradores vetoriais | Testes UJIT `host` passam no CI em AMD EPYC 9V45 (Zen 4) e Intel Xeon 8573C (Linux e Windows) |
 | **CI GitHub** | ✅ linux x64/arm64, windows x64, macos arm64/x64 | |
 
 ---
@@ -258,7 +258,7 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - `CpuInfo`: port da checagem de `XCR0` do upstream (`xgetbv` quando XSAVE+OSXSAVE): AVX/FMA/F16C exigem `XCR0[2:1]`, AVX2 exige AVX, AVX-512 exige `XCR0[7:5]` (no macOS o upstream assume habilitado sob demanda); novo `avx512cd`. Antes o port não consultava o SO.
 - `_new_vec_const()` como o upstream: constantes de 256 bits carregadas com `vbroadcasti128` (AVX-512: `vbroadcasti32x4`/`vmovdqa32`); antes, carga alinhada de largura total.
 - Caminhos `has_avx512()` portados: `avx_ones`/`avx_bit_not` com `vpternlogd`, `avx_isign_flip` (`vpxord` a 512), broadcast de GP (`vpbroadcastd/q`), broadcasts V128/V256 (`vinserti32x4`... e `vshufi32x4`... a 512), `vrndscale*` a 512, round half away com `vpternlogd`, conversões hi/lo/narrowing a 512 (`vextracti32x8`, `vinserti32x8`), comparações AVX-512 com destino K convertido por `vpmovm2*`, bitwise EVEX, `bic` com `vpternlog`, `mulU64LoU32` com `vpmullq`, `hAddF64` a 512, `insertV128/V256`. O UJIT habilita AVX-512 com F+CD+BW+DQ+VL (como o upstream) mas mantém 16 registradores vetoriais (o RA x86 do port ainda aloca XMM0-15).
-- Validação: só no CI (nenhuma máquina local tem AVX-512); os testes UJIT com as features do host passam a exercitar os caminhos EVEX lá.
+- Validação: no CI (nenhuma máquina local tem AVX-512): os runners linux-x64 (AMD EPYC 9V45, Intel Xeon 8573C) e windows-x64 (Xeon 8573C) detectam F/CD/BW/DQ/VL e todos os testes UJIT com as features do host passam (`c9f582c`), inclusive os grupos de 256 bits, agora com EVEX. Vetores de 512 bits ainda não têm teste.
 
 ### Próximos passos
 1. Pendências listadas pelo agente x86: 32 registradores vetoriais com AVX-512, move de máscara pelo tipo, layout do constant pool, consecutive-register ties.
