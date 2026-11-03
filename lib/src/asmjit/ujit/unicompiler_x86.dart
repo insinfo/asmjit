@@ -716,6 +716,10 @@ mixin UniCompilerX86 on UniCompilerBase {
         case UniOpVM.load256U64:
         case UniOpVM.load256F32:
         case UniOpVM.load256F64:
+        case UniOpVM.load512U32:
+        case UniOpVM.load512U64:
+        case UniOpVM.load512F32:
+        case UniOpVM.load512F64:
         case UniOpVM.loadNU32:
         case UniOpVM.loadNU64:
         case UniOpVM.loadNF32:
@@ -733,17 +737,27 @@ mixin UniCompilerX86 on UniCompilerBase {
           return;
 
         case UniOpVM.loadCvt16U8ToU64:
+        case UniOpVM.loadCvt32U8ToU64:
+        case UniOpVM.loadCvt64U8ToU64:
         case UniOpVM.loadCvtNU8ToU64:
-          _emitX86(info.avxInstId, [dst, src.withSize(dst.size ~/ 8)]);
+          final d = op == UniOpVM.loadCvtNU8ToU64
+              ? dst
+              : _vecOfSizeIndexX86(dst, info.memSize >> 2);
+          _emitX86(info.avxInstId, [d, src.withSize(d.size ~/ 8)]);
           return;
 
         case UniOpVM.loadCvt32I8ToI32:
         case UniOpVM.loadCvt32U8ToU32:
         case UniOpVM.loadCvt64I8ToI32:
         case UniOpVM.loadCvt64U8ToU32:
+        case UniOpVM.loadCvt128I8ToI32:
+        case UniOpVM.loadCvt128U8ToU32:
         case UniOpVM.loadCvtNI8ToI32:
         case UniOpVM.loadCvtNU8ToU32:
-          final d = info.memSize == 8 ? X86Ymm(dst.id) : dst;
+          final d =
+              op == UniOpVM.loadCvtNI8ToI32 || op == UniOpVM.loadCvtNU8ToU32
+                  ? dst
+                  : _vecOfSizeIndexX86(dst, info.memSize >> 3);
           _emitX86(info.avxInstId, [d, src.withSize(d.size ~/ 4)]);
           return;
 
@@ -769,23 +783,26 @@ mixin UniCompilerX86 on UniCompilerBase {
         case UniOpVM.loadCvt128U16ToU32:
         case UniOpVM.loadCvt128I32ToI64:
         case UniOpVM.loadCvt128U32ToU64:
+        case UniOpVM.loadCvt256I8ToI16:
+        case UniOpVM.loadCvt256U8ToU16:
+        case UniOpVM.loadCvt256I16ToI32:
+        case UniOpVM.loadCvt256U16ToU32:
+        case UniOpVM.loadCvt256I32ToI64:
+        case UniOpVM.loadCvt256U32ToU64:
         case UniOpVM.loadCvtNI8ToI16:
         case UniOpVM.loadCvtNU8ToU16:
         case UniOpVM.loadCvtNI16ToI32:
         case UniOpVM.loadCvtNU16ToU32:
         case UniOpVM.loadCvtNI32ToI64:
         case UniOpVM.loadCvtNU32ToU64:
-          final d = info.memSize == 8
-              ? xmm
-              : info.memSize == 16
-                  ? X86Ymm(dst.id)
-                  : dst;
+          final d = info.memSize == 0
+              ? dst
+              : _vecOfSizeIndexX86(dst, info.memSize >> 4);
           _emitX86(info.avxInstId, [d, src.withSize(d.size ~/ 2)]);
           return;
 
         default:
-          // 512-bit loads and conversions need AVX-512.
-          throw _requiresX86(op, 'AVX512');
+          throw _requiresX86(op, 'AVX');
       }
     }
 
@@ -948,6 +965,10 @@ mixin UniCompilerX86 on UniCompilerBase {
         case UniOpMV.store256U64:
         case UniOpMV.store256F32:
         case UniOpMV.store256F64:
+        case UniOpMV.store512U32:
+        case UniOpMV.store512U64:
+        case UniOpMV.store512F32:
+        case UniOpMV.store512F64:
         case UniOpMV.storeNU32:
         case UniOpMV.storeNU64:
         case UniOpMV.storeNF32:
@@ -2580,6 +2601,13 @@ mixin UniCompilerX86 on UniCompilerBase {
     final x = X86Xmm(dst.id);
     _emitX86(X86InstId.kVpxor, [x, x, x]);
   }
+
+  /// `signature_of_xmm_ymm_zmm[index]`: [reg] as XMM, YMM or ZMM.
+  static BaseReg _vecOfSizeIndexX86(BaseReg reg, int index) => switch (index) {
+        0 => X86Xmm(reg.id),
+        1 => X86Ymm(reg.id),
+        _ => X86Zmm(reg.id),
+      };
 
   /// `avx512_rndscale` / `FloatInst::frndscale` by float mode (F32S, F64S,
   /// F32V, F64V).
