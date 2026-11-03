@@ -36,26 +36,33 @@ mixin UniCompilerX86 on UniCompilerBase {
     if (features.fma) _avxExtMask |= (1 << AVXExt.kFMA.index);
     if (features.vpclmulqdq) _avxExtMask |= (1 << AVXExt.kVPCLMULQDQ.index);
 
-    // AVX-512 is not enabled: the EVEX encodings its lowerings need (k
-    // registers, vpternlog, EVEX-only compares and moves) are not ported
-    // and verified yet, so AVX-512 hosts use the AVX2 lowerings.
+    if (features.avx2 &&
+        features.avx512f &&
+        features.avx512cd &&
+        features.avx512bw &&
+        features.avx512dq &&
+        features.avx512vl) {
+      _avxExtMask |= (1 << AVXExt.kAVX512.index);
+      if (features.avx512vnni) {
+        _avxExtMask |= (1 << AVXExt.kAVX512_VNNI.index);
+      }
+    }
 
     // Set FMA behavior
     if (features.fma) {
       _fMAddOpBehavior = FMAddOpBehavior.fmaStoreToAny;
     }
 
-    // Update vec reg count
-    if (hasAvx512) {
-      // TODO: Enable 32 registers when EVEX encoding is fully verified
-      // _vecRegCount = 32;
-      _vecRegCount = 16;
-    }
+    // Upstream uses 32 vector registers with AVX-512; the port's x86
+    // register allocator still allocates XMM0-15 only.
+    if (hasAvx512) _vecRegCount = 16;
   }
 
   /// Gets the maximum vector width supported by CPU features.
   VecWidth maxVecWidthFromCpuFeatures() {
-    if (hasAvx512) return VecWidth.k512;
+    // 512-bit SIMD only in 64-bit mode (32-bit mode doesn't have enough
+    // registers to hold 512-bit constants).
+    if (hasAvx512 && is64Bit) return VecWidth.k512;
     if (hasAvx2 || hasAvx) return VecWidth.k256;
     return VecWidth.k128;
   }
@@ -1173,6 +1180,16 @@ mixin UniCompilerX86 on UniCompilerBase {
           if (src is BaseReg && src.isGp) {
             final srcGp = _asGpX86(src, elementSize <= 2 ? 32 : 64);
 
+            // AVX512 provides broadcast instructions for GP, XMM and memory
+            // sources, however, from a GP register only VP instructions are
+            // available, so VBROADCAST[SS|SD] become VPBROADCAST[D|Q].
+            if (hasAvx512) {
+              if (op == UniOpVV.broadcastF32) instId = X86InstId.kVpbroadcastd;
+              if (op == UniOpVV.broadcastF64) instId = X86InstId.kVpbroadcastq;
+              _emitX86(instId, [dst, srcGp]);
+              return;
+            }
+
             // BroadcastU[8|16]Z without AVX2: the unused part of the source
             // is zero, so multiplying by a constant extends the data into 32
             // bits and VPSHUFD does the rest.
@@ -1277,19 +1294,34 @@ mixin UniCompilerX86 on UniCompilerBase {
             return;
           }
           final isFloat = op.index >= UniOpVV.broadcastV128F32.index;
+          final v128 = op.index - UniOpVV.broadcastV128U32.index;
+          // Broadcast instructions only work when the source is a memory
+          // operand.
           if (src is X86Mem) {
-            _emitX86(
-                isFloat || !hasAvx2
-                    ? X86InstId.kVbroadcastf128
-                    : X86InstId.kVbroadcasti128,
-                [dst, src]);
+            if (!hasAvx512) {
+              instId = isFloat || !hasAvx2
+                  ? X86InstId.kVbroadcastf128
+                  : X86InstId.kVbroadcasti128;
+            }
+            _emitX86(instId, [dst, src]);
             return;
           }
+          // Broadcast with a register source operand is implemented via
+          // insert in AVX/AVX2 case.
+          if (dst is X86Ymm) {
+            instId = !hasAvx512
+                ? (isFloat || !hasAvx2
+                    ? X86InstId.kVinsertf128
+                    : X86InstId.kVinserti128)
+                : _avx512Vinsert128[v128];
+            _emitX86(instId, [dst, X86Ymm((src as BaseReg).id), src, Imm(1)]);
+            return;
+          }
+          // Broadcast with a register to 512-bits is implemented via 128-bit
+          // shuffle.
+          final z = X86Zmm((src as BaseReg).id);
           _emitX86(
-              isFloat || !hasAvx2
-                  ? X86InstId.kVinsertf128
-                  : X86InstId.kVinserti128,
-              [dst, X86Ymm((src as BaseReg).id), src, Imm(1)]);
+              _avx512Vshuf128[v128], [dst, z, z, Imm(_shufImm4(0, 0, 0, 0))]);
           return;
 
         case UniOpVV.broadcastV256U32:
@@ -1298,7 +1330,17 @@ mixin UniCompilerX86 on UniCompilerBase {
         case UniOpVV.broadcastV256F64:
           if (src is BaseReg) src = X86Ymm(src.id);
           // Cannot broadcast 256-bit vector to a 128-bit or 256-bit vector.
-          _avxMovX86(X86Ymm(dst.id), src);
+          if (dst is! X86Zmm) {
+            _avxMovX86(X86Ymm(dst.id), src);
+            return;
+          }
+          if (src is X86Mem) {
+            _emitX86(instId, [dst, src]);
+            return;
+          }
+          final z = X86Zmm((src as BaseReg).id);
+          _emitX86(_avx512Vshuf128[op.index - UniOpVV.broadcastV256U32.index],
+              [dst, z, z, Imm(_shufImm4(1, 0, 1, 0))]);
           return;
 
         case UniOpVV.absI64:
@@ -1420,8 +1462,13 @@ mixin UniCompilerX86 on UniCompilerBase {
         case UniOpVV.roundEvenF64S:
         case UniOpVV.roundEvenF32:
         case UniOpVV.roundEvenF64:
+          if (_isScalarFm(fm)) dst = X86Xmm(dst.id);
+          if (hasAvx512 && dst is X86Zmm) {
+            // AVX512 uses a different name.
+            instId =
+                _avx512Rndscale[(op.index - UniOpVV.truncF32S.index) & 0x3];
+          }
           if (_isScalarFm(fm)) {
-            dst = X86Xmm(dst.id);
             // These instructions use 3 operand form for historical reasons.
             if (src is! BaseReg) {
               _emitX86(_vexIdX86(_sseFloatInst[fm].fmovs), [dst, src]);
@@ -1451,14 +1498,22 @@ mixin UniCompilerX86 on UniCompilerBase {
           final half = _fopHalfMinus1UlpX86(dst, fm);
           final msb = _fopMsbBitX86(dst, fm);
           final tmp = _newSimilarRegX86(dst, '@tmp');
-          _emitX86(_vexIdX86(fi.fand), [tmp, src, msb]);
-          _emitX86(_vexIdX86(fi.for_), [tmp, tmp, half]);
+          if (hasAvx512) {
+            _emitX86(_vexIdX86(fi.fmova), [tmp, msb]);
+            // tmp = (msb & src) | half
+            _emitX86(X86InstId.kVpternlogd, [tmp, src, half, Imm(0xEA)]);
+          } else {
+            _emitX86(_vexIdX86(fi.fand), [tmp, src, msb]);
+            _emitX86(_vexIdX86(fi.for_), [tmp, tmp, half]);
+          }
           _emitX86(_vexIdX86(fi.fadd), [dst, src, tmp]);
           // kTrunc | kSuppress.
           if (_isScalarFm(fm)) {
             _emitX86(_vexIdX86(fi.fround), [dst, dst, dst, Imm(0x0B)]);
           } else {
-            _emitX86(_vexIdX86(fi.fround), [dst, dst, Imm(0x0B)]);
+            final roundInst =
+                dst is X86Zmm ? _avx512Rndscale[fm] : _vexIdX86(fi.fround);
+            _emitX86(roundInst, [dst, dst, Imm(0x0B)]);
           }
           return;
 
@@ -1519,9 +1574,16 @@ mixin UniCompilerX86 on UniCompilerBase {
         case UniOpVV.cvtF32HiToF64:
         case UniOpVV.cvtI32HiToF64:
           if (src is BaseReg) {
-            final tmp = newVecWithWidth(VecWidth.k128, '@tmp');
-            if (dst is X86Ymm) {
-              _emitX86(X86InstId.kVextracti128, [tmp, X86Ymm(src.id), Imm(1)]);
+            final tmp = newVecWithWidth(
+                dst is X86Zmm ? VecWidth.k256 : VecWidth.k128, '@tmp');
+            if (dst is X86Zmm) {
+              _emitX86(X86InstId.kVextracti32x8, [tmp, X86Zmm(src.id), Imm(1)]);
+            } else if (dst is X86Ymm) {
+              _emitX86(
+                  hasAvx512
+                      ? X86InstId.kVextracti32x4
+                      : X86InstId.kVextracti128,
+                  [tmp, X86Ymm(src.id), Imm(1)]);
             } else {
               _emitX86(X86InstId.kVpshufd,
                   [tmp, X86Xmm(src.id), Imm(_shufImm4(3, 2, 3, 2))]);
@@ -1546,7 +1608,11 @@ mixin UniCompilerX86 on UniCompilerBase {
           final w = dstSize >> 5;
           dst = w <= 1 ? X86Xmm(dst.id) : X86Ymm(dst.id);
           if (src is BaseReg) {
-            src = w == 0 ? X86Xmm(src.id) : X86Ymm(src.id);
+            src = switch (w) {
+              0 => X86Xmm(src.id),
+              1 => X86Ymm(src.id),
+              _ => X86Zmm(src.id),
+            };
           } else if ((src as X86Mem).size == 0) {
             src = src.withSize(w * 32);
           }
@@ -1556,10 +1622,14 @@ mixin UniCompilerX86 on UniCompilerBase {
         case UniOpVV.cvtF64ToF32Hi:
         case UniOpVV.cvtTruncF64ToI32Hi:
         case UniOpVV.cvtRoundF64ToI32Hi:
-          final tmp = newVecWithWidth(VecWidth.k128, '@tmp');
+          final tmp = newVecWithWidth(
+              dst is X86Zmm ? VecWidth.k256 : VecWidth.k128, '@tmp');
           if (src is X86Mem) src = src.withSize(dst.size);
           _emitX86(instId, [tmp, src]);
-          if (dst is X86Ymm) {
+          if (dst is X86Zmm) {
+            _emitX86(
+                X86InstId.kVinserti32x8, [dst, dst, X86Ymm(tmp.id), Imm(1)]);
+          } else if (dst is X86Ymm) {
             _emitX86(X86InstId.kVinserti128, [dst, dst, tmp, Imm(1)]);
           } else {
             _emitX86(X86InstId.kVunpcklpd, [dst, dst, tmp]);
@@ -2511,12 +2581,59 @@ mixin UniCompilerX86 on UniCompilerBase {
     _emitX86(X86InstId.kVpxor, [x, x, x]);
   }
 
-  /// `avx_ones()`.
-  void _avxOnesX86(BaseReg dst) =>
-      _emitX86(X86InstId.kVpcmpeqb, [dst, dst, dst]);
+  /// `avx512_rndscale` / `FloatInst::frndscale` by float mode (F32S, F64S,
+  /// F32V, F64V).
+  static const _avx512Rndscale = [
+    X86InstId.kVrndscaless,
+    X86InstId.kVrndscalesd,
+    X86InstId.kVrndscaleps,
+    X86InstId.kVrndscalepd,
+  ];
 
-  /// `avx_bit_not()`.
+  /// `avx_vpmovm2v_table`: K mask to vector mask by element size.
+  static const _avxVpmovm2v = [
+    X86InstId.kVpmovm2b,
+    X86InstId.kVpmovm2w,
+    X86InstId.kVpmovm2d,
+    X86InstId.kVpmovm2q,
+  ];
+
+  /// `avx512_vinsert_128`.
+  static const _avx512Vinsert128 = [
+    X86InstId.kVinserti32x4,
+    X86InstId.kVinserti64x2,
+    X86InstId.kVinsertf32x4,
+    X86InstId.kVinsertf64x2,
+  ];
+
+  /// `avx512_vshuf_128`.
+  static const _avx512Vshuf128 = [
+    X86InstId.kVshufi32x4,
+    X86InstId.kVshufi64x2,
+    X86InstId.kVshuff32x4,
+    X86InstId.kVshuff64x2,
+  ];
+
+  /// `avx_ones()`.
+  void _avxOnesX86(BaseReg dst) {
+    if (hasAvx512) {
+      _emitX86(X86InstId.kVpternlogd, [dst, dst, dst, Imm(0xFF)]);
+    } else {
+      _emitX86(X86InstId.kVpcmpeqb, [dst, dst, dst]);
+    }
+  }
+
+  /// `avx_bit_not()`. (Upstream's `overwrite()` option has no consumer in
+  /// its register allocator, so it is not ported.)
   void _avxBitNotX86(BaseReg dst, Operand src) {
+    if (hasAvx512) {
+      _emitX86(
+          X86InstId.kVpternlogd,
+          src is BaseReg
+              ? [dst, src, src, Imm(0x55)]
+              : [dst, dst, src, Imm(0x55)]);
+      return;
+    }
     final ones = _simdConstX86(VecConstTable.p_FFFFFFFFFFFFFFFF, Bcst.k32, dst);
     if (src is! BaseReg) {
       if (ones is BaseReg) {
@@ -2538,13 +2655,15 @@ mixin UniCompilerX86 on UniCompilerBase {
       _ => Bcst.kNA,
     };
     final msk = _simdConstX86(_msbMaskX86(elementSize), bcst, dst);
+    final xor =
+        hasAvx512 && dst is X86Zmm ? X86InstId.kVpxord : X86InstId.kVpxor;
     if (src is BaseReg) {
-      _emitX86(X86InstId.kVpxor, [dst, src, msk]);
+      _emitX86(xor, [dst, src, msk]);
     } else if (msk is BaseReg) {
-      _emitX86(X86InstId.kVpxor, [dst, msk, src]);
+      _emitX86(xor, [dst, msk, src]);
     } else {
       _avxMovX86(dst, src);
-      _emitX86(X86InstId.kVpxor, [dst, dst, msk]);
+      _emitX86(xor, [dst, dst, msk]);
     }
   }
 
@@ -2710,7 +2829,8 @@ mixin UniCompilerX86 on UniCompilerBase {
         }
 
         if (op.index >= UniOpVVV.andU32.index &&
-            op.index <= UniOpVVV.andnU64.index) {
+            op.index <= UniOpVVV.andnU64.index &&
+            !hasAvx512) {
           const avx512ToAvxBitwise = [
             X86InstId.kVpand,
             X86InstId.kVpand,
@@ -2722,6 +2842,25 @@ mixin UniCompilerX86 on UniCompilerBase {
             X86InstId.kVpandn,
           ];
           instId = avx512ToAvxBitwise[op.index - UniOpVVV.andU32.index];
+        }
+
+        if (info.comparison != 0 &&
+            (dst is X86Zmm ||
+                (src2 is X86Mem && src2.broadcast != X86Broadcast.kNone) ||
+                info.avxExt == AVXExt.kAVX512)) {
+          // AVX-512 instructions change semantics when it comes to
+          // comparisons: instead of a VEC destination they need a K
+          // destination. To not change semantics to the users the predicate
+          // is converted to a VEC mask.
+          final kTmp = (cc as X86Compiler).newKq('@kTmp');
+          _emitX86(instId, [
+            kTmp,
+            src1v,
+            src2,
+            if (info.useImm != 0) Imm(info.imm),
+          ]);
+          _emitX86(_avxVpmovm2v[info.elementSize], [dst, kTmp]);
+          return;
         }
 
         _emitX86(instId, [
@@ -2738,6 +2877,17 @@ mixin UniCompilerX86 on UniCompilerBase {
         case UniOpVVV.bicU64:
         case UniOpVVV.bicF32:
         case UniOpVVV.bicF64:
+          if (hasAvx512) {
+            final ternlog = info.elementSize == 2
+                ? X86InstId.kVpternlogd
+                : X86InstId.kVpternlogq;
+            if (src2 is X86Mem) {
+              _emitX86(ternlog, [dst, src1v, src2, Imm(0x44)]);
+            } else {
+              _emitX86(instId, [dst, src2, src1v]);
+            }
+            return;
+          }
           if (op.index <= UniOpVVV.bicU64.index) instId = X86InstId.kVpandn;
           if (src2 is! BaseReg) src2 = _loadNewX86(dst, src2);
           _emitX86(instId, [dst, src2, src1v]);
@@ -2776,6 +2926,13 @@ mixin UniCompilerX86 on UniCompilerBase {
 
         case UniOpVVV.mulU64LoU32:
           final tmp = _newSimilarRegX86(dst, '@tmp');
+          if (hasAvx512) {
+            final msk = _simdVecConstX86(
+                VecConstTable.p_FFFFFFFF00000000, Bcst.k64, dst);
+            _emitX86(X86InstId.kVpandnq, [tmp, msk, src2]);
+            _emitX86(X86InstId.kVpmullq, [dst, src1v, tmp]);
+            return;
+          }
           _emitX86(
               X86InstId.kVpshufd, [tmp, src1v, Imm(_shufImm4(2, 3, 0, 1))]);
           _emitX86(X86InstId.kVpmuludq, [tmp, tmp, src2]);
@@ -2925,7 +3082,16 @@ mixin UniCompilerX86 on UniCompilerBase {
           return;
 
         case UniOpVVV.hAddF64:
-          _emitX86(instId, [dst, src1v, src2]);
+          if (hasAvx512 && dst is X86Zmm) {
+            // [B A]    [C A]
+            // [D C] -> [D B]
+            final tmp = _newSimilarRegX86(dst, '@tmp');
+            _emitX86(X86InstId.kVunpckhpd, [tmp, src1v, src2]);
+            _emitX86(X86InstId.kVunpcklpd, [dst, src1v, src2]);
+            _emitX86(X86InstId.kVaddpd, [dst, dst, tmp]);
+          } else {
+            _emitX86(instId, [dst, src1v, src2]);
+          }
           return;
 
         case UniOpVVV.combineLoHiU64:
@@ -3996,22 +4162,35 @@ mixin UniCompilerX86 on UniCompilerBase {
         case UniOpVVVI.insertV128F32:
         case UniOpVVVI.insertV128U64:
         case UniOpVVVI.insertV128F64:
+          src1v = _cloneAsX86(src1v, dst);
           if (src2 is X86Mem) {
             src2 = src2.withSize(16);
           } else {
             src2 = X86Xmm((src2 as BaseReg).id);
           }
-          instId = hasAvx2 &&
-                  (op == UniOpVVVI.insertV128U32 ||
-                      op == UniOpVVVI.insertV128U64)
-              ? X86InstId.kVinserti128
-              : X86InstId.kVinsertf128;
+          if (!hasAvx512) {
+            instId = hasAvx2 &&
+                    (op == UniOpVVVI.insertV128U32 ||
+                        op == UniOpVVVI.insertV128U64)
+                ? X86InstId.kVinserti128
+                : X86InstId.kVinsertf128;
+          }
           _emitX86(instId, [dst, src1v, src2, Imm(imm)]);
           return;
 
-        default:
-          // insertV256* needs AVX-512.
-          throw _requiresX86(op, 'AVX512');
+        case UniOpVVVI.insertV256U32:
+        case UniOpVVVI.insertV256F32:
+        case UniOpVVVI.insertV256U64:
+        case UniOpVVVI.insertV256F64:
+          if (!hasAvx512) throw _requiresX86(op, 'AVX512');
+          src1v = _cloneAsX86(src1v, dst);
+          if (src2 is X86Mem) {
+            src2 = src2.withSize(32);
+          } else {
+            src2 = X86Ymm((src2 as BaseReg).id);
+          }
+          _emitX86(instId, [dst, src1v, src2, Imm(imm)]);
+          return;
       }
     }
 

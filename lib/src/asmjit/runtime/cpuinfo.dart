@@ -40,6 +40,7 @@ class CpuFeatures {
   final bool erms;
   final bool avx512f;
   final bool avx512dq;
+  final bool avx512cd;
   final bool rdseed;
   final bool adx;
   final bool avx512bw;
@@ -84,6 +85,7 @@ class CpuFeatures {
     this.erms = false,
     this.avx512f = false,
     this.avx512dq = false,
+    this.avx512cd = false,
     this.rdseed = false,
     this.adx = false,
     this.avx512bw = false,
@@ -123,6 +125,7 @@ class CpuFeatures {
         erms = true,
         avx512f = true,
         avx512dq = true,
+        avx512cd = true,
         rdseed = true,
         adx = true,
         avx512bw = true,
@@ -159,6 +162,7 @@ class CpuFeatures {
         erms = false,
         avx512f = false,
         avx512dq = false,
+        avx512cd = false,
         rdseed = false,
         adx = false,
         avx512bw = false,
@@ -194,6 +198,10 @@ class CpuFeatures {
     if (aesni) features.add('AES-NI');
     if (pclmulqdq) features.add('PCLMULQDQ');
     if (avx512f) features.add('AVX-512F');
+    if (avx512cd) features.add('AVX-512CD');
+    if (avx512bw) features.add('AVX-512BW');
+    if (avx512dq) features.add('AVX-512DQ');
+    if (avx512vl) features.add('AVX-512VL');
     return 'CpuFeatures(${features.join(', ')})';
   }
 }
@@ -334,16 +342,38 @@ class CpuInfo {
       ]);
     }
 
+    // `xgetbv` with ECX = 0 (XCR0), storing EAX:EDX at the output pointer.
+    const xgetbvOffset = 64;
+    final xgetbvCode = Uint8List.fromList(Platform.isWindows
+        ? [
+            0x49, 0x89, 0xCA, // mov r10, rcx (output ptr)
+            0x31, 0xC9, // xor ecx, ecx
+            0x0F, 0x01, 0xD0, // xgetbv
+            0x41, 0x89, 0x02, // mov [r10], eax
+            0x41, 0x89, 0x52, 0x04, // mov [r10+4], edx
+            0xC3, // ret
+          ]
+        : [
+            0x31, 0xC9, // xor ecx, ecx
+            0x0F, 0x01, 0xD0, // xgetbv
+            0x89, 0x07, // mov [rdi], eax
+            0x89, 0x57, 0x04, // mov [rdi+4], edx
+            0xC3, // ret
+          ]);
+    final code = Uint8List(xgetbvOffset + xgetbvCode.length)
+      ..setAll(0, cpuidCode)
+      ..setAll(xgetbvOffset, xgetbvCode);
+
     // Allocate RW memory, copy the code and make it executable (W^X).
     final info = VirtMem.info();
-    final alignedSize = info.alignToPage(cpuidCode.length);
+    final alignedSize = info.alignToPage(code.length);
     final (allocErr, mem) = VirtMem.alloc(alignedSize, MemoryFlags.kAccessRW);
     if (allocErr != AsmJitError.ok) {
       throw AsmJitException(allocErr, 'VirtMem.alloc() failed for CPUID');
     }
 
     try {
-      mem.cast<Uint8>().asTypedList(cpuidCode.length).setAll(0, cpuidCode);
+      mem.cast<Uint8>().asTypedList(code.length).setAll(0, code);
 
       final protectErr =
           VirtMem.protect(mem, alignedSize, MemoryFlags.kAccessRX);
@@ -383,6 +413,24 @@ class CpuInfo {
           edx1 = result[3];
         }
 
+        // Get the content of XCR0 if supported by the CPU and enabled by the
+        // OS (XSAVE and OSXSAVE), as upstream `detect_x86_cpu()`.
+        var xcr0 = 0;
+        if ((ecx1 & (1 << 26)) != 0 && (ecx1 & (1 << 27)) != 0) {
+          final xgetbvFn = (mem.cast<Uint8>() + xgetbvOffset)
+              .cast<NativeFunction<Void Function(Pointer<Uint32>)>>()
+              .asFunction<void Function(Pointer<Uint32>)>();
+          xgetbvFn(result);
+          xcr0 = result[0];
+        }
+        // XCR0[2:1] == 11b: XMM & YMM states are enabled by the OS.
+        final avxEnabled = (xcr0 & 0x6) == 0x6;
+        // XCR0[2:1] == 11b and XCR0[7:5] == 111b: the upper 256 bits of
+        // ZMM0-15 and ZMM16-31 are enabled. macOS enables AVX-512 on demand
+        // (the first AVX-512 instruction faults and promotes the thread).
+        final avx512Enabled = Platform.isMacOS || (xcr0 & 0xE6) == 0xE6;
+        final hasAvx = avxEnabled && (ecx1 & (1 << 28)) != 0;
+
         // Extended features from leaf 7
         int ebx7 = 0, ecx7 = 0;
         if (maxLeaf >= 7) {
@@ -419,19 +467,22 @@ class CpuInfo {
               String.fromCharCodes(brandBytes).replaceAll('\x00', '').trim();
         }
 
+        // AVX-512 needs the OS state and AVX-512F itself.
+        final avx512 = avx512Enabled && (ebx7 & (1 << 16)) != 0;
+
         // Extract feature bits
         final features = CpuFeatures(
           // CPUID.1:ECX
           sse3: (ecx1 & (1 << 0)) != 0,
           pclmulqdq: (ecx1 & (1 << 1)) != 0,
           ssse3: (ecx1 & (1 << 9)) != 0,
-          fma: (ecx1 & (1 << 12)) != 0,
+          fma: hasAvx && (ecx1 & (1 << 12)) != 0,
           sse41: (ecx1 & (1 << 19)) != 0,
           sse42: (ecx1 & (1 << 20)) != 0,
           popcnt: (ecx1 & (1 << 23)) != 0,
           aesni: (ecx1 & (1 << 25)) != 0,
-          avx: (ecx1 & (1 << 28)) != 0,
-          f16c: (ecx1 & (1 << 29)) != 0,
+          avx: hasAvx,
+          f16c: hasAvx && (ecx1 & (1 << 29)) != 0,
           rdrand: (ecx1 & (1 << 30)) != 0,
           // CPUID.1:EDX
           fpu: (edx1 & (1 << 0)) != 0,
@@ -442,19 +493,20 @@ class CpuInfo {
           sse2: (edx1 & (1 << 26)) != 0,
           // CPUID.7.0:EBX
           bmi1: (ebx7 & (1 << 3)) != 0,
-          avx2: (ebx7 & (1 << 5)) != 0,
+          avx2: hasAvx && (ebx7 & (1 << 5)) != 0,
           bmi2: (ebx7 & (1 << 8)) != 0,
           erms: (ebx7 & (1 << 9)) != 0,
-          avx512f: (ebx7 & (1 << 16)) != 0,
-          avx512dq: (ebx7 & (1 << 17)) != 0,
+          avx512f: avx512 && (ebx7 & (1 << 16)) != 0,
+          avx512dq: avx512 && (ebx7 & (1 << 17)) != 0,
+          avx512cd: avx512 && (ebx7 & (1 << 28)) != 0,
           rdseed: (ebx7 & (1 << 18)) != 0,
           adx: (ebx7 & (1 << 19)) != 0,
-          avx512bw: (ebx7 & (1 << 30)) != 0,
-          avx512vl: (ebx7 & (1 << 31)) != 0,
+          avx512bw: avx512 && (ebx7 & (1 << 30)) != 0,
+          avx512vl: avx512 && (ebx7 & (1 << 31)) != 0,
           // CPUID.7.0:ECX
           vaes: (ecx7 & (1 << 9)) != 0,
           vpclmulqdq: (ecx7 & (1 << 10)) != 0,
-          avx512vnni: (ecx7 & (1 << 11)) != 0,
+          avx512vnni: avx512 && (ecx7 & (1 << 11)) != 0,
           // CPUID.80000001h:ECX
           lzcnt: (ecxExt1 & (1 << 5)) != 0,
           abm: (ecxExt1 & (1 << 5)) != 0, // LZCNT implies ABM

@@ -34,7 +34,7 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 | **UJIT emit_vm / emit_mv (x86)** | ✅ Port fiel (`opcode_info_2vm`/`opcode_info_2mv`); `storeCvt*` não são implementados no upstream | `ujit_vm_mv_ops_test`: cargas/stores de 128 bits, endereços alinhados e desalinhados |
 | **Constantes vetoriais (tabela local)** | ✅ Corrigidas (antes eram lidas do próprio código) | `ujit_const_runtime_test` |
 | **ChaCha20 otimizado** | ✅ x64 e AArch64 | `chacha20_verify_test` |
-| AVX-512 no UJIT | ⛔ Desativado (encodings EVEX não portados/validados); hosts AVX-512 usam as lowerings AVX2 | |
+| AVX-512 no UJIT | 🔶 Caminhos `has_avx512()` portados e habilitados (F+CD+BW+DQ+VL e XCR0); validação só no CI (runners linux-x64/windows-x64 com AVX-512) | |
 | **CI GitHub** | ✅ linux x64/arm64, windows x64, macos arm64/x64 | |
 
 ---
@@ -253,6 +253,12 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - `A64Compiler.invoke(target, signature)` (sempre BLR, como o upstream) e port de `a64::RACFGBuilder::on_before_invoke()` (`move_imm_to_reg_arg`, `move_imm_to_stack_arg`, `move_reg_to_stack_arg`); a área de argumentos de saída fica em `[sp]` e os spills/callee-saved acima dela. Invoke1-3 de `upstream_compiler_a64_test.dart` passam (104/104).
 - Bugs do port encontrados: `RegUtils.groupOf` mapeava `vec8..vec64` (registradores escalares do A64) para `extra` em vez de `vec` (o upstream os define com `RegGroup::kVec`), o que rejeitava argumentos `double`; e o alvo da chamada não era um uso do RA quando a arquitetura não tem `analyzeInst` (o `blr` saía com o registrador virtual).
 - `virtmem.dart`: `MAP_FAILED` comparado como -1 não detectava a falha num processo de 32 bits (o endereço é 0xFFFFFFFF); era a falha do job linux-ia32 do CI com páginas grandes.
+
+### AVX-512 no UJIT
+- `CpuInfo`: port da checagem de `XCR0` do upstream (`xgetbv` quando XSAVE+OSXSAVE): AVX/FMA/F16C exigem `XCR0[2:1]`, AVX2 exige AVX, AVX-512 exige `XCR0[7:5]` (no macOS o upstream assume habilitado sob demanda); novo `avx512cd`. Antes o port não consultava o SO.
+- `_new_vec_const()` como o upstream: constantes de 256 bits carregadas com `vbroadcasti128` (AVX-512: `vbroadcasti32x4`/`vmovdqa32`); antes, carga alinhada de largura total.
+- Caminhos `has_avx512()` portados: `avx_ones`/`avx_bit_not` com `vpternlogd`, `avx_isign_flip` (`vpxord` a 512), broadcast de GP (`vpbroadcastd/q`), broadcasts V128/V256 (`vinserti32x4`... e `vshufi32x4`... a 512), `vrndscale*` a 512, round half away com `vpternlogd`, conversões hi/lo/narrowing a 512 (`vextracti32x8`, `vinserti32x8`), comparações AVX-512 com destino K convertido por `vpmovm2*`, bitwise EVEX, `bic` com `vpternlog`, `mulU64LoU32` com `vpmullq`, `hAddF64` a 512, `insertV128/V256`. O UJIT habilita AVX-512 com F+CD+BW+DQ+VL (como o upstream) mas mantém 16 registradores vetoriais (o RA x86 do port ainda aloca XMM0-15).
+- Validação: só no CI (nenhuma máquina local tem AVX-512); os testes UJIT com as features do host passam a exercitar os caminhos EVEX lá.
 
 ### Próximos passos
 1. Pendências listadas pelo agente x86: 32 registradores vetoriais com AVX-512, move de máscara pelo tipo, layout do constant pool, consecutive-register ties.
