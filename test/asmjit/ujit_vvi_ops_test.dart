@@ -171,22 +171,28 @@ void main() {
   // lane is compared with the 128-bit reference.
   final host = hostIsX64 ? CpuInfo.host().features : null;
   final hi = _u8([for (var i = 15; i >= 0; i--) input[i] ^ 0x5A]);
-  final wide = Uint8List.fromList([...input, ...hi]);
-  for (final layout in _layouts.entries) {
-    group('UniOpVVI avx2-256 ${layout.key}', () {
-      for (final c in cases) {
-        test(c.name, () {
-          final r = runUjit(
-              (cc, d, a, b, cv, m) => layout.value(cc, c.op, c.imm, d, cv, m),
-              wide,
-              wide,
-              wide,
-              features: host,
-              width: VecWidth.k256);
-          expect(_hex(r),
-              _hex(Uint8List.fromList([...c.ref(input), ...c.ref(hi)])));
-        });
-      }
-    }, skip: (host?.avx2 ?? false) ? null : 'needs an AVX2 host');
+  for (final (name, width, lanes, enabled) in [
+    ('avx2-256', VecWidth.k256, 2, host?.avx2 ?? false),
+    ('avx512-512', VecWidth.k512, 4, host?.avx512bw ?? false),
+  ]) {
+    final ins = [for (var i = 0; i < lanes; i++) i.isEven ? input : hi];
+    final wide = Uint8List.fromList([for (final l in ins) ...l]);
+    for (final layout in _layouts.entries) {
+      group('UniOpVVI $name ${layout.key}', () {
+        for (final c in cases) {
+          test(c.name, () {
+            final r = runUjit(
+                (cc, d, a, b, cv, m) => layout.value(cc, c.op, c.imm, d, cv, m),
+                wide,
+                wide,
+                wide,
+                features: host,
+                width: width);
+            expect(_hex(r),
+                _hex(Uint8List.fromList([for (final l in ins) ...c.ref(l)])));
+          });
+        }
+      }, skip: enabled ? null : 'needs an ${name.split('-').first} host');
+    }
   }
 }

@@ -16,11 +16,16 @@ typedef UjitEmit = void Function(
     UniCompiler cc, BaseReg d, BaseReg a, BaseReg b, BaseReg c, BaseMem mem);
 
 /// JIT-compiles [emit] for the host architecture, runs it with the inputs
-/// [a], [b] and [c] (16 bytes each, 32 with [width] 256-bit) and returns the
+/// [a], [b] and [c] (16 bytes each, 32/64 with a 256/512-bit [width]) and
+/// returns the
 /// bytes of `dst`.
 Uint8List runUjit(UjitEmit emit, Uint8List a, Uint8List b, Uint8List c,
     {CpuFeatures? features, VecWidth width = VecWidth.k128}) {
-  final n = width == VecWidth.k256 ? 32 : 16;
+  final n = switch (width) {
+    VecWidth.k256 => 32,
+    VecWidth.k512 => 64,
+    _ => 16,
+  };
   final rt = JitRuntime();
   try {
     final code = CodeHolder(env: rt.environment);
@@ -32,8 +37,16 @@ Uint8List runUjit(UjitEmit emit, Uint8List a, Uint8List b, Uint8List c,
     BaseMem mem(BaseReg p, int off) => p is A64Gp
         ? A64Mem.baseOffset(p, off)
         : X86Mem.baseDisp(p as X86Gp, off, size: n);
-    final load = n == 32 ? UniOpVM.load256U32 : UniOpVM.load128U32;
-    final store = n == 32 ? UniOpMV.store256U32 : UniOpMV.store128U32;
+    final load = switch (n) {
+      32 => UniOpVM.load256U32,
+      64 => UniOpVM.load512U32,
+      _ => UniOpVM.load128U32,
+    };
+    final store = switch (n) {
+      32 => UniOpMV.store256U32,
+      64 => UniOpMV.store512U32,
+      _ => UniOpMV.store128U32,
+    };
 
     cc.addFunc(
         FuncSignature.build([TypeId.intPtr], TypeId.void_, CallConvId.cdecl));

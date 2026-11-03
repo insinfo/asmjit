@@ -403,31 +403,41 @@ void main() {
   // data: A = a|b and B = b|a (for swizzlevU8 B = b|b: B holds the indices,
   // which the reference requires to be in range).
   final host = hostIsX64 ? CpuInfo.host().features : null;
-  for (final layout in _layouts.entries) {
-    group('UniOpVVV avx2-256 ${layout.key}', () {
-      for (final c in cases) {
-        final name = '${c.op.name} ${_hex(c.a)} ${_hex(c.b)}';
-        test(name, () {
-          final hi = c.op == UniOpVVV.swizzlevU8 ? c.b : c.a;
-          final a = Uint8List.fromList([...c.a, ...c.b]);
-          final b = Uint8List.fromList([...c.b, ...hi]);
-          final r = runUjit(
-              (cc, d, va, vb, vc, m) =>
-                  layout.value(cc, c.op, d, va, vb, vc, m),
-              a,
-              b,
-              b,
-              features: host,
-              width: VecWidth.k256);
-          final expected = [...c.ref(c.a, c.b), ...c.ref(c.b, hi)];
-          if (c.bytes < 16) {
-            expect(_hex(r.sublist(0, c.bytes)),
-                _hex(Uint8List.fromList(expected.sublist(0, c.bytes))));
-          } else {
-            expect(_hex(r), _hex(Uint8List.fromList(expected)));
-          }
-        });
-      }
-    }, skip: host == null || !host.avx2 ? 'needs an AVX2 host' : null);
+  // 512-bit vectors (AVX-512): four lanes, alternating the lane inputs.
+  for (final (name, width, lanes, enabled) in [
+    ('avx2-256', VecWidth.k256, 2, host?.avx2 ?? false),
+    ('avx512-512', VecWidth.k512, 4, host?.avx512bw ?? false),
+  ]) {
+    for (final layout in _layouts.entries) {
+      group('UniOpVVV $name ${layout.key}', () {
+        for (final c in cases) {
+          final caseName = '${c.op.name} ${_hex(c.a)} ${_hex(c.b)}';
+          test(caseName, () {
+            final hi = c.op == UniOpVVV.swizzlevU8 ? c.b : c.a;
+            // Lane i: (a, b) for even lanes, (b, hi) for odd ones.
+            final ins = [
+              for (var i = 0; i < lanes; i++) i.isEven ? (c.a, c.b) : (c.b, hi)
+            ];
+            final a = Uint8List.fromList([for (final l in ins) ...l.$1]);
+            final b = Uint8List.fromList([for (final l in ins) ...l.$2]);
+            final r = runUjit(
+                (cc, d, va, vb, vc, m) =>
+                    layout.value(cc, c.op, d, va, vb, vc, m),
+                a,
+                b,
+                b,
+                features: host,
+                width: width);
+            final expected = [for (final l in ins) ...c.ref(l.$1, l.$2)];
+            if (c.bytes < 16) {
+              expect(_hex(r.sublist(0, c.bytes)),
+                  _hex(Uint8List.fromList(expected.sublist(0, c.bytes))));
+            } else {
+              expect(_hex(r), _hex(Uint8List.fromList(expected)));
+            }
+          });
+        }
+      }, skip: enabled ? null : 'needs an ${name.split('-').first} host');
+    }
   }
 }
