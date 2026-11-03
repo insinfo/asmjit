@@ -211,7 +211,13 @@ void main() {
             ];
             final n = c.bytes < 16 ? c.bytes : r.length;
             expect(_hex(r.sublist(0, n)), _hex(expected.sublist(0, n)));
-          });
+          },
+              skip: c.op == UniOpVVVV.blendvU8 && width == VecWidth.k512
+                  ? 'upstream has no 512-bit blendv: it emits VPBLENDVB with '
+                      'ZMM operands (62 F3 75 48 4C C2 30, the same bytes as '
+                      'upstream), an invalid instruction (SIGILL on AVX-512 '
+                      'hosts); upstream does not test it either'
+                  : null);
         }
       }, skip: skipUnlessJitHost);
     }

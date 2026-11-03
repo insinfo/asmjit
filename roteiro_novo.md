@@ -1,6 +1,6 @@
 # Roteiro de Portação: AsmJit C++ → Dart
 //C:\MyDartProjects\asmjit\roteiro_novo.md
-**Última Atualização**: 2026-11-02 (Atual)
+**Última Atualização**: 2026-11-03 (Atual)
 continue lendo o codigo fonte c++ C:\MyDartProjects\asmjit\referencias\asmjit-master e portando
 
 foco em 64 bits, windows e linux e paridade com c++
@@ -260,11 +260,20 @@ sempre que fizer uma alteração de codigo execute dart analyze para ver se esta
 - Caminhos `has_avx512()` portados: `avx_ones`/`avx_bit_not` com `vpternlogd`, `avx_isign_flip` (`vpxord` a 512), broadcast de GP (`vpbroadcastd/q`), broadcasts V128/V256 (`vinserti32x4`... e `vshufi32x4`... a 512), `vrndscale*` a 512, round half away com `vpternlogd`, conversões hi/lo/narrowing a 512 (`vextracti32x8`, `vinserti32x8`), comparações AVX-512 com destino K convertido por `vpmovm2*`, bitwise EVEX, `bic` com `vpternlog`, `mulU64LoU32` com `vpmullq`, `hAddF64` a 512, `insertV128/V256`. O UJIT habilita AVX-512 com F+CD+BW+DQ+VL (como o upstream) mas mantém 16 registradores vetoriais (o RA x86 do port ainda aloca XMM0-15).
 - Validação: no CI (nenhuma máquina local tem AVX-512): os runners linux-x64 (AMD EPYC 9V45, Intel Xeon 8573C) e windows-x64 (Xeon 8573C) detectam F/CD/BW/DQ/VL e todos os testes UJIT com as features do host passam (`c9f582c`), inclusive os grupos de 256 bits, agora com EVEX. Vetores de 512 bits ainda não têm teste.
 
+### Testes de 512 bits (AVX-512) no UJIT
+- `runUjit()` aceita 512 bits; `vvv`/`vvi`/`vvvv` rodam a 512 bits (4 faixas) nos hosts AVX-512 do CI. A primeira execução (`6b81a69`) mostrou que o caminho AVX do `emit_vm`/`emit_mv` não tratava `load512*`/`store512*` nem as conversões `loadCvt256_*`, `loadCvt128` 8→32 e `loadCvt32/64_U8ToU64`; corrigido em `27bac85` seguindo os grupos genéricos do upstream (registrador pelo tamanho de memória).
+
+### Estado ao fim de 2026-11-03
+- Suítes: nativo arm64 18075, Rosetta x64 45147, Windows x64 (AVX2) 51469; CI verde em todos os jobs (linux x64/arm64/ia32, QEMU arm32/riscv64, macOS arm64/x64, Windows), com AVX-512 validado nos runners linux-x64/windows-x64 quando caem em CPUs AVX-512.
+- Encoders x86/A64 portados do upstream (todas as goldens), relocação/seções/embed como o upstream, JitAllocator, RA com várias funções, chamadas (x86 e A64), jump tables, testes de compiler x86 (75) e A64 (9) do upstream, UJIT com 128/256/512 bits.
+
 ### Próximos passos
-1. Pendências listadas pelo agente x86: 32 registradores vetoriais com AVX-512, move de máscara pelo tipo, layout do constant pool, consecutive-register ties.
-3. Portar `asmjit_test_unicompiler*.cpp` e os testes do compiler.
-4. Acesso de outros operandos além do 0 (xadd/cmpxchg) a partir do banco.
-5. AVX-512/EVEX no UJIT, validado no runner linux-x64 do CI (tem AVX-512F).
+1. **`blendvU8` a 512 bits**: o upstream emite `VPBLENDVB` com ZMM (`62 F3 75 48 4C C2 30`, mesmos bytes no port e no upstream), instrução inválida — SIGILL no runner AVX-512 (EPYC 9V45) do CI em `27bac85`; o teste de 512 bits pula esse caso. Implementar um lowering válido (`vpmovb2m` + `vpblendmb`) como desvio documentado e reativar o teste.
+2. Confirmar no CI o restante dos testes de 512 bits (`vvv`/`vvi`/`vvvv`); o crash acima abortou a suíte antes do fim. Só o CI tem AVX-512, e nem todo runner cai numa CPU AVX-512.
+3. RA x86 com 32 registradores vetoriais quando AVX-512 (XMM16-31) e o UJIT usando `_vecRegCount = 32` como o upstream.
+4. `vv` a 512 bits (conversões/broadcasts com referências de vetor inteiro, como já feito para 256).
+5. Pendências do agente x86: move de máscara pelo tipo, layout do constant pool, consecutive-register ties, retorno x87.
+6. Portar `asmjit_test_unicompiler*.cpp` do upstream (hoje cobertos por testes próprios com modelos de referência).
 
 ---
 
